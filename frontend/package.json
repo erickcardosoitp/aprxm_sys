@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.6.0",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "axios": "^1.7.2",
     "date-fns": "^3.6.0",
     "jwt-decode": "^4.0.0",
