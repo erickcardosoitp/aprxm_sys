@@ -124,7 +124,7 @@ async def add_comment(
         text("""
             INSERT INTO service_order_comments
               (service_order_id, association_id, created_by, comment, attachment_urls)
-            VALUES (:so_id, :assoc_id, :user_id, :comment, :attachments::jsonb)
+            VALUES (:so_id, :assoc_id, :user_id, :comment, CAST(:attachments AS jsonb))
             RETURNING id, created_at
         """),
         {
