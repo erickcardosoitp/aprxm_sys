@@ -712,68 +712,92 @@ export default function PackagesPage() {
       {/* Delivery Modal */}
       {deliveryTarget && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40">
-          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-6 max-h-[92vh] overflow-y-auto">
-            <h3 className="font-semibold text-gray-800 mb-1">
-              Entregar — {deliveryTarget.resident_name ?? `Unid. ${deliveryTarget.unit}`}
-            </h3>
-            {deliveryTarget.tracking_code && (
-              <p className="text-xs text-gray-400 mb-4">Rastreio: {deliveryTarget.tracking_code}</p>
-            )}
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] overflow-y-auto">
+            {/* Modal header */}
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between z-10">
+              <div>
+                <h3 className="font-semibold text-gray-900">Registrar Entrega</h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {deliveryTarget.resident_name ?? `Unid. ${deliveryTarget.unit}`}
+                  {deliveryTarget.tracking_code ? ` · ${deliveryTarget.tracking_code}` : ''}
+                </p>
+              </div>
+              <button onClick={() => { setDeliveryTarget(null); resetDelivery() }}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
 
-            <div className="flex flex-col gap-5">
-              <div className={`rounded-xl p-4 border ${proofVerified ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+            <div className="p-5 flex flex-col gap-4">
+              {/* Proof of residence */}
+              <div className={`rounded-xl p-4 border transition ${proofVerified ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-200'}`}>
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={proofVerified} onChange={e => setProofVerified(e.target.checked)} className="w-4 h-4 accent-green-600" />
+                  <input type="checkbox" checked={proofVerified} onChange={e => setProofVerified(e.target.checked)} className="w-5 h-5 accent-green-600 shrink-0" />
                   <div>
-                    <p className="text-sm font-semibold text-gray-800 flex items-center gap-1">
-                      <Shield className="w-4 h-4 text-green-600" /> Comprovante de residência apresentado
+                    <p className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                      <Shield className={`w-4 h-4 ${proofVerified ? 'text-green-600' : 'text-red-400'}`} />
+                      Comprovante de residência apresentado
                     </p>
-                    <p className="text-xs text-gray-500">Obrigatório para associados e não associados</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Obrigatório — verifique o documento antes de entregar</p>
                   </div>
                 </label>
               </div>
 
-              <div>
-                <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                  <Shield className="w-3 h-3" /> Foto com documento (antifraude — opcional)
+              {/* Anti-fraud photo */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-gray-400" /> Foto do documento (antifraude — opcional)
                 </p>
                 <PhotoCapture label="Documento do recebedor" onCapture={entry => setRecipientIdPhoto(entry.url)} />
               </div>
 
-              <div className="border-t pt-4">
-                <p className="text-xs font-semibold text-gray-600 mb-3 uppercase tracking-wide">Recebedor</p>
-                <div className="flex flex-col gap-3 mb-3">
+              {/* Recipient section */}
+              <div className="rounded-xl border border-blue-200 overflow-hidden">
+                <div className="bg-blue-600 px-4 py-2.5 flex items-center gap-2">
+                  <User className="w-4 h-4 text-white" />
+                  <span className="text-sm font-semibold text-white">Recebedor (Morador)</span>
+                </div>
+                <div className="p-4 flex flex-col gap-3">
                   <div>
-                    <label className="block text-xs text-gray-600 mb-1">Nome completo *</label>
-                    <input value={recipientName} onChange={e => setRecipientName(e.target.value)} className={inputCls} placeholder="Nome do recebedor" />
+                    <label className="block text-xs text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
+                    <input value={recipientName} onChange={e => setRecipientName(e.target.value)} className={inputCls} placeholder="Nome de quem está recebendo" />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">CPF</label>
                     <input value={recipientCpf} onChange={e => setRecipientCpf(e.target.value)} className={inputCls} placeholder="000.000.000-00" />
                   </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Assinatura <span className="text-red-500">*</span></label>
+                    <SignaturePad onSave={setRecipientSig} onClear={() => setRecipientSig('')} />
+                  </div>
                 </div>
-                <label className="block text-xs text-gray-600 mb-1">Assinatura do recebedor *</label>
-                <SignaturePad onSave={setRecipientSig} onClear={() => setRecipientSig('')} />
               </div>
 
-              <div className="border-t pt-4">
-                <p className="text-xs font-semibold text-gray-600 mb-3 uppercase tracking-wide">Entregador</p>
-                <div className="mb-3">
-                  <label className="block text-xs text-gray-600 mb-1">Nome do entregador *</label>
-                  <input value={delivererName} onChange={e => setDelivererName(e.target.value)} className={inputCls} placeholder="Nome de quem entrega" />
+              {/* Deliverer section */}
+              <div className="rounded-xl border border-amber-200 overflow-hidden">
+                <div className="bg-amber-500 px-4 py-2.5 flex items-center gap-2">
+                  <User className="w-4 h-4 text-white" />
+                  <span className="text-sm font-semibold text-white">Entregador (Quem entrega)</span>
                 </div>
-                <label className="block text-xs text-gray-600 mb-1">Assinatura do entregador *</label>
-                <SignaturePad onSave={setDelivererSig} onClear={() => setDelivererSig('')} />
+                <div className="p-4 flex flex-col gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Nome do entregador <span className="text-red-500">*</span></label>
+                    <input value={delivererName} onChange={e => setDelivererName(e.target.value)} className={inputCls} placeholder="Nome do funcionário que entrega" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Assinatura <span className="text-red-500">*</span></label>
+                    <SignaturePad onSave={setDelivererSig} onClear={() => setDelivererSig('')} />
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="flex gap-3 mt-5">
+            <div className="flex gap-3 px-5 pb-5 sticky bottom-0 bg-white border-t border-gray-100 pt-4">
               <button onClick={() => { setDeliveryTarget(null); resetDelivery() }}
                 className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
               <button onClick={handleDeliver}
                 disabled={loading || !recipientSig || !delivererSig || !proofVerified || !recipientName || !delivererName}
-                className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50">
-                {loading ? 'Salvando…' : 'Confirmar Entrega'}
+                className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                {loading ? 'Registrando…' : 'Confirmar Entrega'}
               </button>
             </div>
           </div>
