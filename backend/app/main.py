@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, auth, finance, packages, residents, service_orders
+from app.routers import admin, auth, finance, packages, residents, service_orders, settings
 
 settings = get_settings()
 
@@ -48,6 +48,7 @@ app.include_router(finance.router, prefix=PREFIX)
 app.include_router(packages.router, prefix=PREFIX)
 app.include_router(residents.router, prefix=PREFIX)
 app.include_router(service_orders.router, prefix=PREFIX)
+app.include_router(settings.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

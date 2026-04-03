@@ -1,11 +1,11 @@
 import api from './api'
-import type { Package, PackageStatus } from '../types'
+import type { Package } from '../types'
 
 export const packageService = {
   receive: (data: {
-    unit: string
-    block?: string
     resident_id?: string
+    unit?: string
+    block?: string
     sender_name?: string
     carrier_name?: string
     tracking_code?: string
@@ -21,9 +21,18 @@ export const packageService = {
       signature_url: string
       delivered_to_cpf?: string
       delivered_to_resident_id?: string
+      deliverer_name: string
+      deliverer_signature_url: string
+      proof_of_residence_verified: boolean
+      recipient_id_photo_url?: string
     },
   ) => api.post<Package>(`/packages/${packageId}/deliver`, data),
 
   list: (status?: string) =>
     api.get<Package[]>('/packages', { params: status ? { status } : {} }),
+
+  lookupCep: (cep: string) =>
+    api.get<{ street: string; district: string; city: string; state: string }>(
+      `/packages/cep/${cep.replace(/\D/g, '')}`,
+    ),
 }
