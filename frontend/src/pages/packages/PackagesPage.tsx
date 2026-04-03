@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Barcode, Package as PackageIcon, Plus, Search, Shield, User, UserX } from 'lucide-react'
+import { AlertTriangle, Barcode, Camera, Package as PackageIcon, Plus, Search, Shield, User, UserX } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SignaturePad } from '../../components/packages/SignaturePad'
 import { PhotoCapture } from '../../components/packages/PhotoCapture'
+import { BarcodeScannerModal } from '../../components/packages/BarcodeScanner'
 import { packageService } from '../../services/packages'
 import api from '../../services/api'
 import type { Package, Resident } from '../../types'
@@ -54,6 +55,7 @@ export default function PackagesPage() {
   const [photos, setPhotos] = useState<{ url: string; label: string; taken_at: string }[]>([])
   const barcodeRef = useRef<HTMLInputElement>(null)
 
+  const [showScanner, setShowScanner] = useState(false)
   const [senderSearch, setSenderSearch] = useState('')
   const [senderResults, setSenderResults] = useState<Resident[]>([])
 
@@ -258,12 +260,22 @@ export default function PackagesPage() {
                 <h3 className="font-semibold text-gray-800 mb-1">Nova Encomenda — Destinatário</h3>
                 <p className="text-xs text-gray-400 mb-4">Bipe o código de barras ou busque o morador pelo nome.</p>
 
-                <div className="mb-4 relative">
-                  <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input ref={barcodeRef} value={tracking}
-                    onChange={e => setTracking(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && tracking) { e.preventDefault(); selectedRecipient ? setStep('details') : document.getElementById('recipient-search')?.focus() } }}
-                    className={`${inputCls} pl-9`} placeholder="Bipe o código de barras da etiqueta…" />
+                <div className="mb-4 flex gap-2">
+                  <div className="relative flex-1">
+                    <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input ref={barcodeRef} value={tracking}
+                      onChange={e => setTracking(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && tracking) { e.preventDefault(); selectedRecipient ? setStep('details') : document.getElementById('recipient-search')?.focus() } }}
+                      className={`${inputCls} pl-9`} placeholder="Bipe ou escaneie o código…" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowScanner(true)}
+                    title="Escanear com câmera"
+                    className="flex items-center justify-center gap-1.5 bg-[#26619c] hover:bg-[#1a4f87] text-white px-3 rounded-lg text-sm font-medium transition shrink-0"
+                  >
+                    <Camera className="w-4 h-4" />
+                  </button>
                 </div>
 
                 <div className="relative mb-2">
@@ -487,6 +499,13 @@ export default function PackagesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showScanner && (
+        <BarcodeScannerModal
+          onScan={(code) => { setTracking(code); setShowScanner(false); document.getElementById('recipient-search')?.focus() }}
+          onClose={() => setShowScanner(false)}
+        />
       )}
     </div>
   )
