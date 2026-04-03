@@ -113,7 +113,7 @@ export default function LoginPage() {
             ))}
           </div>
 
-          <div className="px-8 py-7">
+          <div key={step} className="px-8 py-7">
 
             {/* Step 1: Email */}
             {step === 'email' && (
