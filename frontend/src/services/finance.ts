@@ -1,5 +1,5 @@
 import api from './api'
-import type { CashSession, Transaction } from '../types'
+import type { CashSession, CashSessionSummary, Transaction } from '../types'
 
 export const financeService = {
   openSession: (opening_balance: number, notes?: string) =>
@@ -30,8 +30,7 @@ export const financeService = {
 
   listTransactions: (session_id?: string) =>
     api.get<Transaction[]>('/finance/transactions', { params: { session_id } }),
-}
-,
 
   listSessions: () =>
-    api.get<import('../types').CashSessionSummary[]>('/finance/sessions'),
+    api.get<CashSessionSummary[]>('/finance/sessions'),
+}
