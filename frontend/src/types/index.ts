@@ -2,7 +2,7 @@
 // APRXM — Domain Types
 // ============================================================
 
-export type UserRole = 'superadmin' | 'admin' | 'operator' | 'viewer'
+export type UserRole = 'superadmin' | 'admin' | 'conferente' | 'operator' | 'viewer'
 
 export interface AuthState {
   token: string | null

@@ -19,7 +19,12 @@ export function AppShell() {
   const navigate = useNavigate()
 
   const isAdmin = role === 'admin' || role === 'superadmin'
-  const navItems = isAdmin ? [...BASE_NAV, ADMIN_NAV, SETTINGS_NAV] : BASE_NAV
+  const isConferente = role === 'conferente'
+  const navItems = isAdmin
+    ? [...BASE_NAV, ADMIN_NAV, SETTINGS_NAV]
+    : isConferente
+    ? [...BASE_NAV, SETTINGS_NAV]
+    : BASE_NAV
 
   const handleLogout = () => {
     clearAuth()

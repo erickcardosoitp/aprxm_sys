@@ -54,6 +54,9 @@ export default function PackagesPage() {
   const [photos, setPhotos] = useState<{ url: string; label: string; taken_at: string }[]>([])
   const barcodeRef = useRef<HTMLInputElement>(null)
 
+  const [senderSearch, setSenderSearch] = useState('')
+  const [senderResults, setSenderResults] = useState<Resident[]>([])
+
   const [recipientName, setRecipientName] = useState('')
   const [recipientCpf, setRecipientCpf] = useState('')
   const [recipientSig, setRecipientSig] = useState('')
@@ -79,6 +82,16 @@ export default function PackagesPage() {
     try {
       const res = await api.get<Resident[]>('/residents', { params: { q, type: 'member' } })
       setSearchResults(res.data.slice(0, 6))
+    } catch { /* silent */ }
+  }
+
+  const searchSender = async (q: string) => {
+    setSenderSearch(q)
+    setSender(q)
+    if (q.length < 2) { setSenderResults([]); return }
+    try {
+      const res = await api.get<Resident[]>('/residents', { params: { q } })
+      setSenderResults(res.data.slice(0, 5))
     } catch { /* silent */ }
   }
 
@@ -137,7 +150,8 @@ export default function PackagesPage() {
   const resetReceive = () => {
     setShowReceive(false); setStep('recipient'); setRecipientSearch('')
     setSearchResults([]); setSelectedRecipient(null); setShowGuestForm(false)
-    setGuest(emptyGuest()); setTracking(''); setCarrier(''); setSender(''); setPhotos([])
+    setGuest(emptyGuest()); setTracking(''); setCarrier(''); setSender('')
+    setSenderSearch(''); setSenderResults([]); setPhotos([])
   }
 
   const handleDeliver = async () => {
@@ -246,15 +260,17 @@ export default function PackagesPage() {
 
                 <div className="mb-4 relative">
                   <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input ref={barcodeRef} value={tracking} onChange={e => setTracking(e.target.value)}
-                    className={`${inputCls} pl-9`} placeholder="Código de barras / rastreio (opcional)" />
+                  <input ref={barcodeRef} value={tracking}
+                    onChange={e => setTracking(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && tracking) { e.preventDefault(); selectedRecipient ? setStep('details') : document.getElementById('recipient-search')?.focus() } }}
+                    className={`${inputCls} pl-9`} placeholder="Bipe o código de barras da etiqueta…" />
                 </div>
 
                 <div className="relative mb-2">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input value={recipientSearch}
+                  <input id="recipient-search" value={recipientSearch}
                     onChange={e => { setRecipientSearch(e.target.value); searchResidents(e.target.value) }}
-                    className={`${inputCls} pl-9`} placeholder="Buscar associado por nome..." />
+                    className={`${inputCls} pl-9`} placeholder="Buscar associado / dependente por nome…" />
                 </div>
 
                 {searchResults.length > 0 && (
@@ -341,12 +357,20 @@ export default function PackagesPage() {
                   <h3 className="font-semibold text-gray-800">Detalhes da Encomenda</h3>
                 </div>
                 {selectedRecipient && (
-                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-4">
+                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-2">
                     <User className="w-4 h-4 text-[#26619c]" />
                     <span className="text-sm font-medium text-[#1a3f6f]">{selectedRecipient.full_name}</span>
                     {selectedRecipient.type === 'guest' && (
                       <span className="ml-auto text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Não associado</span>
                     )}
+                  </div>
+                )}
+                {selectedRecipient?.type === 'guest' && (
+                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2.5 mb-4">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 font-medium">
+                      Não associado — <strong>taxa de R$ 2,50</strong> será cobrada automaticamente na entrega e lançada no caixa.
+                    </p>
                   </div>
                 )}
                 <div className="flex flex-col gap-3">
@@ -360,9 +384,27 @@ export default function PackagesPage() {
                       <input value={tracking} onChange={e => setTracking(e.target.value)} className={inputCls} placeholder="AA000000000BR" />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">Remetente</label>
-                    <input value={sender} onChange={e => setSender(e.target.value)} className={inputCls} placeholder="Nome do remetente" />
+                  <div className="relative">
+                    <label className="block text-xs text-gray-600 mb-1">Remetente (associado, dependente ou externo)</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input value={senderSearch}
+                        onChange={e => searchSender(e.target.value)}
+                        className={`${inputCls} pl-9`} placeholder="Buscar ou digitar nome do remetente…" />
+                    </div>
+                    {senderResults.length > 0 && (
+                      <ul className="absolute z-10 w-full border border-gray-200 bg-white rounded-lg mt-1 shadow-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
+                        {senderResults.map(r => (
+                          <li key={r.id}>
+                            <button className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
+                              onMouseDown={() => { setSender(r.full_name); setSenderSearch(r.full_name); setSenderResults([]) }}>
+                              {r.full_name}
+                              {r.type === 'member' ? <span className="text-xs text-green-600 ml-2">Associado</span> : <span className="text-xs text-gray-400 ml-2">Dependente</span>}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <PhotoCapture label="Foto da Etiqueta *" onCapture={entry => setPhotos(prev => [...prev, entry])} />
                   {photos.length > 0 && <p className="text-xs text-green-600">{photos.length} foto(s) adicionada(s)</p>}

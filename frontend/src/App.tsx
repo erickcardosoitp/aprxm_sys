@@ -21,6 +21,12 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function RequireConferente({ children }: { children: React.ReactNode }) {
+  const role = useAuthStore((s) => s.role)
+  if (role !== 'admin' && role !== 'superadmin' && role !== 'conferente') return <Navigate to="/finance" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -41,7 +47,7 @@ export default function App() {
           <Route path="service-orders" element={<ServiceOrdersPage />} />
           <Route path="residents" element={<ResidentsPage />} />
           <Route path="admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
-          <Route path="settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
+          <Route path="settings" element={<RequireConferente><SettingsPage /></RequireConferente>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
