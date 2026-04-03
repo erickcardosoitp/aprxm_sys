@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Users, Plus, X, ChevronLeft, ChevronRight, Search } from 'lucide-react'
+import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import type { Resident, ResidentStatus, ResidentType } from '../../types'
@@ -401,12 +401,166 @@ function ResidentForm({ initial, onSave, onCancel }: {
   )
 }
 
+// ─── Dependent Form ───────────────────────────────────────────────────────────
+
+interface DepFormState {
+  full_name: string
+  cpf: string
+  date_of_birth: string
+  phone_primary: string
+  email: string
+  address_cep: string
+  address_number: string
+  address_complement: string
+  responsible_id: string
+}
+const EMPTY_DEP: DepFormState = {
+  full_name: '', cpf: '', date_of_birth: '', phone_primary: '',
+  email: '', address_cep: '', address_number: '', address_complement: '', responsible_id: '',
+}
+
+function DependentForm({ onSave, onCancel }: {
+  onSave: (data: DepFormState) => Promise<void>
+  onCancel: () => void
+}) {
+  const [form, setForm] = useState<DepFormState>(EMPTY_DEP)
+  const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<Resident[]>([])
+  const [responsible, setResponsible] = useState<Resident | null>(null)
+
+  const set = <K extends keyof DepFormState>(k: K, v: DepFormState[K]) =>
+    setForm(f => ({ ...f, [k]: v }))
+
+  const searchResponsible = async (q: string) => {
+    if (q.length < 2) { setResults([]); return }
+    try {
+      const res = await api.get<Resident[]>('/residents', { params: { q, type: 'member' } })
+      setResults(res.data.filter(r => !r.responsible_id).slice(0, 6))
+    } catch { /* silent */ }
+  }
+
+  const handleSubmit = async () => {
+    if (!form.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
+    if (!form.responsible_id) { toast.error('Selecione o associado responsável.'); return }
+    setSaving(true)
+    try { await onSave(form) } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto pt-4 pb-8 px-4">
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="font-bold text-gray-900 flex items-center gap-2">
+            <UserPlus className="w-4 h-4 text-[#26619c]" /> Novo Dependente
+          </h2>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="px-5 py-4 flex flex-col gap-3">
+          {/* Responsible selector */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Associado responsável <span className="text-red-500">*</span></label>
+            {responsible ? (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                <span className="flex-1 text-sm font-medium text-green-800">{responsible.full_name}</span>
+                <button onClick={() => { setResponsible(null); set('responsible_id', '') }} className="text-xs text-gray-400 hover:text-red-500">✕</button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); searchResponsible(e.target.value) }}
+                  placeholder="Buscar associado…"
+                  className="w-full pl-9 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                />
+                {results.length > 0 && (
+                  <ul className="absolute z-10 w-full border border-gray-200 rounded-lg bg-white shadow-lg max-h-40 overflow-y-auto mt-1">
+                    {results.map(r => (
+                      <li key={r.id}>
+                        <button className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
+                          onClick={() => { setResponsible(r); set('responsible_id', r.id); setSearch(''); setResults([]) }}>
+                          {r.full_name}{r.cpf ? ` · ${r.cpf}` : ''}{r.unit ? ` · Unid. ${r.unit}` : ''}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Dependent fields */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
+            <input value={form.full_name} onChange={e => set('full_name', e.target.value)}
+              autoFocus placeholder="Nome do dependente"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">CPF</label>
+              <input value={form.cpf} onChange={e => set('cpf', e.target.value)} placeholder="000.000.000-00"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Nascimento</label>
+              <input type="date" value={form.date_of_birth} onChange={e => set('date_of_birth', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Telefone</label>
+            <input value={form.phone_primary} onChange={e => set('phone_primary', e.target.value)} placeholder="(21) 99999-9999"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">E-mail</label>
+            <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="email@exemplo.com"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">CEP</label>
+              <input value={form.address_cep} onChange={e => set('address_cep', e.target.value)} placeholder="00000-000"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Número</label>
+              <input value={form.address_number} onChange={e => set('address_number', e.target.value)} placeholder="123"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Compl.</label>
+              <input value={form.address_complement} onChange={e => set('address_complement', e.target.value)} placeholder="Apto"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 px-5 pb-5">
+          <button onClick={onCancel}
+            className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
+            Cancelar
+          </button>
+          <button onClick={handleSubmit} disabled={saving}
+            className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+            {saving ? 'Salvando…' : 'Salvar Dependente'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ResidentsPage() {
   const [residents, setResidents] = useState<Resident[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editTarget, setEditTarget] = useState<Resident | null>(null)
+  const [showDepForm, setShowDepForm] = useState(false)
   const [activeTab, setActiveTab] = useState<ResidentTab>('associados')
   const [filterStatus, setFilterStatus] = useState<ResidentStatus | ''>('')
   const [search, setSearch] = useState('')
@@ -463,6 +617,34 @@ export default function ResidentsPage() {
     }
   }
 
+  const handleSaveDependent = async (form: DepFormState) => {
+    const payload = {
+      type: 'member' as const,
+      full_name: form.full_name,
+      cpf: form.cpf || null,
+      date_of_birth: form.date_of_birth || null,
+      phone_primary: form.phone_primary || null,
+      email: form.email || null,
+      address_cep: form.address_cep || null,
+      address_number: form.address_number || null,
+      address_complement: form.address_complement || null,
+      responsible_id: form.responsible_id,
+      status: 'active',
+      is_member_confirmed: false,
+      terms_accepted: false,
+      lgpd_accepted: false,
+    }
+    try {
+      await api.post('/residents', payload)
+      toast.success('Dependente cadastrado!')
+      setShowDepForm(false)
+      load()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
+      throw e
+    }
+  }
+
   const toggleStatus = async (r: Resident) => {
     const next: ResidentStatus = r.status === 'active' ? 'suspended' : 'active'
     try {
@@ -481,10 +663,14 @@ export default function ResidentsPage() {
           <Users className="w-6 h-6 text-[#26619c]" />
           Moradores
         </h1>
-        <button onClick={() => { setEditTarget(null); setShowForm(true) }}
+        <button
+          onClick={() => {
+            if (activeTab === 'dependentes') { setShowDepForm(true) }
+            else { setEditTarget(null); setShowForm(true) }
+          }}
           className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition">
           <Plus className="w-4 h-4" />
-          Novo
+          {activeTab === 'dependentes' ? 'Novo Dependente' : 'Novo'}
         </button>
       </div>
 
@@ -564,6 +750,14 @@ export default function ResidentsPage() {
           </ul>
         )}
       </div>
+
+      {/* Dependent Form modal */}
+      {showDepForm && (
+        <DependentForm
+          onSave={handleSaveDependent}
+          onCancel={() => setShowDepForm(false)}
+        />
+      )}
 
       {/* Form modal */}
       {showForm && (
