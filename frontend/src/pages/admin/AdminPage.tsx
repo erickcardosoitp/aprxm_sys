@@ -8,6 +8,7 @@ import { useAuthStore } from '../../store/authStore'
 const ROLE_LABELS: Record<UserRole, string> = {
   superadmin: 'Superadmin',
   admin: 'Administrador',
+  conferente: 'Conferente',
   operator: 'Operador',
   viewer: 'Visualizador',
 }
@@ -15,6 +16,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
 const ROLE_COLORS: Record<UserRole, string> = {
   superadmin: 'bg-purple-100 text-purple-700',
   admin: 'bg-blue-100 text-blue-700',
+  conferente: 'bg-teal-100 text-teal-700',
   operator: 'bg-green-100 text-green-700',
   viewer: 'bg-gray-100 text-gray-600',
 }
