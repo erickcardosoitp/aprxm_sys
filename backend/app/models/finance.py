@@ -3,7 +3,7 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column
+from sqlalchemy import Column, String
 from sqlmodel import Field, SQLModel
 
 try:
@@ -32,7 +32,7 @@ class TransactionCategory(SQLModel, table=True):
     association_id: UUID = Field(foreign_key="associations.id", index=True)
     name: str = Field(max_length=100)
     description: str | None = None
-    type: TransactionType
+    type: TransactionType = Field(sa_column=Column(String, nullable=False))
     color: str | None = Field(default=None, max_length=7)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -57,7 +57,7 @@ class CashSession(SQLModel, table=True):
     association_id: UUID = Field(foreign_key="associations.id", index=True)
     opened_by: UUID = Field(foreign_key="users.id")
     closed_by: UUID | None = Field(default=None, foreign_key="users.id")
-    status: CashSessionStatus = Field(default=CashSessionStatus.open)
+    status: CashSessionStatus = Field(default=CashSessionStatus.open, sa_column=Column(String, nullable=False, default=CashSessionStatus.open))
     opening_balance: Decimal = Field(default=Decimal("0.00"), decimal_places=2, max_digits=12)
     closing_balance: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
     expected_balance: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
@@ -79,7 +79,7 @@ class Transaction(SQLModel, table=True):
     payment_method_id: UUID | None = Field(default=None, foreign_key="payment_methods.id")
     resident_id: UUID | None = Field(default=None, foreign_key="residents.id")
 
-    type: TransactionType
+    type: TransactionType = Field(sa_column=Column(String, nullable=False))
     amount: Decimal = Field(decimal_places=2, max_digits=12, gt=0)
     description: str
     reference_number: str | None = Field(default=None, max_length=100)
