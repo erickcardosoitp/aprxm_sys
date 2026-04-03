@@ -6,7 +6,10 @@ import type { Resident, ResidentStatus, ResidentType } from '../../types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TYPE_LABELS: Record<ResidentType, string> = { member: 'Associado', guest: 'Dependente' }
+const TYPE_LABELS: Record<ResidentType, string> = { member: 'Associado', guest: 'Visitante' }
+
+type ResidentTab = 'associados' | 'dependentes' | 'visitantes'
+const TAB_LABELS: Record<ResidentTab, string> = { associados: 'Associados', dependentes: 'Dependentes', visitantes: 'Visitantes' }
 const STATUS_COLORS: Record<ResidentStatus, string> = {
   active: 'bg-green-100 text-green-700',
   inactive: 'bg-gray-100 text-gray-500',
@@ -404,14 +407,18 @@ export default function ResidentsPage() {
   const [residents, setResidents] = useState<Resident[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editTarget, setEditTarget] = useState<Resident | null>(null)
-  const [filter, setFilter] = useState<ResidentType | ''>('')
+  const [activeTab, setActiveTab] = useState<ResidentTab>('associados')
+  const [filterStatus, setFilterStatus] = useState<ResidentStatus | ''>('')
   const [search, setSearch] = useState('')
 
   const load = async () => {
     try {
       const params: Record<string, string> = {}
-      if (filter) params.type = filter
+      // For associados and dependentes, fetch members; for visitantes, fetch guests
+      if (activeTab === 'visitantes') params.type = 'guest'
+      else params.type = 'member'
       if (search.trim()) params.q = search.trim()
+      if (filterStatus) params.status = filterStatus
       const res = await api.get<Resident[]>('/residents', { params })
       setResidents(res.data)
     } catch {
@@ -419,7 +426,14 @@ export default function ResidentsPage() {
     }
   }
 
-  useEffect(() => { load() }, [filter, search])
+  useEffect(() => { load() }, [activeTab, filterStatus, search])
+
+  // Client-side split: associados = members without responsible_id, dependentes = members with responsible_id
+  const displayedResidents = residents.filter(r => {
+    if (activeTab === 'associados') return r.type === 'member' && !r.responsible_id
+    if (activeTab === 'dependentes') return r.type === 'member' && !!r.responsible_id
+    return true // visitantes already filtered by type=guest in API call
+  })
 
   const handleSave = async (form: FormState) => {
     const payload: Record<string, any> = {
@@ -474,21 +488,33 @@ export default function ResidentsPage() {
         </button>
       </div>
 
+      {/* Tabs */}
+      <div className="flex border-b border-gray-200">
+        {(['associados', 'dependentes', 'visitantes'] as ResidentTab[]).map(t => (
+          <button key={t} onClick={() => setActiveTab(t)}
+            className={`flex-1 py-2.5 text-xs font-semibold border-b-2 transition -mb-px ${
+              activeTab === t ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}>
+            {TAB_LABELS[t]}
+          </button>
+        ))}
+      </div>
+
       {/* Filters */}
       <div className="flex flex-col gap-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome…"
+            placeholder="Buscar por nome, CPF ou CEP…"
             className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]" />
         </div>
-        <div className="flex gap-2">
-          {(['', 'member', 'guest'] as const).map((f) => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-                filter === f ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {(['', 'active', 'inactive', 'suspended'] as const).map((s) => (
+            <button key={s} onClick={() => setFilterStatus(s)}
+              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}>
-              {f === '' ? 'Todos' : TYPE_LABELS[f]}
+              {s === '' ? 'Todos' : STATUS_LABELS[s as ResidentStatus]}
             </button>
           ))}
         </div>
@@ -496,11 +522,11 @@ export default function ResidentsPage() {
 
       {/* List */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        {residents.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">Nenhum morador encontrado.</div>
+        {displayedResidents.length === 0 ? (
+          <div className="p-8 text-center text-gray-400 text-sm">Nenhum {TAB_LABELS[activeTab].toLowerCase().replace('s','')} encontrado.</div>
         ) : (
           <ul className="divide-y divide-gray-100">
-            {residents.map((r) => (
+            {displayedResidents.map((r) => (
               <li key={r.id} className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-9 h-9 rounded-full bg-[#e8f0fb] flex items-center justify-center text-[#26619c] font-bold text-sm shrink-0">
@@ -509,7 +535,7 @@ export default function ResidentsPage() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
                     <p className="text-xs text-gray-400">
-                      {TYPE_LABELS[r.type]}
+                      {r.responsible_id ? 'Dependente' : TYPE_LABELS[r.type]}
                       {r.unit ? ` · Unid. ${r.unit}` : ''}
                       {r.block ? ` / Bl. ${r.block}` : ''}
                       {r.cpf ? ` · ${r.cpf}` : ''}
