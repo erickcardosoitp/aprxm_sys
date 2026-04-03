@@ -5,29 +5,33 @@ import api from '../../services/api'
 import type { User, UserRole } from '../../types'
 import { useAuthStore } from '../../store/authStore'
 
-const ROLE_LABELS: Record<UserRole, string> = {
+type ExtendedRole = UserRole | 'diretoria_adjunta'
+
+const ROLE_LABELS: Record<ExtendedRole, string> = {
   superadmin: 'Superadmin',
   admin: 'Administrador',
   conferente: 'Conferente',
+  diretoria_adjunta: 'Diretoria Adjunta',
   operator: 'Operador',
   viewer: 'Visualizador',
 }
 
-const ROLE_COLORS: Record<UserRole, string> = {
+const ROLE_COLORS: Record<ExtendedRole, string> = {
   superadmin: 'bg-purple-100 text-purple-700',
   admin: 'bg-blue-100 text-blue-700',
   conferente: 'bg-teal-100 text-teal-700',
+  diretoria_adjunta: 'bg-indigo-100 text-indigo-700',
   operator: 'bg-green-100 text-green-700',
   viewer: 'bg-gray-100 text-gray-600',
 }
 
-const EDITABLE_ROLES: UserRole[] = ['admin', 'operator', 'viewer']
+const EDITABLE_ROLES: ExtendedRole[] = ['admin', 'conferente', 'diretoria_adjunta', 'operator', 'viewer']
 
 interface UserFormData {
   full_name: string
   email: string
   password: string
-  role: UserRole
+  role: ExtendedRole
   phone: string
 }
 
@@ -111,7 +115,11 @@ function UserFormModal({ initial, onSave, onCancel }: {
               ))}
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              <strong>Administrador:</strong> acesso total · <strong>Operador:</strong> operações do dia a dia · <strong>Visualizador:</strong> somente leitura
+              <strong>Administrador:</strong> acesso total ·{' '}
+              <strong>Conferente:</strong> operações financeiras ·{' '}
+              <strong>Diretoria Adjunta:</strong> ordens de serviço ·{' '}
+              <strong>Operador:</strong> operações do dia a dia ·{' '}
+              <strong>Visualizador:</strong> somente leitura
             </p>
           </div>
         </div>
@@ -174,6 +182,12 @@ export default function AdminPage() {
     }
   }
 
+  const getRoleLabel = (role: string) =>
+    ROLE_LABELS[role as ExtendedRole] ?? role
+
+  const getRoleColor = (role: string) =>
+    ROLE_COLORS[role as ExtendedRole] ?? 'bg-gray-100 text-gray-600'
+
   return (
     <div className="flex flex-col gap-5 p-4 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
@@ -213,8 +227,8 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1.5 shrink-0 ml-2">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[u.role]}`}>
-                    {ROLE_LABELS[u.role]}
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getRoleColor(u.role)}`}>
+                    {getRoleLabel(u.role)}
                   </span>
                   {u.id !== currentUserId && (
                     <div className="flex gap-2">
@@ -244,7 +258,7 @@ export default function AdminPage() {
             full_name: editTarget.full_name,
             email: editTarget.email,
             phone: editTarget.phone ?? '',
-            role: editTarget.role,
+            role: editTarget.role as ExtendedRole,
             password: '',
           } : undefined}
           onSave={handleSave}

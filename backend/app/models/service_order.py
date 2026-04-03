@@ -16,9 +16,12 @@ except ImportError:
 
 
 class ServiceOrderStatus(str, Enum):
+    pending = "pending"
     open = "open"
     in_progress = "in_progress"
+    waiting_third_party = "waiting_third_party"
     resolved = "resolved"
+    archived = "archived"
     cancelled = "cancelled"
 
 
@@ -56,6 +59,16 @@ class ServiceOrder(SQLModel, table=True):
     block: str | None = Field(default=None, max_length=50)
     location_detail: str | None = None
     area: str | None = Field(default=None, max_length=100)
+
+    # new fields v2
+    service_impacted: str | None = None
+    category_name: str | None = None
+    org_responsible: str | None = None
+    requester_email: str | None = None
+    reference_point: str | None = None
+    request_date: datetime | None = None
+    address_cep: str | None = None
+    use_requester_address: bool = Field(default=False)
 
     # resolution
     resolution_notes: str | None = None

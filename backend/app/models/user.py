@@ -11,6 +11,7 @@ class UserRole(str, Enum):
     superadmin = "superadmin"
     admin = "admin"
     conferente = "conferente"
+    diretoria_adjunta = "diretoria_adjunta"
     operator = "operator"
     viewer = "viewer"
 

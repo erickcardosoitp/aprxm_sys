@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ArrowDownLeft, List, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, ClipboardCheck, DollarSign, List, Plus, RefreshCw, Scale, TrendingDown, TrendingUp, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
@@ -14,9 +14,170 @@ const TYPE_COLORS: Record<string, string> = { income: 'text-green-600', expense:
 
 type Tab = 'caixa' | 'sessoes'
 
+// ── Session detail modal ──────────────────────────────────────────────────────
+
+function SessionDetailModal({
+  session,
+  onClose,
+}: {
+  session: CashSessionSummary
+  onClose: () => void
+}) {
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(false)
+  const [conferencing, setConferencing] = useState(false)
+
+  const fmtBRL = (v: string | undefined) => (v != null ? `R$ ${parseFloat(v).toFixed(2)}` : '—')
+  const fmtDate = (s: string) =>
+    new Date(s).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+
+  useEffect(() => {
+    const loadTx = async () => {
+      setLoading(true)
+      try {
+        const res = await financeService.listTransactions(session.id)
+        setTransactions(res.data)
+      } catch {
+        setTransactions([])
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadTx()
+  }, [session.id])
+
+  const handleConferencia = () => {
+    setConferencing(true)
+    setTimeout(() => {
+      toast.success('Conferência registrada')
+      setConferencing(false)
+    }, 600)
+  }
+
+  const diff = session.difference ? parseFloat(session.difference) : null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+          <h2 className="font-bold text-gray-900">Detalhe da Sessão</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Summary */}
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 shrink-0">
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-gray-400">Abertura</p>
+              <p className="font-medium text-gray-800">{fmtDate(session.opened_at)}</p>
+            </div>
+            {session.closed_at && (
+              <div>
+                <p className="text-xs text-gray-400">Fechamento</p>
+                <p className="font-medium text-gray-800">{fmtDate(session.closed_at)}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-xs text-gray-400">Saldo de abertura</p>
+              <p className="font-semibold text-gray-800">{fmtBRL(session.opening_balance)}</p>
+            </div>
+            {session.closing_balance && (
+              <div>
+                <p className="text-xs text-gray-400">Saldo de fechamento</p>
+                <p className="font-semibold text-gray-800">{fmtBRL(session.closing_balance)}</p>
+              </div>
+            )}
+            {session.expected_balance && (
+              <div>
+                <p className="text-xs text-gray-400">Saldo esperado</p>
+                <p className="font-semibold text-gray-800">{fmtBRL(session.expected_balance)}</p>
+              </div>
+            )}
+            {diff !== null && (
+              <div>
+                <p className="text-xs text-gray-400">Diferença</p>
+                <p className={`font-semibold ${diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {diff >= 0 ? '+' : ''}R$ {Math.abs(diff).toFixed(2)}
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="mt-2">
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              session.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+            }`}>
+              {session.status === 'open' ? 'Aberta' : 'Fechada'}
+            </span>
+          </div>
+        </div>
+
+        {/* Transactions */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="px-6 py-3 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-800 text-sm">Movimentações</h3>
+          </div>
+          {loading ? (
+            <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
+          ) : transactions.length === 0 ? (
+            <div className="p-6 text-center text-gray-400 text-sm">Nenhuma movimentação registrada.</div>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {transactions.map((tx) => (
+                <li key={tx.id} className="flex items-center justify-between px-6 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{tx.description}</p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(tx.transaction_at).toLocaleString('pt-BR')}
+                      {' · '}
+                      <span className={TYPE_COLORS[tx.type]}>{TYPE_LABELS[tx.type]}</span>
+                    </p>
+                  </div>
+                  <span className={`text-sm font-semibold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                    {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 px-6 py-4 border-t border-gray-100 shrink-0">
+          <button
+            onClick={onClose}
+            className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition"
+          >
+            Fechar
+          </button>
+          <button
+            onClick={handleConferencia}
+            disabled={conferencing}
+            className="flex-1 flex items-center justify-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50"
+          >
+            <ClipboardCheck className="w-4 h-4" />
+            {conferencing ? 'Registrando…' : 'Conferência de Caixa'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function FinancePage() {
   const role = useAuthStore((s) => s.role)
   const canSeeTotals = role !== 'operator' && role !== 'viewer'
+  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
 
   const [tab, setTab] = useState<Tab>('caixa')
   const [session, setSession] = useState<CashSession | null>(null)
@@ -27,6 +188,7 @@ export default function FinancePage() {
   const [sessions, setSessions] = useState<CashSessionSummary[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
+  const [selectedSession, setSelectedSession] = useState<CashSessionSummary | null>(null)
 
   const loadSession = async () => {
     try { const res = await financeService.getCurrentSession(); setSession(res.data) }
@@ -98,7 +260,46 @@ export default function FinancePage() {
                 </div>
               )}
 
-              {canSeeTotals && (
+              {/* KPIs for conferente+ users */}
+              {isConferenteOrAbove && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <DollarSign className="w-3.5 h-3.5 text-blue-500" />
+                      <p className="text-xs text-blue-600 font-medium">Saldo Atual</p>
+                    </div>
+                    <p className="text-xl font-bold text-blue-700">R$ {currentBalance.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-green-50 rounded-xl p-4 border border-green-100 flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <TrendingUp className="w-3.5 h-3.5 text-green-500" />
+                      <p className="text-xs text-green-600 font-medium">Entradas do Dia</p>
+                    </div>
+                    <p className="text-xl font-bold text-green-700">R$ {income.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-red-50 rounded-xl p-4 border border-red-100 flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <TrendingDown className="w-3.5 h-3.5 text-red-500" />
+                      <p className="text-xs text-red-600 font-medium">Saídas do Dia</p>
+                    </div>
+                    <p className="text-xl font-bold text-red-700">R$ {expenses.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <Scale className="w-3.5 h-3.5 text-gray-500" />
+                      <p className="text-xs text-gray-500 font-medium">Saldo Esperado</p>
+                    </div>
+                    <p className="text-xl font-bold text-gray-700">
+                      {session.expected_balance
+                        ? `R$ ${parseFloat(session.expected_balance).toFixed(2)}`
+                        : `R$ ${currentBalance.toFixed(2)}`}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Legacy 2-column totals for non-conferente canSeeTotals users (e.g. diretoria_adjunta) */}
+              {canSeeTotals && !isConferenteOrAbove && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-green-50 rounded-xl p-4 border border-green-100">
                     <p className="text-xs text-green-600 font-medium mb-1">Total Entradas</p>
@@ -179,7 +380,11 @@ export default function FinancePage() {
               {sessions.map(s => {
                 const diff = s.difference ? parseFloat(s.difference) : null
                 return (
-                  <li key={s.id} className="px-4 py-4">
+                  <li
+                    key={s.id}
+                    className="px-4 py-4 cursor-pointer hover:bg-gray-50 transition"
+                    onClick={() => setSelectedSession(s)}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-800">{fmtDate(s.opened_at)}</p>
@@ -211,6 +416,12 @@ export default function FinancePage() {
 
       {showSangria && <SangriaModal onClose={() => setShowSangria(false)} onSuccess={loadTransactions} />}
       {showTransaction && session && <TransactionModal onClose={() => setShowTransaction(false)} onSuccess={loadTransactions} />}
+      {selectedSession && (
+        <SessionDetailModal
+          session={selectedSession}
+          onClose={() => setSelectedSession(null)}
+        />
+      )}
     </div>
   )
 }

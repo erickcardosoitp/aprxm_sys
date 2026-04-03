@@ -1,35 +1,34 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { DollarSign, Package, FileText, Users, LogOut, ShieldCheck, Settings } from 'lucide-react'
+import { BarChart2, DollarSign, FileText, LogOut, Package, Settings, ShieldCheck, Users } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 const BASE_NAV = [
-  { to: '/finance',        label: 'Caixa',      icon: DollarSign },
-  { to: '/packages',      label: 'Encomendas', icon: Package },
-  { to: '/service-orders',label: 'Ordens',     icon: FileText },
-  { to: '/residents',     label: 'Moradores',  icon: Users },
+  { to: '/overview',       label: 'Visão Geral', icon: BarChart2 },
+  { to: '/finance',        label: 'Caixa',       icon: DollarSign },
+  { to: '/packages',       label: 'Encomendas',  icon: Package },
+  { to: '/service-orders', label: 'Ordens',      icon: FileText },
+  { to: '/residents',      label: 'Moradores',   icon: Users },
 ]
 
-const ADMIN_NAV = { to: '/admin', label: 'Admin', icon: ShieldCheck }
+const ADMIN_NAV  = { to: '/admin',    label: 'Admin',  icon: ShieldCheck }
 const SETTINGS_NAV = { to: '/settings', label: 'Config', icon: Settings }
 
 export function AppShell() {
   const clearAuth = useAuthStore((s) => s.clearAuth)
-  const role = useAuthStore((s) => s.role)
-  const fullName = useAuthStore((s) => s.fullName)
-  const navigate = useNavigate()
+  const role      = useAuthStore((s) => s.role)
+  const fullName  = useAuthStore((s) => s.fullName)
+  const navigate  = useNavigate()
 
-  const isAdmin = role === 'admin' || role === 'superadmin'
+  const isAdmin      = role === 'admin' || role === 'superadmin'
   const isConferente = role === 'conferente'
-  const navItems = isAdmin
-    ? [...BASE_NAV, ADMIN_NAV, SETTINGS_NAV]
-    : isConferente
-    ? [...BASE_NAV, SETTINGS_NAV]
-    : BASE_NAV
+  const isDiretoria  = role === 'diretoria_adjunta'
 
-  const handleLogout = () => {
-    clearAuth()
-    navigate('/login')
-  }
+  let navItems = [...BASE_NAV]
+  if (isAdmin) navItems = [...BASE_NAV, ADMIN_NAV, SETTINGS_NAV]
+  else if (isConferente) navItems = [...BASE_NAV, SETTINGS_NAV]
+  else if (isDiretoria) navItems = [...BASE_NAV, SETTINGS_NAV]
+
+  const handleLogout = () => { clearAuth(); navigate('/login') }
 
   const initials = fullName
     ? fullName.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()
@@ -60,14 +59,14 @@ export function AppShell() {
         <Outlet />
       </main>
 
-      {/* Bottom nav (mobile-first) */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2 z-40">
+      {/* Bottom nav */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2 z-40 overflow-x-auto">
         {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-xs font-medium transition ${
+              `flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
                 isActive ? 'text-[#26619c]' : 'text-gray-500 hover:text-gray-700'
               }`
             }
