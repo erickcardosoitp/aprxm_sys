@@ -3,7 +3,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String
+from sqlalchemy import Column
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 try:
@@ -37,8 +38,8 @@ class ServiceOrder(SQLModel, table=True):
 
     title: str = Field(max_length=255)
     description: str
-    status: ServiceOrderStatus = Field(default=ServiceOrderStatus.open, sa_column=Column(String, nullable=False, default=ServiceOrderStatus.open))
-    priority: ServiceOrderPriority = Field(default=ServiceOrderPriority.medium, sa_column=Column(String, nullable=False, default=ServiceOrderPriority.medium))
+    status: ServiceOrderStatus = Field(default=ServiceOrderStatus.open, sa_column=Column(SAEnum(ServiceOrderStatus, name='service_order_status', create_type=False), nullable=False))
+    priority: ServiceOrderPriority = Field(default=ServiceOrderPriority.medium, sa_column=Column(SAEnum(ServiceOrderPriority, name='service_order_priority', create_type=False), nullable=False))
 
     # requester
     requester_resident_id: UUID | None = Field(default=None, foreign_key="residents.id")
@@ -80,8 +81,8 @@ class ServiceOrderHistory(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     service_order_id: UUID = Field(foreign_key="service_orders.id", index=True)
     association_id: UUID = Field(foreign_key="associations.id", index=True)
-    from_status: ServiceOrderStatus | None = Field(default=None, sa_column=Column(String, nullable=True))
-    to_status: ServiceOrderStatus = Field(sa_column=Column(String, nullable=False))
+    from_status: ServiceOrderStatus | None = Field(default=None, sa_column=Column(SAEnum(ServiceOrderStatus, name='service_order_status', create_type=False), nullable=True))
+    to_status: ServiceOrderStatus = Field(sa_column=Column(SAEnum(ServiceOrderStatus, name='service_order_status', create_type=False), nullable=False))
     changed_by: UUID = Field(foreign_key="users.id")
     notes: str | None = None
     changed_at: datetime = Field(default_factory=datetime.utcnow)

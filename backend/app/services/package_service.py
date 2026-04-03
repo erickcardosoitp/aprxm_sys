@@ -164,7 +164,7 @@ class PackageService:
     def _is_active_member(resident: Resident | None) -> bool:
         if not resident:
             return False
-        return resident.type.value == "member" and resident.status == ResidentStatus.active
+        return resident.type == ResidentType.member and resident.status == ResidentStatus.active
 
     async def list_packages(
         self,

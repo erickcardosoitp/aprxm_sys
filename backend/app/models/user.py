@@ -2,7 +2,8 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String
+from sqlalchemy import Column
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 
@@ -22,7 +23,7 @@ class User(SQLModel, table=True):
     email: str = Field(max_length=255, index=True)
     phone: str | None = Field(default=None, max_length=20)
     hashed_password: str
-    role: UserRole = Field(default=UserRole.operator, sa_column=Column(String, nullable=False, default=UserRole.operator))
+    role: UserRole = Field(default=UserRole.operator, sa_column=Column(SAEnum(UserRole, name='user_role', create_type=False), nullable=False))
     avatar_url: str | None = None
     is_active: bool = Field(default=True)
     last_login_at: datetime | None = None

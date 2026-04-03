@@ -3,7 +3,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String
+from sqlalchemy import Column
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 try:
@@ -30,8 +31,8 @@ class Resident(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     association_id: UUID = Field(foreign_key="associations.id", index=True)
-    type: ResidentType = Field(default=ResidentType.member, sa_column=Column(String, nullable=False, default=ResidentType.member))
-    status: ResidentStatus = Field(default=ResidentStatus.active, sa_column=Column(String, nullable=False, default=ResidentStatus.active))
+    type: ResidentType = Field(default=ResidentType.member, sa_column=Column(SAEnum(ResidentType, name='resident_type', create_type=False), nullable=False))
+    status: ResidentStatus = Field(default=ResidentStatus.active, sa_column=Column(SAEnum(ResidentStatus, name='resident_status', create_type=False), nullable=False))
 
     # --- identification ---
     full_name: str = Field(max_length=255)

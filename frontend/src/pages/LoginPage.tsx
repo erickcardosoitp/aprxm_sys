@@ -161,10 +161,10 @@ export default function LoginPage() {
                       <Building2 className="w-4 h-4 text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{org.name}</p>
-                      <p className="text-xs text-gray-400 capitalize">{org.role}</p>
+                      <p className="text-sm font-semibold text-gray-800 leading-tight">{org.name}</p>
+                      <p className="text-xs text-gray-400 capitalize mt-0.5">{org.role}</p>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#26619c]" />
+                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#26619c] shrink-0" />
                   </button>
                 ))}
               </div>
@@ -186,7 +186,7 @@ export default function LoginPage() {
                   <Building2 className="w-4 h-4 text-[#26619c] shrink-0" />
                   <div className="min-w-0">
                     <p className="text-xs text-gray-500">{email}</p>
-                    <p className="text-sm font-semibold text-[#1a3f6f] truncate">{selectedOrg.name}</p>
+                    <p className="text-sm font-semibold text-[#1a3f6f] leading-tight">{selectedOrg.name}</p>
                   </div>
                 </div>
 

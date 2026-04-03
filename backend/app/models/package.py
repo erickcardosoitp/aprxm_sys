@@ -4,7 +4,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String
+from sqlalchemy import Column
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 try:
@@ -29,7 +30,7 @@ class Package(SQLModel, table=True):
     association_id: UUID = Field(foreign_key="associations.id", index=True)
     resident_id: UUID | None = Field(default=None, foreign_key="residents.id")
 
-    status: PackageStatus = Field(default=PackageStatus.received, sa_column=Column(String, nullable=False, default=PackageStatus.received))
+    status: PackageStatus = Field(default=PackageStatus.received, sa_column=Column(SAEnum(PackageStatus, name='package_status', create_type=False), nullable=False))
 
     # sender / carrier
     sender_name: str | None = Field(default=None, max_length=255)
