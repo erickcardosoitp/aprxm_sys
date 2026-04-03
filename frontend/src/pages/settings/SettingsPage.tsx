@@ -2,14 +2,37 @@ import { useEffect, useState } from 'react'
 import { Save, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { settingsService } from '../../services/settings'
+import api from '../../services/api'
+import { useAuthStore } from '../../store/authStore'
 import type { AssociationSettings } from '../../types'
 
+interface AssociationData {
+  name?: string
+  phone?: string
+  email?: string
+  address?: string
+  cep?: string
+  president_user_id?: string
+}
+
 export default function SettingsPage() {
+  const role = useAuthStore((s) => s.role)
+  const canSeeAssociation =
+    role === 'conferente' || role === 'admin' || role === 'superadmin'
+
+  // ── Caixa state ──
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
   const [defaultCash, setDefaultCash] = useState('')
   const [maxCash, setMaxCash] = useState('')
   const [loading, setLoading] = useState(false)
 
+  // ── Association state ──
+  const [assoc, setAssoc] = useState<AssociationData>({})
+  const [assocForm, setAssocForm] = useState<AssociationData>({})
+  const [loadingAssoc, setLoadingAssoc] = useState(false)
+  const [savingAssoc, setSavingAssoc] = useState(false)
+
+  // ── Load Caixa settings ──
   const load = async () => {
     try {
       const res = await settingsService.get()
@@ -23,6 +46,25 @@ export default function SettingsPage() {
 
   useEffect(() => { load() }, [])
 
+  // ── Load Association data ──
+  useEffect(() => {
+    if (!canSeeAssociation) return
+    const loadAssoc = async () => {
+      setLoadingAssoc(true)
+      try {
+        const res = await api.get<AssociationData>('/settings/association')
+        setAssoc(res.data)
+        setAssocForm(res.data)
+      } catch {
+        // Association settings may not exist yet; ignore silently
+      } finally {
+        setLoadingAssoc(false)
+      }
+    }
+    loadAssoc()
+  }, [canSeeAssociation])
+
+  // ── Save Caixa settings ──
   const handleSave = async () => {
     const dc = parseFloat(defaultCash)
     const mc = parseFloat(maxCash)
@@ -46,7 +88,26 @@ export default function SettingsPage() {
     }
   }
 
-  const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
+  // ── Save Association settings ──
+  const handleSaveAssoc = async () => {
+    setSavingAssoc(true)
+    try {
+      const res = await api.put<AssociationData>('/settings/association', assocForm)
+      setAssoc(res.data)
+      setAssocForm(res.data)
+      toast.success('Dados da associação salvos!')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao salvar dados da associação.')
+    } finally {
+      setSavingAssoc(false)
+    }
+  }
+
+  const setAssocField = (field: keyof AssociationData, value: string) =>
+    setAssocForm((f) => ({ ...f, [field]: value }))
+
+  const inputCls =
+    'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
 
   return (
     <div className="flex flex-col gap-6 p-4 max-w-lg mx-auto">
@@ -55,6 +116,7 @@ export default function SettingsPage() {
         Configurações
       </h1>
 
+      {/* ── Caixa section ── */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col gap-5">
         <div>
           <h2 className="font-semibold text-gray-800 mb-1">Caixa</h2>
@@ -111,6 +173,98 @@ export default function SettingsPage() {
           {loading ? 'Salvando…' : 'Salvar configurações'}
         </button>
       </div>
+
+      {/* ── Dados da Associação section (conferente+) ── */}
+      {canSeeAssociation && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col gap-5">
+          <div>
+            <h2 className="font-semibold text-gray-800 mb-1">Dados da Associação</h2>
+            <p className="text-xs text-gray-400 mb-4">Informações institucionais da associação exibidas nos documentos e relatórios.</p>
+
+            {loadingAssoc ? (
+              <div className="py-6 text-center text-gray-400 text-sm">Carregando…</div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome da associação</label>
+                  <input
+                    type="text"
+                    value={assocForm.name ?? ''}
+                    onChange={e => setAssocField('name', e.target.value)}
+                    className={inputCls}
+                    placeholder="Ex: Instituto Tia Pretinha"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                    <input
+                      type="text"
+                      value={assocForm.phone ?? ''}
+                      onChange={e => setAssocField('phone', e.target.value)}
+                      className={inputCls}
+                      placeholder="(21) 99999-9999"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
+                    <input
+                      type="text"
+                      value={assocForm.cep ?? ''}
+                      onChange={e => setAssocField('cep', e.target.value)}
+                      className={inputCls}
+                      placeholder="00000-000"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+                  <input
+                    type="email"
+                    value={assocForm.email ?? ''}
+                    onChange={e => setAssocField('email', e.target.value)}
+                    className={inputCls}
+                    placeholder="contato@associacao.org.br"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                  <input
+                    type="text"
+                    value={assocForm.address ?? ''}
+                    onChange={e => setAssocField('address', e.target.value)}
+                    className={inputCls}
+                    placeholder="Rua, número, bairro, cidade"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ID do Presidente (UUID)</label>
+                  <p className="text-xs text-gray-400 mb-2">Usuário responsável pela presidência da associação.</p>
+                  <input
+                    type="text"
+                    value={assocForm.president_user_id ?? ''}
+                    onChange={e => setAssocField('president_user_id', e.target.value)}
+                    className={inputCls}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {!loadingAssoc && (
+            <button onClick={handleSaveAssoc} disabled={savingAssoc}
+              className="flex items-center justify-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl font-semibold transition disabled:opacity-50">
+              <Save className="w-4 h-4" />
+              {savingAssoc ? 'Salvando…' : 'Salvar dados da associação'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

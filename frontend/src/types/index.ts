@@ -2,7 +2,13 @@
 // APRXM — Domain Types
 // ============================================================
 
-export type UserRole = 'superadmin' | 'admin' | 'conferente' | 'operator' | 'viewer'
+export type UserRole =
+  | 'superadmin'
+  | 'admin'
+  | 'conferente'
+  | 'diretoria_adjunta'
+  | 'operator'
+  | 'viewer'
 
 export interface AuthState {
   token: string | null
@@ -51,6 +57,7 @@ export interface Transaction {
   is_sangria: boolean
   category_id?: string
   resident_id?: string
+  created_by?: string
 }
 
 export interface TransactionCategory {
@@ -89,6 +96,7 @@ export interface Resident {
   block?: string
   parking_spot?: string
   photo_url?: string
+  responsible_id?: string
 
   address_cep?: string
   address_street?: string
@@ -109,7 +117,6 @@ export interface Resident {
   neighborhood_problems: string[]
   main_priority_request?: string
 
-  responsible_id?: string
   ownership_type?: string
   move_in_date?: string
   move_out_date?: string
@@ -134,21 +141,39 @@ export interface Package {
   block?: string
   carrier_name?: string
   tracking_code?: string
-  sender_name?: string
   has_delivery_fee: boolean
   delivery_fee_amount?: string
   received_at: string
   delivered_at?: string
   resident_id?: string
   resident_name?: string
+  resident_cpf?: string
   resident_cep?: string
   resident_phone?: string
   resident_type?: string
 }
 
+export interface PackageEvent {
+  id: string
+  event_type: string
+  comment?: string
+  attachment_url?: string
+  attachment_name?: string
+  created_at: string
+  author_name: string
+}
+
 // --- Service Orders ---
 
-export type ServiceOrderStatus = 'open' | 'in_progress' | 'resolved' | 'cancelled'
+export type ServiceOrderStatus =
+  | 'pending'
+  | 'open'
+  | 'in_progress'
+  | 'waiting_third_party'
+  | 'resolved'
+  | 'archived'
+  | 'cancelled'
+
 export type ServiceOrderPriority = 'low' | 'medium' | 'high' | 'critical'
 
 export interface ServiceOrder {
@@ -161,7 +186,30 @@ export interface ServiceOrder {
   area?: string
   unit?: string
   block?: string
+  service_impacted?: string
+  category_name?: string
+  org_responsible?: string
+  requester_name?: string
+  requester_phone?: string
+  requester_email?: string
+  reference_point?: string
+  address_cep?: string
+  assigned_to?: string
+  requester_resident_id?: string
+  resolution_notes?: string
+  resolved_at?: string
+  cancellation_reason?: string
+  request_date?: string
   created_at: string
+  updated_at?: string
+}
+
+export interface SOComment {
+  id: string
+  comment: string
+  attachment_urls: string[]
+  created_at: string
+  author_name: string
 }
 
 // --- Settings ---
@@ -170,6 +218,15 @@ export interface AssociationSettings {
   association_id: string
   default_cash_balance: string
   max_cash_before_sangria: string
+}
+
+export interface AssociationData {
+  name: string
+  phone: string
+  email: string
+  address: string
+  cep: string
+  president_user_id?: string
 }
 
 // --- Cash Session Summary ---

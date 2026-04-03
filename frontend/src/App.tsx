@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AppShell } from './components/layout/AppShell'
 import LoginPage from './pages/LoginPage'
+import OverviewPage from './pages/overview/OverviewPage'
 import FinancePage from './pages/finance/FinancePage'
 import PackagesPage from './pages/packages/PackagesPage'
 import ResidentsPage from './pages/residents/ResidentsPage'
@@ -17,13 +18,14 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const role = useAuthStore((s) => s.role)
-  if (role !== 'admin' && role !== 'superadmin') return <Navigate to="/finance" replace />
+  if (role !== 'admin' && role !== 'superadmin') return <Navigate to="/overview" replace />
   return <>{children}</>
 }
 
 function RequireConferente({ children }: { children: React.ReactNode }) {
   const role = useAuthStore((s) => s.role)
-  if (role !== 'admin' && role !== 'superadmin' && role !== 'conferente') return <Navigate to="/finance" replace />
+  if (role !== 'admin' && role !== 'superadmin' && role !== 'conferente' && role !== 'diretoria_adjunta')
+    return <Navigate to="/overview" replace />
   return <>{children}</>
 }
 
@@ -41,13 +43,14 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route index element={<Navigate to="/finance" replace />} />
-          <Route path="finance" element={<FinancePage />} />
-          <Route path="packages" element={<PackagesPage />} />
+          <Route index element={<Navigate to="/overview" replace />} />
+          <Route path="overview"       element={<OverviewPage />} />
+          <Route path="finance"        element={<FinancePage />} />
+          <Route path="packages"       element={<PackagesPage />} />
           <Route path="service-orders" element={<ServiceOrdersPage />} />
-          <Route path="residents" element={<ResidentsPage />} />
-          <Route path="admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
-          <Route path="settings" element={<RequireConferente><SettingsPage /></RequireConferente>} />
+          <Route path="residents"      element={<ResidentsPage />} />
+          <Route path="admin"          element={<RequireAdmin><AdminPage /></RequireAdmin>} />
+          <Route path="settings"       element={<RequireConferente><SettingsPage /></RequireConferente>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

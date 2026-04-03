@@ -32,6 +32,14 @@ class ServiceOrderService:
         requester_resident_id: UUID | None = None,
         requester_name: str | None = None,
         requester_phone: str | None = None,
+        requester_email: str | None = None,
+        service_impacted: str | None = None,
+        category_name: str | None = None,
+        org_responsible: str | None = None,
+        reference_point: str | None = None,
+        request_date: datetime | None = None,
+        address_cep: str | None = None,
+        use_requester_address: bool = False,
     ) -> ServiceOrder:
         number = await self._next_number(association_id)
 
@@ -41,6 +49,7 @@ class ServiceOrderService:
             title=title,
             description=description,
             priority=priority,
+            status=ServiceOrderStatus.pending,
             area=area,
             unit=unit,
             block=block,
@@ -49,8 +58,26 @@ class ServiceOrderService:
             requester_user_id=created_by,
             requester_name=requester_name,
             requester_phone=requester_phone,
+            requester_email=requester_email,
+            service_impacted=service_impacted,
+            category_name=category_name,
+            org_responsible=org_responsible,
+            reference_point=reference_point,
+            request_date=request_date or datetime.utcnow(),
+            address_cep=address_cep,
+            use_requester_address=use_requester_address,
             created_by=created_by,
         )
+        self._session.add(so)
+        await self._session.flush()
+        return so
+
+    async def update(self, so_id: UUID, association_id: UUID, data: dict) -> ServiceOrder:
+        so = await self._get(so_id, association_id)
+        for k, v in data.items():
+            if hasattr(so, k):
+                setattr(so, k, v)
+        so.updated_at = datetime.utcnow()
         self._session.add(so)
         await self._session.flush()
         return so

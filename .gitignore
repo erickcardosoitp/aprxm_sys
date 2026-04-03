@@ -31,3 +31,5 @@ backend/alembic/versions/*.pyc
 
 # Logs
 *.log
+
+.vercel
