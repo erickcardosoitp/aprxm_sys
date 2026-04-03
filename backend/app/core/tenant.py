@@ -19,6 +19,10 @@ class CurrentUser:
         return self.role in ("admin", "superadmin")
 
     @property
+    def is_conferente(self) -> bool:
+        return self.role in ("conferente", "admin", "superadmin")
+
+    @property
     def is_superadmin(self) -> bool:
         return self.role == "superadmin"
 
@@ -43,4 +47,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
 async def require_admin(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
     if not current.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de administrador necessária.")
+    return current
+
+
+async def require_conferente(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    if not current.is_conferente:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de conferente ou superior necessária.")
     return current

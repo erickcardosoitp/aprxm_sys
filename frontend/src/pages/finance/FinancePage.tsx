@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { ArrowDownLeft, List, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, List, Plus, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
 import { TransactionModal } from '../../components/finance/TransactionModal'
 import { financeService } from '../../services/finance'
-import type { CashSession, CashSessionSummary, Transaction } from '../../types'
+import { settingsService } from '../../services/settings'
+import { useAuthStore } from '../../store/authStore'
+import type { AssociationSettings, CashSession, CashSessionSummary, Transaction } from '../../types'
 
 const TYPE_LABELS: Record<string, string> = { income: 'Entrada', expense: 'Saída', sangria: 'Sangria' }
 const TYPE_COLORS: Record<string, string> = { income: 'text-green-600', expense: 'text-red-600', sangria: 'text-amber-600' }
@@ -13,6 +15,9 @@ const TYPE_COLORS: Record<string, string> = { income: 'text-green-600', expense:
 type Tab = 'caixa' | 'sessoes'
 
 export default function FinancePage() {
+  const role = useAuthStore((s) => s.role)
+  const canSeeTotals = role !== 'operator' && role !== 'viewer'
+
   const [tab, setTab] = useState<Tab>('caixa')
   const [session, setSession] = useState<CashSession | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -21,6 +26,7 @@ export default function FinancePage() {
   const [loadingTx, setLoadingTx] = useState(false)
   const [sessions, setSessions] = useState<CashSessionSummary[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
+  const [settings, setSettings] = useState<AssociationSettings | null>(null)
 
   const loadSession = async () => {
     try { const res = await financeService.getCurrentSession(); setSession(res.data) }
@@ -45,9 +51,15 @@ export default function FinancePage() {
   useEffect(() => { loadSession() }, [])
   useEffect(() => { loadTransactions() }, [session?.id])
   useEffect(() => { if (tab === 'sessoes') loadSessions() }, [tab])
+  useEffect(() => {
+    if (canSeeTotals) settingsService.get().then(r => setSettings(r.data)).catch(() => {})
+  }, [canSeeTotals])
 
   const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
   const expenses = transactions.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+  const currentBalance = session ? parseFloat(session.opening_balance) + income - expenses : 0
+  const maxCash = settings ? parseFloat(settings.max_cash_before_sangria) : null
+  const sangriaAlert = canSeeTotals && maxCash !== null && currentBalance > maxCash
 
   const fmtBRL = (v: string | undefined) => v != null ? `R$ ${parseFloat(v).toFixed(2)}` : '—'
   const fmtDate = (s: string) => new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -74,16 +86,30 @@ export default function FinancePage() {
 
           {session && (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-green-50 rounded-xl p-4 border border-green-100">
-                  <p className="text-xs text-green-600 font-medium mb-1">Total Entradas</p>
-                  <p className="text-xl font-bold text-green-700">R$ {income.toFixed(2)}</p>
+              {sangriaAlert && (
+                <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-800">Sangria necessária</p>
+                    <p className="text-xs text-amber-700">
+                      Saldo atual <strong>R$ {currentBalance.toFixed(2)}</strong> excede o limite de <strong>R$ {maxCash!.toFixed(2)}</strong>. Realize uma sangria.
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-red-50 rounded-xl p-4 border border-red-100">
-                  <p className="text-xs text-red-600 font-medium mb-1">Total Saídas</p>
-                  <p className="text-xl font-bold text-red-700">R$ {expenses.toFixed(2)}</p>
+              )}
+
+              {canSeeTotals && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+                    <p className="text-xs text-green-600 font-medium mb-1">Total Entradas</p>
+                    <p className="text-xl font-bold text-green-700">R$ {income.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-red-50 rounded-xl p-4 border border-red-100">
+                    <p className="text-xs text-red-600 font-medium mb-1">Total Saídas</p>
+                    <p className="text-xl font-bold text-red-700">R$ {expenses.toFixed(2)}</p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex gap-3">
                 <button onClick={() => setShowTransaction(true)}
@@ -120,9 +146,11 @@ export default function FinancePage() {
                             <span className={TYPE_COLORS[tx.type]}>{TYPE_LABELS[tx.type]}</span>
                           </p>
                         </div>
-                        <span className={`text-sm font-semibold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                          {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
-                        </span>
+                        {canSeeTotals && (
+                          <span className={`text-sm font-semibold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                            {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>

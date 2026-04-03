@@ -10,6 +10,7 @@ from sqlmodel import Field, SQLModel
 class UserRole(str, Enum):
     superadmin = "superadmin"
     admin = "admin"
+    conferente = "conferente"
     operator = "operator"
     viewer = "viewer"
 

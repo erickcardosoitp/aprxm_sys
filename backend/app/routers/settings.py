@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.tenant import CurrentUser, get_current_user, require_admin
+from app.core.tenant import CurrentUser, get_current_user, require_admin, require_conferente
 from app.database import get_session
 from app.models.settings import AssociationSettings
 
@@ -42,10 +42,10 @@ async def get_settings(
     }
 
 
-@router.put("", summary="Atualizar configurações (admin)")
+@router.put("", summary="Atualizar configurações (conferente+)")
 async def update_settings(
     body: UpdateSettingsRequest,
-    current: CurrentUser = Depends(require_admin),
+    current: CurrentUser = Depends(require_conferente),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     stmt = select(AssociationSettings).where(
