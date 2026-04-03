@@ -31,3 +31,7 @@ export const financeService = {
   listTransactions: (session_id?: string) =>
     api.get<Transaction[]>('/finance/transactions', { params: { session_id } }),
 }
+,
+
+  listSessions: () =>
+    api.get<import('../types').CashSessionSummary[]>('/finance/sessions'),

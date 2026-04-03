@@ -130,7 +130,7 @@ export type PackageStatus = 'received' | 'notified' | 'delivered' | 'returned'
 export interface Package {
   id: string
   status: PackageStatus
-  unit: string
+  unit?: string
   block?: string
   carrier_name?: string
   tracking_code?: string
@@ -143,6 +143,7 @@ export interface Package {
   resident_name?: string
   resident_cep?: string
   resident_phone?: string
+  resident_type?: string
 }
 
 // --- Service Orders ---
@@ -161,4 +162,25 @@ export interface ServiceOrder {
   unit?: string
   block?: string
   created_at: string
+}
+
+// --- Settings ---
+
+export interface AssociationSettings {
+  association_id: string
+  default_cash_balance: string
+  max_cash_before_sangria: string
+}
+
+// --- Cash Session Summary ---
+
+export interface CashSessionSummary {
+  id: string
+  status: string
+  opening_balance: string
+  closing_balance?: string
+  expected_balance?: string
+  difference?: string
+  opened_at: string
+  closed_at?: string
 }

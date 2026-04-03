@@ -57,6 +57,14 @@ class Package(SQLModel, table=True):
     signature_url: str | None = None
     delivered_at: datetime | None = None
 
+    # delivery person (courier)
+    deliverer_name: str | None = Field(default=None, max_length=255)
+    deliverer_signature_url: str | None = None
+
+    # anti-fraud
+    proof_of_residence_verified: bool = Field(default=False)
+    recipient_id_photo_url: str | None = None
+
     # return
     returned_at: datetime | None = None
     return_reason: str | None = None

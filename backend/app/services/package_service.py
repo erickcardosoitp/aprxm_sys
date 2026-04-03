@@ -83,6 +83,10 @@ class PackageService:
         delivered_to_cpf: str | None = None,
         delivered_to_resident_id: UUID | None = None,
         cash_session_id: UUID | None = None,
+        deliverer_name: str | None = None,
+        deliverer_signature_url: str | None = None,
+        proof_of_residence_verified: bool = False,
+        recipient_id_photo_url: str | None = None,
     ) -> Package:
         package = await self._get_package(package_id, association_id)
 
@@ -118,6 +122,10 @@ class PackageService:
         package.delivered_to_cpf = delivered_to_cpf
         package.delivered_to_resident_id = delivered_to_resident_id
         package.signature_url = signature_url
+        package.deliverer_name = deliverer_name
+        package.deliverer_signature_url = deliverer_signature_url
+        package.proof_of_residence_verified = proof_of_residence_verified
+        package.recipient_id_photo_url = recipient_id_photo_url
         package.delivered_at = datetime.utcnow()
         package.delivered_by = delivered_by
         package.updated_at = datetime.utcnow()

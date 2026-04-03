@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { DollarSign, Package, FileText, Users, LogOut, ShieldCheck } from 'lucide-react'
+import { DollarSign, Package, FileText, Users, LogOut, ShieldCheck, Settings } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 const BASE_NAV = [
@@ -10,6 +10,7 @@ const BASE_NAV = [
 ]
 
 const ADMIN_NAV = { to: '/admin', label: 'Admin', icon: ShieldCheck }
+const SETTINGS_NAV = { to: '/settings', label: 'Config', icon: Settings }
 
 export function AppShell() {
   const clearAuth = useAuthStore((s) => s.clearAuth)
@@ -18,7 +19,7 @@ export function AppShell() {
   const navigate = useNavigate()
 
   const isAdmin = role === 'admin' || role === 'superadmin'
-  const navItems = isAdmin ? [...BASE_NAV, ADMIN_NAV] : BASE_NAV
+  const navItems = isAdmin ? [...BASE_NAV, ADMIN_NAV, SETTINGS_NAV] : BASE_NAV
 
   const handleLogout = () => {
     clearAuth()

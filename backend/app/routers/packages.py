@@ -1,5 +1,6 @@
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,14 +16,13 @@ router = APIRouter(prefix="/packages", tags=["Encomendas"])
 
 
 class ReceivePackageRequest(BaseModel):
-    unit: str
-    block: str | None = None
     resident_id: UUID | None = None
+    unit: str | None = None
+    block: str | None = None
     sender_name: str | None = None
     carrier_name: str | None = None
     tracking_code: str | None = None
     object_type: str | None = None
-    # [{url, label, taken_at}]
     photo_urls: list[dict] = []
     notes: str | None = None
 
@@ -32,6 +32,11 @@ class DeliverPackageRequest(BaseModel):
     signature_url: str
     delivered_to_cpf: str | None = None
     delivered_to_resident_id: UUID | None = None
+    # anti-fraud
+    deliverer_name: str
+    deliverer_signature_url: str
+    proof_of_residence_verified: bool = False
+    recipient_id_photo_url: str | None = None
 
 
 @router.post("", summary="Registrar recebimento de encomenda")
@@ -73,6 +78,10 @@ async def deliver_package(
         signature_url=body.signature_url,
         delivered_to_cpf=body.delivered_to_cpf,
         delivered_to_resident_id=body.delivered_to_resident_id,
+        deliverer_name=body.deliverer_name,
+        deliverer_signature_url=body.deliverer_signature_url,
+        proof_of_residence_verified=body.proof_of_residence_verified,
+        recipient_id_photo_url=body.recipient_id_photo_url,
     )
     return {
         "id": str(pkg.id),
@@ -89,7 +98,6 @@ async def list_packages(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    # Join packages with residents to get resident info
     stmt = (
         select(Package, Resident)
         .outerjoin(Resident, Package.resident_id == Resident.id)
@@ -113,8 +121,25 @@ async def list_packages(
             "received_at": str(p.received_at),
             "resident_id": str(p.resident_id) if p.resident_id else None,
             "resident_name": r.full_name if r else None,
+            "resident_type": r.type if r else None,
             "resident_cep": r.address_cep if r else None,
             "resident_phone": r.phone_primary if r else None,
         }
         for p, r in rows
     ]
+
+
+@router.get("/cep/{cep}", summary="Consultar endereço por CEP (proxy ViaCEP)")
+async def lookup_cep(cep: str) -> dict:
+    clean = cep.replace("-", "").strip()
+    async with httpx.AsyncClient(timeout=5) as client:
+        resp = await client.get(f"https://viacep.com.br/ws/{clean}/json/")
+    data = resp.json()
+    if data.get("erro"):
+        return {}
+    return {
+        "street": data.get("logradouro", ""),
+        "district": data.get("bairro", ""),
+        "city": data.get("localidade", ""),
+        "state": data.get("uf", ""),
+    }

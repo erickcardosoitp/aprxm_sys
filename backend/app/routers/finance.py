@@ -185,6 +185,34 @@ async def list_categories(
     ]
 
 
+@router.get("/sessions", summary="Listar todas as sessões de caixa")
+async def list_sessions(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlmodel import select
+    stmt = (
+        select(CashSession)
+        .where(CashSession.association_id == current.association_id)
+        .order_by(CashSession.opened_at.desc())
+    )
+    result = await session.execute(stmt)
+    sessions = result.scalars().all()
+    return [
+        {
+            "id": str(s.id),
+            "status": s.status,
+            "opening_balance": str(s.opening_balance),
+            "closing_balance": str(s.closing_balance) if s.closing_balance is not None else None,
+            "expected_balance": str(s.expected_balance) if s.expected_balance is not None else None,
+            "difference": str(s.difference) if s.difference is not None else None,
+            "opened_at": str(s.opened_at),
+            "closed_at": str(s.closed_at) if s.closed_at else None,
+        }
+        for s in sessions
+    ]
+
+
 @router.get("/payment-methods", summary="Métodos de pagamento")
 async def list_payment_methods(
     current: CurrentUser = Depends(get_current_user),
