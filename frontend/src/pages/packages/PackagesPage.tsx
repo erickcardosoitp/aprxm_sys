@@ -161,9 +161,14 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
             <div>
               <p className="text-xs text-gray-500 mb-1.5">Fotos</p>
               <div className="flex gap-2 flex-wrap">
-                {pkg.photo_urls.map((photo, i) => (
+                {pkg.photo_urls.filter(p => !p.url.startsWith('blob:')).map((photo, i) => (
                   <a key={i} href={photo.url} target="_blank" rel="noopener noreferrer">
-                    <img src={photo.url} alt={photo.label || `Foto ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                    <img
+                      src={photo.url}
+                      alt={photo.label || `Foto ${i + 1}`}
+                      className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
                   </a>
                 ))}
               </div>

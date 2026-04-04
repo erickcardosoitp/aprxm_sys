@@ -88,12 +88,12 @@ export function AppShell() {
               key={to}
               to={to}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl text-xs font-medium transition shrink-0 min-w-[60px] min-h-[52px] ${
+                `flex flex-col items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium transition shrink-0 min-w-[60px] min-h-[52px] sm:min-w-0 sm:min-h-0 ${
                   isActive ? 'text-[#26619c] bg-blue-50' : 'text-gray-500 active:bg-gray-100'
                 }`
               }
             >
-              <Icon className="w-6 h-6" />
+              <Icon className="w-6 h-6 sm:w-5 sm:h-5" />
               <span className="leading-none whitespace-nowrap text-[11px]">{label}</span>
             </NavLink>
           ))}
