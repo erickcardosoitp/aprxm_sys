@@ -228,7 +228,7 @@ export default function FinancePage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Operação de Caixa</h1>
 
       {/* Tabs — operators only see Frente de Caixa */}
       {isConferenteOrAbove && (

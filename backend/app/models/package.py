@@ -64,6 +64,7 @@ class Package(SQLModel, table=True):
 
     # anti-fraud
     proof_of_residence_verified: bool = Field(default=False)
+    proof_of_residence_url: str | None = None
     recipient_id_photo_url: str | None = None
 
     # return

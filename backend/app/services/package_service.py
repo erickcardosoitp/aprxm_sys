@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.core.exceptions import NotFoundError, UnprocessableError
 from app.models.finance import TransactionType
 from app.models.package import Package, PackageStatus
-from app.models.resident import Resident, ResidentStatus
+from app.models.resident import Resident, ResidentStatus, ResidentType
 from app.services.finance_service import FinanceService
 
 settings = get_settings()
@@ -47,6 +47,8 @@ class PackageService:
         tracking_code: str | None = None,
         object_type: str | None = None,
         notes: str | None = None,
+        deliverer_name: str | None = None,
+        deliverer_signature_url: str | None = None,
     ) -> Package:
         if not photo_urls:
             raise UnprocessableError("Ao menos uma foto da etiqueta é obrigatória.")
@@ -62,6 +64,8 @@ class PackageService:
             object_type=object_type,
             notes=notes,
             received_by=received_by,
+            deliverer_name=deliverer_name,
+            deliverer_signature_url=deliverer_signature_url,
         )
         self._session.add(package)
         await self._session.flush()
@@ -81,10 +85,9 @@ class PackageService:
         delivered_to_cpf: str | None = None,
         delivered_to_resident_id: UUID | None = None,
         cash_session_id: UUID | None = None,
-        deliverer_name: str | None = None,
-        deliverer_signature_url: str | None = None,
-        proof_of_residence_verified: bool = False,
+        proof_of_residence_url: str | None = None,
         recipient_id_photo_url: str | None = None,
+        delivery_person_name: str | None = None,
     ) -> Package:
         package = await self._get_package(package_id, association_id)
 
@@ -97,7 +100,11 @@ class PackageService:
         )
         is_active_member = self._is_active_member(resident)
 
-        if not is_active_member:
+        same_deliverer = (
+            package.deliverer_name and delivery_person_name and
+            package.deliverer_name.strip().lower() == delivery_person_name.strip().lower()
+        )
+        if not is_active_member and not same_deliverer:
             # Charge fee — open session required
             cash_session = await self._finance.get_open_session(association_id)
             tx = await self._finance.register_transaction(
@@ -120,9 +127,7 @@ class PackageService:
         package.delivered_to_cpf = delivered_to_cpf
         package.delivered_to_resident_id = delivered_to_resident_id
         package.signature_url = signature_url
-        package.deliverer_name = deliverer_name
-        package.deliverer_signature_url = deliverer_signature_url
-        package.proof_of_residence_verified = proof_of_residence_verified
+        package.proof_of_residence_url = proof_of_residence_url
         package.recipient_id_photo_url = recipient_id_photo_url
         package.delivered_at = datetime.utcnow()
         package.delivered_by = delivered_by

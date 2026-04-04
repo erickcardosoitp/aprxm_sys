@@ -12,6 +12,8 @@ export const packageService = {
     object_type?: string
     photo_urls: { url: string; label: string; taken_at: string }[]
     notes?: string
+    deliverer_name?: string
+    deliverer_signature_url?: string
   }) => api.post<Package>('/packages', data),
 
   deliver: (
@@ -21,10 +23,9 @@ export const packageService = {
       signature_url: string
       delivered_to_cpf?: string
       delivered_to_resident_id?: string
-      deliverer_name: string
-      deliverer_signature_url: string
-      proof_of_residence_verified: boolean
+      proof_of_residence_url: string
       recipient_id_photo_url?: string
+      delivery_person_name?: string
     },
   ) => api.post<Package>(`/packages/${packageId}/deliver`, data),
 
