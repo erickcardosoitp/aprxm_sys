@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  AlertCircle, ChevronDown, FileText, MessageSquare, Plus, Search, X,
+  AlertCircle, ChevronDown, FileText, MessageSquare, Pencil, Plus, Search, X,
   Clock, CheckCircle, XCircle, Archive, Loader2, User,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -487,6 +487,37 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [detail, setDetail] = useState<ServiceOrder>(so)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    title: so.title,
+    description: so.description,
+    priority: so.priority as ServiceOrderPriority,
+    service_impacted: so.service_impacted ?? '',
+    category_name: so.category_name ?? '',
+    org_responsible: so.org_responsible ?? '',
+    address_cep: so.address_cep ?? '',
+    reference_point: so.reference_point ?? '',
+    requester_name: so.requester_name ?? '',
+    requester_phone: so.requester_phone ?? '',
+    requester_email: so.requester_email ?? '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  const handleSaveEdit = async () => {
+    setSaving(true)
+    try {
+      await api.put(`/service-orders/${so.id}`, editForm)
+      toast.success('OS atualizada.')
+      setEditing(false)
+      const res = await api.get<ServiceOrder>(`/service-orders/${so.id}`)
+      setDetail(res.data)
+      onUpdated()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -590,48 +621,216 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
             <div className="flex flex-col gap-4">
               {canWrite && (
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowStatusModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#26619c] hover:bg-[#1a4f87] text-white rounded-lg text-xs font-medium transition"
-                  >
-                    <ChevronDown className="w-3.5 h-3.5" /> Atualizar Status
-                  </button>
+                  {!editing && (
+                    <>
+                      <button
+                        onClick={() => setShowStatusModal(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#26619c] hover:bg-[#1a4f87] text-white rounded-lg text-xs font-medium transition"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" /> Atualizar Status
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditForm({
+                            title: d.title,
+                            description: d.description,
+                            priority: d.priority,
+                            service_impacted: d.service_impacted ?? '',
+                            category_name: d.category_name ?? '',
+                            org_responsible: d.org_responsible ?? '',
+                            address_cep: d.address_cep ?? '',
+                            reference_point: d.reference_point ?? '',
+                            requester_name: d.requester_name ?? '',
+                            requester_phone: d.requester_phone ?? '',
+                            requester_email: d.requester_email ?? '',
+                          })
+                          setEditing(true)
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Editar
+                      </button>
+                    </>
+                  )}
+                  {editing && (
+                    <>
+                      <button
+                        onClick={handleSaveEdit}
+                        disabled={saving}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition disabled:opacity-50"
+                      >
+                        {saving ? 'Salvando…' : 'Salvar'}
+                      </button>
+                      <button
+                        onClick={() => setEditing(false)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 transition"
+                      >
+                        Cancelar
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <FieldCell label="Prioridade">
-                  <span className={`font-medium ${PRIORITY_TEXT[d.priority]}`}>
-                    <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${PRIORITY_DOT[d.priority]}`} />
-                    {PRIORITY_LABELS[d.priority]}
-                  </span>
-                </FieldCell>
-                <FieldCell label="Categoria">{d.category_name ?? '—'}</FieldCell>
-                <FieldCell label="Serviço afetado">{d.service_impacted ?? '—'}</FieldCell>
-                <FieldCell label="Org. responsável">{d.org_responsible ?? '—'}</FieldCell>
-                <FieldCell label="Solicitante">{d.requester_name ?? '—'}</FieldCell>
-                <FieldCell label="Telefone">{d.requester_phone ?? '—'}</FieldCell>
-                <FieldCell label="E-mail">{d.requester_email ?? '—'}</FieldCell>
-                <FieldCell label="Data solicitação">{fmt(d.request_date ?? d.created_at)}</FieldCell>
-                <FieldCell label="CEP">{d.address_cep ?? '—'}</FieldCell>
-                <FieldCell label="Ponto de referência">{d.reference_point ?? '—'}</FieldCell>
-                {d.assigned_to && <FieldCell label="Atribuído a">{d.assigned_to}</FieldCell>}
-                {d.resolution_notes && (
-                  <div className="col-span-2">
-                    <FieldCell label="Notas de resolução">{d.resolution_notes}</FieldCell>
+              {editing ? (
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Título</label>
+                    <input
+                      type="text"
+                      value={editForm.title}
+                      onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
+                      className={inputCls}
+                    />
                   </div>
-                )}
-                {d.cancellation_reason && (
-                  <div className="col-span-2">
-                    <FieldCell label="Motivo cancelamento">{d.cancellation_reason}</FieldCell>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Descrição</label>
+                    <textarea
+                      rows={3}
+                      value={editForm.description}
+                      onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+                      className={`${inputCls} resize-none`}
+                    />
                   </div>
-                )}
-              </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Prioridade</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {(['low', 'medium', 'high', 'critical'] as ServiceOrderPriority[]).map(p => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setEditForm(f => ({ ...f, priority: p }))}
+                          className={`px-3 py-1 rounded-full text-xs font-medium border transition ${editForm.priority === p ? 'border-[#26619c] bg-[#26619c] text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+                        >
+                          {PRIORITY_LABELS[p]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Serviço afetado</label>
+                    <select
+                      value={editForm.service_impacted}
+                      onChange={e => setEditForm(f => ({ ...f, service_impacted: e.target.value }))}
+                      className={inputCls}
+                    >
+                      <option value="">— Selecione —</option>
+                      {SERVICES_IMPACTED.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Categoria</label>
+                      <select
+                        value={editForm.category_name}
+                        onChange={e => setEditForm(f => ({ ...f, category_name: e.target.value, org_responsible: '' }))}
+                        className={inputCls}
+                      >
+                        <option value="">— Selecione —</option>
+                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Org. responsável</label>
+                      <select
+                        value={editForm.org_responsible}
+                        onChange={e => setEditForm(f => ({ ...f, org_responsible: e.target.value }))}
+                        className={inputCls}
+                        disabled={!editForm.category_name}
+                      >
+                        <option value="">— Selecione —</option>
+                        {(ORG_BY_CATEGORY[editForm.category_name] ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">CEP</label>
+                      <input
+                        type="text"
+                        value={editForm.address_cep}
+                        onChange={e => setEditForm(f => ({ ...f, address_cep: e.target.value }))}
+                        className={inputCls}
+                        placeholder="00000-000"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Ponto de referência</label>
+                      <input
+                        type="text"
+                        value={editForm.reference_point}
+                        onChange={e => setEditForm(f => ({ ...f, reference_point: e.target.value }))}
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Solicitante</label>
+                    <input
+                      type="text"
+                      value={editForm.requester_name}
+                      onChange={e => setEditForm(f => ({ ...f, requester_name: e.target.value }))}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Telefone</label>
+                      <input
+                        type="text"
+                        value={editForm.requester_phone}
+                        onChange={e => setEditForm(f => ({ ...f, requester_phone: e.target.value }))}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">E-mail</label>
+                      <input
+                        type="email"
+                        value={editForm.requester_email}
+                        onChange={e => setEditForm(f => ({ ...f, requester_email: e.target.value }))}
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <FieldCell label="Prioridade">
+                      <span className={`font-medium ${PRIORITY_TEXT[d.priority]}`}>
+                        <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${PRIORITY_DOT[d.priority]}`} />
+                        {PRIORITY_LABELS[d.priority]}
+                      </span>
+                    </FieldCell>
+                    <FieldCell label="Categoria">{d.category_name ?? '—'}</FieldCell>
+                    <FieldCell label="Serviço afetado">{d.service_impacted ?? '—'}</FieldCell>
+                    <FieldCell label="Org. responsável">{d.org_responsible ?? '—'}</FieldCell>
+                    <FieldCell label="Solicitante">{d.requester_name ?? '—'}</FieldCell>
+                    <FieldCell label="Telefone">{d.requester_phone ?? '—'}</FieldCell>
+                    <FieldCell label="E-mail">{d.requester_email ?? '—'}</FieldCell>
+                    <FieldCell label="Data solicitação">{fmt(d.request_date ?? d.created_at)}</FieldCell>
+                    <FieldCell label="CEP">{d.address_cep ?? '—'}</FieldCell>
+                    <FieldCell label="Ponto de referência">{d.reference_point ?? '—'}</FieldCell>
+                    {d.assigned_to && <FieldCell label="Atribuído a">{d.assigned_to}</FieldCell>}
+                    {d.resolution_notes && (
+                      <div className="col-span-2">
+                        <FieldCell label="Notas de resolução">{d.resolution_notes}</FieldCell>
+                      </div>
+                    )}
+                    {d.cancellation_reason && (
+                      <div className="col-span-2">
+                        <FieldCell label="Motivo cancelamento">{d.cancellation_reason}</FieldCell>
+                      </div>
+                    )}
+                  </div>
 
-              <div>
-                <p className="text-xs text-gray-500 font-medium mb-1">Descrição</p>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{d.description}</p>
-              </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium mb-1">Descrição</p>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{d.description}</p>
+                  </div>
+                </>
+              )}
 
               <div className="text-xs text-gray-400 flex gap-4">
                 <span>Criado: {fmt(d.created_at)}</span>
