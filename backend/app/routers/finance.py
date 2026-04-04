@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import CurrentUser, get_current_user, require_admin
+from app.core.tenant import CurrentUser, get_current_user, require_admin, require_conferente
 from app.database import get_session
 from app.models.finance import CashSession, PaymentMethod, Transaction, TransactionCategory, TransactionType
 from app.services.finance_service import FinanceService
@@ -41,6 +41,10 @@ class TransactionRequest(BaseModel):
     payment_method_id: UUID | None = None
     resident_id: UUID | None = None
     reference_number: str | None = None
+
+
+class ConferenciaRequest(BaseModel):
+    counted_amount: Decimal = Field(ge=0)
 
 
 # ---- Endpoints ----
@@ -211,6 +215,34 @@ async def list_sessions(
         }
         for s in sessions
     ]
+
+
+@router.post("/sessions/conferencia", summary="Conferência de caixa (sem fechar)")
+async def conferencia_caixa(
+    body: ConferenciaRequest,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = FinanceService(session)
+    try:
+        cash = await svc.get_open_session(current.association_id)
+    except Exception:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Nenhuma sessão aberta.")
+    txs = await svc.list_transactions(current.association_id, cash.id)
+    income = sum(float(t.amount) for t in txs if t.type == "income")
+    exits = sum(float(t.amount) for t in txs if t.type != "income")
+    expected = float(cash.opening_balance) + income - exits
+    counted = float(body.counted_amount)
+    return {
+        "session_id": str(cash.id),
+        "opening_balance": str(cash.opening_balance),
+        "income": str(round(income, 2)),
+        "exits": str(round(exits, 2)),
+        "expected": str(round(expected, 2)),
+        "counted": str(round(counted, 2)),
+        "difference": str(round(counted - expected, 2)),
+    }
 
 
 @router.get("/payment-methods", summary="Métodos de pagamento")
