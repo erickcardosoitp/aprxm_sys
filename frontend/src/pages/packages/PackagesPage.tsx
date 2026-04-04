@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, Barcode, Camera, Package as PackageIcon, Plus,
-  Search, Shield, User, UserX, List, Columns, X, ChevronDown,
+  AlertTriangle, Barcode, Camera, MessageCircle, Package as PackageIcon, Plus,
+  Search, Shield, User, UserX, List, Columns, Workflow, X, ChevronDown,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SignaturePad } from '../../components/packages/SignaturePad'
@@ -54,6 +54,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
   const [events, setEvents] = useState<PackageEvent[]>([])
   const [newComment, setNewComment] = useState('')
   const [addingEvent, setAddingEvent] = useState(false)
+  const [residentPhone, setResidentPhone] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -64,6 +65,17 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
     }
     fetchEvents()
   }, [pkg.id])
+
+  useEffect(() => {
+    if (pkg.resident_name) {
+      api.get<Resident[]>('/residents', { params: { q: pkg.resident_name } })
+        .then(res => {
+          const found = res.data.find(r => r.id === pkg.resident_id || r.full_name === pkg.resident_name)
+          if (found?.phone_primary) setResidentPhone(found.phone_primary)
+        })
+        .catch(() => {})
+    }
+  }, [pkg.resident_name, pkg.resident_id])
 
   const handleAddEvent = async () => {
     if (!newComment.trim()) return
@@ -141,6 +153,18 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
             </button>
           )}
 
+          {residentPhone && (pkg.status === 'received' || pkg.status === 'notified') && (
+            <a
+              href={`https://wa.me/55${residentPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`Olá ${pkg.resident_name ?? 'morador'}! Sua encomenda chegou na portaria. Por favor, venha retirar o mais breve possível. 📦`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl text-sm font-medium transition"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Avisar via WhatsApp
+            </a>
+          )}
+
           {/* Events / Observações */}
           <div className="border-t border-gray-100 pt-3 mt-1">
             <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">Observações</p>
@@ -184,6 +208,42 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
   )
 }
 
+// ─── Esteira Stepper ──────────────────────────────────────────────────────────
+
+const WORKFLOW_STEPS = ['Recebido', 'Notificado', 'Entregue']
+
+function EsteiraStepper({ status }: { status: string }) {
+  const stepIndex = status === 'received' ? 0 : status === 'notified' ? 1 : status === 'delivered' || status === 'returned' ? 2 : 0
+  const isReturned = status === 'returned'
+  return (
+    <div className="flex items-center gap-0 flex-1">
+      {WORKFLOW_STEPS.map((step, i) => {
+        const active = i <= stepIndex
+        const current = i === stepIndex
+        const isLast = i === WORKFLOW_STEPS.length - 1
+        const label = isLast && isReturned ? 'Devolvido' : step
+        return (
+          <div key={step} className="flex items-center flex-1">
+            <div className="flex flex-col items-center gap-1 shrink-0">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition ${
+                active
+                  ? isReturned && isLast ? 'bg-gray-400 border-gray-400 text-white' : current ? 'bg-[#26619c] border-[#26619c] text-white' : 'bg-green-500 border-green-500 text-white'
+                  : 'border-gray-300 text-gray-400 bg-white'
+              }`}>
+                {active && !current ? '✓' : i + 1}
+              </div>
+              <span className={`text-[10px] font-medium whitespace-nowrap ${active ? 'text-gray-700' : 'text-gray-400'}`}>{label}</span>
+            </div>
+            {!isLast && (
+              <div className={`flex-1 h-0.5 mx-1 ${i < stepIndex ? 'bg-green-400' : 'bg-gray-200'}`} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
@@ -192,7 +252,7 @@ export default function PackagesPage() {
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
   const [loading, setLoading] = useState(false)
   const [filterStatus, setFilterStatus] = useState('')
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'esteira'>('list')
   const [detailPkg, setDetailPkg] = useState<Package | null>(null)
 
   // Filters
@@ -407,6 +467,12 @@ export default function PackagesPage() {
             >
               <Columns className="w-3.5 h-3.5" /> Kanban
             </button>
+            <button
+              onClick={() => setViewMode('esteira')}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition ${viewMode === 'esteira' ? 'bg-[#26619c] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Workflow className="w-3.5 h-3.5" /> Esteira
+            </button>
           </div>
           <button
             onClick={() => { setShowReceive(true); setStep('recipient') }}
@@ -518,6 +584,41 @@ export default function PackagesPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Esteira View */}
+      {viewMode === 'esteira' && (
+        <div className="flex flex-col gap-3">
+          {packages.length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400 text-sm">Nenhuma encomenda encontrada.</div>
+          ) : (
+            packages.map(pkg => (
+              <div
+                key={pkg.id}
+                className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 cursor-pointer hover:border-[#26619c]/40 transition"
+                onClick={() => setDetailPkg(pkg)}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-800 truncate">
+                      {pkg.resident_name ?? '—'}
+                      {pkg.unit ? ` · Unid. ${pkg.unit}${pkg.block ? `/Bl.${pkg.block}` : ''}` : ''}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {pkg.carrier_name ?? 'Sem transportadora'}{pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
+                      {' · '}
+                      {new Date(pkg.received_at).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                  {pkg.has_delivery_fee && (
+                    <span className="text-xs text-amber-600 font-medium shrink-0 ml-2">Taxa R$ {parseFloat(pkg.delivery_fee_amount ?? '2.50').toFixed(2)}</span>
+                  )}
+                </div>
+                <EsteiraStepper status={pkg.status} />
+              </div>
+            ))
+          )}
         </div>
       )}
 
