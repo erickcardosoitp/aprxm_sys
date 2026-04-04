@@ -35,9 +35,10 @@ interface CloseModalProps {
   session: CashSession
   onDone: () => void
   onCancel: () => void
+  onRefresh: () => void
 }
 
-function CloseModal({ session, onDone, onCancel }: CloseModalProps) {
+function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
   const [step, setStep] = useState<CloseStep>('blind')
   const [blindAmount, setBlindAmount] = useState('')
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -71,10 +72,12 @@ function CloseModal({ session, onDone, onCancel }: CloseModalProps) {
     setLoading(true)
     try {
       await financeService.closeSession(result.counted)
+      onRefresh()
       setStep('done')
       setTimeout(() => { onDone() }, 1800)
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao fechar caixa.')
+      onRefresh()
     } finally {
       setLoading(false)
     }
@@ -607,6 +610,7 @@ export function CashSessionPanel({ session, onRefresh, canConferencia = true }: 
           session={session}
           onDone={() => { setShowClose(false); onRefresh() }}
           onCancel={() => setShowClose(false)}
+          onRefresh={onRefresh}
         />
       )}
 
