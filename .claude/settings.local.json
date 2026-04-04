@@ -84,7 +84,17 @@
       "Bash(grep -r \"POST\\\\|post\\\\|router.post\" /c/aprxm_sass/backend/app/routers/*.py)",
       "Bash(python -c \"import psycopg2; import bcrypt; print\\('OK'\\)\")",
       "Bash(python seed_teste.py)",
-      "Bash(python migrate_v2.py)"
+      "Bash(python migrate_v2.py)",
+      "Bash(vercel ls:*)",
+      "Bash(vercel --prod)",
+      "Bash(vercel --prod --cwd backend)",
+      "Bash(vercel deploy:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('token',''\\)\\)\")",
+      "Read(//c/Users/gonca/AppData/Local/com.vercel.cli/**)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(python backend/migrate_v3.py)",
+      "Bash(DATABASE_URL=\"postgresql://neondb_owner:npg_I0UVZq5jmdzM@ep-rough-tooth-an10po6b.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require\" python backend/migrate_v3.py)"
     ]
   }
 }

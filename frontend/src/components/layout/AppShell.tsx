@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { BarChart2, DollarSign, FileText, LogOut, Package, Settings, ShieldCheck, Users } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
-const BASE_NAV = [
+const FULL_NAV = [
   { to: '/overview',       label: 'Visão Geral', icon: BarChart2 },
   { to: '/finance',        label: 'Caixa',       icon: DollarSign },
   { to: '/packages',       label: 'Encomendas',  icon: Package },
@@ -10,7 +10,21 @@ const BASE_NAV = [
   { to: '/residents',      label: 'Moradores',   icon: Users },
 ]
 
-const ADMIN_NAV  = { to: '/admin',    label: 'Admin',  icon: ShieldCheck }
+// Operators see Caixa, Encomendas, Ordens, Moradores — no Visão Geral
+const OPERATOR_NAV = [
+  { to: '/finance',        label: 'Caixa',      icon: DollarSign },
+  { to: '/packages',       label: 'Encomendas', icon: Package },
+  { to: '/service-orders', label: 'Ordens',     icon: FileText },
+  { to: '/residents',      label: 'Moradores',  icon: Users },
+]
+
+const VIEWER_NAV = [
+  { to: '/packages',       label: 'Encomendas', icon: Package },
+  { to: '/service-orders', label: 'Ordens',     icon: FileText },
+  { to: '/residents',      label: 'Moradores',  icon: Users },
+]
+
+const ADMIN_NAV    = { to: '/admin',    label: 'Admin',  icon: ShieldCheck }
 const SETTINGS_NAV = { to: '/settings', label: 'Config', icon: Settings }
 
 export function AppShell() {
@@ -22,11 +36,15 @@ export function AppShell() {
   const isAdmin      = role === 'admin' || role === 'superadmin'
   const isConferente = role === 'conferente'
   const isDiretoria  = role === 'diretoria_adjunta'
+  const isOperator   = role === 'operator'
+  const isViewer     = role === 'viewer'
 
-  let navItems = [...BASE_NAV]
-  if (isAdmin) navItems = [...BASE_NAV, ADMIN_NAV, SETTINGS_NAV]
-  else if (isConferente) navItems = [...BASE_NAV, SETTINGS_NAV]
-  else if (isDiretoria) navItems = [...BASE_NAV, SETTINGS_NAV]
+  let navItems = [...FULL_NAV]
+  if (isAdmin) navItems = [...FULL_NAV, ADMIN_NAV, SETTINGS_NAV]
+  else if (isConferente) navItems = [...FULL_NAV, SETTINGS_NAV]
+  else if (isDiretoria) navItems = [...FULL_NAV, SETTINGS_NAV]
+  else if (isOperator) navItems = [...OPERATOR_NAV]
+  else if (isViewer) navItems = [...VIEWER_NAV]
 
   const handleLogout = () => { clearAuth(); navigate('/login') }
 
@@ -36,16 +54,17 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Top bar */}
-      <header className="bg-[#1a3f6f] text-white flex items-center justify-between px-4 py-3 shadow">
+      {/* Top bar — extends into status bar area on iOS standalone */}
+      <header className="bg-[#1a3f6f] text-white flex items-center justify-between px-4 py-3 shadow"
+        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
         <span className="font-extrabold text-lg tracking-tight">APRXM</span>
         <div className="flex items-center gap-3">
           {fullName && (
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
+              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold shrink-0">
                 {initials}
               </div>
-              <span className="text-sm opacity-90 hidden sm:block">{fullName.split(' ')[0]}</span>
+              <span className="text-sm opacity-90 hidden sm:block truncate max-w-[120px]">{fullName.split(' ')[0]}</span>
             </div>
           )}
           <button onClick={handleLogout} className="flex items-center gap-1 text-sm opacity-70 hover:opacity-100">
@@ -54,27 +73,30 @@ export function AppShell() {
         </div>
       </header>
 
-      {/* Content */}
-      <main className="flex-1 overflow-y-auto pb-20">
+      {/* Content — bottom padding accounts for nav + safe area */}
+      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom))' }}>
         <Outlet />
       </main>
 
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2 z-40 overflow-x-auto">
-        {navItems.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
-                isActive ? 'text-[#26619c]' : 'text-gray-500 hover:text-gray-700'
-              }`
-            }
-          >
-            <Icon className="w-5 h-5" />
-            {label}
-          </NavLink>
-        ))}
+      {/* Bottom nav — respects iOS home indicator */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around z-40 overflow-x-auto"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
+        <div className="flex justify-around w-full py-2">
+          {navItems.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                `flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
+                  isActive ? 'text-[#26619c]' : 'text-gray-500 hover:text-gray-700'
+                }`
+              }
+            >
+              <Icon className="w-5 h-5" />
+              <span className="leading-none">{label}</span>
+            </NavLink>
+          ))}
+        </div>
       </nav>
     </div>
   )

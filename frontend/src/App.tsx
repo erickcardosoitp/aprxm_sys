@@ -22,6 +22,12 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function RedirectByRole() {
+  const role = useAuthStore((s) => s.role)
+  if (role === 'operator' || role === 'viewer') return <Navigate to="/finance" replace />
+  return <Navigate to="/overview" replace />
+}
+
 function RequireConferente({ children }: { children: React.ReactNode }) {
   const role = useAuthStore((s) => s.role)
   if (role !== 'admin' && role !== 'superadmin' && role !== 'conferente' && role !== 'diretoria_adjunta')
@@ -43,7 +49,7 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route index element={<Navigate to="/overview" replace />} />
+          <Route index element={<RedirectByRole />} />
           <Route path="overview"       element={<OverviewPage />} />
           <Route path="finance"        element={<FinancePage />} />
           <Route path="packages"       element={<PackagesPage />} />

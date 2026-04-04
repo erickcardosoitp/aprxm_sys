@@ -230,21 +230,23 @@ export default function FinancePage() {
     <div className="flex flex-col gap-6 p-4 max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200">
-        {([['caixa', 'Frente de Caixa'], ['sessoes', 'Sessões']] as [Tab, string][]).map(([t, label]) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${tab === t ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {t === 'sessoes' && <List className="w-4 h-4" />}
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* Tabs — operators only see Frente de Caixa */}
+      {isConferenteOrAbove && (
+        <div className="flex border-b border-gray-200">
+          {([['caixa', 'Frente de Caixa'], ['sessoes', 'Sessões']] as [Tab, string][]).map(([t, label]) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${tab === t ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              {t === 'sessoes' && <List className="w-4 h-4" />}
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── TAB: CAIXA ── */}
       {tab === 'caixa' && (
         <>
-          <CashSessionPanel session={session} onRefresh={loadSession} />
+          <CashSessionPanel session={session} onRefresh={loadSession} canConferencia={isConferenteOrAbove} />
 
           {session && (
             <>

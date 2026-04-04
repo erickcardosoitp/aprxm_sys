@@ -17,9 +17,9 @@ router = APIRouter(prefix="/settings", tags=["Configurações"])
 
 
 def require_superadmin(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    if current.role not in ("superadmin",):
+    if current.role not in ("superadmin", "admin"):
         from fastapi import HTTPException
-        raise HTTPException(status_code=403, detail="Apenas superadmin pode acessar esta função.")
+        raise HTTPException(status_code=403, detail="Apenas admin+ pode acessar esta função.")
     return current
 
 
