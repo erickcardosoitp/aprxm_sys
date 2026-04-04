@@ -651,6 +651,14 @@ export default function PackagesPage() {
       {/* Esteira View */}
       {viewMode === 'esteira' && (
         <div className="flex flex-col gap-3">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {(['', 'received', 'notified', 'delivered', 'returned'] as const).map((s) => (
+              <button key={s} onClick={() => setFilterStatus(s)}
+                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition ${filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {s === '' ? 'Todos' : STATUS_LABELS[s]}
+              </button>
+            ))}
+          </div>
           {packages.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400 text-sm">Nenhuma encomenda encontrada.</div>
           ) : (
