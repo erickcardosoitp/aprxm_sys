@@ -3,6 +3,7 @@ import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus } from 'luc
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import type { Resident, ResidentStatus, ResidentType } from '../../types'
+import { maskCpf } from '../../utils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -481,7 +482,7 @@ function DependentForm({ onSave, onCancel }: {
                       <li key={r.id}>
                         <button className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
                           onClick={() => { setResponsible(r); set('responsible_id', r.id); setSearch(''); setResults([]) }}>
-                          {r.full_name}{r.cpf ? ` · ${r.cpf}` : ''}{r.unit ? ` · Unid. ${r.unit}` : ''}
+                          {r.full_name}{r.cpf ? ` · ${maskCpf(r.cpf)}` : ''}{r.unit ? ` · Unid. ${r.unit}` : ''}
                         </button>
                       </li>
                     ))}
@@ -724,7 +725,7 @@ export default function ResidentsPage() {
                       {r.responsible_id ? 'Dependente' : TYPE_LABELS[r.type]}
                       {r.unit ? ` · Unid. ${r.unit}` : ''}
                       {r.block ? ` / Bl. ${r.block}` : ''}
-                      {r.cpf ? ` · ${r.cpf}` : ''}
+                      {r.cpf ? ` · ${maskCpf(r.cpf)}` : ''}
                     </p>
                     {r.address_cep && (
                       <p className="text-xs text-gray-400">CEP {r.address_cep}{r.phone_primary ? ` · ${r.phone_primary}` : ''}</p>

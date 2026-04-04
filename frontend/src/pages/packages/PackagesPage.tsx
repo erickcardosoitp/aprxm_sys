@@ -8,6 +8,8 @@ import { SignaturePad } from '../../components/packages/SignaturePad'
 import { PhotoCapture } from '../../components/packages/PhotoCapture'
 import { BarcodeScannerModal } from '../../components/packages/BarcodeScanner'
 import { packageService } from '../../services/packages'
+import { maskCpf } from '../../utils'
+import { uploadService } from '../../services/upload'
 import api from '../../services/api'
 import type { Package, Resident } from '../../types'
 
@@ -95,7 +97,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
             <div>
               <p className="text-xs text-gray-500">Destinatário</p>
               <p className="font-medium text-gray-800">{pkg.resident_name ?? '—'}</p>
-              {pkg.resident_cpf && <p className="text-xs text-gray-400">CPF: {pkg.resident_cpf}</p>}
+              {pkg.resident_cpf && <p className="text-xs text-gray-400">CPF: {maskCpf(pkg.resident_cpf)}</p>}
               {pkg.resident_phone && <p className="text-xs text-gray-400">Tel: {pkg.resident_phone}</p>}
             </div>
             {pkg.unit && (
@@ -177,7 +179,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
                   <div>
                     <p className="text-xs text-gray-500">Recebido por</p>
                     <p className="font-medium text-gray-800">{pkg.delivered_to_name}</p>
-                    {pkg.delivered_to_cpf && <p className="text-xs text-gray-400">CPF: {pkg.delivered_to_cpf}</p>}
+                    {pkg.delivered_to_cpf && <p className="text-xs text-gray-400">CPF: {maskCpf(pkg.delivered_to_cpf)}</p>}
                   </div>
                 )}
                 {pkg.delivered_at && (
@@ -741,7 +743,7 @@ export default function PackagesPage() {
                           <div>
                             <p className="text-sm font-medium text-gray-800">{r.full_name}</p>
                             <p className="text-xs text-gray-400">
-                              {r.cpf ? `CPF: ${r.cpf}` : ''}
+                              {r.cpf ? `CPF: ${maskCpf(r.cpf)}` : ''}
                               {r.address_cep ? ` · CEP: ${r.address_cep}` : ''}
                               {(r as any).unit ? ` · Unid. ${(r as any).unit}` : ''}
                               {r.phone_primary ? ` · ${r.phone_primary}` : ''}
@@ -851,7 +853,11 @@ export default function PackagesPage() {
                       <input value={tracking} onChange={e => setTracking(e.target.value)} className={inputCls} placeholder="AA000000000BR (opcional)" />
                     </div>
                   </div>
-                  <PhotoCapture label="Foto da Etiqueta *" onCapture={entry => setPhotos(prev => [...prev, entry])} />
+                  <PhotoCapture
+                    label="Foto da Etiqueta *"
+                    onCapture={entry => setPhotos(prev => [...prev, entry])}
+                    onUpload={file => uploadService.uploadFile(file, 'packages/labels')}
+                  />
                   {photos.length > 0 && <p className="text-xs text-green-600">{photos.length} foto(s) adicionada(s)</p>}
 
                   {/* Entregador section */}
@@ -867,7 +873,12 @@ export default function PackagesPage() {
                       </div>
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">Assinatura do entregador</label>
-                        <SignaturePad onSave={setDelivererSig} onClear={() => setDelivererSig('')} />
+                        <SignaturePad
+                          label="Assinatura do entregador"
+                          onSave={setDelivererSig}
+                          onClear={() => setDelivererSig('')}
+                          onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')}
+                        />
                       </div>
                     </div>
                   </div>
@@ -909,7 +920,11 @@ export default function PackagesPage() {
                   Comprovante de Residência <span className="text-red-500">*</span>
                 </p>
                 <p className="text-xs text-gray-400 mb-2">Foto obrigatória para confirmar a entrega</p>
-                <PhotoCapture label="Foto do comprovante" onCapture={entry => setProofResidenceUrl(entry.url)} />
+                <PhotoCapture
+                  label="Foto do comprovante"
+                  onCapture={entry => setProofResidenceUrl(entry.url)}
+                  onUpload={file => uploadService.uploadFile(file, 'packages/proofs')}
+                />
                 {proofResidenceUrl && <p className="text-xs text-green-600 mt-1">✓ Comprovante registrado</p>}
               </div>
 
@@ -918,7 +933,11 @@ export default function PackagesPage() {
                 <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
                   <Shield className="w-3.5 h-3.5 text-gray-400" /> Foto do documento (antifraude — opcional)
                 </p>
-                <PhotoCapture label="Documento do recebedor" onCapture={entry => setRecipientIdPhoto(entry.url)} />
+                <PhotoCapture
+                  label="Documento do recebedor"
+                  onCapture={entry => setRecipientIdPhoto(entry.url)}
+                  onUpload={file => uploadService.uploadFile(file, 'packages/ids')}
+                />
               </div>
 
               {/* Recipient section */}
@@ -942,7 +961,12 @@ export default function PackagesPage() {
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Assinatura <span className="text-red-500">*</span></label>
-                    <SignaturePad onSave={setRecipientSig} onClear={() => setRecipientSig('')} />
+                    <SignaturePad
+                      label="Assinatura do recebedor"
+                      onSave={setRecipientSig}
+                      onClear={() => setRecipientSig('')}
+                      onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')}
+                    />
                   </div>
                 </div>
               </div>
