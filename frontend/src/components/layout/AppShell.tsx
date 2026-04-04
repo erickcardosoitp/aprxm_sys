@@ -82,7 +82,7 @@ export function AppShell() {
       {/* Bottom nav — respects iOS home indicator */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
-        <div className="flex overflow-x-auto scrollbar-none px-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
+        <div className="flex justify-center overflow-x-auto scrollbar-none px-2 gap-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
           {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
