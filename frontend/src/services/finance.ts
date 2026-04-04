@@ -33,4 +33,7 @@ export const financeService = {
 
   listSessions: () =>
     api.get<CashSessionSummary[]>('/finance/sessions'),
+
+  conferencia: (counted_amount: number) =>
+    api.post<{ session_id: string; expected: string; counted: string; difference: string; income: string; exits: string; opening_balance: string }>('/finance/sessions/conferencia', { counted_amount }),
 }
