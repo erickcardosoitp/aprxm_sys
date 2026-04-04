@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
@@ -13,6 +14,13 @@ from app.database import get_session
 from app.models.settings import AssociationSettings
 
 router = APIRouter(prefix="/settings", tags=["Configurações"])
+
+
+def require_superadmin(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    if current.role not in ("superadmin",):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Apenas superadmin pode acessar esta função.")
+    return current
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -138,3 +146,48 @@ async def update_assoc_data(
     )
     await session.commit()
     return {"ok": True}
+
+
+DEFAULT_ACCESS_GROUPS = {
+    "viewer": {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": [], "admin": [], "settings": []},
+    "operator": {"residents": ["view"], "packages": ["view", "create"], "service_orders": ["view"], "finance": ["view", "create"], "admin": [], "settings": []},
+    "conferente": {"residents": ["view", "create", "edit"], "packages": ["view", "create", "edit"], "service_orders": ["view", "create", "edit"], "finance": ["view", "create", "edit"], "admin": [], "settings": ["view"]},
+    "diretoria_adjunta": {"residents": ["view"], "packages": ["view"], "service_orders": ["view", "create", "edit"], "finance": ["view"], "admin": [], "settings": []},
+    "admin": {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "edit"]},
+}
+
+
+@router.get("/access-groups", summary="Gestão de acesso por grupo (superadmin)")
+async def get_access_groups(
+    current: CurrentUser = Depends(require_superadmin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    result = await session.execute(
+        text("SELECT access_groups FROM association_settings WHERE association_id = :id"),
+        {"id": str(current.association_id)},
+    )
+    row = result.fetchone()
+    if row and row[0]:
+        data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        return data
+    return DEFAULT_ACCESS_GROUPS
+
+
+@router.put("/access-groups", summary="Salvar gestão de acesso por grupo (superadmin)")
+async def update_access_groups(
+    body: dict,
+    current: CurrentUser = Depends(require_superadmin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await session.execute(
+        text("""
+            INSERT INTO association_settings (association_id, access_groups, updated_at)
+            VALUES (:id, CAST(:groups AS jsonb), NOW())
+            ON CONFLICT (association_id) DO UPDATE SET
+                access_groups = CAST(EXCLUDED.access_groups AS jsonb),
+                updated_at = NOW()
+        """),
+        {"id": str(current.association_id), "groups": json.dumps(body)},
+    )
+    await session.commit()
+    return body
