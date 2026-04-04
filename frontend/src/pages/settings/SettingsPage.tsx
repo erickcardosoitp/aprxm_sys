@@ -53,7 +53,7 @@ export default function SettingsPage() {
   const role = useAuthStore((s) => s.role)
   const canSeeAssociation =
     role === 'conferente' || role === 'admin' || role === 'superadmin'
-  const isSuperadmin = role === 'superadmin'
+  const isSuperadmin = role === 'superadmin' || role === 'admin'
 
   // ── Caixa state ──
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
@@ -357,7 +357,7 @@ export default function SettingsPage() {
             <h2 className="font-semibold text-gray-800 mb-1 flex items-center gap-2">
               <Shield className="w-4 h-4 text-[#26619c]" />
               Gestão de Acesso por Grupo
-              <span className="text-xs font-normal text-gray-400 ml-1">Apenas SuperAdmin</span>
+              <span className="text-xs font-normal text-gray-400 ml-1">Admin+</span>
             </h2>
             <p className="text-xs text-gray-400 mb-4">
               Define quais permissões cada grupo de usuários tem por módulo.

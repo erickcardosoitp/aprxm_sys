@@ -11,6 +11,7 @@ import type { CashSession, Transaction } from '../../types'
 interface Props {
   session: CashSession | null
   onRefresh: () => void
+  canConferencia?: boolean
 }
 
 type CloseStep = 'blind' | 'review' | 'done'
@@ -470,7 +471,7 @@ function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) 
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export function CashSessionPanel({ session, onRefresh }: Props) {
+export function CashSessionPanel({ session, onRefresh, canConferencia = true }: Props) {
   const fullName = useAuthStore((s) => s.fullName)
   const [openBalance, setOpenBalance] = useState('')
   const [opening, setOpening] = useState(false)
@@ -581,16 +582,23 @@ export function CashSessionPanel({ session, onRefresh }: Props) {
           </div>
 
           {/* Conferência + Close buttons */}
-          <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => setShowConferencia(true)} className="flex items-center justify-center gap-2 border-2 border-[#26619c] text-[#26619c] hover:bg-[#26619c]/5 py-3 rounded-xl font-semibold text-sm transition">
-              <ClipboardCheck className="w-4 h-4" />
-              Conferência
-            </button>
-            <button onClick={() => setShowClose(true)} className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-semibold text-sm transition">
+          {canConferencia ? (
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setShowConferencia(true)} className="flex items-center justify-center gap-2 border-2 border-[#26619c] text-[#26619c] hover:bg-[#26619c]/5 py-3 rounded-xl font-semibold text-sm transition">
+                <ClipboardCheck className="w-4 h-4" />
+                Conferência
+              </button>
+              <button onClick={() => setShowClose(true)} className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-semibold text-sm transition">
+                <Lock className="w-4 h-4" />
+                Fechar Caixa
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setShowClose(true)} className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-semibold text-sm transition">
               <Lock className="w-4 h-4" />
               Fechar Caixa
             </button>
-          </div>
+          )}
         </div>
       </div>
 

@@ -3,7 +3,27 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    /* Prevent pull-to-refresh and bounce scroll on iOS PWA */
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply font-sans text-gray-900 antialiased;
+    /* Prevent overscroll bounce on iOS */
+    overscroll-behavior: none;
+    /* Full height for PWA standalone mode */
+    min-height: 100dvh;
+  }
+
+  /* Smooth tap highlight */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Better touch targets */
+  button, a[role="button"] {
+    touch-action: manipulation;
   }
 }
