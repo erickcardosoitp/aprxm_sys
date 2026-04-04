@@ -54,7 +54,6 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
   const [events, setEvents] = useState<PackageEvent[]>([])
   const [newComment, setNewComment] = useState('')
   const [addingEvent, setAddingEvent] = useState(false)
-  const [residentPhone, setResidentPhone] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -65,17 +64,6 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
     }
     fetchEvents()
   }, [pkg.id])
-
-  useEffect(() => {
-    if (pkg.resident_name) {
-      api.get<Resident[]>('/residents', { params: { q: pkg.resident_name } })
-        .then(res => {
-          const found = res.data.find(r => r.id === pkg.resident_id || r.full_name === pkg.resident_name)
-          if (found?.phone_primary) setResidentPhone(found.phone_primary)
-        })
-        .catch(() => {})
-    }
-  }, [pkg.resident_name, pkg.resident_id])
 
   const handleAddEvent = async () => {
     if (!newComment.trim()) return
@@ -107,6 +95,8 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
             <div>
               <p className="text-xs text-gray-500">Destinatário</p>
               <p className="font-medium text-gray-800">{pkg.resident_name ?? '—'}</p>
+              {pkg.resident_cpf && <p className="text-xs text-gray-400">CPF: {pkg.resident_cpf}</p>}
+              {pkg.resident_phone && <p className="text-xs text-gray-400">Tel: {pkg.resident_phone}</p>}
             </div>
             {pkg.unit && (
               <div>
@@ -114,6 +104,18 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
                 <p className="font-medium text-gray-800">
                   {pkg.unit}{pkg.block ? ` / Bl. ${pkg.block}` : ''}
                 </p>
+              </div>
+            )}
+            {pkg.object_type && (
+              <div>
+                <p className="text-xs text-gray-500">Tipo de objeto</p>
+                <p className="font-medium text-gray-800">{pkg.object_type}</p>
+              </div>
+            )}
+            {pkg.sender_name && (
+              <div>
+                <p className="text-xs text-gray-500">Remetente</p>
+                <p className="font-medium text-gray-800">{pkg.sender_name}</p>
               </div>
             )}
             {pkg.carrier_name && (
@@ -144,6 +146,60 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
             )}
           </div>
 
+          {/* Notes */}
+          {pkg.notes && (
+            <div className="bg-gray-50 rounded-lg px-3 py-2">
+              <p className="text-xs text-gray-500 mb-0.5">Observações</p>
+              <p className="text-sm text-gray-700">{pkg.notes}</p>
+            </div>
+          )}
+
+          {/* Package photos */}
+          {pkg.photo_urls && pkg.photo_urls.length > 0 && (
+            <div>
+              <p className="text-xs text-gray-500 mb-1.5">Fotos</p>
+              <div className="flex gap-2 flex-wrap">
+                {pkg.photo_urls.map((photo, i) => (
+                  <a key={i} href={photo.url} target="_blank" rel="noopener noreferrer">
+                    <img src={photo.url} alt={photo.label || `Foto ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Delivery info */}
+          {pkg.status === 'delivered' && (
+            <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
+              <p className="text-xs font-semibold text-green-700 mb-1.5">Informações de Entrega</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {pkg.delivered_to_name && (
+                  <div>
+                    <p className="text-xs text-gray-500">Recebido por</p>
+                    <p className="font-medium text-gray-800">{pkg.delivered_to_name}</p>
+                    {pkg.delivered_to_cpf && <p className="text-xs text-gray-400">CPF: {pkg.delivered_to_cpf}</p>}
+                  </div>
+                )}
+                {pkg.delivered_at && (
+                  <div>
+                    <p className="text-xs text-gray-500">Entregue em</p>
+                    <p className="font-medium text-gray-800">
+                      {new Date(pkg.delivered_at).toLocaleString('pt-BR', {
+                        day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+                )}
+                {pkg.deliverer_name && (
+                  <div>
+                    <p className="text-xs text-gray-500">Entregador</p>
+                    <p className="font-medium text-gray-800">{pkg.deliverer_name}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {(pkg.status === 'received' || pkg.status === 'notified') && (
             <button
               onClick={onDeliverClick}
@@ -153,9 +209,9 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
             </button>
           )}
 
-          {residentPhone && (pkg.status === 'received' || pkg.status === 'notified') && (
+          {pkg.resident_phone && (pkg.status === 'received' || pkg.status === 'notified') && (
             <a
-              href={`https://wa.me/55${residentPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`Olá ${pkg.resident_name ?? 'morador'}! Sua encomenda chegou na portaria. Por favor, venha retirar o mais breve possível. 📦`)}`}
+              href={`https://wa.me/55${pkg.resident_phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Olá ${pkg.resident_name ?? 'morador'}! Sua encomenda chegou na portaria. Por favor, venha retirar o mais breve possível. 📦`)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl text-sm font-medium transition"
@@ -278,10 +334,13 @@ export default function PackagesPage() {
   const [recipientName, setRecipientName] = useState('')
   const [recipientCpf, setRecipientCpf] = useState('')
   const [recipientSig, setRecipientSig] = useState('')
+  const [proofResidenceUrl, setProofResidenceUrl] = useState('')
+  const [recipientIdPhoto, setRecipientIdPhoto] = useState('')
+  const [deliveryPersonName, setDeliveryPersonName] = useState('')
+
+  // Receive flow — deliverer
   const [delivererName, setDelivererName] = useState('')
   const [delivererSig, setDelivererSig] = useState('')
-  const [proofVerified, setProofVerified] = useState(false)
-  const [recipientIdPhoto, setRecipientIdPhoto] = useState('')
 
   const loadPackages = async () => {
     try {
@@ -351,6 +410,8 @@ export default function PackagesPage() {
         carrier_name: carrier || undefined,
         tracking_code: tracking || undefined,
         photo_urls: photos,
+        deliverer_name: delivererName || undefined,
+        deliverer_signature_url: delivererSig || undefined,
       })
       toast.success('Encomenda registrada!')
       resetReceive()
@@ -366,13 +427,13 @@ export default function PackagesPage() {
     setShowReceive(false); setStep('recipient'); setRecipientSearch('')
     setSearchResults([]); setSelectedRecipient(null); setShowGuestForm(false)
     setGuest(emptyGuest()); setTracking(''); setCarrier(''); setPhotos([])
+    setDelivererName(''); setDelivererSig('')
   }
 
   const handleDeliver = async () => {
     if (!deliveryTarget) return
     if (!recipientName || !recipientSig) { toast.error('Nome e assinatura do recebedor obrigatórios.'); return }
-    if (!delivererName || !delivererSig) { toast.error('Nome e assinatura do entregador obrigatórios.'); return }
-    if (!proofVerified) { toast.error('Confirme a apresentação do comprovante de residência.'); return }
+    if (!proofResidenceUrl) { toast.error('Foto do comprovante de residência obrigatória.'); return }
     setLoading(true)
     try {
       const res = await packageService.deliver(deliveryTarget.id, {
@@ -380,10 +441,9 @@ export default function PackagesPage() {
         signature_url: recipientSig,
         delivered_to_cpf: recipientCpf || undefined,
         delivered_to_resident_id: deliveryTarget.resident_id,
-        deliverer_name: delivererName,
-        deliverer_signature_url: delivererSig,
-        proof_of_residence_verified: proofVerified,
+        proof_of_residence_url: proofResidenceUrl,
         recipient_id_photo_url: recipientIdPhoto || undefined,
+        delivery_person_name: deliveryPersonName || undefined,
       })
       const pkg = res.data as any
       toast.success(pkg.has_delivery_fee
@@ -401,7 +461,7 @@ export default function PackagesPage() {
 
   const resetDelivery = () => {
     setRecipientName(''); setRecipientCpf(''); setRecipientSig('')
-    setDelivererName(''); setDelivererSig(''); setProofVerified(false); setRecipientIdPhoto('')
+    setProofResidenceUrl(''); setRecipientIdPhoto(''); setDeliveryPersonName('')
   }
 
   const pendingCount = packages.filter(p => p.status === 'received' || p.status === 'notified').length
@@ -444,41 +504,32 @@ export default function PackagesPage() {
   return (
     <div className="flex flex-col gap-5 p-4 max-w-3xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <PackageIcon className="w-6 h-6 text-[#26619c]" />
-          Encomendas
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2 min-w-0">
+          <PackageIcon className="w-5 h-5 text-[#26619c] shrink-0" />
+          <span className="truncate">Encomendas</span>
           {pendingCount > 0 && (
-            <span className="ml-1 bg-[#26619c] text-white text-xs font-bold px-2 py-0.5 rounded-full">{pendingCount}</span>
+            <span className="shrink-0 bg-[#26619c] text-white text-xs font-bold px-2 py-0.5 rounded-full">{pendingCount}</span>
           )}
         </h1>
-        <div className="flex items-center gap-2">
-          {/* View toggle */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* View toggle — icons only on mobile */}
           <div className="flex border border-gray-200 rounded-lg overflow-hidden">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition ${viewMode === 'list' ? 'bg-[#26619c] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-            >
-              <List className="w-3.5 h-3.5" /> Lista
-            </button>
-            <button
-              onClick={() => setViewMode('kanban')}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition ${viewMode === 'kanban' ? 'bg-[#26619c] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-            >
-              <Columns className="w-3.5 h-3.5" /> Kanban
-            </button>
-            <button
-              onClick={() => setViewMode('esteira')}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition ${viewMode === 'esteira' ? 'bg-[#26619c] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-            >
-              <Workflow className="w-3.5 h-3.5" /> Esteira
-            </button>
+            <button onClick={() => setViewMode('list')}
+              className={`flex items-center justify-center p-1.5 transition ${viewMode === 'list' ? 'bg-[#26619c] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="Lista"><List className="w-4 h-4" /></button>
+            <button onClick={() => setViewMode('kanban')}
+              className={`flex items-center justify-center p-1.5 transition ${viewMode === 'kanban' ? 'bg-[#26619c] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="Kanban"><Columns className="w-4 h-4" /></button>
+            <button onClick={() => setViewMode('esteira')}
+              className={`flex items-center justify-center p-1.5 transition ${viewMode === 'esteira' ? 'bg-[#26619c] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="Esteira"><Workflow className="w-4 h-4" /></button>
           </div>
           <button
             onClick={() => { setShowReceive(true); setStep('recipient') }}
-            className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition"
+            className="flex items-center gap-1.5 bg-[#26619c] hover:bg-[#1a4f87] text-white px-3 py-2 rounded-xl text-sm font-medium transition"
           >
-            <Plus className="w-4 h-4" /> Receber
+            <Plus className="w-4 h-4" /><span className="hidden sm:inline">Receber</span>
           </button>
         </div>
       </div>
@@ -486,34 +537,37 @@ export default function PackagesPage() {
       {/* Filter bar */}
       <div className="flex flex-col gap-2">
         <div className="flex gap-2 items-center">
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               value={filterQ}
               onChange={e => setFilterQ(e.target.value)}
-              placeholder="Buscar por nome, CPF ou CEP…"
+              placeholder="Buscar nome, rastreio…"
               className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
             />
           </div>
+          {(filterQ || filterDateFrom || filterDateTo || filterStatus) && (
+            <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 shrink-0">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2 items-center">
           <input
             type="date"
             value={filterDateFrom}
             onChange={e => setFilterDateFrom(e.target.value)}
             title="Data inicial"
-            className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
+            className="flex-1 min-w-0 border border-gray-200 rounded-xl px-2 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
           />
+          <span className="text-gray-400 text-xs shrink-0">até</span>
           <input
             type="date"
             value={filterDateTo}
             onChange={e => setFilterDateTo(e.target.value)}
             title="Data final"
-            className="border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
+            className="flex-1 min-w-0 border border-gray-200 rounded-xl px-2 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
           />
-          {(filterQ || filterDateFrom || filterDateTo || filterStatus) && (
-            <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 whitespace-nowrap">
-              <X className="w-3.5 h-3.5" /> Limpar
-            </button>
-          )}
         </div>
 
         {/* Status pills — only in list view */}
@@ -799,6 +853,25 @@ export default function PackagesPage() {
                   </div>
                   <PhotoCapture label="Foto da Etiqueta *" onCapture={entry => setPhotos(prev => [...prev, entry])} />
                   {photos.length > 0 && <p className="text-xs text-green-600">{photos.length} foto(s) adicionada(s)</p>}
+
+                  {/* Entregador section */}
+                  <div className="rounded-xl border border-amber-200 overflow-hidden">
+                    <div className="bg-amber-500 px-4 py-2.5 flex items-center gap-2">
+                      <User className="w-4 h-4 text-white" />
+                      <span className="text-sm font-semibold text-white">Entregador (quem trouxe)</span>
+                    </div>
+                    <div className="p-4 flex flex-col gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Nome do entregador</label>
+                        <input value={delivererName} onChange={e => setDelivererName(e.target.value)} className={inputCls} placeholder="Nome do courier/transportadora" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Assinatura do entregador</label>
+                        <SignaturePad onSave={setDelivererSig} onClear={() => setDelivererSig('')} />
+                      </div>
+                    </div>
+                  </div>
+
                   <button onClick={handleReceive} disabled={loading || photos.length === 0}
                     className="w-full bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl font-medium transition disabled:opacity-50">
                     {loading ? 'Salvando…' : 'Registrar Encomenda'}
@@ -830,17 +903,14 @@ export default function PackagesPage() {
 
             <div className="p-5 flex flex-col gap-4">
               {/* Proof of residence */}
-              <div className={`rounded-xl p-4 border transition ${proofVerified ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-200'}`}>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={proofVerified} onChange={e => setProofVerified(e.target.checked)} className="w-5 h-5 accent-green-600 shrink-0" />
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
-                      <Shield className={`w-4 h-4 ${proofVerified ? 'text-green-600' : 'text-red-400'}`} />
-                      Comprovante de residência apresentado
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">Obrigatório — verifique o documento antes de entregar</p>
-                  </div>
-                </label>
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <p className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-[#26619c]" />
+                  Comprovante de Residência <span className="text-red-500">*</span>
+                </p>
+                <p className="text-xs text-gray-400 mb-2">Foto obrigatória para confirmar a entrega</p>
+                <PhotoCapture label="Foto do comprovante" onCapture={entry => setProofResidenceUrl(entry.url)} />
+                {proofResidenceUrl && <p className="text-xs text-green-600 mt-1">✓ Comprovante registrado</p>}
               </div>
 
               {/* Anti-fraud photo */}
@@ -867,26 +937,12 @@ export default function PackagesPage() {
                     <input value={recipientCpf} onChange={e => setRecipientCpf(e.target.value)} className={inputCls} placeholder="000.000.000-00" />
                   </div>
                   <div>
+                    <label className="block text-xs text-gray-600 mb-1">Nome do funcionário que está entregando</label>
+                    <input value={deliveryPersonName} onChange={e => setDeliveryPersonName(e.target.value)} className={inputCls} placeholder="Nome do funcionário da portaria" />
+                  </div>
+                  <div>
                     <label className="block text-xs text-gray-600 mb-1">Assinatura <span className="text-red-500">*</span></label>
                     <SignaturePad onSave={setRecipientSig} onClear={() => setRecipientSig('')} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Deliverer section */}
-              <div className="rounded-xl border border-amber-200 overflow-hidden">
-                <div className="bg-amber-500 px-4 py-2.5 flex items-center gap-2">
-                  <User className="w-4 h-4 text-white" />
-                  <span className="text-sm font-semibold text-white">Entregador (Quem entrega)</span>
-                </div>
-                <div className="p-4 flex flex-col gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">Nome do entregador <span className="text-red-500">*</span></label>
-                    <input value={delivererName} onChange={e => setDelivererName(e.target.value)} className={inputCls} placeholder="Nome do funcionário que entrega" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">Assinatura <span className="text-red-500">*</span></label>
-                    <SignaturePad onSave={setDelivererSig} onClear={() => setDelivererSig('')} />
                   </div>
                 </div>
               </div>
@@ -896,7 +952,7 @@ export default function PackagesPage() {
               <button onClick={() => { setDeliveryTarget(null); resetDelivery() }}
                 className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
               <button onClick={handleDeliver}
-                disabled={loading || !recipientSig || !delivererSig || !proofVerified || !recipientName || !delivererName}
+                disabled={loading || !recipientSig || !proofResidenceUrl || !recipientName}
                 className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
                 {loading ? 'Registrando…' : 'Confirmar Entrega'}
               </button>

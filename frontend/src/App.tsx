@@ -9,6 +9,7 @@ import ResidentsPage from './pages/residents/ResidentsPage'
 import ServiceOrdersPage from './pages/service_orders/ServiceOrdersPage'
 import AdminPage from './pages/admin/AdminPage'
 import SettingsPage from './pages/settings/SettingsPage'
+import FinanceiroPage from './pages/financeiro/FinanceiroPage'
 import { useAuthStore } from './store/authStore'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="residents"      element={<ResidentsPage />} />
           <Route path="admin"          element={<RequireAdmin><AdminPage /></RequireAdmin>} />
           <Route path="settings"       element={<RequireConferente><SettingsPage /></RequireConferente>} />
+          <Route path="financeiro"     element={<RequireConferente><FinanceiroPage /></RequireConferente>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

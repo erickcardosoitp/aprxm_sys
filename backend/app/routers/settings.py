@@ -191,3 +191,39 @@ async def update_access_groups(
     )
     await session.commit()
     return body
+
+
+@router.get("/cadastros", summary="Obter cadastros básicos")
+async def get_cadastros(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    result = await session.execute(
+        text("SELECT cadastros FROM association_settings WHERE association_id = :id"),
+        {"id": str(current.association_id)},
+    )
+    row = result.fetchone()
+    if not row or not row[0]:
+        return {"categorias": [], "servicos_impactados": [], "orgaos_responsaveis": []}
+    data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+    return data
+
+
+@router.put("/cadastros", summary="Salvar cadastros básicos")
+async def save_cadastros(
+    body: dict,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await session.execute(
+        text("""
+            INSERT INTO association_settings (association_id, cadastros, updated_at)
+            VALUES (:id, CAST(:val AS jsonb), NOW())
+            ON CONFLICT (association_id) DO UPDATE SET
+                cadastros = CAST(:val AS jsonb),
+                updated_at = NOW()
+        """),
+        {"id": str(current.association_id), "val": json.dumps(body)},
+    )
+    await session.commit()
+    return body

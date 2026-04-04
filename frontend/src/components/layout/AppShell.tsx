@@ -1,10 +1,11 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { BarChart2, DollarSign, FileText, LogOut, Package, Settings, ShieldCheck, Users } from 'lucide-react'
+import { BarChart2, DollarSign, FileText, LogOut, Package, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 const FULL_NAV = [
-  { to: '/overview',       label: 'Visão Geral', icon: BarChart2 },
+  { to: '/overview',       label: 'Visão',       icon: BarChart2 },
   { to: '/finance',        label: 'Caixa',       icon: DollarSign },
+  { to: '/financeiro',     label: 'Financeiro',  icon: TrendingUp },
   { to: '/packages',       label: 'Encomendas',  icon: Package },
   { to: '/service-orders', label: 'Ordens',      icon: FileText },
   { to: '/residents',      label: 'Moradores',   icon: Users },
@@ -79,21 +80,21 @@ export function AppShell() {
       </main>
 
       {/* Bottom nav — respects iOS home indicator */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around z-40 overflow-x-auto"
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
-        <div className="flex justify-around w-full py-2">
+        <div className="flex overflow-x-auto scrollbar-none py-1.5 px-1 gap-0.5">
           {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
-                  isActive ? 'text-[#26619c]' : 'text-gray-500 hover:text-gray-700'
+                `flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg text-[10px] font-medium transition shrink-0 min-w-[52px] ${
+                  isActive ? 'text-[#26619c] bg-blue-50' : 'text-gray-500 hover:text-gray-700'
                 }`
               }
             >
               <Icon className="w-5 h-5" />
-              <span className="leading-none">{label}</span>
+              <span className="leading-none whitespace-nowrap">{label}</span>
             </NavLink>
           ))}
         </div>

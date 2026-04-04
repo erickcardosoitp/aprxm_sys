@@ -151,6 +151,16 @@ export interface Package {
   resident_cep?: string
   resident_phone?: string
   resident_type?: string
+  photo_urls?: Array<{ url: string; label: string; taken_at: string }>
+  notes?: string
+  object_type?: string
+  sender_name?: string
+  delivered_to_name?: string
+  delivered_to_cpf?: string
+  deliverer_name?: string
+  signature_url?: string
+  proof_of_residence_url?: string
+  deliverer_signature_url?: string
 }
 
 export interface PackageEvent {

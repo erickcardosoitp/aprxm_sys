@@ -25,6 +25,8 @@ class ReceivePackageRequest(BaseModel):
     object_type: str | None = None
     photo_urls: list[dict] = []
     notes: str | None = None
+    deliverer_name: str | None = None
+    deliverer_signature_url: str | None = None
 
 
 class AddPackageEventRequest(BaseModel):
@@ -40,10 +42,9 @@ class DeliverPackageRequest(BaseModel):
     delivered_to_cpf: str | None = None
     delivered_to_resident_id: UUID | None = None
     # anti-fraud
-    deliverer_name: str
-    deliverer_signature_url: str
-    proof_of_residence_verified: bool = False
+    proof_of_residence_url: str
     recipient_id_photo_url: str | None = None
+    delivery_person_name: str | None = None
 
 
 @router.post("", summary="Registrar recebimento de encomenda")
@@ -64,6 +65,8 @@ async def receive_package(
         tracking_code=body.tracking_code,
         object_type=body.object_type,
         notes=body.notes,
+        deliverer_name=body.deliverer_name,
+        deliverer_signature_url=body.deliverer_signature_url,
     )
     return {"id": str(pkg.id), "status": pkg.status, "received_at": str(pkg.received_at)}
 
@@ -84,10 +87,9 @@ async def deliver_package(
         signature_url=body.signature_url,
         delivered_to_cpf=body.delivered_to_cpf,
         delivered_to_resident_id=body.delivered_to_resident_id,
-        deliverer_name=body.deliverer_name,
-        deliverer_signature_url=body.deliverer_signature_url,
-        proof_of_residence_verified=body.proof_of_residence_verified,
+        proof_of_residence_url=body.proof_of_residence_url,
         recipient_id_photo_url=body.recipient_id_photo_url,
+        delivery_person_name=body.delivery_person_name,
     )
     return {
         "id": str(pkg.id),
@@ -209,6 +211,17 @@ async def list_packages(
             "resident_type": r.type if r else None,
             "resident_cep": rcep,
             "resident_phone": r.phone_primary if r else None,
+            "photo_urls": p.photo_urls or [],
+            "notes": p.notes,
+            "object_type": p.object_type,
+            "sender_name": p.sender_name,
+            "delivered_to_name": p.delivered_to_name,
+            "delivered_to_cpf": p.delivered_to_cpf,
+            "deliverer_name": p.deliverer_name,
+            "signature_url": p.signature_url,
+            "proof_of_residence_url": getattr(p, 'proof_of_residence_url', None),
+            "deliverer_signature_url": p.deliverer_signature_url,
+            "delivered_at": str(p.delivered_at) if p.delivered_at else None,
         })
     return out
 
