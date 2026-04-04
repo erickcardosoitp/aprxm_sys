@@ -75,26 +75,26 @@ export function AppShell() {
       </header>
 
       {/* Content — bottom padding accounts for nav + safe area */}
-      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom))' }}>
+      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom))' }}>
         <Outlet />
       </main>
 
       {/* Bottom nav — respects iOS home indicator */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
-        <div className="flex overflow-x-auto scrollbar-none py-1.5 px-1 gap-0.5">
+        <div className="flex overflow-x-auto scrollbar-none px-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
           {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg text-[10px] font-medium transition shrink-0 min-w-[52px] ${
-                  isActive ? 'text-[#26619c] bg-blue-50' : 'text-gray-500 hover:text-gray-700'
+                `flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl text-xs font-medium transition shrink-0 min-w-[60px] min-h-[52px] ${
+                  isActive ? 'text-[#26619c] bg-blue-50' : 'text-gray-500 active:bg-gray-100'
                 }`
               }
             >
-              <Icon className="w-5 h-5" />
-              <span className="leading-none whitespace-nowrap">{label}</span>
+              <Icon className="w-6 h-6" />
+              <span className="leading-none whitespace-nowrap text-[11px]">{label}</span>
             </NavLink>
           ))}
         </div>

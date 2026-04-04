@@ -212,7 +212,7 @@ async def get_cadastros(
 @router.put("/cadastros", summary="Salvar cadastros básicos")
 async def save_cadastros(
     body: dict,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_conferente),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     await session.execute(
