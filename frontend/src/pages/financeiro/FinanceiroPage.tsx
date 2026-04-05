@@ -80,13 +80,27 @@ export default function FinanceiroPage() {
     if (tab === 'relatorios') loadSessions()
   }, [tab, period])
 
+  const periodStart = (): Date => {
+    const now = new Date()
+    if (period === 'week') return new Date(now.getTime() - 7 * 24 * 3600 * 1000)
+    if (period === 'year') return new Date(now.getFullYear(), 0, 1)
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  }
+
+  const filterByPeriod = (txs: Tx[]) => {
+    const from = periodStart()
+    return txs.filter(t => new Date(t.transaction_at) >= from)
+  }
+
+  const PERIOD_LABEL: Record<string, string> = { week: 'Últimos 7 dias', month: 'Este mês', year: 'Este ano' }
+
   const loadSummary = async () => {
     setLoadingSummary(true)
     try {
       const res = await api.get<FinanceSummary>('/financeiro/summary', { params: { period } })
       setSummary(res.data)
-    } catch {
-      // Silently fail if endpoint not ready
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao carregar resumo.')
     } finally {
       setLoadingSummary(false)
     }
@@ -224,19 +238,30 @@ export default function FinanceiroPage() {
 
       {/* Receitas tab */}
       {tab === 'receitas' && (() => {
-        const rows = transactions.filter(t => t.type === 'income')
+        const rows = filterByPeriod(transactions.filter(t => t.type === 'income'))
         const total = rows.reduce((s, t) => s + parseFloat(t.amount), 0)
         return (
           <div className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              {(['week', 'month', 'year'] as const).map(p => (
+                <button key={p} onClick={() => setPeriod(p)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${period === p ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600'}`}>
+                  {p === 'week' ? 'Semana' : p === 'month' ? 'Mês' : 'Ano'}
+                </button>
+              ))}
+            </div>
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">
-              <p className="text-sm font-medium text-green-700">Total de entradas</p>
+              <div>
+                <p className="text-xs text-gray-500">{PERIOD_LABEL[period]}</p>
+                <p className="text-sm font-medium text-green-700">Total de entradas</p>
+              </div>
               <p className="text-xl font-bold text-green-700">{fmt(total)}</p>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               {loadingTx ? (
                 <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
               ) : rows.length === 0 ? (
-                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma receita encontrada.</div>
+                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma receita no período.</div>
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {rows.map(t => (
@@ -257,28 +282,41 @@ export default function FinanceiroPage() {
 
       {/* Despesas tab */}
       {tab === 'despesas' && (() => {
-        const rows = transactions.filter(t => t.type !== 'income')
+        const rows = filterByPeriod(transactions.filter(t => t.type !== 'income'))
         const total = rows.reduce((s, t) => s + parseFloat(t.amount), 0)
         return (
           <div className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              {(['week', 'month', 'year'] as const).map(p => (
+                <button key={p} onClick={() => setPeriod(p)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${period === p ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600'}`}>
+                  {p === 'week' ? 'Semana' : p === 'month' ? 'Mês' : 'Ano'}
+                </button>
+              ))}
+            </div>
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
-              <p className="text-sm font-medium text-red-700">Total de saídas</p>
+              <div>
+                <p className="text-xs text-gray-500">{PERIOD_LABEL[period]}</p>
+                <p className="text-sm font-medium text-red-700">Total de saídas</p>
+              </div>
               <p className="text-xl font-bold text-red-700">{fmt(total)}</p>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               {loadingTx ? (
                 <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
               ) : rows.length === 0 ? (
-                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma despesa encontrada.</div>
+                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma despesa no período.</div>
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {rows.map(t => (
                     <li key={t.id} className="px-4 py-3 flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate">
-                          {t.is_sangria ? '🔒 Sangria — ' : ''}{t.description}
+                          {t.is_sangria ? '🔒 ' : ''}{t.description}
                         </p>
-                        <p className="text-xs text-gray-400">{fmtDate(t.transaction_at)}</p>
+                        <p className="text-xs text-gray-400">
+                          {t.is_sangria ? 'Sangria · ' : ''}{fmtDate(t.transaction_at)}
+                        </p>
                       </div>
                       <span className="text-sm font-bold text-red-600 shrink-0">{fmt(t.amount)}</span>
                     </li>
@@ -293,22 +331,29 @@ export default function FinanceiroPage() {
       {/* Relatórios tab */}
       {tab === 'relatorios' && (() => {
         const closed = sessions.filter(s => s.status === 'closed')
-        const totalIncome = closed.reduce((sum, s) => {
-          const open = parseFloat(s.opening_balance)
-          const close = parseFloat(s.closing_balance ?? '0')
-          return sum + Math.max(0, close - open)
-        }, 0)
         const totalDiff = closed.reduce((sum, s) => sum + parseFloat(s.difference ?? '0'), 0)
+        const totalIncome = closed.reduce((sum, s) => {
+          const exp = parseFloat(s.expected_balance ?? s.closing_balance ?? '0')
+          const open = parseFloat(s.opening_balance)
+          return sum + Math.max(0, exp - open)
+        }, 0)
         return (
           <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                <p className="text-xs text-gray-500 mb-1">Sessões fechadas</p>
-                <p className="text-2xl font-bold text-gray-800">{closed.length}</p>
+                <p className="text-xs text-gray-500 mb-1">Sessões</p>
+                <p className="text-2xl font-bold text-gray-800">{sessions.length}</p>
+                <p className="text-xs text-gray-400">{closed.length} fechadas</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                <p className="text-xs text-gray-500 mb-1">Mov. líquida</p>
+                <p className="text-xl font-bold text-[#26619c]">{fmt(totalIncome)}</p>
               </div>
               <div className={`rounded-xl border shadow-sm p-4 ${totalDiff >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <p className="text-xs text-gray-500 mb-1">Diferença acumulada</p>
-                <p className={`text-2xl font-bold ${totalDiff >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmt(totalDiff)}</p>
+                <p className="text-xs text-gray-500 mb-1">Diferença</p>
+                <p className={`text-xl font-bold ${totalDiff >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                  {totalDiff >= 0 ? '+' : ''}{fmt(totalDiff)}
+                </p>
               </div>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -331,7 +376,7 @@ export default function FinanceiroPage() {
                             {s.status === 'open' ? 'Aberta' : 'Fechada'}
                           </span>
                         </div>
-                        <div className="flex gap-4 text-xs text-gray-500">
+                        <div className="flex flex-wrap gap-3 text-xs text-gray-500">
                           <span>Abertura: <strong>{fmt(s.opening_balance)}</strong></span>
                           {s.closing_balance && <span>Fechamento: <strong>{fmt(s.closing_balance)}</strong></span>}
                           {diff !== null && (
