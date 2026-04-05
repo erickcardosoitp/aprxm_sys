@@ -34,6 +34,7 @@ export interface User {
 // --- Finance ---
 
 export type TransactionType = 'income' | 'expense' | 'sangria'
+export type IncomeSubtype = 'proof_of_residence' | 'delivery_fee' | 'mensalidade' | 'other'
 export type CashSessionStatus = 'open' | 'closed'
 
 export interface CashSession {
@@ -51,6 +52,7 @@ export interface CashSession {
 export interface Transaction {
   id: string
   type: TransactionType
+  income_subtype?: IncomeSubtype
   amount: string
   description: string
   transaction_at: string

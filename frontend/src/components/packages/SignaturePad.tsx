@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import ReactSignatureCanvas from 'react-signature-canvas'
-import { Check, RotateCcw } from 'lucide-react'
+import { Check, RotateCcw, PenLine } from 'lucide-react'
 
 interface SignaturePadProps {
   label?: string
@@ -15,8 +15,9 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
   const [saved, setSaved] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [isEmpty, setIsEmpty] = useState(true)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
 
-  // Resize canvas to match container pixel width
   useEffect(() => {
     const resize = () => {
       const canvas = canvasRef.current?.getCanvas()
@@ -34,7 +35,7 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
     resize()
     window.addEventListener('resize', resize)
     return () => window.removeEventListener('resize', resize)
-  }, [])
+  }, [editing])
 
   const handleSave = async () => {
     const pad = canvasRef.current
@@ -48,7 +49,9 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
         finalUrl = await onUpload(dataUrl)
       }
       onSave(finalUrl)
+      setPreviewUrl(finalUrl)
       setSaved(true)
+      setEditing(false)
     } finally {
       setUploading(false)
     }
@@ -58,7 +61,49 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
     canvasRef.current?.clear()
     setSaved(false)
     setIsEmpty(true)
+    setPreviewUrl(null)
+    setEditing(false)
     onClear?.()
+  }
+
+  // If saved and not editing, show preview
+  if (saved && previewUrl && !editing) {
+    return (
+      <div className="flex flex-col gap-2">
+        {label && <p className="text-xs font-medium text-gray-600">{label}</p>}
+        <div className="relative border-2 border-green-400 rounded-lg overflow-hidden bg-white">
+          <img
+            src={previewUrl}
+            alt="Assinatura"
+            className="w-full h-[100px] object-contain bg-white"
+          />
+          <div className="absolute top-2 right-2 bg-green-500 text-white rounded-full p-0.5">
+            <Check className="w-3 h-3" />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleClear}
+            className="flex items-center justify-center gap-1.5 flex-1 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Limpar
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="flex items-center justify-center gap-1.5 flex-1 py-2 text-sm rounded-lg border border-[#26619c] text-[#26619c] hover:bg-blue-50 transition"
+          >
+            <PenLine className="w-3.5 h-3.5" />
+            Refazer
+          </button>
+        </div>
+        <p className="text-xs text-green-600 flex items-center gap-1">
+          <Check className="w-3 h-3" /> Assinatura confirmada
+        </p>
+      </div>
+    )
   }
 
   return (
@@ -85,11 +130,6 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
             <p className="text-xs text-gray-400">Assine aqui</p>
           </div>
         )}
-        {saved && (
-          <div className="absolute top-2 right-2 bg-green-500 text-white rounded-full p-0.5">
-            <Check className="w-3 h-3" />
-          </div>
-        )}
       </div>
 
       <div className="flex gap-2">
@@ -108,9 +148,15 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
           className="flex items-center justify-center gap-1.5 flex-1 py-2.5 text-sm rounded-lg bg-[#26619c] hover:bg-[#1a4f87] text-white transition disabled:opacity-40 active:bg-[#1a4f87]"
         >
           <Check className="w-3.5 h-3.5" />
-          {uploading ? 'Salvando…' : saved ? 'Salvo ✓' : 'Confirmar'}
+          {uploading ? 'Salvando…' : 'Confirmar'}
         </button>
       </div>
+
+      {!saved && !isEmpty && (
+        <p className="text-xs text-amber-600 flex items-center gap-1">
+          ⚠ Clique em "Confirmar" para salvar a assinatura
+        </p>
+      )}
     </div>
   )
 }

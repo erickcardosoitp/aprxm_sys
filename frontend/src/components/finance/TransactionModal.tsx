@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, ChevronLeft, ChevronRight, Search } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { financeService } from '../../services/finance'
@@ -11,7 +11,25 @@ interface Props {
   onSuccess: () => void
 }
 
-const STEP_TITLES = ['Tipo & Responsável', 'Dados da Transação', 'Confirmação']
+type IncomeSubtype = 'proof_of_residence' | 'delivery_fee' | 'mensalidade' | 'other'
+
+interface PaymentHistory {
+  total_payments: number
+  last_payment_at: string | null
+  current_month_paid: boolean
+  is_delinquent: boolean
+  monthly_payment_day: number | null
+  payments: Array<{ id: string; amount: string; description: string; transaction_at: string }>
+}
+
+const INCOME_SUBTYPES: { value: IncomeSubtype; label: string; icon: string }[] = [
+  { value: 'proof_of_residence', label: 'Comprovante de Residência', icon: '🏠' },
+  { value: 'delivery_fee', label: 'Taxa de Entrega', icon: '📦' },
+  { value: 'mensalidade', label: 'Mensalidade', icon: '💳' },
+  { value: 'other', label: 'Outros', icon: '💰' },
+]
+
+const STEP_TITLES = ['Tipo', 'Dados', 'Confirmação']
 
 export function TransactionModal({ onClose, onSuccess }: Props) {
   const [step, setStep] = useState(0)
@@ -19,6 +37,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
   // Step 1
   const [txType, setTxType] = useState<'income' | 'expense'>('income')
+  const [incomeSubtype, setIncomeSubtype] = useState<IncomeSubtype>('other')
 
   // Step 2 — shared
   const [categories, setCategories] = useState<TransactionCategory[]>([])
@@ -32,11 +51,12 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [cpfQuery, setCpfQuery] = useState('')
   const [cpfLoading, setCpfLoading] = useState(false)
   const [resident, setResident] = useState<Resident | null>(null)
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistory | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   // Step 2 — expense specific
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState('')
 
-  // Load categories + payment methods
   useEffect(() => {
     const load = async () => {
       try {
@@ -54,6 +74,15 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     load()
   }, [txType])
 
+  // Auto-fill description based on income subtype
+  useEffect(() => {
+    if (txType !== 'income') return
+    const sub = INCOME_SUBTYPES.find(s => s.value === incomeSubtype)
+    if (sub && incomeSubtype !== 'other') {
+      setDescription(sub.label + (resident ? ` — ${resident.full_name}` : ''))
+    }
+  }, [incomeSubtype, resident, txType])
+
   const lookupCpf = async () => {
     const cpf = cpfQuery.replace(/\D/g, '')
     if (cpf.length !== 11) { toast.error('CPF inválido.'); return }
@@ -61,20 +90,41 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     try {
       const res = await api.get<Resident>(`/residents/cpf/${cpfQuery}`)
       setResident(res.data)
-      if (!description) setDescription(`${res.data.full_name}`)
     } catch {
       toast.error('Morador não encontrado para este CPF.')
       setResident(null)
+      setPaymentHistory(null)
     } finally {
       setCpfLoading(false)
     }
   }
+
+  const loadPaymentHistory = async (residentId: string) => {
+    setHistoryLoading(true)
+    try {
+      const res = await api.get<PaymentHistory>(`/finance/residents/${residentId}/payment-history`)
+      setPaymentHistory(res.data)
+    } catch {
+      setPaymentHistory(null)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (resident && incomeSubtype === 'mensalidade') {
+      loadPaymentHistory(resident.id)
+    } else {
+      setPaymentHistory(null)
+    }
+  }, [resident, incomeSubtype])
 
   const canProceed = () => {
     if (step === 0) return true
     if (step === 1) {
       if (!amount || parseFloat(amount) <= 0) return false
       if (!description.trim()) return false
+      if (txType === 'income' && incomeSubtype === 'mensalidade' && !resident) return false
       return true
     }
     return true
@@ -88,6 +138,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         type: txType,
         amount: parseFloat(amount),
         description: description.trim(),
+        income_subtype: txType === 'income' ? incomeSubtype : undefined,
         category_id: categoryId || undefined,
         payment_method_id: paymentMethodId || undefined,
         resident_id: resident?.id || undefined,
@@ -118,7 +169,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
               step === i ? 'text-[#26619c] border-[#26619c]' :
               i < step ? 'text-green-600 border-green-400' : 'text-gray-400 border-transparent'
             }`}>
-              {i + 1}. {title.split(' ')[0]}
+              {i + 1}. {title}
             </div>
           ))}
         </div>
@@ -129,7 +180,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           {/* ── Step 1: Tipo ── */}
           {step === 0 && (
             <>
-              <p className="text-sm text-gray-600 font-medium">Tipo de transação</p>
+              <p className="text-sm text-gray-600 font-medium">Direção</p>
               <div className="grid grid-cols-2 gap-3">
                 {(['income', 'expense'] as const).map((t) => (
                   <button key={t} type="button" onClick={() => setTxType(t)}
@@ -145,16 +196,38 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                   </button>
                 ))}
               </div>
+
+              {/* Income sub-type */}
+              {txType === 'income' && (
+                <>
+                  <p className="text-sm text-gray-600 font-medium mt-1">Tipo de entrada <span className="text-red-500">*</span></p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {INCOME_SUBTYPES.map(({ value, label, icon }) => (
+                      <button key={value} type="button" onClick={() => setIncomeSubtype(value)}
+                        className={`py-3 px-3 rounded-xl text-xs font-semibold border-2 transition flex items-center gap-2 ${
+                          incomeSubtype === value
+                            ? 'border-[#26619c] bg-blue-50 text-[#26619c]'
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                        }`}>
+                        <span>{icon}</span>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
 
           {/* ── Step 2: Dados ── */}
           {step === 1 && (
             <>
-              {/* CPF lookup (income only) */}
+              {/* Resident lookup (income only) */}
               {txType === 'income' && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">CPF do morador (opcional)</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    CPF do morador {incomeSubtype === 'mensalidade' ? <span className="text-red-500">*</span> : '(opcional)'}
+                  </label>
                   <div className="flex gap-2">
                     <input value={cpfQuery} onChange={(e) => setCpfQuery(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && lookupCpf()}
@@ -176,6 +249,41 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                           {resident.status === 'active' ? 'Ativo' : resident.status === 'suspended' ? 'Suspenso' : 'Inativo'}
                         </span>
                       </p>
+                    </div>
+                  )}
+
+                  {/* Mensalidade payment history */}
+                  {incomeSubtype === 'mensalidade' && resident && (
+                    <div className="mt-2">
+                      {historyLoading ? (
+                        <p className="text-xs text-gray-400">Consultando histórico…</p>
+                      ) : paymentHistory && (
+                        <div className={`rounded-lg px-3 py-2.5 border text-xs ${
+                          paymentHistory.is_delinquent
+                            ? 'bg-red-50 border-red-200'
+                            : paymentHistory.current_month_paid
+                              ? 'bg-green-50 border-green-200'
+                              : 'bg-yellow-50 border-yellow-200'
+                        }`}>
+                          <div className="flex items-center gap-1.5 font-semibold mb-1">
+                            {paymentHistory.is_delinquent
+                              ? <><AlertCircle className="w-3.5 h-3.5 text-red-500" /><span className="text-red-700">Inadimplente</span></>
+                              : paymentHistory.current_month_paid
+                                ? <><CheckCircle2 className="w-3.5 h-3.5 text-green-500" /><span className="text-green-700">Adimplente — mês atual pago</span></>
+                                : <><AlertCircle className="w-3.5 h-3.5 text-yellow-500" /><span className="text-yellow-700">Mês atual em aberto</span></>
+                            }
+                          </div>
+                          <p className="text-gray-500">
+                            {paymentHistory.total_payments} pagamento(s) registrado(s)
+                            {paymentHistory.last_payment_at && (
+                              <> · Último: {new Date(paymentHistory.last_payment_at).toLocaleDateString('pt-BR')}</>
+                            )}
+                            {paymentHistory.monthly_payment_day && (
+                              <> · Vencimento: dia {paymentHistory.monthly_payment_day}</>
+                            )}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -252,7 +360,12 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                   {txType === 'income' ? '+' : '-'} R$ {parseFloat(amount || '0').toFixed(2)}
                 </p>
                 <p className="text-sm text-gray-700 mt-1">{description}</p>
-                {resident && <p className="text-xs text-gray-500 mt-1">Morador: {resident.full_name}</p>}
+                {txType === 'income' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Tipo: {INCOME_SUBTYPES.find(s => s.value === incomeSubtype)?.label}
+                  </p>
+                )}
+                {resident && <p className="text-xs text-gray-500">Morador: {resident.full_name}</p>}
                 {categoryId && <p className="text-xs text-gray-500">Categoria: {categories.find(c => c.id === categoryId)?.name}</p>}
                 {paymentMethodId && <p className="text-xs text-gray-500">Pagamento: {paymentMethods.find(m => m.id === paymentMethodId)?.name}</p>}
               </div>

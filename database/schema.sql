@@ -36,6 +36,19 @@ CREATE TYPE transaction_type AS ENUM (
     'sangria'       -- sangria de caixa
 );
 
+CREATE TYPE income_subtype AS ENUM (
+    'proof_of_residence',   -- comprovante de residência
+    'delivery_fee',         -- taxa de entrega
+    'mensalidade',          -- mensalidade do associado
+    'other'                 -- outros
+);
+
+CREATE TYPE mensalidade_status AS ENUM (
+    'pending',
+    'paid',
+    'overdue'
+);
+
 CREATE TYPE cash_session_status AS ENUM (
     'open',
     'closed'
@@ -255,9 +268,17 @@ CREATE TABLE transactions (
     sangria_reason      TEXT,
     sangria_destination VARCHAR(255),
     receipt_photo_url   TEXT,               -- foto do recibo (obrigatório em sangria)
+    income_subtype      income_subtype,     -- subtipo de entrada (mensalidade, taxa, etc.)
 
     -- package delivery fee link
     package_id          UUID,               -- FK added below after packages table
+
+    -- reversal (estorno)
+    is_reversal         BOOLEAN             NOT NULL DEFAULT FALSE,
+    reversal_of_id      UUID                REFERENCES transactions (id) ON DELETE SET NULL,
+    reversal_reason     TEXT,
+    reversed_by         UUID                REFERENCES users (id),
+    reversed_at         TIMESTAMPTZ,
 
     created_by          UUID                NOT NULL REFERENCES users (id),
     transaction_at      TIMESTAMPTZ         NOT NULL DEFAULT NOW(),
@@ -268,6 +289,11 @@ CREATE TABLE transactions (
         (is_sangria = FALSE)
         OR
         (is_sangria = TRUE AND type = 'sangria' AND sangria_reason IS NOT NULL)
+    ),
+    CONSTRAINT chk_reversal CHECK (
+        (is_reversal = FALSE)
+        OR
+        (is_reversal = TRUE AND reversal_of_id IS NOT NULL AND reversal_reason IS NOT NULL)
     )
 );
 
@@ -278,6 +304,36 @@ CREATE INDEX idx_tx_resident       ON transactions (resident_id);
 CREATE INDEX idx_tx_type           ON transactions (type);
 CREATE INDEX idx_tx_at             ON transactions (transaction_at DESC);
 CREATE INDEX idx_tx_sangria        ON transactions (is_sangria) WHERE is_sangria = TRUE;
+
+-- ============================================================
+-- MENSALIDADES  (Contas a Receber)
+-- ============================================================
+
+CREATE TABLE mensalidades (
+    id                  UUID                PRIMARY KEY DEFAULT gen_random_uuid(),
+    association_id      UUID                NOT NULL REFERENCES associations (id),
+    resident_id         UUID                NOT NULL REFERENCES residents (id) ON DELETE CASCADE,
+
+    reference_month     VARCHAR(7)          NOT NULL,           -- "YYYY-MM"
+    due_date            DATE                NOT NULL,
+    amount              NUMERIC(10, 2)      NOT NULL CHECK (amount > 0),
+    status              mensalidade_status  NOT NULL DEFAULT 'pending',
+
+    paid_at             TIMESTAMPTZ,
+    transaction_id      UUID                REFERENCES transactions (id) ON DELETE SET NULL,
+    notes               TEXT,
+
+    created_by          UUID                NOT NULL REFERENCES users (id),
+    created_at          TIMESTAMPTZ         NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ         NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_mensalidade_period UNIQUE (association_id, resident_id, reference_month)
+);
+
+CREATE INDEX idx_mensalidade_assoc    ON mensalidades (association_id);
+CREATE INDEX idx_mensalidade_resident ON mensalidades (resident_id);
+CREATE INDEX idx_mensalidade_status   ON mensalidades (status);
+CREATE INDEX idx_mensalidade_due      ON mensalidades (due_date);
 
 -- ============================================================
 -- PACKAGES  (Encomendas / Correspondências)

@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from app.models.bank_statement import BankStatement, Reconciliation
 from app.models.finance import Transaction, TransactionType
+from app.services.mensalidade_service import MensalidadeService
 
 
 def normalize_name(name: str) -> str:
@@ -234,6 +235,15 @@ class ReconciliationService:
                 stmt.conciliado = True
                 self._session.add(stmt)
                 item["status"] = "automatico"
+
+                # Dar baixa na mensalidade mais antiga pendente do morador (CPF match)
+                if stmt.cpf and best_tx:
+                    await self._pay_pending_mensalidade(
+                        association_id=association_id,
+                        cpf=stmt.cpf,
+                        transaction_id=best_tx[0],
+                    )
+
                 automatico.append(item)
             elif best_score >= 70:
                 # Multiple or single match suggestion
@@ -262,3 +272,23 @@ class ReconciliationService:
             "sugestao": sugestao,
             "pendente": pendente,
         }
+
+    async def _pay_pending_mensalidade(
+        self,
+        association_id: UUID,
+        cpf: str,
+        transaction_id: UUID,
+    ) -> None:
+        from app.models.resident import Resident
+        res_q = await self._session.execute(
+            text("SELECT id FROM residents WHERE association_id = :aid AND cpf LIKE :cpf LIMIT 1"),
+            {"aid": str(association_id), "cpf": f"%{cpf}%"},
+        )
+        row = res_q.fetchone()
+        if not row:
+            return
+        resident_id = row[0]
+        svc = MensalidadeService(self._session)
+        m = await svc.find_pending_for_resident(association_id, resident_id)
+        if m:
+            await svc.pay(m.id, association_id, transaction_id)

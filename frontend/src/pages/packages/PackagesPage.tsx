@@ -11,6 +11,7 @@ import { packageService } from '../../services/packages'
 import { maskCpf } from '../../utils'
 import { uploadService } from '../../services/upload'
 import api from '../../services/api'
+import { useAuthStore } from '../../store/authStore'
 import type { Package, Resident } from '../../types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -179,7 +180,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
           {pkg.status === 'delivered' && (
             <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
               <p className="text-xs font-semibold text-green-700 mb-1.5">Informações de Entrega</p>
-              <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="grid grid-cols-2 gap-2 text-sm mb-2">
                 {pkg.delivered_to_name && (
                   <div>
                     <p className="text-xs text-gray-500">Recebido por</p>
@@ -204,16 +205,57 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
                   </div>
                 )}
               </div>
+
+              {/* Signatures */}
+              <div className="flex gap-3 mt-1">
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                    Assinatura do morador
+                    {pkg.signature_url
+                      ? <span className="text-green-600 font-medium">✓ Assinado</span>
+                      : <span className="text-gray-400">Não assinado</span>}
+                  </p>
+                  {pkg.signature_url && (
+                    <img
+                      src={pkg.signature_url}
+                      alt="Assinatura do morador"
+                      className="w-full h-16 object-contain bg-white border border-green-200 rounded"
+                    />
+                  )}
+                </div>
+                {pkg.deliverer_signature_url && (
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                      Assinatura do entregador
+                      <span className="text-green-600 font-medium">✓ Assinado</span>
+                    </p>
+                    <img
+                      src={pkg.deliverer_signature_url}
+                      alt="Assinatura do entregador"
+                      className="w-full h-16 object-contain bg-white border border-green-200 rounded"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {(pkg.status === 'received' || pkg.status === 'notified') && (
             <button
-              onClick={onDeliverClick}
+              onClick={() => { onDeliverClick() }}
               className="w-full bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-medium transition"
             >
               Entregar Encomenda
             </button>
+          )}
+
+          {/* Signature status badges for non-delivered */}
+          {pkg.status !== 'delivered' && (
+            <div className="flex gap-2">
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${pkg.deliverer_signature_url ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                {pkg.deliverer_signature_url ? '✓ Entregador assinado' : 'Entregador não assinado'}
+              </span>
+            </div>
           )}
 
           {pkg.resident_phone && (pkg.status === 'received' || pkg.status === 'notified') && (
@@ -310,6 +352,7 @@ function EsteiraStepper({ status }: { status: string }) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
+  const { fullName } = useAuthStore()
   const [packages, setPackages] = useState<Package[]>([])
   const [showReceive, setShowReceive] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
@@ -339,7 +382,6 @@ export default function PackagesPage() {
 
   // Delivery flow
   const [recipientName, setRecipientName] = useState('')
-  const [recipientCpf, setRecipientCpf] = useState('')
   const [recipientSig, setRecipientSig] = useState('')
   const [proofResidenceUrl, setProofResidenceUrl] = useState('')
   const [recipientIdPhoto, setRecipientIdPhoto] = useState('')
@@ -446,11 +488,10 @@ export default function PackagesPage() {
       const res = await packageService.deliver(deliveryTarget.id, {
         delivered_to_name: recipientName,
         signature_url: recipientSig,
-        delivered_to_cpf: recipientCpf || undefined,
         delivered_to_resident_id: deliveryTarget.resident_id,
         proof_of_residence_url: proofResidenceUrl,
         recipient_id_photo_url: recipientIdPhoto || undefined,
-        delivery_person_name: deliveryPersonName || undefined,
+        delivery_person_name: deliveryPersonName || fullName || undefined,
       })
       const pkg = res.data as any
       toast.success(pkg.has_delivery_fee
@@ -467,7 +508,7 @@ export default function PackagesPage() {
   }
 
   const resetDelivery = () => {
-    setRecipientName(''); setRecipientCpf(''); setRecipientSig('')
+    setRecipientName(''); setRecipientSig('')
     setProofResidenceUrl(''); setRecipientIdPhoto(''); setDeliveryPersonName('')
   }
 
@@ -496,7 +537,7 @@ export default function PackagesPage() {
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
           {(pkg.status === 'received' || pkg.status === 'notified') && (
             <button
-              onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? '') }}
+              onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? ''); setDeliveryPersonName(fullName ?? '') }}
               className="text-xs text-[#26619c] hover:underline"
             >
               Entregar
@@ -965,11 +1006,7 @@ export default function PackagesPage() {
                     <input value={recipientName} onChange={e => setRecipientName(e.target.value)} className={inputCls} placeholder="Nome de quem está recebendo" />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-600 mb-1">CPF</label>
-                    <input value={recipientCpf} onChange={e => setRecipientCpf(e.target.value)} className={inputCls} placeholder="000.000.000-00" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">Nome do funcionário que está entregando</label>
+                    <label className="block text-xs text-gray-600 mb-1">Funcionário que está entregando</label>
                     <input value={deliveryPersonName} onChange={e => setDeliveryPersonName(e.target.value)} className={inputCls} placeholder="Nome do funcionário da portaria" />
                   </div>
                   <div>

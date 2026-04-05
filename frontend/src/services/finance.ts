@@ -23,6 +23,7 @@ export const financeService = {
     type: string
     amount: number
     description: string
+    income_subtype?: string
     category_id?: string
     payment_method_id?: string
     resident_id?: string

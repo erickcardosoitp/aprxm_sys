@@ -26,7 +26,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def init_db() -> None:
     # Import all models so SQLAlchemy metadata is fully populated before create_all
-    from app.models import association, user, resident, finance, package, service_order, bank_statement, settings  # noqa: F401
+    from app.models import association, user, resident, finance, package, service_order, bank_statement, settings, mensalidade  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
