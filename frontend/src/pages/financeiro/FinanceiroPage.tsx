@@ -13,6 +13,26 @@ interface FinanceSummary {
   period_label: string
 }
 
+interface Tx {
+  id: string
+  type: string
+  amount: string
+  description: string
+  transaction_at: string
+  is_sangria: boolean
+}
+
+interface Session {
+  id: string
+  status: string
+  opening_balance: string
+  closing_balance: string | null
+  expected_balance: string | null
+  difference: string | null
+  opened_at: string
+  closed_at: string | null
+}
+
 interface ReconciliationItem {
   id: string
   bank: string
@@ -25,11 +45,23 @@ interface ReconciliationItem {
   sale_description?: string
 }
 
+const fmt = (v: string | number) =>
+  `R$ ${parseFloat(String(v)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const fmtDate = (s: string) =>
+  new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+
 export default function FinanceiroPage() {
   const [tab, setTab] = useState<Tab>('dashboard')
   const [summary, setSummary] = useState<FinanceSummary | null>(null)
   const [loadingSummary, setLoadingSummary] = useState(false)
-  const [period, setPeriod] = useState('month') // 'month' | 'week' | 'year'
+  const [period, setPeriod] = useState('month')
+
+  const [transactions, setTransactions] = useState<Tx[]>([])
+  const [loadingTx, setLoadingTx] = useState(false)
+
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [loadingSessions, setLoadingSessions] = useState(false)
 
   // Conciliation state
   const [bankFile, setBankFile] = useState<File | null>(null)
@@ -44,6 +76,8 @@ export default function FinanceiroPage() {
 
   useEffect(() => {
     if (tab === 'dashboard') loadSummary()
+    if (tab === 'receitas' || tab === 'despesas') loadTransactions()
+    if (tab === 'relatorios') loadSessions()
   }, [tab, period])
 
   const loadSummary = async () => {
@@ -55,6 +89,30 @@ export default function FinanceiroPage() {
       // Silently fail if endpoint not ready
     } finally {
       setLoadingSummary(false)
+    }
+  }
+
+  const loadTransactions = async () => {
+    setLoadingTx(true)
+    try {
+      const res = await api.get<Tx[]>('/finance/transactions')
+      setTransactions(res.data)
+    } catch {
+      setTransactions([])
+    } finally {
+      setLoadingTx(false)
+    }
+  }
+
+  const loadSessions = async () => {
+    setLoadingSessions(true)
+    try {
+      const res = await api.get<Session[]>('/finance/sessions')
+      setSessions(res.data)
+    } catch {
+      setSessions([])
+    } finally {
+      setLoadingSessions(false)
     }
   }
 
@@ -164,19 +222,134 @@ export default function FinanceiroPage() {
         </div>
       )}
 
-      {/* Receitas / Despesas tabs — placeholder for now */}
-      {(tab === 'receitas' || tab === 'despesas') && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-gray-400 text-sm">
-          Relatório de {tab === 'receitas' ? 'receitas' : 'despesas'} em desenvolvimento.
-        </div>
-      )}
+      {/* Receitas tab */}
+      {tab === 'receitas' && (() => {
+        const rows = transactions.filter(t => t.type === 'income')
+        const total = rows.reduce((s, t) => s + parseFloat(t.amount), 0)
+        return (
+          <div className="flex flex-col gap-3">
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">
+              <p className="text-sm font-medium text-green-700">Total de entradas</p>
+              <p className="text-xl font-bold text-green-700">{fmt(total)}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              {loadingTx ? (
+                <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
+              ) : rows.length === 0 ? (
+                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma receita encontrada.</div>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {rows.map(t => (
+                    <li key={t.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{t.description}</p>
+                        <p className="text-xs text-gray-400">{fmtDate(t.transaction_at)}</p>
+                      </div>
+                      <span className="text-sm font-bold text-green-600 shrink-0">{fmt(t.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Despesas tab */}
+      {tab === 'despesas' && (() => {
+        const rows = transactions.filter(t => t.type !== 'income')
+        const total = rows.reduce((s, t) => s + parseFloat(t.amount), 0)
+        return (
+          <div className="flex flex-col gap-3">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
+              <p className="text-sm font-medium text-red-700">Total de saídas</p>
+              <p className="text-xl font-bold text-red-700">{fmt(total)}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              {loadingTx ? (
+                <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
+              ) : rows.length === 0 ? (
+                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma despesa encontrada.</div>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {rows.map(t => (
+                    <li key={t.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">
+                          {t.is_sangria ? '🔒 Sangria — ' : ''}{t.description}
+                        </p>
+                        <p className="text-xs text-gray-400">{fmtDate(t.transaction_at)}</p>
+                      </div>
+                      <span className="text-sm font-bold text-red-600 shrink-0">{fmt(t.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Relatórios tab */}
-      {tab === 'relatorios' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-gray-400 text-sm">
-          Relatórios em desenvolvimento. Dados virão das sessões de caixa.
-        </div>
-      )}
+      {tab === 'relatorios' && (() => {
+        const closed = sessions.filter(s => s.status === 'closed')
+        const totalIncome = closed.reduce((sum, s) => {
+          const open = parseFloat(s.opening_balance)
+          const close = parseFloat(s.closing_balance ?? '0')
+          return sum + Math.max(0, close - open)
+        }, 0)
+        const totalDiff = closed.reduce((sum, s) => sum + parseFloat(s.difference ?? '0'), 0)
+        return (
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                <p className="text-xs text-gray-500 mb-1">Sessões fechadas</p>
+                <p className="text-2xl font-bold text-gray-800">{closed.length}</p>
+              </div>
+              <div className={`rounded-xl border shadow-sm p-4 ${totalDiff >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <p className="text-xs text-gray-500 mb-1">Diferença acumulada</p>
+                <p className={`text-2xl font-bold ${totalDiff >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmt(totalDiff)}</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-800">Histórico de Sessões</h3>
+              </div>
+              {loadingSessions ? (
+                <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
+              ) : sessions.length === 0 ? (
+                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma sessão encontrada.</div>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {sessions.map(s => {
+                    const diff = s.difference ? parseFloat(s.difference) : null
+                    return (
+                      <li key={s.id} className="px-4 py-3">
+                        <div className="flex items-center justify-between gap-3 mb-1">
+                          <p className="text-sm font-medium text-gray-800">{fmtDate(s.opened_at)}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {s.status === 'open' ? 'Aberta' : 'Fechada'}
+                          </span>
+                        </div>
+                        <div className="flex gap-4 text-xs text-gray-500">
+                          <span>Abertura: <strong>{fmt(s.opening_balance)}</strong></span>
+                          {s.closing_balance && <span>Fechamento: <strong>{fmt(s.closing_balance)}</strong></span>}
+                          {diff !== null && (
+                            <span className={diff === 0 ? 'text-green-600' : diff > 0 ? 'text-blue-600' : 'text-red-600'}>
+                              Dif: <strong>{diff >= 0 ? '+' : ''}{fmt(diff)}</strong>
+                            </span>
+                          )}
+                        </div>
+                        {s.closed_at && <p className="text-xs text-gray-400 mt-0.5">Fechado: {fmtDate(s.closed_at)}</p>}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Conciliação PIX tab */}
       {tab === 'conciliacao' && (

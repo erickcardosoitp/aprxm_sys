@@ -82,18 +82,18 @@ export function AppShell() {
       {/* Bottom nav — respects iOS home indicator */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
-        <div className="flex justify-center overflow-x-auto scrollbar-none px-2 gap-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
+        <div className="flex justify-center overflow-x-auto scrollbar-none px-2 gap-3 sm:gap-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
           {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium transition shrink-0 min-w-[60px] min-h-[52px] sm:min-w-0 sm:min-h-0 ${
+                `flex flex-col items-center justify-center gap-1 px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium transition shrink-0 min-w-[64px] min-h-[56px] sm:min-w-0 sm:min-h-0 ${
                   isActive ? 'text-[#26619c] bg-blue-50' : 'text-gray-500 active:bg-gray-100'
                 }`
               }
             >
-              <Icon className="w-6 h-6 sm:w-5 sm:h-5" />
+              <Icon className="w-7 h-7 sm:w-5 sm:h-5" />
               <span className="leading-none whitespace-nowrap text-[11px]">{label}</span>
             </NavLink>
           ))}
