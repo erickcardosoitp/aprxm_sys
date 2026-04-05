@@ -89,9 +89,12 @@ export default function OverviewPage() {
   }
 
   const ORDER_STATUS_COLOR: Record<string, string> = {
+    pending: 'bg-gray-100 text-gray-600',
     open: 'bg-red-100 text-red-700',
     in_progress: 'bg-amber-100 text-amber-700',
+    waiting_third_party: 'bg-purple-100 text-purple-700',
     resolved: 'bg-green-100 text-green-700',
+    archived: 'bg-gray-100 text-gray-400',
     cancelled: 'bg-gray-100 text-gray-500',
   }
 
