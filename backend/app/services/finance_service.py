@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.exceptions import CashSessionError, NotFoundError
-from app.models.finance import CashSession, CashSessionStatus, Transaction, TransactionType
+from app.models.finance import CashSession, CashSessionStatus, IncomeSubtype, Transaction, TransactionType
 
 
 class FinanceService:
@@ -105,6 +105,7 @@ class FinanceService:
         amount: Decimal,
         description: str,
         created_by: UUID,
+        income_subtype: IncomeSubtype | None = None,
         category_id: UUID | None = None,
         payment_method_id: UUID | None = None,
         resident_id: UUID | None = None,
@@ -118,6 +119,7 @@ class FinanceService:
             payment_method_id=payment_method_id,
             resident_id=resident_id,
             type=tx_type,
+            income_subtype=income_subtype,
             amount=amount,
             description=description,
             reference_number=reference_number,
@@ -163,6 +165,116 @@ class FinanceService:
         self._session.add(tx)
         await self._session.flush()
         return tx
+
+    async def reverse_transaction(
+        self,
+        transaction_id: UUID,
+        association_id: UUID,
+        reversed_by: UUID,
+        reason: str,
+    ) -> Transaction:
+        stmt = select(Transaction).where(
+            Transaction.id == transaction_id,
+            Transaction.association_id == association_id,
+        )
+        result = await self._session.execute(stmt)
+        original = result.scalar_one_or_none()
+        if not original:
+            raise NotFoundError("Transação")
+        if original.is_reversal:
+            raise CashSessionError("Não é possível estornar um estorno.")
+        if original.reversed_at is not None:
+            raise CashSessionError("Transação já foi estornada.")
+
+        cash_session = await self.get_open_session(association_id)
+
+        # Inverse type: income → expense, expense/sangria → income
+        inverse_type = (
+            TransactionType.expense if original.type == TransactionType.income
+            else TransactionType.income
+        )
+
+        reversal = Transaction(
+            association_id=association_id,
+            cash_session_id=cash_session.id,
+            type=inverse_type,
+            amount=original.amount,
+            description=f"Estorno: {original.description}",
+            is_reversal=True,
+            reversal_of_id=original.id,
+            reversal_reason=reason,
+            created_by=reversed_by,
+        )
+        self._session.add(reversal)
+
+        original.reversed_by = reversed_by
+        original.reversed_at = datetime.utcnow()
+        original.updated_at = datetime.utcnow()
+        self._session.add(original)
+
+        await self._session.flush()
+        return reversal
+
+    async def get_resident_payment_history(
+        self, association_id: UUID, resident_id: UUID
+    ) -> dict:
+        from sqlmodel import select as sa_select
+        from app.models.resident import Resident
+
+        # Load resident for monthly_payment_day
+        res_stmt = sa_select(Resident).where(
+            Resident.id == resident_id,
+            Resident.association_id == association_id,
+        )
+        res_result = await self._session.execute(res_stmt)
+        resident = res_result.scalar_one_or_none()
+
+        # All mensalidade transactions for this resident
+        stmt = (
+            sa_select(Transaction)
+            .where(
+                Transaction.association_id == association_id,
+                Transaction.resident_id == resident_id,
+                Transaction.income_subtype == IncomeSubtype.mensalidade,
+            )
+            .order_by(Transaction.transaction_at.desc())
+        )
+        result = await self._session.execute(stmt)
+        payments = list(result.scalars().all())
+
+        now = datetime.utcnow()
+        last_payment_at = payments[0].transaction_at if payments else None
+        payment_day = resident.monthly_payment_day if resident else None
+
+        # Inadimplência: sem pagamento no mês corrente após o dia de vencimento
+        current_month_paid = any(
+            p.transaction_at.year == now.year and p.transaction_at.month == now.month
+            for p in payments
+        )
+        is_delinquent = (
+            not current_month_paid
+            and payment_day is not None
+            and now.day > payment_day
+        )
+
+        return {
+            "resident_id": str(resident_id),
+            "monthly_payment_day": payment_day,
+            "total_payments": len(payments),
+            "last_payment_at": str(last_payment_at) if last_payment_at else None,
+            "current_month_paid": current_month_paid,
+            "is_delinquent": is_delinquent,
+            "payments": [
+                {
+                    "id": str(p.id),
+                    "amount": str(p.amount),
+                    "description": p.description,
+                    "transaction_at": str(p.transaction_at),
+                    "reference_number": p.reference_number,
+                }
+                for p in payments
+            ],
+        }
 
     async def list_transactions(
         self, association_id: UUID, cash_session_id: UUID | None = None

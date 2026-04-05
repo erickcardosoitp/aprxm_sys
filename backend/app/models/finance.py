@@ -21,6 +21,13 @@ class TransactionType(str, Enum):
     sangria = "sangria"
 
 
+class IncomeSubtype(str, Enum):
+    proof_of_residence = "proof_of_residence"
+    delivery_fee = "delivery_fee"
+    mensalidade = "mensalidade"
+    other = "other"
+
+
 class CashSessionStatus(str, Enum):
     open = "open"
     closed = "closed"
@@ -91,7 +98,16 @@ class Transaction(SQLModel, table=True):
     sangria_destination: str | None = Field(default=None, max_length=255)
     receipt_photo_url: str | None = None
 
+    income_subtype: IncomeSubtype | None = Field(default=None, sa_column=Column(SAEnum(IncomeSubtype, name='income_subtype', create_type=False), nullable=True))
+
     package_id: UUID | None = Field(default=None, foreign_key="packages.id")
+
+    # reversal (estorno)
+    is_reversal: bool = Field(default=False)
+    reversal_of_id: UUID | None = Field(default=None)  # references transactions.id
+    reversal_reason: str | None = None
+    reversed_by: UUID | None = Field(default=None, foreign_key="users.id")
+    reversed_at: datetime | None = None
 
     created_by: UUID = Field(foreign_key="users.id")
     transaction_at: datetime = Field(default_factory=datetime.utcnow)

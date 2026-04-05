@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import CurrentUser, get_current_user, require_admin, require_conferente
 from app.database import get_session
-from app.models.finance import CashSession, PaymentMethod, Transaction, TransactionCategory, TransactionType
+from app.models.finance import CashSession, IncomeSubtype, PaymentMethod, Transaction, TransactionCategory, TransactionType
 from app.services.finance_service import FinanceService
 
 router = APIRouter(prefix="/finance", tags=["Finanças"])
@@ -37,6 +37,7 @@ class TransactionRequest(BaseModel):
     type: TransactionType
     amount: Decimal = Field(gt=0)
     description: str
+    income_subtype: IncomeSubtype | None = None
     category_id: UUID | None = None
     payment_method_id: UUID | None = None
     resident_id: UUID | None = None
@@ -139,6 +140,7 @@ async def register_transaction(
         amount=body.amount,
         description=body.description,
         created_by=current.user_id,
+        income_subtype=body.income_subtype,
         category_id=body.category_id,
         payment_method_id=body.payment_method_id,
         resident_id=body.resident_id,
@@ -243,6 +245,84 @@ async def conferencia_caixa(
         "counted": str(round(counted, 2)),
         "difference": str(round(counted - expected, 2)),
     }
+
+
+class ReversalRequest(BaseModel):
+    reason: str = Field(min_length=5, description="Motivo do estorno")
+
+
+@router.post("/transactions/{transaction_id}/reverse", summary="Estornar transação")
+async def reverse_transaction(
+    transaction_id: UUID,
+    body: ReversalRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = FinanceService(session)
+    reversal = await svc.reverse_transaction(
+        transaction_id=transaction_id,
+        association_id=current.association_id,
+        reversed_by=current.user_id,
+        reason=body.reason,
+    )
+    await session.commit()
+    return {
+        "id": str(reversal.id),
+        "type": reversal.type,
+        "amount": str(reversal.amount),
+        "reversal_of_id": str(reversal.reversal_of_id),
+    }
+
+
+@router.get("/audit", summary="Trilha de auditoria financeira")
+async def get_audit_trail(
+    limit: int = 50,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as sa_text
+    result = await session.execute(
+        sa_text("""
+            SELECT t.id, t.type, t.income_subtype, t.amount, t.description,
+                   t.is_sangria, t.is_reversal, t.reversal_of_id, t.reversal_reason,
+                   t.transaction_at, t.created_by,
+                   u.full_name AS creator_name,
+                   t.reversed_by, ur.full_name AS reverser_name, t.reversed_at
+            FROM transactions t
+            JOIN users u ON u.id = t.created_by
+            LEFT JOIN users ur ON ur.id = t.reversed_by
+            WHERE t.association_id = :aid
+            ORDER BY t.transaction_at DESC
+            LIMIT :lim
+        """),
+        {"aid": str(current.association_id), "lim": limit},
+    )
+    rows = result.fetchall()
+    return [
+        {
+            "id": str(r[0]), "type": r[1], "income_subtype": r[2],
+            "amount": str(r[3]), "description": r[4],
+            "is_sangria": r[5], "is_reversal": r[6],
+            "reversal_of_id": str(r[7]) if r[7] else None,
+            "reversal_reason": r[8],
+            "transaction_at": str(r[9]),
+            "created_by": str(r[10]), "creator_name": r[11],
+            "reversed_by": str(r[12]) if r[12] else None,
+            "reverser_name": r[13],
+            "reversed_at": str(r[14]) if r[14] else None,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/residents/{resident_id}/payment-history", summary="Histórico de mensalidades do morador")
+async def get_resident_payment_history(
+    resident_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = FinanceService(session)
+    return await svc.get_resident_payment_history(current.association_id, resident_id)
 
 
 @router.get("/payment-methods", summary="Métodos de pagamento")
