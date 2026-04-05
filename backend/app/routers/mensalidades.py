@@ -47,6 +47,15 @@ async def create_mensalidade(
     return _fmt(m)
 
 
+@router.get("/pending", summary="Mensalidades a receber (não vencidas)")
+async def list_pending(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    svc = MensalidadeService(session)
+    return await svc.list_pending(current.association_id)
+
+
 @router.get("/delinquent", summary="Listar inadimplentes")
 async def list_delinquent(
     current: CurrentUser = Depends(get_current_user),
