@@ -89,8 +89,12 @@ export default function FinanceiroPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
 
+  // Open cash session
+  const [openSession, setOpenSession] = useState<{ id: string } | null | undefined>(undefined)
+
   // Cobranças
-  const [mensalidades, setMensalidades] = useState<Mensalidade[]>([])
+  const [pendingMensalidades, setPendingMensalidades] = useState<Mensalidade[]>([])
+  const [pendingNames, setPendingNames] = useState<Record<string, string>>({})
   const [delinquent, setDelinquent] = useState<DelinquentItem[]>([])
   const [delinquentNames, setDelinquentNames] = useState<Record<string, string>>({})
   const [loadingCobrancas, setLoadingCobrancas] = useState(false)
@@ -121,8 +125,17 @@ export default function FinanceiroPage() {
     if (tab === 'dashboard') loadSummary()
     if (tab === 'receitas' || tab === 'despesas') loadTransactions()
     if (tab === 'relatorios') loadSessions()
-    if (tab === 'cobrancas') loadCobrancas()
+    if (tab === 'cobrancas') { loadOpenSession(); loadCobrancas() }
   }, [tab, period])
+
+  const loadOpenSession = async () => {
+    try {
+      const res = await api.get<{ id: string }>('/finance/sessions/current')
+      setOpenSession(res.data)
+    } catch {
+      setOpenSession(null)
+    }
+  }
 
   const periodStart = () => {
     const now = new Date()
@@ -159,22 +172,33 @@ export default function FinanceiroPage() {
     } catch { setSessions([]) } finally { setLoadingSessions(false) }
   }
 
+  const loadResidentNames = async (ids: string[]): Promise<Record<string, string>> => {
+    const names: Record<string, string> = {}
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const r = await api.get<Resident>(`/residents/${id}`)
+        names[id] = r.data.full_name
+      } catch { names[id] = id.slice(0, 8) }
+    }))
+    return names
+  }
+
   const loadCobrancas = async () => {
     setLoadingCobrancas(true)
     try {
-      const [delinqRes] = await Promise.all([
+      const [pendingRes, delinqRes] = await Promise.all([
+        api.get<Mensalidade[]>('/mensalidades/pending'),
         api.get<DelinquentItem[]>('/mensalidades/delinquent'),
       ])
+      setPendingMensalidades(pendingRes.data)
       setDelinquent(delinqRes.data)
-      // Load names for delinquent residents
-      const ids = [...new Set(delinqRes.data.map(d => d.resident_id))]
-      const names: Record<string, string> = {}
-      await Promise.all(ids.map(async (id) => {
-        try {
-          const r = await api.get<Resident>(`/residents/${id}`)
-          names[id] = r.data.full_name
-        } catch { names[id] = id.slice(0, 8) }
-      }))
+
+      const allIds = [...new Set([
+        ...pendingRes.data.map(m => m.resident_id),
+        ...delinqRes.data.map(d => d.resident_id),
+      ])]
+      const names = await loadResidentNames(allIds)
+      setPendingNames(names)
       setDelinquentNames(names)
     } catch { } finally { setLoadingCobrancas(false) }
   }
@@ -221,6 +245,10 @@ export default function FinanceiroPage() {
   }
 
   const handlePayMensalidade = async (id: string) => {
+    if (!openSession) {
+      toast.error('Abra o caixa antes de registrar pagamentos.')
+      return
+    }
     setPayingId(id)
     try {
       const res = await api.post<{ mensalidade: Mensalidade; transaction: any; next_month: Mensalidade | null }>(
@@ -235,7 +263,7 @@ export default function FinanceiroPage() {
       loadCobrancas()
       if (historyResidentId) loadResidentHistory(historyResidentId)
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao pagar mensalidade. Verifique se há caixa aberto.')
+      toast.error(e.response?.data?.detail ?? 'Erro ao pagar mensalidade.')
     } finally { setPayingId(null) }
   }
 
@@ -499,6 +527,14 @@ export default function FinanceiroPage() {
       {/* ── COBRANÇAS ── */}
       {tab === 'cobrancas' && (
         <div className="flex flex-col gap-4">
+          {/* Open session warning */}
+          {openSession === null && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+              <p className="text-xs text-amber-700">Nenhum caixa aberto. Abra o caixa para registrar pagamentos.</p>
+            </div>
+          )}
+
           {/* Sub-tabs */}
           <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
             {([
@@ -605,17 +641,35 @@ export default function FinanceiroPage() {
           {cobrancasView === 'pendentes' && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-800">Contas a Receber</p>
+                <p className="text-sm font-semibold text-gray-800">A Receber ({pendingMensalidades.length})</p>
                 {loadingCobrancas && <span className="text-xs text-gray-400">Carregando…</span>}
               </div>
-              {delinquent.filter(d => d.months_overdue <= 0).length === 0 && !loadingCobrancas ? (
-                <div className="p-6 text-center text-gray-400 text-sm">
-                  Nenhuma mensalidade pendente não vencida.
-                </div>
+              {!loadingCobrancas && pendingMensalidades.length === 0 ? (
+                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma mensalidade pendente.</div>
               ) : (
-                <p className="px-4 py-2 text-xs text-gray-400">
-                  Use "Histórico" para buscar mensalidades por morador.
-                </p>
+                <ul className="divide-y divide-gray-100">
+                  {pendingMensalidades.map(m => (
+                    <li key={m.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-800 truncate">
+                          {pendingNames[m.resident_id] ?? '…'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Ref: {m.reference_month} · Venc: {fmtDate(m.due_date)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-bold text-blue-700">{fmt(m.amount)}</span>
+                        <button
+                          disabled={!openSession || payingId === m.id}
+                          onClick={() => handlePayMensalidade(m.id)}
+                          className="text-xs bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg transition">
+                          {payingId === m.id ? '…' : 'Pagar'}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           )}
@@ -662,8 +716,8 @@ export default function FinanceiroPage() {
                             </button>
                             <button
                               onClick={() => handlePayMensalidade(d.id)}
-                              disabled={payingId === d.id}
-                              className="text-xs bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded-lg transition disabled:opacity-50">
+                              disabled={!openSession || payingId === d.id}
+                              className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-2 py-1 rounded-lg transition">
                               {payingId === d.id ? '…' : 'Pagar'}
                             </button>
                           </div>
@@ -723,8 +777,8 @@ export default function FinanceiroPage() {
                           {m.status !== 'paid' && (
                             <button
                               onClick={() => handlePayMensalidade(m.id)}
-                              disabled={payingId === m.id}
-                              className="text-xs bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded-lg transition disabled:opacity-50">
+                              disabled={!openSession || payingId === m.id}
+                              className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-2 py-1 rounded-lg transition">
                               {payingId === m.id ? '…' : 'Pagar'}
                             </button>
                           )}

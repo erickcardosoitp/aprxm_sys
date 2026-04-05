@@ -205,6 +205,33 @@ class MensalidadeService:
             })
         return delinquent
 
+    async def list_pending(self, association_id: UUID) -> list[dict]:
+        """Mensalidades pendentes ainda não vencidas (a receber)."""
+        today = date.today()
+        stmt = (
+            select(Mensalidade)
+            .where(
+                Mensalidade.association_id == association_id,
+                Mensalidade.status == MensalidadeStatus.pending,
+                Mensalidade.due_date >= today,
+            )
+            .order_by(Mensalidade.due_date.asc())
+        )
+        result = await self._session.execute(stmt)
+        rows = result.scalars().all()
+        return [
+            {
+                "id": str(m.id),
+                "resident_id": str(m.resident_id),
+                "reference_month": m.reference_month,
+                "due_date": str(m.due_date),
+                "amount": str(m.amount),
+                "status": m.status,
+                "notes": m.notes,
+            }
+            for m in rows
+        ]
+
     async def total_pending(self, association_id: UUID) -> Decimal:
         from sqlalchemy import text
         result = await self._session.execute(
