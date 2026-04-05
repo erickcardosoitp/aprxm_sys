@@ -79,9 +79,12 @@ export default function OverviewPage() {
   }
 
   const ORDER_STATUS_LABEL: Record<string, string> = {
+    pending: 'Pendente',
     open: 'Aberta',
     in_progress: 'Em andamento',
+    waiting_third_party: 'Ag. Terceiros',
     resolved: 'Resolvida',
+    archived: 'Arquivada',
     cancelled: 'Cancelada',
   }
 
