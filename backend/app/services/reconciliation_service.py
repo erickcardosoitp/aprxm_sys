@@ -96,49 +96,58 @@ class ReconciliationService:
         return result
 
     def _parse_cora(self, rows: list[dict], association_id: UUID) -> list[BankStatement]:
+        """
+        Formato Cora:
+        Data, Transação, Tipo Transação, Identificação, Valor
+        - Tipo Transação: CRÉDITO | DÉBITO
+        - Identificação: nome do pagador (às vezes com CPF embutido no final)
+        - Valor: positivo para crédito, negativo para débito
+        """
+        import re
         result = []
         for row in rows:
-            # Cora typical columns: Data, Descrição, Valor
-            raw_date = row.get("Data") or row.get("data") or ""
-            valor = row.get("Valor") or row.get("valor") or "0"
-            descricao = row.get("Descrição") or row.get("Descricao") or row.get("descricao") or ""
+            tipo_tx = (row.get("Tipo Transação") or row.get("Tipo") or "").strip().upper()
+            if tipo_tx != "CRÉDITO" and tipo_tx != "CREDITO":
+                continue  # só entradas
 
-            try:
-                valor_dec = Decimal(valor.replace("R$", "").replace(".", "").replace(",", ".").strip())
-            except Exception:
-                continue
-
-            if valor_dec <= 0:
-                continue
-
-            # Cora: identify "Pix recebida" entries
-            if "pix" not in descricao.lower():
-                continue
+            raw_date = (row.get("Data") or "").strip()
+            transacao = (row.get("Transação") or row.get("Transacao") or "").strip()
+            identificacao = (row.get("Identificação") or row.get("Identificacao") or "").strip()
+            valor_raw = (row.get("Valor") or "0").strip()
 
             try:
                 from datetime import datetime
-                dt = datetime.strptime(raw_date.strip(), "%d/%m/%Y").date()
+                dt = datetime.strptime(raw_date, "%d/%m/%Y").date()
             except Exception:
                 continue
 
-            # Extract name from description: "Pix recebida de NOME"
-            nome = ""
-            lower_desc = descricao.lower()
-            for prefix in ["pix recebida de ", "pix recebido de "]:
-                if prefix in lower_desc:
-                    idx = lower_desc.index(prefix) + len(prefix)
-                    nome = descricao[idx:].strip()
-                    break
+            try:
+                valor_dec = Decimal(valor_raw.replace("R$", "").replace(".", "").replace(",", "."))
+                if valor_dec <= 0:
+                    continue
+            except Exception:
+                continue
+
+            # Extrai CPF embutido no campo Identificação (11 dígitos consecutivos)
+            cpf_found = None
+            clean_nome = identificacao
+            cpf_match = re.search(r'\b(\d{11})\b', identificacao)
+            if cpf_match:
+                cpf_found = cpf_match.group(1)
+                clean_nome = identificacao.replace(cpf_match.group(0), "").strip()
+
+            # Remove CNPJ-like prefixes (XX.XXX.XXX)
+            clean_nome = re.sub(r'^\d{2}\.\d{3}\.\d{3}\s*', '', clean_nome).strip()
 
             result.append(BankStatement(
                 association_id=association_id,
                 bank="cora",
                 date=dt,
                 amount=valor_dec,
-                name=normalize_name(nome) if nome else normalize_name(descricao),
-                cpf=None,
+                name=normalize_name(clean_nome) if clean_nome else normalize_name(identificacao),
+                cpf=cpf_found,
                 tipo="entrada",
-                description=descricao,
+                description=transacao,
             ))
         return result
 
@@ -187,14 +196,16 @@ class ReconciliationService:
                 if stmt.cpf and res_cpf and clean_cpf(res_cpf) == stmt.cpf:
                     score += 100
 
-                # Name similarity
+                # Name similarity — token overlap ratio
                 if stmt.name and res_name:
                     norm_res = normalize_name(res_name)
-                    # Simple: check if any word matches
-                    stmt_words = set(stmt.name.split())
-                    res_words = set(norm_res.split())
-                    if stmt_words & res_words:
-                        score += 60
+                    stmt_words = set(stmt.name.split()) - {"DE", "DA", "DO", "DOS", "DAS", "E"}
+                    res_words  = set(norm_res.split())  - {"DE", "DA", "DO", "DOS", "DAS", "E"}
+                    if stmt_words and res_words:
+                        overlap = len(stmt_words & res_words)
+                        ratio = overlap / max(len(stmt_words), len(res_words))
+                        if ratio >= 0.5:       # ≥50% dos tokens batem
+                            score += int(60 * ratio)  # proporcional: 30–60 pts
 
                 # Amount match
                 if Decimal(str(tx_amount)) == stmt.amount:
