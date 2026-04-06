@@ -10,6 +10,7 @@ import ServiceOrdersPage from './pages/service_orders/ServiceOrdersPage'
 import AdminPage from './pages/admin/AdminPage'
 import SettingsPage from './pages/settings/SettingsPage'
 import FinanceiroPage from './pages/financeiro/FinanceiroPage'
+import GeralPage from './pages/geral/GeralPage'
 import { useAuthStore } from './store/authStore'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -25,8 +26,16 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 
 function RedirectByRole() {
   const role = useAuthStore((s) => s.role)
+  const isAggregator = useAuthStore((s) => s.isAggregator())
+  if (isAggregator) return <Navigate to="/geral" replace />
   if (role === 'operator' || role === 'viewer') return <Navigate to="/finance" replace />
   return <Navigate to="/overview" replace />
+}
+
+function RequireAggregator({ children }: { children: React.ReactNode }) {
+  const isAggregator = useAuthStore((s) => s.isAggregator())
+  if (!isAggregator) return <Navigate to="/overview" replace />
+  return <>{children}</>
 }
 
 function RequireConferente({ children }: { children: React.ReactNode }) {
@@ -59,6 +68,7 @@ export default function App() {
           <Route path="admin"          element={<RequireAdmin><AdminPage /></RequireAdmin>} />
           <Route path="settings"       element={<RequireConferente><SettingsPage /></RequireConferente>} />
           <Route path="financeiro"     element={<RequireConferente><FinanceiroPage /></RequireConferente>} />
+          <Route path="geral"          element={<RequireAggregator><GeralPage /></RequireAggregator>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

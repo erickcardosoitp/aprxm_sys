@@ -17,13 +17,20 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
-def create_access_token(subject: UUID, association_id: UUID, role: str, full_name: str = "") -> str:
+def create_access_token(
+    subject: UUID,
+    association_id: UUID,
+    role: str,
+    full_name: str = "",
+    linked_association_ids: list[str] | None = None,
+) -> str:
     expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {
         "sub": str(subject),
         "association_id": str(association_id),
         "role": role,
         "full_name": full_name,
+        "linked_association_ids": linked_association_ids or [],
         "exp": expire,
         "iat": datetime.now(UTC),
     }

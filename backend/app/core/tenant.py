@@ -9,10 +9,27 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 
 class CurrentUser:
-    def __init__(self, user_id: UUID, association_id: UUID, role: str) -> None:
+    def __init__(
+        self,
+        user_id: UUID,
+        association_id: UUID,
+        role: str,
+        linked_association_ids: list[UUID] | None = None,
+    ) -> None:
         self.user_id = user_id
         self.association_id = association_id
         self.role = role
+        self.linked_association_ids: list[UUID] = linked_association_ids or []
+
+    @property
+    def is_aggregator(self) -> bool:
+        return len(self.linked_association_ids) > 0
+
+    def scoped_ids(self, slug_filter: str | None = None) -> list[UUID]:
+        """Returns association IDs to filter by. For aggregators, returns linked IDs."""
+        if not self.is_aggregator:
+            return [self.association_id]
+        return self.linked_association_ids
 
     @property
     def is_admin(self) -> bool:
@@ -41,10 +58,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
+    linked_ids = [UUID(i) for i in payload.get("linked_association_ids", [])]
     return CurrentUser(
         user_id=UUID(payload["sub"]),
         association_id=UUID(payload["association_id"]),
         role=payload["role"],
+        linked_association_ids=linked_ids,
     )
 
 

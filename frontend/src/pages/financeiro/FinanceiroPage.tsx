@@ -108,7 +108,23 @@ export default function FinanceiroPage() {
   const [selectedResident, setSelectedResident] = useState<Resident | null>(null)
   const [historyResidentId, setHistoryResidentId] = useState<string | null>(null)
   const [history, setHistory] = useState<Mensalidade[]>([])
-  const [cobrancasView, setCobrancasView] = useState<'pendentes' | 'inadimplentes' | 'historico'>('pendentes')
+  const [cobrancasView, setCobrancasView] = useState<'pendentes' | 'inadimplentes' | 'pagos' | 'historico'>('pendentes')
+
+  // Pagos
+  interface PaidItem { id: string; resident_id: string; resident_name: string; reference_month: string; due_date: string; amount: string; paid_at: string | null; transaction_id: string | null }
+  const [paidItems, setPaidItems] = useState<PaidItem[]>([])
+  const [paidMonth, setPaidMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [loadingPaid, setLoadingPaid] = useState(false)
+
+  // Relatório de mensalidades
+  const [reportFromMonth, setReportFromMonth] = useState(() => {
+    const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [reportToMonth, setReportToMonth] = useState(() => {
+    const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [report, setReport] = useState<{ from_month: string; to_month: string; total: number; paid_count: number; pending_count: number; total_paid: string; total_pending: string; items: any[] } | null>(null)
+  const [loadingReport, setLoadingReport] = useState(false)
 
   // Conciliation
   const [bankFile, setBankFile] = useState<File | null>(null)
@@ -201,6 +217,38 @@ export default function FinanceiroPage() {
       setPendingNames(names)
       setDelinquentNames(names)
     } catch { } finally { setLoadingCobrancas(false) }
+  }
+
+  const loadPaidMensalidades = async (month: string) => {
+    setLoadingPaid(true)
+    try {
+      const res = await api.get<any[]>('/mensalidades/paid', { params: { month } })
+      setPaidItems(res.data)
+    } catch { setPaidItems([]) } finally { setLoadingPaid(false) }
+  }
+
+  const loadReport = async () => {
+    setLoadingReport(true)
+    try {
+      const res = await api.get('/mensalidades/report', { params: { from_month: reportFromMonth, to_month: reportToMonth } })
+      setReport(res.data)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao gerar relatório.')
+    } finally { setLoadingReport(false) }
+  }
+
+  const exportReportCSV = () => {
+    if (!report) return
+    const header = 'Morador,Mês Ref,Vencimento,Valor,Status,Pago em'
+    const rows = report.items.map(i =>
+      `"${i.resident_name}",${i.reference_month},${i.due_date},${i.amount},${i.status === 'paid' ? 'Pago' : 'Pendente'},${i.paid_at ?? ''}`
+    )
+    const csv = [header, ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `mensalidades_${report.from_month}_${report.to_month}.csv`
+    a.click(); URL.revokeObjectURL(url)
   }
 
   const loadResidentHistory = async (residentId: string) => {
@@ -536,14 +584,19 @@ export default function FinanceiroPage() {
           )}
 
           {/* Sub-tabs */}
-          <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+          <div className="flex gap-1 bg-gray-100 rounded-xl p-1 flex-wrap">
             {([
               { key: 'pendentes', label: 'A Receber' },
               { key: 'inadimplentes', label: 'Inadimplentes' },
-              { key: 'historico', label: 'Histórico' },
+              { key: 'pagos', label: 'Pagos' },
+              { key: 'historico', label: 'Por Morador' },
             ] as const).map(({ key, label }) => (
-              <button key={key} onClick={() => setCobrancasView(key)}
-                className={`flex-1 py-2 rounded-lg text-xs font-medium transition ${
+              <button key={key}
+                onClick={() => {
+                  setCobrancasView(key)
+                  if (key === 'pagos') loadPaidMensalidades(paidMonth)
+                }}
+                className={`flex-1 py-2 rounded-lg text-xs font-medium transition min-w-[70px] ${
                   cobrancasView === key ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'
                 }`}>
                 {label}
@@ -730,6 +783,58 @@ export default function FinanceiroPage() {
             </div>
           )}
 
+          {/* Pagos */}
+          {cobrancasView === 'pagos' && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <input type="month" value={paidMonth}
+                  onChange={e => { setPaidMonth(e.target.value); loadPaidMensalidades(e.target.value) }}
+                  className={inputCls} />
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-800">
+                    Pagamentos Recebidos — {paidMonth}
+                  </p>
+                  <span className="text-xs text-gray-400">
+                    {loadingPaid ? 'Carregando…' : `${paidItems.length} registro(s)`}
+                  </span>
+                </div>
+                {!loadingPaid && paidItems.length === 0 ? (
+                  <div className="p-6 text-center text-gray-400 text-sm">Nenhum pagamento neste mês.</div>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {paidItems.map(p => (
+                      <li key={p.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-800 truncate">{p.resident_name}</p>
+                          <p className="text-xs text-gray-500">Ref: {p.reference_month}</p>
+                          {p.paid_at && (
+                            <p className="text-xs text-green-600">
+                              Pago em: {fmtDate(p.paid_at)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-sm font-bold text-green-700">{fmt(p.amount)}</span>
+                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Pago</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {paidItems.length > 0 && (
+                  <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+                    <span className="text-xs text-gray-500">Total arrecadado</span>
+                    <span className="text-sm font-bold text-green-700">
+                      {fmt(paidItems.reduce((s, p) => s + parseFloat(p.amount), 0))}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Histórico por morador */}
           {cobrancasView === 'historico' && (
             <div className="flex flex-col gap-3">
@@ -793,7 +898,7 @@ export default function FinanceiroPage() {
         </div>
       )}
 
-      {/* ── RELATÓRIOS (Sessões) ── */}
+      {/* ── RELATÓRIOS ── */}
       {tab === 'relatorios' && (() => {
         const closed = sessions.filter(s => s.status === 'closed')
         const totalDiff = closed.reduce((sum, s) => sum + parseFloat(s.difference ?? '0'), 0)
@@ -847,6 +952,87 @@ export default function FinanceiroPage() {
                   })}
                 </ul>
               )}
+            </div>
+
+            {/* Relatório de Mensalidades */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-800">Relatório de Mensalidades</h3>
+              </div>
+              <div className="p-4 flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">De</label>
+                    <input type="month" value={reportFromMonth}
+                      onChange={e => setReportFromMonth(e.target.value)}
+                      className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Até</label>
+                    <input type="month" value={reportToMonth}
+                      onChange={e => setReportToMonth(e.target.value)}
+                      className={inputCls} />
+                  </div>
+                </div>
+                <button onClick={loadReport} disabled={loadingReport}
+                  className="bg-[#26619c] hover:bg-[#1a4f87] disabled:opacity-50 text-white py-2 rounded-xl text-sm font-medium transition">
+                  {loadingReport ? 'Gerando…' : 'Gerar Relatório'}
+                </button>
+                {report && (
+                  <div className="flex flex-col gap-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-green-50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-green-600">Pagos</p>
+                        <p className="text-lg font-bold text-green-700">{report.paid_count}</p>
+                        <p className="text-xs text-green-600">{fmt(report.total_paid)}</p>
+                      </div>
+                      <div className="bg-red-50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-red-500">Pendentes</p>
+                        <p className="text-lg font-bold text-red-600">{report.pending_count}</p>
+                        <p className="text-xs text-red-500">{fmt(report.total_pending)}</p>
+                      </div>
+                      <div className="bg-blue-50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-blue-500">Total</p>
+                        <p className="text-lg font-bold text-blue-700">{report.total}</p>
+                        <p className="text-xs text-blue-500">registros</p>
+                      </div>
+                    </div>
+                    <button onClick={exportReportCSV}
+                      className="flex items-center justify-center gap-2 border border-[#26619c] text-[#26619c] py-2 rounded-xl text-sm font-medium hover:bg-blue-50 transition">
+                      <Upload className="w-4 h-4" />
+                      Exportar CSV
+                    </button>
+                    <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="text-left px-3 py-2 text-gray-500 font-medium">Morador</th>
+                            <th className="text-left px-3 py-2 text-gray-500 font-medium">Mês</th>
+                            <th className="text-right px-3 py-2 text-gray-500 font-medium">Valor</th>
+                            <th className="text-center px-3 py-2 text-gray-500 font-medium">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {report.items.map(i => (
+                            <tr key={i.id}>
+                              <td className="px-3 py-2 text-gray-700 truncate max-w-[120px]">{i.resident_name}</td>
+                              <td className="px-3 py-2 text-gray-500">{i.reference_month}</td>
+                              <td className="px-3 py-2 text-right font-medium text-gray-800">{fmt(i.amount)}</td>
+                              <td className="px-3 py-2 text-center">
+                                <span className={`px-1.5 py-0.5 rounded-full font-medium text-xs ${
+                                  i.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                                }`}>
+                                  {i.status === 'paid' ? 'Pago' : 'Pendente'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )

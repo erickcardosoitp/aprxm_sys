@@ -259,6 +259,90 @@ class MensalidadeService:
         result = await self._session.execute(stmt)
         return result.scalars().first()
 
+    async def list_paid(
+        self, association_id: UUID, month: str | None = None
+    ) -> list[dict]:
+        """Mensalidades pagas com nome do morador. Filtro opcional por mês (YYYY-MM)."""
+        from app.models.resident import Resident
+        from sqlalchemy import select as sa_select
+
+        stmt = (
+            sa_select(Mensalidade, Resident.full_name)
+            .join(Resident, Resident.id == Mensalidade.resident_id)
+            .where(
+                Mensalidade.association_id == association_id,
+                Mensalidade.status == MensalidadeStatus.paid,
+            )
+            .order_by(Mensalidade.paid_at.desc())
+        )
+        if month:
+            stmt = stmt.where(Mensalidade.reference_month == month)
+
+        result = await self._session.execute(stmt)
+        return [
+            {
+                "id": str(m.id),
+                "resident_id": str(m.resident_id),
+                "resident_name": name,
+                "reference_month": m.reference_month,
+                "due_date": str(m.due_date),
+                "amount": str(m.amount),
+                "paid_at": str(m.paid_at) if m.paid_at else None,
+                "transaction_id": str(m.transaction_id) if m.transaction_id else None,
+            }
+            for m, name in result.all()
+        ]
+
+    async def payment_report(
+        self, association_id: UUID, from_month: str, to_month: str
+    ) -> dict:
+        """Relatório de mensalidades por período (qualquer status)."""
+        from app.models.resident import Resident
+        from sqlalchemy import select as sa_select
+
+        stmt = (
+            sa_select(Mensalidade, Resident.full_name)
+            .join(Resident, Resident.id == Mensalidade.resident_id)
+            .where(
+                Mensalidade.association_id == association_id,
+                Mensalidade.reference_month >= from_month,
+                Mensalidade.reference_month <= to_month,
+            )
+            .order_by(Mensalidade.reference_month.desc(), Resident.full_name.asc())
+        )
+        result = await self._session.execute(stmt)
+        rows = result.all()
+
+        items = [
+            {
+                "id": str(m.id),
+                "resident_id": str(m.resident_id),
+                "resident_name": name,
+                "reference_month": m.reference_month,
+                "due_date": str(m.due_date),
+                "amount": str(m.amount),
+                "status": m.status,
+                "paid_at": str(m.paid_at) if m.paid_at else None,
+            }
+            for m, name in rows
+        ]
+
+        paid = [i for i in items if i["status"] == MensalidadeStatus.paid]
+        pending = [i for i in items if i["status"] != MensalidadeStatus.paid]
+        total_paid = sum(Decimal(i["amount"]) for i in paid)
+        total_pending = sum(Decimal(i["amount"]) for i in pending)
+
+        return {
+            "from_month": from_month,
+            "to_month": to_month,
+            "total": len(items),
+            "paid_count": len(paid),
+            "pending_count": len(pending),
+            "total_paid": str(total_paid),
+            "total_pending": str(total_pending),
+            "items": items,
+        }
+
     async def _get(self, mensalidade_id: UUID, association_id: UUID) -> Mensalidade:
         stmt = select(Mensalidade).where(
             Mensalidade.id == mensalidade_id,

@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,6 +74,27 @@ async def list_by_resident(
     svc = MensalidadeService(session)
     items = await svc.list_by_resident(current.association_id, resident_id)
     return [_fmt(m) for m in items]
+
+
+@router.get("/paid", summary="Mensalidades pagas (com nome do morador)")
+async def list_paid(
+    month: str | None = Query(default=None, description="Filtrar por mês YYYY-MM"),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    svc = MensalidadeService(session)
+    return await svc.list_paid(current.association_id, month)
+
+
+@router.get("/report", summary="Relatório de mensalidades por período")
+async def payment_report(
+    from_month: str = Query(..., description="Mês inicial YYYY-MM"),
+    to_month: str = Query(..., description="Mês final YYYY-MM"),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = MensalidadeService(session)
+    return await svc.payment_report(current.association_id, from_month, to_month)
 
 
 @router.post("/{mensalidade_id}/pay", summary="Pagar mensalidade via caixa aberto")

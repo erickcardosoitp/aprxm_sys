@@ -1,6 +1,9 @@
 from datetime import datetime
+from typing import List
 from uuid import UUID, uuid4
 
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import ARRAY, TEXT
 from sqlmodel import Field, SQLModel
 
 
@@ -24,5 +27,9 @@ class Association(SQLModel, table=True):
     is_active: bool = Field(default=True)
     plan_name: str = Field(default="basic", max_length=50)
     plan_expires_at: datetime | None = None
+    linked_association_slugs: List[str] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(TEXT), nullable=False, server_default="{}"),
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -6,6 +6,7 @@ from sqlmodel import select
 
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.core.security import create_access_token, hash_password, verify_password
+from app.models.association import Association
 from app.models.user import User
 
 
@@ -28,7 +29,23 @@ class AuthService:
         user.last_login_at = datetime.utcnow()
         self._session.add(user)
 
-        return create_access_token(user.id, user.association_id, user.role.value, user.full_name)
+        # Resolve linked associations for aggregator accounts
+        linked_ids: list[str] = []
+        assoc_result = await self._session.execute(
+            select(Association).where(Association.id == user.association_id)
+        )
+        assoc = assoc_result.scalar_one_or_none()
+        if assoc and getattr(assoc, "linked_association_slugs", None):
+            slug_result = await self._session.execute(
+                select(Association).where(
+                    Association.slug.in_(assoc.linked_association_slugs)
+                )
+            )
+            linked_ids = [str(a.id) for a in slug_result.scalars().all()]
+
+        return create_access_token(
+            user.id, user.association_id, user.role.value, user.full_name, linked_ids
+        )
 
     async def create_user(
         self,
