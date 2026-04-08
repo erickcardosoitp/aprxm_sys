@@ -39,6 +39,8 @@ interface CloseModalProps {
 }
 
 function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
+  const role = useAuthStore((s) => s.role)
+  const isOperator = role === 'operator'
   const [step, setStep] = useState<CloseStep>('blind')
   const [blindAmount, setBlindAmount] = useState('')
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -163,30 +165,36 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
           {/* ── Step 2: Review ── */}
           {step === 'review' && result && (
             <div className="flex flex-col gap-4">
-              {/* Summary grid */}
+              {/* Summary grid — operators only see duration */}
               <div className="bg-gray-50 rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-gray-400">Saldo de abertura</p>
-                  <p className="font-semibold text-gray-800">R$ {fmt(openingBalance)}</p>
-                </div>
+                {!isOperator && (
+                  <div>
+                    <p className="text-xs text-gray-400">Saldo de abertura</p>
+                    <p className="font-semibold text-gray-800">R$ {fmt(openingBalance)}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-xs text-gray-400">Duração</p>
                   <p className="font-semibold text-gray-800">{elapsed(session.opened_at)}</p>
                 </div>
-                <div className="flex items-center gap-1">
-                  <PlusCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                  <div>
-                    <p className="text-xs text-gray-400">Entradas</p>
-                    <p className="font-semibold text-green-700">R$ {fmt(income)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <MinusCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                  <div>
-                    <p className="text-xs text-gray-400">Saídas</p>
-                    <p className="font-semibold text-red-600">R$ {fmt(exits)}</p>
-                  </div>
-                </div>
+                {!isOperator && (
+                  <>
+                    <div className="flex items-center gap-1">
+                      <PlusCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-400">Entradas</p>
+                        <p className="font-semibold text-green-700">R$ {fmt(income)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <MinusCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-400">Saídas</p>
+                        <p className="font-semibold text-red-600">R$ {fmt(exits)}</p>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Expected vs Counted */}
@@ -476,6 +484,8 @@ function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) 
 
 export function CashSessionPanel({ session, onRefresh, canConferencia = true }: Props) {
   const fullName = useAuthStore((s) => s.fullName)
+  const role = useAuthStore((s) => s.role)
+  const isOperator = role === 'operator'
   const [openBalance, setOpenBalance] = useState('')
   const [opening, setOpening] = useState(false)
   const [showClose, setShowClose] = useState(false)
@@ -570,12 +580,14 @@ export function CashSessionPanel({ session, onRefresh, canConferencia = true }: 
                 <p className="text-sm font-semibold text-gray-800 truncate">{fullName}</p>
               </div>
             )}
-            <div className="bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
-              <p className="text-xs text-gray-400 mb-0.5">Saldo de abertura</p>
-              <p className="text-sm font-semibold text-gray-800">
-                R$ {fmt(parseFloat(session.opening_balance))}
-              </p>
-            </div>
+            {!isOperator && (
+              <div className="bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
+                <p className="text-xs text-gray-400 mb-0.5">Saldo de abertura</p>
+                <p className="text-sm font-semibold text-gray-800">
+                  R$ {fmt(parseFloat(session.opening_balance))}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Instructions */}

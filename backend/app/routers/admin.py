@@ -1,7 +1,9 @@
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -112,6 +114,51 @@ async def update_user(
     user.updated_at = datetime.utcnow()
     session.add(user)
     return _serialize_user(user)
+
+
+class ResetDatabaseRequest(BaseModel):
+    confirm: str  # must be "RESETAR"
+    initial_balance: Decimal = Decimal("0.00")
+
+
+@router.post("/reset-database", summary="Resetar base de dados (manter usuários)")
+async def reset_database(
+    body: ResetDatabaseRequest,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if body.confirm != "RESETAR":
+        raise HTTPException(status_code=400, detail="Digite RESETAR para confirmar.")
+
+    aid = str(current.association_id)
+    tables = [
+        "reconciliations", "bank_statements",
+        "mensalidades", "transactions", "cash_sessions",
+        "service_order_comments", "service_order_history", "service_orders",
+        "package_events", "packages",
+        "residents",
+    ]
+    for table in tables:
+        await session.execute(
+            text(f"DELETE FROM {table} WHERE association_id = :aid"),
+            {"aid": aid},
+        )
+
+    # Update association settings initial balance
+    await session.execute(
+        text("""
+            UPDATE association_settings
+               SET default_cash_balance = :bal, updated_at = NOW()
+             WHERE association_id = :aid
+        """),
+        {"aid": aid, "bal": str(body.initial_balance)},
+    )
+
+    return {
+        "ok": True,
+        "message": "Base de dados resetada. Usuários mantidos.",
+        "initial_balance": str(body.initial_balance),
+    }
 
 
 @router.delete("/users/{user_id}", summary="Desativar usuário")

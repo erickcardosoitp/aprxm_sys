@@ -11,6 +11,7 @@ import AdminPage from './pages/admin/AdminPage'
 import SettingsPage from './pages/settings/SettingsPage'
 import FinanceiroPage from './pages/financeiro/FinanceiroPage'
 import GeralPage from './pages/geral/GeralPage'
+import SuperAdminPage from './pages/superadmin/SuperAdminPage'
 import { useAuthStore } from './store/authStore'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -21,6 +22,12 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const role = useAuthStore((s) => s.role)
   if (role !== 'admin' && role !== 'superadmin') return <Navigate to="/overview" replace />
+  return <>{children}</>
+}
+
+function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
+  const role = useAuthStore((s) => s.role)
+  if (role !== 'superadmin') return <Navigate to="/overview" replace />
   return <>{children}</>
 }
 
@@ -69,6 +76,7 @@ export default function App() {
           <Route path="settings"       element={<RequireConferente><SettingsPage /></RequireConferente>} />
           <Route path="financeiro"     element={<RequireConferente><FinanceiroPage /></RequireConferente>} />
           <Route path="geral"          element={<RequireAggregator><GeralPage /></RequireAggregator>} />
+          <Route path="superadmin"     element={<RequireSuperAdmin><SuperAdminPage /></RequireSuperAdmin>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

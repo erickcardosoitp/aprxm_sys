@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { BarChart2, DollarSign, FileText, LogOut, Package, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
+import { Activity, BarChart2, DollarSign, FileText, LogOut, Package, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 const FULL_NAV = [
@@ -25,8 +25,9 @@ const VIEWER_NAV = [
   { to: '/residents',      label: 'Moradores',  icon: Users },
 ]
 
-const ADMIN_NAV    = { to: '/admin',    label: 'Admin',  icon: ShieldCheck }
-const SETTINGS_NAV = { to: '/settings', label: 'Config', icon: Settings }
+const ADMIN_NAV      = { to: '/admin',      label: 'Admin',  icon: ShieldCheck }
+const SETTINGS_NAV   = { to: '/settings',   label: 'Config', icon: Settings }
+const SUPERADMIN_NAV = { to: '/superadmin', label: 'TI',     icon: Activity }
 
 export function AppShell() {
   const clearAuth         = useAuthStore((s) => s.clearAuth)
@@ -36,13 +37,15 @@ export function AppShell() {
   const navigate          = useNavigate()
 
   const isAdmin      = role === 'admin' || role === 'superadmin'
+  const isSuperAdmin = role === 'superadmin'
   const isConferente = role === 'conferente'
   const isDiretoria  = role === 'diretoria_adjunta'
   const isOperator   = role === 'operator'
   const isViewer     = role === 'viewer'
 
   let navItems = [...FULL_NAV]
-  if (isAdmin) navItems = [...FULL_NAV, ADMIN_NAV, SETTINGS_NAV]
+  if (isSuperAdmin) navItems = [...FULL_NAV, ADMIN_NAV, SETTINGS_NAV, SUPERADMIN_NAV]
+  else if (isAdmin) navItems = [...FULL_NAV, ADMIN_NAV, SETTINGS_NAV]
   else if (isConferente) navItems = [...FULL_NAV, SETTINGS_NAV]
   else if (isDiretoria) navItems = [...FULL_NAV, SETTINGS_NAV]
   else if (isOperator) navItems = [...OPERATOR_NAV]
@@ -59,10 +62,10 @@ export function AppShell() {
       {/* Top bar — extends into status bar area on iOS standalone */}
       <header className="bg-[#1a3f6f] text-white flex items-center justify-between px-4 py-3 shadow"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
-        <div className="flex flex-col leading-tight">
+        <div className="flex flex-col leading-tight min-w-0 max-w-[55vw]">
           <span className="font-extrabold text-base tracking-tight">APRXM</span>
           {associationName && (
-            <span className="text-[10px] opacity-60 leading-none truncate max-w-[140px]">{associationName}</span>
+            <span className="text-[10px] opacity-70 leading-none whitespace-nowrap overflow-hidden text-ellipsis">{associationName}</span>
           )}
         </div>
         <div className="flex items-center gap-3">

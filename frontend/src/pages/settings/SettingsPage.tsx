@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Save, Settings, Shield, Plus } from 'lucide-react'
+import { AlertTriangle, Loader2, Save, Settings, Shield, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { settingsService } from '../../services/settings'
 import api from '../../services/api'
@@ -101,6 +101,12 @@ export default function SettingsPage() {
   const canSeeAssociation =
     role === 'conferente' || role === 'admin' || role === 'superadmin'
   const isSuperadmin = role === 'superadmin' || role === 'admin'
+  const isAdmin = role === 'admin' || role === 'superadmin'
+
+  // ── Reset DB state ──
+  const [resetConfirm, setResetConfirm] = useState('')
+  const [resetBalance, setResetBalance] = useState('0')
+  const [resetting, setResetting] = useState(false)
 
   // ── Caixa state ──
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
@@ -274,6 +280,20 @@ export default function SettingsPage() {
 
   const setAssocField = (field: keyof AssociationData, value: string) =>
     setAssocForm((f) => ({ ...f, [field]: value }))
+
+  const handleReset = async () => {
+    if (resetConfirm !== 'RESETAR') { toast.error('Digite RESETAR para confirmar.'); return }
+    setResetting(true)
+    try {
+      await api.post('/admin/reset-database', { confirm: 'RESETAR', initial_balance: parseFloat(resetBalance) || 0 })
+      toast.success('Base resetada com sucesso! Usuários mantidos.')
+      setResetConfirm('')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao resetar.')
+    } finally {
+      setResetting(false)
+    }
+  }
 
   const inputCls =
     'w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
@@ -508,6 +528,65 @@ export default function SettingsPage() {
               {savingAccessGroups ? 'Salvando…' : 'Salvar Permissões'}
             </button>
           )}
+        </div>
+      )}
+
+      {/* ── Resetar Base de Dados (admin only) ── */}
+      {isAdmin && (
+        <div className="bg-white rounded-xl border border-red-200 shadow-sm p-5 flex flex-col gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+              <Trash2 className="w-4 h-4 text-red-600" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-800">Resetar Base de Dados</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Apaga todos os dados operacionais (moradores, transações, encomendas, ordens) mantendo os usuários.
+                Use para reiniciar o ambiente de testes com saldo inicial limpo.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800"><strong>Atenção:</strong> Esta operação é irreversível. Todos os dados serão permanentemente apagados.</p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Saldo inicial da organização (R$)</label>
+              <p className="text-xs text-gray-400 mb-2">Valor de troco disponível ao abrir o primeiro caixa.</p>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">R$</span>
+                <input
+                  type="number" min="0" step="0.01" value={resetBalance}
+                  onChange={e => setResetBalance(e.target.value)}
+                  className={`${inputCls} pl-9`} placeholder="100.00"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Digite <span className="font-mono font-bold text-red-600">RESETAR</span> para confirmar
+              </label>
+              <input
+                type="text"
+                value={resetConfirm}
+                onChange={e => setResetConfirm(e.target.value)}
+                className={`${inputCls} border-red-200 focus:ring-red-300 focus:border-red-400`}
+                placeholder="RESETAR"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={handleReset}
+            disabled={resetting || resetConfirm !== 'RESETAR'}
+            className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl font-semibold transition disabled:opacity-40"
+          >
+            {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            {resetting ? 'Resetando…' : 'Resetar Base de Dados'}
+          </button>
         </div>
       )}
 
