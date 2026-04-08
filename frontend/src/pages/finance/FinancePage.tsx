@@ -582,7 +582,7 @@ export default function FinancePage() {
       {tab === 'sessoes' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-800">Histórico de Sessões</h3>
+            <h3 className="font-semibold text-gray-800 text-sm">Histórico de Sessões</h3>
             <button onClick={loadSessions} className="text-gray-400 hover:text-gray-600">
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -592,40 +592,68 @@ export default function FinancePage() {
           ) : sessions.length === 0 ? (
             <div className="p-6 text-center text-gray-400 text-sm">Nenhuma sessão encontrada.</div>
           ) : (
-            <ul className="divide-y divide-gray-100">
-              {sessions.map(s => {
-                const diff = s.difference ? parseFloat(s.difference) : null
-                return (
-                  <li
-                    key={s.id}
-                    className="px-4 py-4 cursor-pointer hover:bg-gray-50 transition"
-                    onClick={() => setSelectedSession(s)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-800">{fmtDate(s.opened_at)}</p>
-                        {s.closed_at && <p className="text-xs text-gray-400">Fechado: {fmtDate(s.closed_at)}</p>}
-                        <div className="flex gap-3 mt-1.5 text-xs text-gray-600">
-                          <span>Abertura: <strong>{fmtBRL(s.opening_balance)}</strong></span>
-                          {s.closing_balance && <span>Fechamento: <strong>{fmtBRL(s.closing_balance)}</strong></span>}
-                          {s.expected_balance && <span>Esperado: <strong>{fmtBRL(s.expected_balance)}</strong></span>}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                          {s.status === 'open' ? 'Aberta' : 'Fechada'}
-                        </span>
-                        {diff != null && (
-                          <span className={`text-xs font-semibold ${diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            Diferença: {diff >= 0 ? '+' : ''}R$ {Math.abs(diff).toFixed(2)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-semibold uppercase tracking-wide">
+                    <th className="px-3 py-2.5 text-left whitespace-nowrap">Data</th>
+                    <th className="px-3 py-2.5 text-left whitespace-nowrap">Operador</th>
+                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ PIX</th>
+                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Dinheiro</th>
+                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Total Bruto</th>
+                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Baixas</th>
+                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Total Líquido</th>
+                    <th className="px-3 py-2.5 text-right whitespace-nowrap">Conf. Cega</th>
+                    <th className="px-3 py-2.5 text-right whitespace-nowrap">Sobra/Falta</th>
+                    <th className="px-3 py-2.5 text-left whitespace-nowrap">Conferido por</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {sessions.map(s => {
+                    const bruto = parseFloat(s.total_bruto ?? '0')
+                    const baixas = parseFloat(s.total_baixas ?? '0')
+                    const liquido = bruto - baixas
+                    // difference stored as (counted - expected); user wants sobra=negative, falta=positive → negate
+                    const rawDiff = s.difference != null ? parseFloat(s.difference) : null
+                    const displayDiff = rawDiff != null ? -rawDiff : null
+                    const isSobra = displayDiff != null && displayDiff < 0
+                    const isFalta = displayDiff != null && displayDiff > 0
+                    const fmtV = (v: number) => `R$ ${v.toFixed(2)}`
+                    return (
+                      <tr key={s.id}
+                        className="hover:bg-gray-50 transition cursor-pointer"
+                        onClick={() => setSelectedSession(s)}>
+                        <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
+                          <div>{new Date(s.opened_at).toLocaleDateString('pt-BR')}</div>
+                          {s.status === 'open' && (
+                            <span className="inline-block mt-0.5 text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Aberta</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{s.operador_name ?? '—'}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_pix ?? '0'))}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_dinheiro ?? '0'))}</td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-green-700 whitespace-nowrap">{fmtV(bruto)}</td>
+                        <td className="px-3 py-2.5 text-right text-amber-700 whitespace-nowrap">{fmtV(baixas)}</td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-[#26619c] whitespace-nowrap">{fmtV(liquido)}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-700 whitespace-nowrap">
+                          {s.closing_balance != null ? fmtV(parseFloat(s.closing_balance)) : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right whitespace-nowrap font-semibold">
+                          {displayDiff == null ? '—' : (
+                            <span className={isSobra ? 'text-amber-600' : isFalta ? 'text-red-600' : 'text-green-600'}>
+                              {isSobra ? '▼ ' : isFalta ? '▲ ' : ''}
+                              {`R$ ${Math.abs(displayDiff).toFixed(2)}`}
+                              <span className="ml-1 font-normal text-[10px]">{isSobra ? 'Sobra' : isFalta ? 'Falta' : 'OK'}</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{s.conferido_por ?? '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

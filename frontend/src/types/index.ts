@@ -256,4 +256,10 @@ export interface CashSessionSummary {
   difference?: string
   opened_at: string
   closed_at?: string
+  operador_name?: string
+  conferido_por?: string
+  total_pix?: string
+  total_dinheiro?: string
+  total_bruto?: string
+  total_baixas?: string
 }

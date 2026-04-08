@@ -201,26 +201,61 @@ async def list_sessions(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    from sqlmodel import select
-    stmt = (
-        select(CashSession)
-        .where(CashSession.association_id == current.association_id)
-        .order_by(CashSession.opened_at.desc())
+    from sqlalchemy import text as sa_text
+    result = await session.execute(
+        sa_text("""
+            SELECT
+                cs.id,
+                cs.status,
+                cs.opened_at,
+                cs.closed_at,
+                cs.opening_balance,
+                cs.closing_balance,
+                cs.expected_balance,
+                cs.difference,
+                u_open.full_name  AS operador_name,
+                u_close.full_name AS conferido_por,
+                COALESCE(SUM(CASE WHEN t.type = 'income'
+                    AND pm.name ILIKE '%pix%' THEN t.amount ELSE 0 END), 0) AS total_pix,
+                COALESCE(SUM(CASE WHEN t.type = 'income'
+                    AND (pm.name ILIKE '%dinheiro%' OR pm.name ILIKE '%espécie%'
+                         OR pm.name ILIKE '%especie%' OR t.payment_method_id IS NULL)
+                    THEN t.amount ELSE 0 END), 0) AS total_dinheiro,
+                COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) AS total_bruto,
+                COALESCE(SUM(CASE WHEN t.type = 'sangria' THEN t.amount ELSE 0 END), 0) AS total_baixas
+            FROM cash_sessions cs
+            LEFT JOIN users u_open  ON u_open.id  = cs.opened_by
+            LEFT JOIN users u_close ON u_close.id = cs.closed_by
+            LEFT JOIN transactions t
+                ON t.cash_session_id = cs.id AND t.association_id = cs.association_id
+            LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+            WHERE cs.association_id = :aid
+            GROUP BY cs.id, cs.status, cs.opened_at, cs.closed_at,
+                     cs.opening_balance, cs.closing_balance, cs.expected_balance,
+                     cs.difference, u_open.full_name, u_close.full_name
+            ORDER BY cs.opened_at DESC
+        """),
+        {"aid": str(current.association_id)},
     )
-    result = await session.execute(stmt)
-    sessions = result.scalars().all()
+    rows = result.fetchall()
     return [
         {
-            "id": str(s.id),
-            "status": s.status,
-            "opening_balance": str(s.opening_balance),
-            "closing_balance": str(s.closing_balance) if s.closing_balance is not None else None,
-            "expected_balance": str(s.expected_balance) if s.expected_balance is not None else None,
-            "difference": str(s.difference) if s.difference is not None else None,
-            "opened_at": str(s.opened_at),
-            "closed_at": str(s.closed_at) if s.closed_at else None,
+            "id": str(r[0]),
+            "status": r[1],
+            "opened_at": str(r[2]),
+            "closed_at": str(r[3]) if r[3] else None,
+            "opening_balance": str(r[4]),
+            "closing_balance": str(r[5]) if r[5] is not None else None,
+            "expected_balance": str(r[6]) if r[6] is not None else None,
+            "difference": str(r[7]) if r[7] is not None else None,
+            "operador_name": r[8],
+            "conferido_por": r[9],
+            "total_pix": str(round(float(r[10]), 2)),
+            "total_dinheiro": str(round(float(r[11]), 2)),
+            "total_bruto": str(round(float(r[12]), 2)),
+            "total_baixas": str(round(float(r[13]), 2)),
         }
-        for s in sessions
+        for r in rows
     ]
 
 
