@@ -23,6 +23,7 @@ def create_access_token(
     role: str,
     full_name: str = "",
     linked_association_ids: list[str] | None = None,
+    association_name: str = "",
 ) -> str:
     expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {
@@ -31,6 +32,7 @@ def create_access_token(
         "role": role,
         "full_name": full_name,
         "linked_association_ids": linked_association_ids or [],
+        "association_name": association_name,
         "exp": expire,
         "iat": datetime.now(UTC),
     }

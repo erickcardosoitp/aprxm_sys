@@ -100,11 +100,18 @@ class PackageService:
         )
         is_active_member = self._is_active_member(resident)
 
+        # Delinquent members (overdue > 2 days) also pay the fee
+        is_delinquent = False
+        if is_active_member and resident:
+            from app.services.mensalidade_service import MensalidadeService
+            mens_svc = MensalidadeService(self._session)
+            is_delinquent = await mens_svc.has_delinquent_mensalidade(association_id, resident.id)
+
         same_deliverer = (
             package.deliverer_name and delivery_person_name and
             package.deliverer_name.strip().lower() == delivery_person_name.strip().lower()
         )
-        if not is_active_member and not same_deliverer:
+        if (not is_active_member or is_delinquent) and not same_deliverer:
             # Charge fee — open session required
             cash_session = await self._finance.get_open_session(association_id)
             tx = await self._finance.register_transaction(

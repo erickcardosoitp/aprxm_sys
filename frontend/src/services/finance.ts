@@ -37,4 +37,23 @@ export const financeService = {
 
   conferencia: (counted_amount: number) =>
     api.post<{ session_id: string; expected: string; counted: string; difference: string; income: string; exits: string; opening_balance: string }>('/finance/sessions/conferencia', { counted_amount }),
+
+  listPendingApprovals: () =>
+    api.get<PendingApproval[]>('/finance/transactions/pending-approval'),
+
+  approveTransaction: (id: string, signature_url?: string) =>
+    api.post(`/finance/transactions/${id}/approve`, { signature_url }),
+
+  rejectTransaction: (id: string, reason: string) =>
+    api.post(`/finance/transactions/${id}/reject`, { reason }),
+}
+
+export interface PendingApproval {
+  id: string
+  amount: string
+  description: string
+  category_name: string | null
+  creator_name: string
+  transaction_at: string
+  approval_status: string
 }

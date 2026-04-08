@@ -44,8 +44,16 @@ class AuthService:
             )
             linked_ids = [str(r[0]) for r in ids_row.fetchall()]
 
+        # Fetch association name for JWT
+        assoc_name_row = await self._session.execute(
+            text("SELECT name FROM associations WHERE id = :id"),
+            {"id": str(user.association_id)},
+        )
+        assoc_name_result = assoc_name_row.fetchone()
+        association_name = assoc_name_result[0] if assoc_name_result else ""
+
         return create_access_token(
-            user.id, user.association_id, user.role.value, user.full_name, linked_ids
+            user.id, user.association_id, user.role.value, user.full_name, linked_ids, association_name
         )
 
     async def create_user(

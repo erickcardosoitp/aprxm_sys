@@ -29,10 +29,11 @@ const ADMIN_NAV    = { to: '/admin',    label: 'Admin',  icon: ShieldCheck }
 const SETTINGS_NAV = { to: '/settings', label: 'Config', icon: Settings }
 
 export function AppShell() {
-  const clearAuth = useAuthStore((s) => s.clearAuth)
-  const role      = useAuthStore((s) => s.role)
-  const fullName  = useAuthStore((s) => s.fullName)
-  const navigate  = useNavigate()
+  const clearAuth         = useAuthStore((s) => s.clearAuth)
+  const role              = useAuthStore((s) => s.role)
+  const fullName          = useAuthStore((s) => s.fullName)
+  const associationName   = useAuthStore((s) => s.associationName)
+  const navigate          = useNavigate()
 
   const isAdmin      = role === 'admin' || role === 'superadmin'
   const isConferente = role === 'conferente'
@@ -58,7 +59,12 @@ export function AppShell() {
       {/* Top bar — extends into status bar area on iOS standalone */}
       <header className="bg-[#1a3f6f] text-white flex items-center justify-between px-4 py-3 shadow"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
-        <span className="font-extrabold text-lg tracking-tight">APRXM</span>
+        <div className="flex flex-col leading-tight">
+          <span className="font-extrabold text-base tracking-tight">APRXM</span>
+          {associationName && (
+            <span className="text-[10px] opacity-60 leading-none truncate max-w-[140px]">{associationName}</span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           {fullName && (
             <div className="flex items-center gap-2">

@@ -109,6 +109,13 @@ class Transaction(SQLModel, table=True):
     reversed_by: UUID | None = Field(default=None, foreign_key="users.id")
     reversed_at: datetime | None = None
 
+    # expense approval
+    approval_status: str | None = Field(default=None, max_length=20)  # None | 'pending' | 'approved' | 'rejected'
+    approved_by: UUID | None = Field(default=None, foreign_key="users.id")
+    approved_at: datetime | None = None
+    approval_signature_url: str | None = None
+    rejection_reason: str | None = None
+
     created_by: UUID = Field(foreign_key="users.id")
     transaction_at: datetime = Field(default_factory=datetime.utcnow)
     created_at: datetime = Field(default_factory=datetime.utcnow)

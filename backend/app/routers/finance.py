@@ -165,6 +165,8 @@ async def list_transactions(
             "description": t.description,
             "transaction_at": str(t.transaction_at),
             "is_sangria": t.is_sangria,
+            "approval_status": t.approval_status,
+            "is_reversal": t.is_reversal,
         }
         for t in txs
     ]
@@ -245,6 +247,59 @@ async def conferencia_caixa(
         "counted": str(round(counted, 2)),
         "difference": str(round(counted - expected, 2)),
     }
+
+
+class ApproveExpenseRequest(BaseModel):
+    signature_url: str | None = None
+
+
+class RejectExpenseRequest(BaseModel):
+    reason: str = Field(min_length=5, description="Motivo da recusa")
+
+
+@router.get("/transactions/pending-approval", summary="Listar despesas pendentes de aprovação")
+async def list_pending_approvals(
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    svc = FinanceService(session)
+    return await svc.list_pending_approvals(current.association_id)
+
+
+@router.post("/transactions/{transaction_id}/approve", summary="Aprovar despesa")
+async def approve_transaction(
+    transaction_id: UUID,
+    body: ApproveExpenseRequest,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = FinanceService(session)
+    tx = await svc.approve_transaction(
+        transaction_id=transaction_id,
+        association_id=current.association_id,
+        approved_by=current.user_id,
+        signature_url=body.signature_url,
+    )
+    await session.commit()
+    return {"id": str(tx.id), "approval_status": tx.approval_status, "approved_at": str(tx.approved_at)}
+
+
+@router.post("/transactions/{transaction_id}/reject", summary="Recusar despesa")
+async def reject_transaction_approval(
+    transaction_id: UUID,
+    body: RejectExpenseRequest,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = FinanceService(session)
+    tx = await svc.reject_transaction(
+        transaction_id=transaction_id,
+        association_id=current.association_id,
+        rejected_by=current.user_id,
+        reason=body.reason,
+    )
+    await session.commit()
+    return {"id": str(tx.id), "approval_status": tx.approval_status}
 
 
 class ReversalRequest(BaseModel):

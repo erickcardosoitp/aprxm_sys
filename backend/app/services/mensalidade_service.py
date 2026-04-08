@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -176,14 +176,30 @@ class MensalidadeService:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def has_delinquent_mensalidade(
+        self, association_id: UUID, resident_id: UUID
+    ) -> bool:
+        """Returns True if resident has any mensalidade overdue by more than 2 days."""
+        today = date.today()
+        grace_cutoff = today - timedelta(days=2)
+        stmt = select(Mensalidade).where(
+            Mensalidade.association_id == association_id,
+            Mensalidade.resident_id == resident_id,
+            Mensalidade.status != MensalidadeStatus.paid,
+            Mensalidade.due_date < grace_cutoff,
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def list_delinquent(self, association_id: UUID) -> list[dict]:
         today = date.today()
+        grace_cutoff = today - timedelta(days=2)
         stmt = (
             select(Mensalidade)
             .where(
                 Mensalidade.association_id == association_id,
                 Mensalidade.status != MensalidadeStatus.paid,
-                Mensalidade.due_date < today,
+                Mensalidade.due_date < grace_cutoff,
             )
             .order_by(Mensalidade.due_date.asc())
         )
@@ -206,14 +222,15 @@ class MensalidadeService:
         return delinquent
 
     async def list_pending(self, association_id: UUID) -> list[dict]:
-        """Mensalidades pendentes ainda não vencidas (a receber)."""
+        """Mensalidades pendentes (inclui período de carência de 2 dias após vencimento)."""
         today = date.today()
+        grace_cutoff = today - timedelta(days=2)
         stmt = (
             select(Mensalidade)
             .where(
                 Mensalidade.association_id == association_id,
                 Mensalidade.status == MensalidadeStatus.pending,
-                Mensalidade.due_date >= today,
+                Mensalidade.due_date >= grace_cutoff,
             )
             .order_by(Mensalidade.due_date.asc())
         )

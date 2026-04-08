@@ -80,7 +80,12 @@ class FinanceService:
         for tx in transactions:
             if tx.type == TransactionType.income:
                 balance += tx.amount
+            elif tx.type == TransactionType.expense:
+                # Only approved expenses affect balance
+                if tx.approval_status == "approved":
+                    balance -= tx.amount
             else:
+                # sangria always affects balance
                 balance -= tx.amount
         return balance
 
@@ -112,6 +117,9 @@ class FinanceService:
         reference_number: str | None = None,
         package_id: UUID | None = None,
     ) -> Transaction:
+        # Expense transactions require approval before affecting balance
+        approval_status = "pending" if tx_type == TransactionType.expense else None
+
         tx = Transaction(
             association_id=association_id,
             cash_session_id=cash_session_id,
@@ -125,6 +133,7 @@ class FinanceService:
             reference_number=reference_number,
             package_id=package_id,
             created_by=created_by,
+            approval_status=approval_status,
         )
         self._session.add(tx)
         await self._session.flush()
@@ -275,6 +284,93 @@ class FinanceService:
                 for p in payments
             ],
         }
+
+    async def list_pending_approvals(self, association_id: UUID) -> list[dict]:
+        from sqlalchemy import text as sa_text
+        result = await self._session.execute(
+            sa_text("""
+                SELECT t.id, t.amount, t.description, t.category_id,
+                       t.transaction_at, t.created_by, u.full_name AS creator_name,
+                       c.name AS category_name
+                FROM transactions t
+                JOIN users u ON u.id = t.created_by
+                LEFT JOIN transaction_categories c ON c.id = t.category_id
+                WHERE t.association_id = :aid
+                  AND t.type = 'expense'
+                  AND t.approval_status = 'pending'
+                ORDER BY t.transaction_at ASC
+            """),
+            {"aid": str(association_id)},
+        )
+        rows = result.fetchall()
+        return [
+            {
+                "id": str(r[0]),
+                "amount": str(r[1]),
+                "description": r[2],
+                "category_id": str(r[3]) if r[3] else None,
+                "transaction_at": str(r[4]),
+                "created_by": str(r[5]),
+                "creator_name": r[6],
+                "category_name": r[7],
+                "approval_status": "pending",
+            }
+            for r in rows
+        ]
+
+    async def approve_transaction(
+        self,
+        transaction_id: UUID,
+        association_id: UUID,
+        approved_by: UUID,
+        signature_url: str | None = None,
+    ) -> Transaction:
+        stmt = select(Transaction).where(
+            Transaction.id == transaction_id,
+            Transaction.association_id == association_id,
+        )
+        result = await self._session.execute(stmt)
+        tx = result.scalar_one_or_none()
+        if not tx:
+            raise NotFoundError("Transação")
+        if tx.approval_status != "pending":
+            from app.core.exceptions import UnprocessableError
+            raise UnprocessableError("Transação não está pendente de aprovação.")
+        tx.approval_status = "approved"
+        tx.approved_by = approved_by
+        tx.approved_at = datetime.utcnow()
+        tx.approval_signature_url = signature_url
+        tx.updated_at = datetime.utcnow()
+        self._session.add(tx)
+        await self._session.flush()
+        return tx
+
+    async def reject_transaction(
+        self,
+        transaction_id: UUID,
+        association_id: UUID,
+        rejected_by: UUID,
+        reason: str,
+    ) -> Transaction:
+        stmt = select(Transaction).where(
+            Transaction.id == transaction_id,
+            Transaction.association_id == association_id,
+        )
+        result = await self._session.execute(stmt)
+        tx = result.scalar_one_or_none()
+        if not tx:
+            raise NotFoundError("Transação")
+        if tx.approval_status != "pending":
+            from app.core.exceptions import UnprocessableError
+            raise UnprocessableError("Transação não está pendente de aprovação.")
+        tx.approval_status = "rejected"
+        tx.approved_by = rejected_by
+        tx.approved_at = datetime.utcnow()
+        tx.rejection_reason = reason
+        tx.updated_at = datetime.utcnow()
+        self._session.add(tx)
+        await self._session.flush()
+        return tx
 
     async def list_transactions(
         self, association_id: UUID, cash_session_id: UUID | None = None

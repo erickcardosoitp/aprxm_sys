@@ -73,8 +73,8 @@ export default function LoginPage() {
         association_id: selectedOrg.id,
       })
       const token = res.data.access_token
-      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[] }>(token)
-      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [])
+      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string }>(token)
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '')
       navigate('/')
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Credenciais inválidas.')

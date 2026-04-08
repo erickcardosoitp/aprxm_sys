@@ -57,6 +57,8 @@ export interface Transaction {
   description: string
   transaction_at: string
   is_sangria: boolean
+  is_reversal?: boolean
+  approval_status?: string | null
   category_id?: string
   resident_id?: string
   created_by?: string
