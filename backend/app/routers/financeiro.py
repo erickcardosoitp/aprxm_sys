@@ -239,22 +239,24 @@ async def get_evolucao(
 async def get_fluxo_projetado(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> dict:
+) -> list[dict]:
     result = await session.execute(
         text("""
-            SELECT COALESCE(SUM(amount), 0), COUNT(*)
-            FROM mensalidades
-            WHERE association_id = :aid
-              AND status = 'pending'
-              AND due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
+            SELECT r.full_name, r.unit, r.block, m.reference_month, m.due_date, m.amount
+            FROM mensalidades m
+            JOIN residents r ON r.id = m.resident_id
+            WHERE m.association_id = :aid
+              AND m.status = 'pending'
+              AND m.due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
+            ORDER BY m.due_date ASC
         """),
         {"aid": str(current.association_id)},
     )
-    r = result.fetchone()
-    return {
-        "a_receber_30d": float(r[0]),
-        "mensalidades_count": int(r[1]),
-    }
+    return [
+        {"resident_name": r[0], "unit": r[1], "block": r[2],
+         "reference_month": r[3], "due_date": str(r[4]), "amount": str(r[5])}
+        for r in result.fetchall()
+    ]
 
 
 @router.post("/reconcile")

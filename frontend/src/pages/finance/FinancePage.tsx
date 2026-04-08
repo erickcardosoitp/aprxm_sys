@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
 import { TransactionModal } from '../../components/finance/TransactionModal'
+import api from '../../services/api'
 import { financeService, type PendingApproval } from '../../services/finance'
 import { settingsService } from '../../services/settings'
 import { useAuthStore } from '../../store/authStore'
@@ -138,7 +139,15 @@ function ApprovalModal({
   )
 }
 
-type Tab = 'caixa' | 'sessoes'
+type Tab = 'caixa' | 'sessoes' | 'extrato' | 'relatorios'
+
+interface ExtratoEntry {
+  id: string; data: string; tipo: string; descricao: string; valor: string
+  categoria?: string; metodo?: string; operador?: string; aprovacao?: string
+}
+
+interface EvolucaoEntry { mes: string; entradas: number; saidas: number }
+interface FluxoEntry { resident_name: string; unit?: string; block?: string; reference_month: string; due_date: string; amount: string }
 
 // ── Session detail modal ──────────────────────────────────────────────────────
 
@@ -318,6 +327,19 @@ export default function FinancePage() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
   const [approvalItem, setApprovalItem] = useState<PendingApproval | null>(null)
 
+  // ── Extrato state ──
+  const today = new Date().toISOString().slice(0, 10)
+  const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
+  const [extratoFrom, setExtratoFrom] = useState(firstOfMonth)
+  const [extratoTo, setExtratoTo] = useState(today)
+  const [extrato, setExtrato] = useState<ExtratoEntry[]>([])
+  const [loadingExtrato, setLoadingExtrato] = useState(false)
+
+  // ── Relatórios state ──
+  const [evolucao, setEvolucao] = useState<EvolucaoEntry[]>([])
+  const [fluxo, setFluxo] = useState<FluxoEntry[]>([])
+  const [loadingRel, setLoadingRel] = useState(false)
+
   const loadSession = async () => {
     try { const res = await financeService.getCurrentSession(); setSession(res.data) }
     catch { setSession(null) }
@@ -344,9 +366,33 @@ export default function FinancePage() {
     finally { setLoadingSessions(false) }
   }
 
+  const loadExtrato = async () => {
+    setLoadingExtrato(true)
+    try {
+      const res = await api.get<ExtratoEntry[]>('/financeiro/extrato', { params: { date_from: extratoFrom, date_to: extratoTo } })
+      setExtrato(res.data)
+    } catch { toast.error('Erro ao carregar extrato.') }
+    finally { setLoadingExtrato(false) }
+  }
+
+  const loadRelatorios = async () => {
+    setLoadingRel(true)
+    try {
+      const [evRes, flRes] = await Promise.all([
+        api.get<EvolucaoEntry[]>('/financeiro/evolucao'),
+        api.get<FluxoEntry[]>('/financeiro/fluxo-projetado'),
+      ])
+      setEvolucao(evRes.data)
+      setFluxo(flRes.data)
+    } catch { /* silent */ }
+    finally { setLoadingRel(false) }
+  }
+
   useEffect(() => { loadSession() }, [])
   useEffect(() => { loadTransactions() }, [session?.id])
   useEffect(() => { if (tab === 'sessoes') loadSessions() }, [tab])
+  useEffect(() => { if (tab === 'extrato') loadExtrato() }, [tab])
+  useEffect(() => { if (tab === 'relatorios') loadRelatorios() }, [tab])
   useEffect(() => {
     if (canSeeTotals) settingsService.get().then(r => setSettings(r.data)).catch(() => {})
   }, [canSeeTotals])
@@ -368,7 +414,7 @@ export default function FinancePage() {
       {/* Tabs — operators only see Frente de Caixa */}
       {isConferenteOrAbove && (
         <div className="flex border-b border-gray-200">
-          {([['caixa', 'Frente de Caixa'], ['sessoes', 'Sessões']] as [Tab, string][]).map(([t, label]) => (
+          {([['caixa', 'Frente de Caixa'], ['sessoes', 'Sessões'], ['extrato', 'Extrato'], ['relatorios', 'Relatórios']] as [Tab, string][]).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${tab === t ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
               {t === 'sessoes' && <List className="w-4 h-4" />}
@@ -580,6 +626,132 @@ export default function FinancePage() {
                 )
               })}
             </ul>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB: EXTRATO ── */}
+      {tab === 'extrato' && (
+        <div className="flex flex-col gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
+            <div className="flex gap-3 items-end">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">De</label>
+                <input type="date" value={extratoFrom} onChange={e => setExtratoFrom(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Até</label>
+                <input type="date" value={extratoTo} onChange={e => setExtratoTo(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <button onClick={loadExtrato} disabled={loadingExtrato}
+                className="px-4 py-2 bg-[#26619c] text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                {loadingExtrato ? '…' : 'Buscar'}
+              </button>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            {loadingExtrato ? (
+              <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
+            ) : extrato.length === 0 ? (
+              <div className="p-6 text-center text-gray-400 text-sm">Nenhuma transação no período.</div>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {extrato.map(e => (
+                  <li key={e.id} className="px-4 py-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{e.descricao}</p>
+                      <p className="text-xs text-gray-400">
+                        {new Date(e.data).toLocaleDateString('pt-BR')}
+                        {e.categoria ? ` · ${e.categoria}` : ''}
+                        {e.metodo ? ` · ${e.metodo}` : ''}
+                        {e.operador ? ` · ${e.operador}` : ''}
+                      </p>
+                      {e.aprovacao && e.aprovacao !== 'approved' && (
+                        <span className={`text-xs font-medium ${e.aprovacao === 'pending' ? 'text-amber-600' : 'text-red-600'}`}>
+                          {e.aprovacao === 'pending' ? 'Pendente aprovação' : 'Rejeitada'}
+                        </span>
+                      )}
+                    </div>
+                    <span className={`text-sm font-semibold shrink-0 ${e.tipo === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                      {e.tipo === 'income' ? '+' : '-'}R$ {parseFloat(e.valor).toFixed(2)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: RELATÓRIOS ── */}
+      {tab === 'relatorios' && (
+        <div className="flex flex-col gap-5">
+          {loadingRel ? (
+            <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+          ) : (
+            <>
+              {/* Evolução mensal */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                <h3 className="font-semibold text-gray-800 mb-4">Evolução Mensal (6 meses)</h3>
+                {evolucao.length === 0 ? (
+                  <p className="text-xs text-gray-400">Sem dados.</p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {evolucao.map(e => {
+                      const max = Math.max(...evolucao.map(x => Math.max(x.entradas, x.saidas)), 1)
+                      return (
+                        <div key={e.mes}>
+                          <p className="text-xs text-gray-500 mb-1">{e.mes}</p>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-green-600 w-14 shrink-0">Entrada</span>
+                              <div className="flex-1 bg-gray-100 rounded-full h-2">
+                                <div className="bg-green-500 h-2 rounded-full" style={{ width: `${(e.entradas / max) * 100}%` }} />
+                              </div>
+                              <span className="text-xs text-green-700 w-20 text-right shrink-0">R$ {e.entradas.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-red-600 w-14 shrink-0">Saída</span>
+                              <div className="flex-1 bg-gray-100 rounded-full h-2">
+                                <div className="bg-red-400 h-2 rounded-full" style={{ width: `${(e.saidas / max) * 100}%` }} />
+                              </div>
+                              <span className="text-xs text-red-700 w-20 text-right shrink-0">R$ {e.saidas.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Fluxo projetado */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                <h3 className="font-semibold text-gray-800 mb-1">Fluxo Projetado (próximos 30 dias)</h3>
+                <p className="text-xs text-gray-400 mb-4">Mensalidades pendentes com vencimento nos próximos 30 dias.</p>
+                {fluxo.length === 0 ? (
+                  <p className="text-xs text-gray-400">Nenhuma mensalidade projetada.</p>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {fluxo.map((f, i) => (
+                      <li key={i} className="py-2.5 flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{f.resident_name}</p>
+                          <p className="text-xs text-gray-400">
+                            Venc: {new Date(f.due_date).toLocaleDateString('pt-BR')}
+                            {f.unit ? ` · Unid. ${f.unit}` : ''}
+                            {f.block ? ` / Bl. ${f.block}` : ''}
+                          </p>
+                        </div>
+                        <span className="text-sm font-semibold text-[#26619c] shrink-0">R$ {parseFloat(f.amount).toFixed(2)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}

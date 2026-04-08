@@ -565,22 +565,31 @@ interface InadimplenciaEntry {
   reference_month: string; due_date: string; amount: string; status: string; paid_at: string | null; pago_em_atraso: boolean
 }
 
+interface ResidentPackage {
+  id: string; status: string; received_at: string; carrier_name?: string; tracking_code?: string; object_type?: string
+}
+
+type ProfileTab = 'mensalidades' | 'inadimplencia' | 'encomendas'
+
 function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClose: () => void }) {
   const [mensalidades, setMensalidades] = useState<MensalidadeEntry[]>([])
   const [inadimplencias, setInadimplencias] = useState<InadimplenciaEntry[]>([])
-  const [tab, setTab] = useState<'mensalidades' | 'inadimplencia'>('mensalidades')
+  const [pkgs, setPkgs] = useState<ResidentPackage[]>([])
+  const [tab, setTab] = useState<ProfileTab>('mensalidades')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetch = async () => {
       setLoading(true)
       try {
-        const [mRes, iRes] = await Promise.all([
+        const [mRes, iRes, pRes] = await Promise.all([
           api.get<MensalidadeEntry[]>(`/mensalidades/residents/${resident.id}`),
           api.get<InadimplenciaEntry[]>(`/mensalidades/residents/${resident.id}/inadimplencia`),
+          api.get<ResidentPackage[]>(`/packages/resident/${resident.id}`),
         ])
         setMensalidades(mRes.data)
         setInadimplencias(iRes.data)
+        setPkgs(pRes.data)
       } catch { /* silent */ }
       setLoading(false)
     }
@@ -631,14 +640,12 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
         </div>
 
         <div className="flex gap-1 bg-gray-100 p-1 m-4 rounded-xl shrink-0">
-          <button onClick={() => setTab('mensalidades')}
-            className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === 'mensalidades' ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
-            Mensalidades
-          </button>
-          <button onClick={() => setTab('inadimplencia')}
-            className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === 'inadimplencia' ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
-            Inadimplência
-          </button>
+          {(['mensalidades', 'inadimplencia', 'encomendas'] as ProfileTab[]).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
+              {t === 'mensalidades' ? 'Mensalidades' : t === 'inadimplencia' ? 'Inadimplência' : 'Encomendas'}
+            </button>
+          ))}
         </div>
 
         <div className="overflow-y-auto flex-1 px-4 pb-4">
@@ -668,7 +675,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                 ))}
               </ul>
             )
-          ) : (
+          ) : tab === 'inadimplencia' ? (
             inadimplencias.length === 0 ? (
               <div className="py-8 text-center text-gray-400 text-sm flex flex-col items-center gap-2">
                 <AlertCircle className="w-8 h-8 text-gray-300" />
@@ -694,6 +701,35 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                 ))}
               </ul>
             )
+          ) : (
+            pkgs.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-sm">Nenhuma encomenda registrada.</div>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {pkgs.map((p) => (
+                  <li key={p.id} className="bg-gray-50 rounded-xl px-3 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800">{p.object_type ?? 'Encomenda'}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(p.received_at).toLocaleDateString('pt-BR')}
+                          {p.carrier_name ? ` · ${p.carrier_name}` : ''}
+                          {p.tracking_code ? ` · ${p.tracking_code}` : ''}
+                        </p>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                        p.status === 'delivered' ? 'bg-green-100 text-green-700' :
+                        p.status === 'returned' ? 'bg-gray-100 text-gray-600' :
+                        p.status === 'notified' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {p.status === 'delivered' ? 'Entregue' : p.status === 'returned' ? 'Devolvido' : p.status === 'notified' ? 'Notificado' : 'Aguardando'}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )
           )}
         </div>
       </div>
@@ -711,12 +747,13 @@ export default function ResidentsPage() {
   const [profileResident, setProfileResident] = useState<Resident | null>(null)
   const [activeTab, setActiveTab] = useState<ResidentTab>('associados')
   const [filterStatus, setFilterStatus] = useState<ResidentStatus | ''>('')
+  const [filterDelinquent, setFilterDelinquent] = useState(false)
+  const [delinquentIds, setDelinquentIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
 
   const load = async () => {
     try {
       const params: Record<string, string> = {}
-      // For associados and dependentes, fetch members; for visitantes, fetch guests
       if (activeTab === 'visitantes') params.type = 'guest'
       else params.type = 'member'
       if (search.trim()) params.q = search.trim()
@@ -728,13 +765,22 @@ export default function ResidentsPage() {
     }
   }
 
+  const loadDelinquents = async () => {
+    try {
+      const res = await api.get<{ resident_id: string }[]>('/mensalidades/delinquent')
+      setDelinquentIds(new Set(res.data.map((d: any) => d.resident_id ?? d.id)))
+    } catch { /* silent */ }
+  }
+
   useEffect(() => { load() }, [activeTab, filterStatus, search])
+  useEffect(() => { loadDelinquents() }, [])
 
   // Client-side split: associados = members without responsible_id, dependentes = members with responsible_id
   const displayedResidents = residents.filter(r => {
-    if (activeTab === 'associados') return r.type === 'member' && !r.responsible_id
-    if (activeTab === 'dependentes') return r.type === 'member' && !!r.responsible_id
-    return true // visitantes already filtered by type=guest in API call
+    if (activeTab === 'associados') { if (r.type !== 'member' || r.responsible_id) return false }
+    else if (activeTab === 'dependentes') { if (r.type !== 'member' || !r.responsible_id) return false }
+    if (filterDelinquent && !delinquentIds.has(r.id)) return false
+    return true
   })
 
   const handleSave = async (form: FormState) => {
@@ -851,6 +897,12 @@ export default function ResidentsPage() {
               {s === '' ? 'Todos' : STATUS_LABELS[s as ResidentStatus]}
             </button>
           ))}
+          <button onClick={() => setFilterDelinquent(v => !v)}
+            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition border ${
+              filterDelinquent ? 'bg-red-600 text-white border-red-600' : 'border-red-300 text-red-600 bg-red-50 hover:bg-red-100'
+            }`}>
+            Inadimplentes {delinquentIds.size > 0 && `(${delinquentIds.size})`}
+          </button>
         </div>
       </div>
 

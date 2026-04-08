@@ -928,6 +928,22 @@ export default function ServiceOrdersPage() {
   const [showNewOS, setShowNewOS] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null)
 
+  // Report state
+  const [showReport, setShowReport] = useState(false)
+  const [reportFrom, setReportFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
+  const [reportTo, setReportTo] = useState(new Date().toISOString().slice(0, 10))
+  const [reportData, setReportData] = useState<any>(null)
+  const [loadingReport, setLoadingReport] = useState(false)
+
+  const loadReport = async () => {
+    setLoadingReport(true)
+    try {
+      const res = await api.get('/service-orders/report', { params: { date_from: reportFrom, date_to: reportTo } })
+      setReportData(res.data)
+    } catch { toast.error('Erro ao carregar relatório.') }
+    finally { setLoadingReport(false) }
+  }
+
   // Filters
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<ServiceOrderStatus | ''>('')
@@ -965,14 +981,20 @@ export default function ServiceOrdersPage() {
           <FileText className="w-6 h-6 text-[#26619c]" />
           Ordens de Serviço
         </h1>
-        {canWrite && (
-          <button
-            onClick={() => setShowNewOS(true)}
-            className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition"
-          >
-            <Plus className="w-4 h-4" /> Nova OS
+        <div className="flex gap-2">
+          <button onClick={() => { setShowReport(true); loadReport() }}
+            className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
+            <FileText className="w-4 h-4" /><span className="hidden sm:inline">Relatório</span>
           </button>
-        )}
+          {canWrite && (
+            <button
+              onClick={() => setShowNewOS(true)}
+              className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition"
+            >
+              <Plus className="w-4 h-4" /> Nova OS
+            </button>
+          )}
+        </div>
       </div>
 
       {/* KPIs */}
@@ -1089,6 +1111,66 @@ export default function ServiceOrdersPage() {
           onClose={() => setSelectedOrder(null)}
           onUpdated={load}
         />
+      )}
+
+      {showReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl mx-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+              <h3 className="font-semibold text-gray-900">Relatório de OS</h3>
+              <button onClick={() => setShowReport(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="p-5 flex flex-col gap-4 overflow-y-auto">
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">De</label>
+                  <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Até</label>
+                  <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <button onClick={loadReport} disabled={loadingReport}
+                  className="px-4 py-2 bg-[#26619c] text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                  {loadingReport ? '…' : 'Buscar'}
+                </button>
+              </div>
+              {reportData && (
+                <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'Total', value: reportData.total, color: 'text-gray-800' },
+                      { label: 'Abertas', value: reportData.abertas, color: 'text-blue-600' },
+                      { label: 'Resolvidas', value: reportData.resolvidas, color: 'text-green-600' },
+                      { label: 'Canceladas', value: reportData.canceladas, color: 'text-gray-500' },
+                      { label: 'Críticas', value: reportData.criticas, color: 'text-red-600' },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className="bg-gray-50 rounded-xl p-3">
+                        <p className="text-xs text-gray-500">{label}</p>
+                        <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {reportData.by_area?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-2">Por Área</p>
+                      <ul className="flex flex-col gap-1">
+                        {reportData.by_area.map((a: any) => (
+                          <li key={a.area} className="flex justify-between text-sm">
+                            <span className="text-gray-700">{a.area}</span>
+                            <span className="font-medium text-gray-800">{a.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
