@@ -364,8 +364,6 @@ class FinanceService:
             from app.core.exceptions import UnprocessableError
             raise UnprocessableError("Transação não está pendente de aprovação.")
         tx.approval_status = "rejected"
-        tx.approved_by = rejected_by
-        tx.approved_at = datetime.utcnow()
         tx.rejection_reason = reason
         tx.updated_at = datetime.utcnow()
         self._session.add(tx)

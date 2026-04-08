@@ -47,6 +47,7 @@ export interface CashSession {
   opened_at: string
   closed_at?: string
   opened_by: string
+  opened_by_name?: string
 }
 
 export interface Transaction {

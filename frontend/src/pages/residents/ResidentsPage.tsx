@@ -36,7 +36,6 @@ const EMPTY_FORM = {
   type: 'member' as ResidentType,
   full_name: '',
   cpf: '',
-  rg: '',
   date_of_birth: '',
   race: '',
   education_level: '',
@@ -203,9 +202,11 @@ function ResidentForm({ initial, onSave, onCancel }: {
     }
   }
 
+  const isGuest = form.type === 'guest'
+
   const handleSubmit = async () => {
     if (!form.full_name.trim()) { toast.error('Nome é obrigatório.'); setStep(0); return }
-    if (!form.lgpd_accepted) { toast.error('Aceite o termo LGPD para continuar.'); return }
+    if (!isGuest && !form.lgpd_accepted) { toast.error('Aceite o termo LGPD para continuar.'); return }
     setSaving(true)
     try {
       await onSave(form)
@@ -223,8 +224,8 @@ function ResidentForm({ initial, onSave, onCancel }: {
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* Step indicator */}
-        <div className="flex border-b border-gray-100">
+        {/* Step indicator (member only) */}
+        {!isGuest && <div className="flex border-b border-gray-100">
           {SECTION_TITLES.map((title, i) => (
             <button key={i} onClick={() => setStep(i)}
               className={`flex-1 py-2.5 text-xs font-medium transition border-b-2 ${
@@ -234,13 +235,13 @@ function ResidentForm({ initial, onSave, onCancel }: {
               {i + 1}. {title.split(' ')[0]}
             </button>
           ))}
-        </div>
+        </div>}
 
         {/* Section content */}
         <div className="px-6 py-5 flex flex-col gap-4">
 
-          {/* ── SECTION 1: Identificação ── */}
-          {step === 0 && (
+          {/* ── GUEST: simplified form ── */}
+          {isGuest && (
             <>
               <div className="flex gap-2">
                 {(['member', 'guest'] as ResidentType[]).map((t) => (
@@ -259,10 +260,31 @@ function ResidentForm({ initial, onSave, onCancel }: {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
                   placeholder="Nome completo" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Input label="CPF" value={form.cpf} onChange={(v) => set('cpf', v)} placeholder="000.000.000-00" />
-                <Input label="RG" value={form.rg} onChange={(v) => set('rg', v)} placeholder="00.000.000-0" />
+              <Input label="Telefone" value={form.phone_primary} onChange={(v) => set('phone_primary', v)} placeholder="(21) 99999-9999" />
+            </>
+          )}
+
+          {/* ── SECTION 1: Identificação ── */}
+          {!isGuest && step === 0 && (
+            <>
+              <div className="flex gap-2">
+                {(['member', 'guest'] as ResidentType[]).map((t) => (
+                  <button key={t} type="button" onClick={() => set('type', t)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${
+                      form.type === t ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600'
+                    }`}>
+                    {TYPE_LABELS[t]}
+                  </button>
+                ))}
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
+                <input ref={firstNameRef as any} value={form.full_name}
+                  onChange={(e) => set('full_name', e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                  placeholder="Nome completo" />
+              </div>
+              <Input label="CPF" value={form.cpf} onChange={(v) => set('cpf', v)} placeholder="000.000.000-00" />
               <Input label="Data de nascimento" value={form.date_of_birth} onChange={(v) => set('date_of_birth', v)} type="date" />
               <div className="grid grid-cols-2 gap-3">
                 <Select label="Raça/Cor" value={form.race} onChange={(v) => set('race', v)} options={RACE_OPTIONS} />
@@ -275,7 +297,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
           )}
 
           {/* ── SECTION 2: Endereço & Moradia ── */}
-          {step === 1 && (
+          {!isGuest && step === 1 && (
             <>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">CEP</label>
@@ -319,7 +341,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
           )}
 
           {/* ── SECTION 3: Perfil Domiciliar ── */}
-          {step === 2 && (
+          {!isGuest && step === 2 && (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <Input label="Nº de cômodos" value={form.address_rooms} onChange={(v) => set('address_rooms', v)} type="number" placeholder="3" />
@@ -339,7 +361,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
           )}
 
           {/* ── SECTION 4: Vínculo & Legal ── */}
-          {step === 3 && (
+          {!isGuest && step === 3 && (
             <>
               <Select label="Tipo de posse do imóvel" value={form.ownership_type} onChange={(v) => set('ownership_type', v)} options={OWNERSHIP_OPTIONS} />
               <div className="grid grid-cols-2 gap-3">
@@ -385,7 +407,12 @@ function ResidentForm({ initial, onSave, onCancel }: {
             <ChevronLeft className="w-4 h-4" />
             {step === 0 ? 'Cancelar' : 'Anterior'}
           </button>
-          {step < 3 ? (
+          {isGuest ? (
+            <button onClick={handleSubmit} disabled={saving}
+              className="bg-[#26619c] hover:bg-[#1a4f87] text-white px-6 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+              {saving ? 'Salvando…' : 'Salvar Visitante'}
+            </button>
+          ) : step < 3 ? (
             <button onClick={() => setStep(step + 1)}
               className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-5 py-2 rounded-xl text-sm font-semibold transition">
               Próximo <ChevronRight className="w-4 h-4" />
@@ -750,6 +777,9 @@ export default function ResidentsPage() {
   const [filterDelinquent, setFilterDelinquent] = useState(false)
   const [delinquentIds, setDelinquentIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
+  const [counts, setCounts] = useState({ associados: 0, dependentes: 0, visitantes: 0 })
+  const [promptDep, setPromptDep] = useState(false)
+  const [lastSavedId, setLastSavedId] = useState<string | null>(null)
 
   const load = async () => {
     try {
@@ -772,8 +802,20 @@ export default function ResidentsPage() {
     } catch { /* silent */ }
   }
 
+  const loadCounts = async () => {
+    try {
+      const [members, guests] = await Promise.all([
+        api.get<Resident[]>('/residents', { params: { type: 'member' } }),
+        api.get<Resident[]>('/residents', { params: { type: 'guest' } }),
+      ])
+      const assoc = members.data.filter((r: Resident) => !r.responsible_id).length
+      const dep = members.data.filter((r: Resident) => !!r.responsible_id).length
+      setCounts({ associados: assoc, dependentes: dep, visitantes: guests.data.length })
+    } catch { /* silent */ }
+  }
+
   useEffect(() => { load() }, [activeTab, filterStatus, search])
-  useEffect(() => { loadDelinquents() }, [])
+  useEffect(() => { loadDelinquents(); loadCounts() }, [])
 
   // Client-side split: associados = members without responsible_id, dependentes = members with responsible_id
   const displayedResidents = residents.filter(r => {
@@ -792,19 +834,23 @@ export default function ResidentsPage() {
       date_of_birth: form.date_of_birth || null,
       move_in_date: form.move_in_date || null,
       cpf: form.cpf || null,
-      rg: form.rg || null,
     }
     try {
       if (editTarget) {
         await api.put(`/residents/${editTarget.id}`, payload)
         toast.success('Morador atualizado!')
       } else {
-        await api.post('/residents', payload)
+        const res = await api.post('/residents', payload)
         toast.success('Morador cadastrado!')
+        if (form.type === 'member' && !payload.responsible_id) {
+          setLastSavedId(res.data.id ?? null)
+          setPromptDep(true)
+        }
       }
       setShowForm(false)
       setEditTarget(null)
       load()
+      loadCounts()
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
       throw e
@@ -833,6 +879,7 @@ export default function ResidentsPage() {
       toast.success('Dependente cadastrado!')
       setShowDepForm(false)
       load()
+      loadCounts()
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
       throw e
@@ -872,10 +919,15 @@ export default function ResidentsPage() {
       <div className="flex border-b border-gray-200">
         {(['associados', 'dependentes', 'visitantes'] as ResidentTab[]).map(t => (
           <button key={t} onClick={() => setActiveTab(t)}
-            className={`flex-1 py-2.5 text-xs font-semibold border-b-2 transition -mb-px ${
+            className={`flex-1 py-2.5 text-xs font-semibold border-b-2 transition -mb-px flex items-center justify-center gap-1 ${
               activeTab === t ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}>
             {TAB_LABELS[t]}
+            {counts[t] > 0 && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                activeTab === t ? 'bg-[#26619c]/10 text-[#26619c]' : 'bg-gray-100 text-gray-500'
+              }`}>{counts[t]}</span>
+            )}
           </button>
         ))}
       </div>
@@ -970,6 +1022,29 @@ export default function ResidentsPage() {
         />
       )}
 
+      {/* Prompt: add dependent after saving associado */}
+      {promptDep && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm flex flex-col gap-4">
+            <p className="font-bold text-gray-900 text-center">Adicionar dependente?</p>
+            <p className="text-sm text-gray-500 text-center">Deseja cadastrar um dependente para este associado agora?</p>
+            <div className="flex gap-3">
+              <button onClick={() => { setPromptDep(false); setLastSavedId(null) }}
+                className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
+                Não, obrigado
+              </button>
+              <button onClick={() => {
+                setPromptDep(false)
+                setShowDepForm(true)
+              }}
+                className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition">
+                Sim, adicionar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Form modal */}
       {showForm && (
         <ResidentForm
@@ -977,7 +1052,6 @@ export default function ResidentsPage() {
             type: editTarget.type,
             full_name: editTarget.full_name,
             cpf: editTarget.cpf ?? '',
-            rg: editTarget.rg ?? '',
             date_of_birth: editTarget.date_of_birth ?? '',
             race: editTarget.race ?? '',
             education_level: editTarget.education_level ?? '',
@@ -1012,7 +1086,7 @@ export default function ResidentsPage() {
             terms_accepted: editTarget.terms_accepted,
             lgpd_accepted: editTarget.lgpd_accepted,
             notes: editTarget.notes ?? '',
-          } : undefined}
+          } : (activeTab === 'visitantes' ? { type: 'guest' as ResidentType } : undefined)}
           onSave={handleSave}
           onCancel={() => { setShowForm(false); setEditTarget(null) }}
         />

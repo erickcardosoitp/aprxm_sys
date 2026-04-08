@@ -73,12 +73,15 @@ async def current_session(
 ) -> dict:
     svc = FinanceService(session)
     cash = await svc.get_open_session(current.association_id)
+    from app.models.user import User
+    opener = await session.get(User, cash.opened_by)
     return {
         "id": str(cash.id),
         "status": cash.status,
         "opening_balance": str(cash.opening_balance),
         "opened_at": str(cash.opened_at),
         "opened_by": str(cash.opened_by),
+        "opened_by_name": opener.full_name if opener else None,
     }
 
 

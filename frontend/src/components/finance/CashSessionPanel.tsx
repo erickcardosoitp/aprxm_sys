@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   AlertTriangle, CheckCircle, ClipboardCheck, DollarSign, Lock, MinusCircle,
   PlusCircle, TrendingUp, Unlock, User, X,
@@ -14,7 +14,7 @@ interface Props {
   canConferencia?: boolean
 }
 
-type CloseStep = 'blind' | 'review' | 'done'
+type CloseStep = 'blind' | 'review' | 'sign' | 'done'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,9 +47,39 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ expected: number; counted: number; diff: number } | null>(null)
 
+  // Signature canvas (operator only)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [drawing, setDrawing] = useState(false)
+  const [hasSig, setHasSig] = useState(false)
+
   const openingBalance = parseFloat(session.opening_balance)
 
-  const fetchAndReview = async () => {
+  const getPos = (e: React.MouseEvent | React.TouchEvent, rect: DOMRect) => {
+    if ('touches' in e) return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top }
+    return { x: (e as React.MouseEvent).clientX - rect.left, y: (e as React.MouseEvent).clientY - rect.top }
+  }
+  const startDraw = (e: React.MouseEvent | React.TouchEvent) => {
+    const canvas = canvasRef.current; if (!canvas) return
+    setDrawing(true); setHasSig(true)
+    const ctx = canvas.getContext('2d')!
+    const { x, y } = getPos(e, canvas.getBoundingClientRect())
+    ctx.beginPath(); ctx.moveTo(x, y)
+  }
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!drawing) return
+    const canvas = canvasRef.current!
+    const ctx = canvas.getContext('2d')!
+    const { x, y } = getPos(e, canvas.getBoundingClientRect())
+    ctx.lineTo(x, y); ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2; ctx.stroke()
+  }
+  const stopDraw = () => setDrawing(false)
+  const clearSig = () => {
+    const canvas = canvasRef.current; if (!canvas) return
+    canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
+    setHasSig(false)
+  }
+
+  const fetchAndContinue = async () => {
     const counted = parseFloat(blindAmount.replace(',', '.'))
     if (isNaN(counted) || counted < 0) { toast.error('Valor inválido.'); return }
     setLoading(true)
@@ -61,7 +91,7 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
       const exits = txs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
       const expected = openingBalance + income - exits
       setResult({ expected, counted, diff: counted - expected })
-      setStep('review')
+      setStep(isOperator ? 'sign' : 'review')
     } catch {
       toast.error('Erro ao buscar movimentações.')
     } finally {
@@ -88,10 +118,14 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
   const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
   const exits = transactions.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
 
+  // Step labels differ per role
+  const stepLabels = isOperator
+    ? [{ key: 'blind', label: 'Contagem Cega' }, { key: 'sign', label: 'Assinatura' }]
+    : [{ key: 'blind', label: 'Contagem Cega' }, { key: 'review', label: 'Conferência' }]
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-gray-500" />
@@ -102,16 +136,15 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
           )}
         </div>
 
-        {/* Step indicators */}
         {step !== 'done' && (
           <div className="flex border-b border-gray-100">
-            {(['blind', 'review'] as const).map((s, i) => (
-              <div key={s} className={`flex-1 py-2 text-center text-xs font-medium border-b-2 transition ${
-                step === s ? 'border-[#26619c] text-[#26619c]' :
-                (step === 'review' && s === 'blind') ? 'border-green-400 text-green-600' :
+            {stepLabels.map(({ key, label }, i) => (
+              <div key={key} className={`flex-1 py-2 text-center text-xs font-medium border-b-2 transition ${
+                step === key ? 'border-[#26619c] text-[#26619c]' :
+                (i === 0 && step !== 'blind') ? 'border-green-400 text-green-600' :
                 'border-transparent text-gray-400'
               }`}>
-                {i + 1}. {s === 'blind' ? 'Contagem Cega' : 'Conferência'}
+                {i + 1}. {label}
               </div>
             ))}
           </div>
@@ -121,83 +154,89 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
           {/* ── Step 1: Blind count ── */}
           {step === 'blind' && (
             <div className="flex flex-col gap-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-amber-900">Contagem Cega</p>
-                    <p className="text-xs text-amber-700 mt-1">
-                      Conte o dinheiro na gaveta <strong>sem olhar o sistema</strong>.
-                      Informe o valor contado abaixo.
-                    </p>
-                  </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">Contagem Cega</p>
+                  <p className="text-xs text-amber-700 mt-1">Conte o dinheiro na gaveta <strong>sem olhar o sistema</strong>. Informe o valor contado abaixo.</p>
                 </div>
               </div>
-
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Valor total contado (R$) *</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={blindAmount}
-                  onChange={e => setBlindAmount(e.target.value)}
-                  placeholder="0,00"
-                  autoFocus
-                  onKeyDown={e => { if (e.key === 'Enter' && blindAmount) fetchAndReview() }}
+                <input type="number" min="0" step="0.01" value={blindAmount}
+                  onChange={e => setBlindAmount(e.target.value)} placeholder="0,00" autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter' && blindAmount) fetchAndContinue() }}
                   className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg font-semibold text-center focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
                 />
               </div>
-
               <div className="flex gap-3">
-                <button onClick={onCancel}
-                  className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
-                  Cancelar
-                </button>
-                <button onClick={fetchAndReview} disabled={!blindAmount || loading}
+                <button onClick={onCancel} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
+                <button onClick={fetchAndContinue} disabled={!blindAmount || loading}
                   className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
-                  {loading ? 'Calculando…' : 'Ver Conferência →'}
+                  {loading ? 'Calculando…' : isOperator ? 'Próximo →' : 'Ver Conferência →'}
                 </button>
               </div>
             </div>
           )}
 
-          {/* ── Step 2: Review ── */}
+          {/* ── Step sign (operator only): signature ── */}
+          {step === 'sign' && result && (
+            <div className="flex flex-col gap-4">
+              <div className="bg-gray-50 rounded-xl p-4 text-center">
+                <p className="text-xs text-gray-400">Duração</p>
+                <p className="font-semibold text-gray-800">{elapsed(session.opened_at)}</p>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-gray-600">Assinatura do operador *</label>
+                  <button onClick={clearSig} className="text-xs text-gray-400 hover:text-red-500">Limpar</button>
+                </div>
+                <canvas
+                  ref={canvasRef}
+                  width={380} height={120}
+                  onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                  onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
+                  className="w-full border-2 border-gray-300 rounded-xl bg-white cursor-crosshair touch-none"
+                  style={{ height: 120 }}
+                />
+                {!hasSig && <p className="text-xs text-gray-400 mt-1 text-center">Assine acima para confirmar o fechamento</p>}
+              </div>
+              <button onClick={handleConfirm} disabled={!hasSig || loading}
+                className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50 flex items-center justify-center gap-1.5">
+                <Lock className="w-3.5 h-3.5" />
+                {loading ? 'Fechando…' : 'Confirmar Fechamento'}
+              </button>
+            </div>
+          )}
+
+          {/* ── Step 2: Review (non-operator) ── */}
           {step === 'review' && result && (
             <div className="flex flex-col gap-4">
-              {/* Summary grid — operators only see duration */}
               <div className="bg-gray-50 rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
-                {!isOperator && (
-                  <div>
-                    <p className="text-xs text-gray-400">Saldo de abertura</p>
-                    <p className="font-semibold text-gray-800">R$ {fmt(openingBalance)}</p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-xs text-gray-400">Saldo de abertura</p>
+                  <p className="font-semibold text-gray-800">R$ {fmt(openingBalance)}</p>
+                </div>
                 <div>
                   <p className="text-xs text-gray-400">Duração</p>
                   <p className="font-semibold text-gray-800">{elapsed(session.opened_at)}</p>
                 </div>
-                {!isOperator && (
-                  <>
-                    <div className="flex items-center gap-1">
-                      <PlusCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                      <div>
-                        <p className="text-xs text-gray-400">Entradas</p>
-                        <p className="font-semibold text-green-700">R$ {fmt(income)}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <MinusCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                      <div>
-                        <p className="text-xs text-gray-400">Saídas</p>
-                        <p className="font-semibold text-red-600">R$ {fmt(exits)}</p>
-                      </div>
-                    </div>
-                  </>
-                )}
+                <div className="flex items-center gap-1">
+                  <PlusCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-400">Entradas</p>
+                    <p className="font-semibold text-green-700">R$ {fmt(income)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <MinusCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-400">Saídas</p>
+                    <p className="font-semibold text-red-600">R$ {fmt(exits)}</p>
+                  </div>
+                </div>
               </div>
 
-              {/* Expected vs Counted */}
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 <div className="flex">
                   <div className="flex-1 p-4 text-center border-r border-gray-200">
@@ -209,20 +248,13 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
                     <p className="text-xl font-bold text-[#26619c]">R$ {fmt(result.counted)}</p>
                   </div>
                 </div>
-                <div className={`px-4 py-3 text-center border-t border-gray-200 ${
-                  result.diff === 0 ? 'bg-green-50' : result.diff > 0 ? 'bg-blue-50' : 'bg-red-50'
-                }`}>
+                <div className={`px-4 py-3 text-center border-t border-gray-200 ${result.diff === 0 ? 'bg-green-50' : result.diff > 0 ? 'bg-blue-50' : 'bg-red-50'}`}>
                   <p className="text-xs font-medium text-gray-500 mb-0.5">Diferença</p>
-                  <p className={`text-lg font-bold ${
-                    result.diff === 0 ? 'text-green-700' : result.diff > 0 ? 'text-blue-700' : 'text-red-700'
-                  }`}>
+                  <p className={`text-lg font-bold ${result.diff === 0 ? 'text-green-700' : result.diff > 0 ? 'text-blue-700' : 'text-red-700'}`}>
                     {result.diff >= 0 ? '+' : ''}R$ {fmt(result.diff)}
                   </p>
-                  <p className={`text-xs mt-0.5 ${
-                    result.diff === 0 ? 'text-green-600' : result.diff > 0 ? 'text-blue-600' : 'text-red-600'
-                  }`}>
-                    {result.diff === 0 ? 'Caixa conferido — sem diferença' :
-                     result.diff > 0 ? 'Sobra de caixa detectada' : 'Falta de caixa detectada'}
+                  <p className={`text-xs mt-0.5 ${result.diff === 0 ? 'text-green-600' : result.diff > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {result.diff === 0 ? 'Caixa conferido — sem diferença' : result.diff > 0 ? 'Sobra de caixa detectada' : 'Falta de caixa detectada'}
                   </p>
                 </div>
               </div>
@@ -241,22 +273,18 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
             </div>
           )}
 
-          {/* ── Step 3: Done ── */}
+          {/* ── Done ── */}
           {step === 'done' && result && (
             <div className="flex flex-col items-center gap-4 py-4">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                result.diff === 0 ? 'bg-green-100' : 'bg-amber-100'
-              }`}>
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${result.diff === 0 ? 'bg-green-100' : 'bg-amber-100'}`}>
                 <CheckCircle className={`w-8 h-8 ${result.diff === 0 ? 'text-green-600' : 'text-amber-500'}`} />
               </div>
               <div className="text-center">
                 <p className="font-bold text-gray-900 mb-1">Caixa fechado!</p>
                 <p className="text-sm text-gray-500">
-                  {result.diff === 0
-                    ? 'Caixa conferido com sucesso. Sem diferença.'
-                    : result.diff > 0
-                      ? `Sobra de R$ ${fmt(result.diff)} registrada.`
-                      : `Falta de R$ ${fmt(Math.abs(result.diff))} registrada.`}
+                  {result.diff === 0 ? 'Caixa conferido com sucesso. Sem diferença.' :
+                   result.diff > 0 ? `Sobra de R$ ${fmt(result.diff)} registrada.` :
+                   `Falta de R$ ${fmt(Math.abs(result.diff))} registrada.`}
                 </p>
               </div>
             </div>
@@ -576,8 +604,8 @@ export function CashSessionPanel({ session, onRefresh, canConferencia = true }: 
           <div className="grid grid-cols-2 gap-3">
             {fullName && (
               <div className="bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
-                <p className="text-xs text-gray-400 mb-0.5">Operador</p>
-                <p className="text-sm font-semibold text-gray-800 truncate">{fullName}</p>
+                <p className="text-xs text-gray-400 mb-0.5">Aberto por</p>
+                <p className="text-sm font-semibold text-gray-800 truncate">{session.opened_by_name ?? fullName}</p>
               </div>
             )}
             {!isOperator && (
