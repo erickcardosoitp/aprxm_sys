@@ -263,3 +263,43 @@ async def list_sos(
             "assigned_to": str(s.assigned_to) if s.assigned_to else None,
         })
     return result
+
+
+@router.get("/report", summary="Relatório de OS por período")
+async def service_orders_report(
+    date_from: str,
+    date_to: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    result = await session.execute(
+        sa_text("""
+            SELECT
+              COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE status='resolved') AS resolvidas,
+              COUNT(*) FILTER (WHERE status='cancelled') AS canceladas,
+              COUNT(*) FILTER (WHERE status NOT IN ('resolved','cancelled','archived')) AS abertas,
+              COUNT(*) FILTER (WHERE priority='critical') AS criticas
+            FROM service_orders
+            WHERE association_id = :aid
+              AND created_at::date BETWEEN :df AND :dt
+        """),
+        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+    )
+    r = result.fetchone()
+    by_area = await session.execute(
+        sa_text("""
+            SELECT area, COUNT(*) FROM service_orders
+            WHERE association_id = :aid AND created_at::date BETWEEN :df AND :dt
+              AND area IS NOT NULL
+            GROUP BY area ORDER BY 2 DESC LIMIT 10
+        """),
+        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+    )
+    return {
+        "period": {"from": date_from, "to": date_to},
+        "total": r[0], "resolvidas": r[1], "canceladas": r[2],
+        "abertas": r[3], "criticas": r[4],
+        "by_area": [{"area": a[0], "count": a[1]} for a in by_area.fetchall()],
+    }

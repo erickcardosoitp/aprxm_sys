@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus } from 'lucide-react'
+import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus, FileText, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import type { Resident, ResidentStatus, ResidentType } from '../../types'
@@ -555,6 +555,152 @@ function DependentForm({ onSave, onCancel }: {
   )
 }
 
+// ─── Resident Profile Modal ────────────────────────────────────────────────────
+
+interface MensalidadeEntry {
+  id: string; reference_month: string; due_date: string; amount: string; status: string; paid_at: string | null; transaction_id: string | null
+}
+
+interface InadimplenciaEntry {
+  reference_month: string; due_date: string; amount: string; status: string; paid_at: string | null; pago_em_atraso: boolean
+}
+
+function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClose: () => void }) {
+  const [mensalidades, setMensalidades] = useState<MensalidadeEntry[]>([])
+  const [inadimplencias, setInadimplencias] = useState<InadimplenciaEntry[]>([])
+  const [tab, setTab] = useState<'mensalidades' | 'inadimplencia'>('mensalidades')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetch = async () => {
+      setLoading(true)
+      try {
+        const [mRes, iRes] = await Promise.all([
+          api.get<MensalidadeEntry[]>(`/mensalidades/residents/${resident.id}`),
+          api.get<InadimplenciaEntry[]>(`/mensalidades/residents/${resident.id}/inadimplencia`),
+        ])
+        setMensalidades(mRes.data)
+        setInadimplencias(iRes.data)
+      } catch { /* silent */ }
+      setLoading(false)
+    }
+    fetch()
+  }, [resident.id])
+
+  const handleComprovante = async (id: string) => {
+    try {
+      const res = await api.get<any>(`/mensalidades/${id}/comprovante`)
+      const d = res.data
+      const html = `
+        <html><head><title>Comprovante</title><style>
+          body{font-family:sans-serif;padding:24px;max-width:480px;margin:auto}
+          h2{color:#26619c}p{margin:4px 0}.label{color:#666;font-size:12px}.val{font-weight:600;font-size:14px}
+          hr{margin:16px 0}
+        </style></head><body>
+          <h2>Comprovante de Mensalidade</h2>
+          <hr/>
+          <p class="label">Morador</p><p class="val">${d.resident_name}</p>
+          ${d.resident_cpf ? `<p class="label">CPF</p><p class="val">${maskCpf(d.resident_cpf)}</p>` : ''}
+          ${d.unit ? `<p class="label">Unidade</p><p class="val">${d.unit}${d.block ? ' / Bl. ' + d.block : ''}</p>` : ''}
+          <hr/>
+          <p class="label">Referência</p><p class="val">${d.reference_month}</p>
+          <p class="label">Vencimento</p><p class="val">${new Date(d.due_date).toLocaleDateString('pt-BR')}</p>
+          <p class="label">Valor</p><p class="val">R$ ${parseFloat(d.amount).toFixed(2)}</p>
+          <p class="label">Pago em</p><p class="val">${d.paid_at ? new Date(d.paid_at).toLocaleDateString('pt-BR') : '—'}</p>
+          <p class="label">Forma de pagamento</p><p class="val">${d.payment_method}</p>
+          <hr/>
+          <p class="label">Associação</p><p class="val">${d.association_name}</p>
+          ${d.assoc_phone ? `<p class="label">Telefone</p><p class="val">${d.assoc_phone}</p>` : ''}
+        </body></html>`
+      const win = window.open('', '_blank')
+      if (win) { win.document.write(html); win.document.close(); win.print() }
+    } catch { toast.error('Comprovante não disponível.') }
+  }
+
+  const STATUS_MAP: Record<string, string> = { pending: 'Pendente', paid: 'Pago', overdue: 'Inadimplente' }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl mx-4 max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div>
+            <h3 className="font-semibold text-gray-900">{resident.full_name}</h3>
+            <p className="text-xs text-gray-400">{resident.unit ? `Unid. ${resident.unit}` : ''}{resident.block ? ` / Bl. ${resident.block}` : ''}</p>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+
+        <div className="flex gap-1 bg-gray-100 p-1 m-4 rounded-xl shrink-0">
+          <button onClick={() => setTab('mensalidades')}
+            className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === 'mensalidades' ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
+            Mensalidades
+          </button>
+          <button onClick={() => setTab('inadimplencia')}
+            className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === 'inadimplencia' ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
+            Inadimplência
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-4 pb-4">
+          {loading ? (
+            <div className="py-8 text-center text-gray-400 text-sm">Carregando…</div>
+          ) : tab === 'mensalidades' ? (
+            mensalidades.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-sm">Nenhuma mensalidade registrada.</div>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {mensalidades.map((m) => (
+                  <li key={m.id} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{m.reference_month}</p>
+                      <p className="text-xs text-gray-500">Venc: {new Date(m.due_date).toLocaleDateString('pt-BR')} · R$ {parseFloat(m.amount).toFixed(2)}</p>
+                      <span className={`text-xs font-medium ${m.status === 'paid' ? 'text-green-600' : m.status === 'overdue' ? 'text-red-600' : 'text-amber-600'}`}>
+                        {STATUS_MAP[m.status] ?? m.status}
+                      </span>
+                    </div>
+                    {m.status === 'paid' && (
+                      <button onClick={() => handleComprovante(m.id)}
+                        className="flex items-center gap-1 text-xs text-[#26619c] hover:underline shrink-0">
+                        <FileText className="w-3.5 h-3.5" /> Comprovante
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : (
+            inadimplencias.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-sm flex flex-col items-center gap-2">
+                <AlertCircle className="w-8 h-8 text-gray-300" />
+                Nenhum histórico de inadimplência.
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {inadimplencias.map((i, idx) => (
+                  <li key={idx} className="bg-red-50 border border-red-100 rounded-xl px-3 py-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{i.reference_month}</p>
+                        <p className="text-xs text-gray-500">Venc: {new Date(i.due_date).toLocaleDateString('pt-BR')} · R$ {parseFloat(i.amount).toFixed(2)}</p>
+                        {i.pago_em_atraso && i.paid_at && (
+                          <p className="text-xs text-amber-600">Pago em atraso: {new Date(i.paid_at).toLocaleDateString('pt-BR')}</p>
+                        )}
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${i.status === 'paid' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                        {i.pago_em_atraso ? 'Pago em atraso' : STATUS_MAP[i.status] ?? i.status}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ResidentsPage() {
@@ -562,6 +708,7 @@ export default function ResidentsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editTarget, setEditTarget] = useState<Resident | null>(null)
   const [showDepForm, setShowDepForm] = useState(false)
+  const [profileResident, setProfileResident] = useState<Resident | null>(null)
   const [activeTab, setActiveTab] = useState<ResidentTab>('associados')
   const [filterStatus, setFilterStatus] = useState<ResidentStatus | ''>('')
   const [search, setSearch] = useState('')
@@ -737,6 +884,10 @@ export default function ResidentsPage() {
                     {STATUS_LABELS[r.status]}
                   </span>
                   <div className="flex gap-2">
+                    <button onClick={() => setProfileResident(r)}
+                      className="text-xs text-gray-500 hover:text-gray-700 hover:underline">
+                      Ver
+                    </button>
                     <button onClick={() => { setEditTarget(r); setShowForm(true) }}
                       className="text-xs text-[#26619c] hover:underline">
                       Editar
@@ -751,6 +902,13 @@ export default function ResidentsPage() {
           </ul>
         )}
       </div>
+
+      {profileResident && (
+        <ResidentProfileModal
+          resident={profileResident}
+          onClose={() => setProfileResident(null)}
+        />
+      )}
 
       {/* Dependent Form modal */}
       {showDepForm && (

@@ -82,6 +82,10 @@ async def create_user(
     )
     session.add(user)
     await session.flush()
+    await session.execute(
+        text("INSERT INTO audit_log (association_id,user_id,action,entity,entity_id,detail) VALUES (:a,:u,'criar_usuario','user',:eid,:d)"),
+        {"a": str(current.association_id), "u": str(current.user_id), "eid": str(user.id), "d": f"{user.full_name} ({user.role})"},
+    )
     return _serialize_user(user)
 
 
@@ -113,12 +117,37 @@ async def update_user(
     from datetime import datetime
     user.updated_at = datetime.utcnow()
     session.add(user)
+    await session.execute(
+        text("INSERT INTO audit_log (association_id,user_id,action,entity,entity_id,detail) VALUES (:a,:u,'editar_usuario','user',:eid,:d)"),
+        {"a": str(current.association_id), "u": str(current.user_id), "eid": str(user_id), "d": f"{user.full_name} → papel:{user.role}"},
+    )
     return _serialize_user(user)
 
 
 class ResetDatabaseRequest(BaseModel):
     confirm: str  # must be "RESETAR"
     initial_balance: Decimal = Decimal("0.00")
+
+
+@router.get("/audit-log", summary="Log de auditoria de usuários")
+async def get_audit_log(
+    limit: int = 100,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    result = await session.execute(
+        text("""
+            SELECT al.id, al.action, al.entity, al.entity_id, al.detail,
+                   al.created_at, u.full_name AS actor
+            FROM audit_log al
+            JOIN users u ON u.id = al.user_id
+            WHERE al.association_id = :aid
+            ORDER BY al.created_at DESC LIMIT :lim
+        """),
+        {"aid": str(current.association_id), "lim": limit},
+    )
+    return [{"id": str(r[0]), "acao": r[1], "entidade": r[2], "entidade_id": r[3],
+             "detalhe": r[4], "data": str(r[5]), "autor": r[6]} for r in result.fetchall()]
 
 
 @router.post("/reset-database", summary="Resetar base de dados (manter usuários)")

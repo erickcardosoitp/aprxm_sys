@@ -226,6 +226,132 @@ async def list_packages(
     return out
 
 
+class NotifyPackageRequest(BaseModel):
+    message: str | None = None
+
+
+class ReturnPackageRequest(BaseModel):
+    reason: str
+
+
+@router.post("/{package_id}/notify", summary="Marcar encomenda como notificada")
+async def notify_package(
+    package_id: UUID,
+    body: NotifyPackageRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from datetime import datetime
+    pkg = await session.get(Package, package_id)
+    if not pkg or str(pkg.association_id) != str(current.association_id):
+        from fastapi import HTTPException
+        raise HTTPException(404, "Encomenda não encontrada.")
+    pkg.status = PackageStatus.notified
+    pkg.updated_at = datetime.utcnow()
+    session.add(pkg)
+    # register event
+    await session.execute(
+        text("""INSERT INTO package_events (association_id, package_id, created_by, event_type, comment)
+                VALUES (:a, :p, :u, 'notification', :msg)"""),
+        {"a": str(current.association_id), "p": str(package_id), "u": str(current.user_id),
+         "msg": body.message or "Morador notificado da chegada da encomenda."},
+    )
+    await session.commit()
+    return {"id": str(pkg.id), "status": pkg.status}
+
+
+@router.post("/{package_id}/return", summary="Registrar devolução de encomenda")
+async def return_package(
+    package_id: UUID,
+    body: ReturnPackageRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from datetime import datetime
+    pkg = await session.get(Package, package_id)
+    if not pkg or str(pkg.association_id) != str(current.association_id):
+        from fastapi import HTTPException
+        raise HTTPException(404, "Encomenda não encontrada.")
+    pkg.status = PackageStatus.returned
+    pkg.return_reason = body.reason
+    pkg.returned_at = datetime.utcnow()
+    pkg.updated_at = datetime.utcnow()
+    session.add(pkg)
+    await session.execute(
+        text("""INSERT INTO package_events (association_id, package_id, created_by, event_type, comment)
+                VALUES (:a, :p, :u, 'return', :msg)"""),
+        {"a": str(current.association_id), "p": str(package_id), "u": str(current.user_id),
+         "msg": f"Devolvida: {body.reason}"},
+    )
+    await session.commit()
+    return {"id": str(pkg.id), "status": pkg.status, "return_reason": pkg.return_reason}
+
+
+@router.get("/report", summary="Relatório de encomendas por período")
+async def packages_report(
+    date_from: str,
+    date_to: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    result = await session.execute(
+        text("""
+            SELECT
+              COUNT(*) FILTER (WHERE status = 'received')   AS received,
+              COUNT(*) FILTER (WHERE status = 'notified')   AS notified,
+              COUNT(*) FILTER (WHERE status = 'delivered')  AS delivered,
+              COUNT(*) FILTER (WHERE status = 'returned')   AS returned,
+              COUNT(*) FILTER (WHERE has_delivery_fee)      AS with_fee,
+              COALESCE(SUM(delivery_fee_amount) FILTER (WHERE has_delivery_fee), 0) AS fee_total,
+              COUNT(*) AS total
+            FROM packages
+            WHERE association_id = :aid
+              AND received_at::date BETWEEN :df AND :dt
+        """),
+        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+    )
+    r = result.fetchone()
+    # by carrier
+    carriers = await session.execute(
+        text("""
+            SELECT carrier_name, COUNT(*) FROM packages
+            WHERE association_id = :aid AND received_at::date BETWEEN :df AND :dt
+              AND carrier_name IS NOT NULL
+            GROUP BY carrier_name ORDER BY 2 DESC LIMIT 10
+        """),
+        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+    )
+    return {
+        "period": {"from": date_from, "to": date_to},
+        "total": r[6], "received": r[0], "notified": r[1],
+        "delivered": r[2], "returned": r[3],
+        "with_fee": r[4], "fee_total": str(r[5]),
+        "by_carrier": [{"carrier": c[0], "count": c[1]} for c in carriers.fetchall()],
+    }
+
+
+@router.get("/resident/{resident_id}", summary="Encomendas de um morador")
+async def packages_by_resident(
+    resident_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    result = await session.execute(
+        text("""
+            SELECT id, status, carrier_name, tracking_code, received_at, delivered_at,
+                   has_delivery_fee, delivery_fee_amount, return_reason
+            FROM packages
+            WHERE association_id = :aid AND resident_id = :rid
+            ORDER BY received_at DESC LIMIT 50
+        """),
+        {"aid": str(current.association_id), "rid": str(resident_id)},
+    )
+    return [{"id": str(r[0]), "status": r[1], "carrier_name": r[2], "tracking_code": r[3],
+             "received_at": str(r[4]), "delivered_at": str(r[5]) if r[5] else None,
+             "has_delivery_fee": r[6], "fee": str(r[7]) if r[7] else None,
+             "return_reason": r[8]} for r in result.fetchall()]
+
+
 @router.get("/cep/{cep}", summary="Consultar endereço por CEP (proxy ViaCEP)")
 async def lookup_cep(cep: str) -> dict:
     clean = cep.replace("-", "").strip()

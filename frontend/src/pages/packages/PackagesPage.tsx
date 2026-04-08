@@ -51,12 +51,38 @@ interface PackageDetailModalProps {
   pkg: Package
   onClose: () => void
   onDeliverClick: () => void
+  onRefresh?: () => void
 }
 
-function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModalProps) {
+function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: PackageDetailModalProps) {
   const [events, setEvents] = useState<PackageEvent[]>([])
   const [newComment, setNewComment] = useState('')
   const [addingEvent, setAddingEvent] = useState(false)
+  const [notifying, setNotifying] = useState(false)
+  const [showReturnForm, setShowReturnForm] = useState(false)
+  const [returnReason, setReturnReason] = useState('')
+  const [returning, setReturning] = useState(false)
+
+  const handleNotify = async () => {
+    setNotifying(true)
+    try {
+      await api.post(`/packages/${pkg.id}/notify`)
+      toast.success('Morador notificado!')
+      onRefresh?.()
+      onClose()
+    } catch { toast.error('Erro ao notificar.') } finally { setNotifying(false) }
+  }
+
+  const handleReturn = async () => {
+    if (!returnReason.trim()) { toast.error('Informe o motivo.'); return }
+    setReturning(true)
+    try {
+      await api.post(`/packages/${pkg.id}/return`, { reason: returnReason.trim() })
+      toast.success('Encomenda marcada como devolvida.')
+      onRefresh?.()
+      onClose()
+    } catch { toast.error('Erro ao registrar devolução.') } finally { setReturning(false) }
+  }
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -240,6 +266,13 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
             </div>
           )}
 
+          {pkg.status === 'received' && (
+            <button onClick={handleNotify} disabled={notifying}
+              className="w-full bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50">
+              {notifying ? 'Notificando…' : 'Marcar como Notificado'}
+            </button>
+          )}
+
           {(pkg.status === 'received' || pkg.status === 'notified') && (
             <button
               onClick={() => { onDeliverClick() }}
@@ -247,6 +280,35 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick }: PackageDetailModal
             >
               Entregar Encomenda
             </button>
+          )}
+
+          {(pkg.status === 'received' || pkg.status === 'notified') && !showReturnForm && (
+            <button onClick={() => setShowReturnForm(true)}
+              className="w-full border border-red-300 text-red-600 py-2.5 rounded-xl text-sm font-medium hover:bg-red-50 transition">
+              Devolver Encomenda
+            </button>
+          )}
+
+          {showReturnForm && (
+            <div className="border border-red-200 rounded-xl p-4 flex flex-col gap-3 bg-red-50">
+              <p className="text-sm font-medium text-red-700">Motivo da Devolução</p>
+              <input
+                value={returnReason}
+                onChange={e => setReturnReason(e.target.value)}
+                placeholder="Ex: Destinatário não encontrado, recusou receber…"
+                className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setShowReturnForm(false)}
+                  className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">
+                  Cancelar
+                </button>
+                <button onClick={handleReturn} disabled={returning}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                  {returning ? 'Salvando…' : 'Confirmar Devolução'}
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Signature status badges for non-delivered */}
@@ -1048,6 +1110,7 @@ export default function PackagesPage() {
         <PackageDetailModal
           pkg={detailPkg}
           onClose={() => setDetailPkg(null)}
+          onRefresh={loadPackages}
           onDeliverClick={() => {
             setDeliveryTarget(detailPkg)
             setRecipientName(detailPkg.resident_name ?? '')

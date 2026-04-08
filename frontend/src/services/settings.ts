@@ -3,6 +3,6 @@ import type { AssociationSettings } from '../types'
 
 export const settingsService = {
   get: () => api.get<AssociationSettings>('/settings'),
-  update: (data: { default_cash_balance: number; max_cash_before_sangria: number }) =>
+  update: (data: { default_cash_balance: number; max_cash_before_sangria: number; default_mensalidade_amount?: number }) =>
     api.put<AssociationSettings>('/settings', data),
 }

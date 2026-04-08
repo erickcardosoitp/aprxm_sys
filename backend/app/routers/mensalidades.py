@@ -97,6 +97,64 @@ async def payment_report(
     return await svc.payment_report(current.association_id, from_month, to_month)
 
 
+@router.get("/{mensalidade_id}/comprovante", summary="Dados do comprovante de pagamento")
+async def get_comprovante(
+    mensalidade_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text
+    result = await session.execute(
+        text("""
+            SELECT m.reference_month, m.due_date, m.amount, m.paid_at,
+                   r.full_name, r.cpf, r.unit, r.block,
+                   a.name AS assoc_name, a.address_city, a.phone AS assoc_phone,
+                   t.description AS tx_desc, pm.name AS payment_method
+            FROM mensalidades m
+            JOIN residents r ON r.id = m.resident_id
+            JOIN associations a ON a.id = m.association_id
+            LEFT JOIN transactions t ON t.id = m.transaction_id
+            LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+            WHERE m.id = :mid AND m.association_id = :aid AND m.status = 'paid'
+        """),
+        {"mid": str(mensalidade_id), "aid": str(current.association_id)},
+    )
+    row = result.fetchone()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Comprovante não disponível.")
+    return {
+        "reference_month": row[0], "due_date": str(row[1]),
+        "amount": str(row[2]), "paid_at": str(row[3]),
+        "resident_name": row[4], "resident_cpf": row[5],
+        "unit": row[6], "block": row[7],
+        "association_name": row[8], "city": row[9], "assoc_phone": row[10],
+        "payment_method": row[12] or "Dinheiro",
+    }
+
+
+@router.get("/residents/{resident_id}/inadimplencia", summary="Histórico de inadimplência do morador")
+async def inadimplencia_history(
+    resident_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text
+    result = await session.execute(
+        text("""
+            SELECT reference_month, due_date, amount, status, paid_at
+            FROM mensalidades
+            WHERE association_id = :aid AND resident_id = :rid
+              AND (status != 'paid' OR paid_at > due_date + INTERVAL '2 days')
+            ORDER BY reference_month DESC
+        """),
+        {"aid": str(current.association_id), "rid": str(resident_id)},
+    )
+    return [{"reference_month": r[0], "due_date": str(r[1]), "amount": str(r[2]),
+             "status": r[3], "paid_at": str(r[4]) if r[4] else None,
+             "pago_em_atraso": r[3] == 'paid'} for r in result.fetchall()]
+
+
 @router.post("/{mensalidade_id}/pay", summary="Pagar mensalidade via caixa aberto")
 async def pay_mensalidade(
     mensalidade_id: UUID,

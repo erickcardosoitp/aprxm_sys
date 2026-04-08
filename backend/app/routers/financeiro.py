@@ -183,6 +183,80 @@ async def import_bank_statement(
     return {"imported": len(statements)}
 
 
+@router.get("/extrato", summary="Extrato financeiro por período")
+async def get_extrato(
+    date_from: str,
+    date_to: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    result = await session.execute(
+        text("""
+            SELECT t.id, t.type, t.income_subtype, t.amount, t.description,
+                   t.transaction_at, t.approval_status,
+                   u.full_name AS creator, c.name AS category,
+                   pm.name AS payment_method
+            FROM transactions t
+            JOIN users u ON u.id = t.created_by
+            LEFT JOIN transaction_categories c ON c.id = t.category_id
+            LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+            WHERE t.association_id = :aid
+              AND t.transaction_at::date BETWEEN :df AND :dt
+            ORDER BY t.transaction_at ASC
+        """),
+        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+    )
+    return [
+        {"id": str(r[0]), "tipo": r[1], "subtipo": r[2], "valor": str(r[3]),
+         "descricao": r[4], "data": str(r[5]), "aprovacao": r[6],
+         "operador": r[7], "categoria": r[8], "metodo": r[9]}
+        for r in result.fetchall()
+    ]
+
+
+@router.get("/evolucao", summary="Evolução financeira mensal (últimos 6 meses)")
+async def get_evolucao(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    result = await session.execute(
+        text("""
+            SELECT
+              TO_CHAR(DATE_TRUNC('month', transaction_at), 'YYYY-MM') AS mes,
+              COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) AS entradas,
+              COALESCE(SUM(CASE WHEN type!='income' THEN amount ELSE 0 END), 0) AS saidas
+            FROM transactions
+            WHERE association_id = :aid
+              AND transaction_at >= NOW() - INTERVAL '6 months'
+            GROUP BY mes ORDER BY mes ASC
+        """),
+        {"aid": str(current.association_id)},
+    )
+    return [{"mes": r[0], "entradas": float(r[1]), "saidas": float(r[2])} for r in result.fetchall()]
+
+
+@router.get("/fluxo-projetado", summary="Fluxo de caixa projetado (próximos 30 dias)")
+async def get_fluxo_projetado(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    result = await session.execute(
+        text("""
+            SELECT COALESCE(SUM(amount), 0), COUNT(*)
+            FROM mensalidades
+            WHERE association_id = :aid
+              AND status = 'pending'
+              AND due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
+        """),
+        {"aid": str(current.association_id)},
+    )
+    r = result.fetchone()
+    return {
+        "a_receber_30d": float(r[0]),
+        "mensalidades_count": int(r[1]),
+    }
+
+
 @router.post("/reconcile")
 async def run_reconciliation(
     current: CurrentUser = Depends(get_current_user),

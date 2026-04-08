@@ -137,11 +137,20 @@ function UserFormModal({ initial, onSave, onCancel }: {
   )
 }
 
+interface AuditEntry {
+  id: string; acao: string; entidade: string; entidade_id: string; detalhe: string; data: string; autor: string
+}
+
+type AdminTab = 'usuarios' | 'logs'
+
 export default function AdminPage() {
   const currentUserId = useAuthStore((s) => s.userId)
+  const [tab, setTab] = useState<AdminTab>('usuarios')
   const [users, setUsers] = useState<User[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editTarget, setEditTarget] = useState<User | null>(null)
+  const [logs, setLogs] = useState<AuditEntry[]>([])
+  const [loadingLogs, setLoadingLogs] = useState(false)
 
   const load = async () => {
     try {
@@ -152,7 +161,17 @@ export default function AdminPage() {
     }
   }
 
+  const loadLogs = async () => {
+    setLoadingLogs(true)
+    try {
+      const res = await api.get<AuditEntry[]>('/admin/audit-log')
+      setLogs(res.data)
+    } catch { setLogs([]) }
+    finally { setLoadingLogs(false) }
+  }
+
   useEffect(() => { load() }, [])
+  useEffect(() => { if (tab === 'logs') loadLogs() }, [tab])
 
   const handleSave = async (data: UserFormData) => {
     try {
@@ -193,63 +212,101 @@ export default function AdminPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <ShieldCheck className="w-6 h-6 text-[#26619c]" />
-          Usuários
+          Admin
         </h1>
-        <button onClick={() => { setEditTarget(null); setShowForm(true) }}
-          className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition">
-          <Plus className="w-4 h-4" />
-          Novo
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        {users.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">Nenhum usuário encontrado.</div>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {users.map((u) => (
-              <li key={u.id} className={`flex items-center justify-between px-4 py-3 ${!u.is_active ? 'opacity-50' : ''}`}>
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-[#e8f0fb] flex items-center justify-center text-[#26619c] font-bold text-sm shrink-0">
-                    {u.full_name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">
-                      {u.full_name}
-                      {u.id === currentUserId && <span className="ml-1 text-xs text-gray-400">(você)</span>}
-                    </p>
-                    <p className="text-xs text-gray-400 truncate">{u.email}</p>
-                    {u.last_login_at && (
-                      <p className="text-xs text-gray-400">
-                        Último acesso: {new Date(u.last_login_at).toLocaleDateString('pt-BR')}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-1.5 shrink-0 ml-2">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getRoleColor(u.role)}`}>
-                    {getRoleLabel(u.role)}
-                  </span>
-                  {u.id !== currentUserId && (
-                    <div className="flex gap-2">
-                      <button onClick={() => { setEditTarget(u); setShowForm(true) }}
-                        className="text-xs text-[#26619c] hover:underline flex items-center gap-0.5">
-                        <Pencil className="w-3 h-3" /> Editar
-                      </button>
-                      <button onClick={() => toggleActive(u)}
-                        className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-0.5">
-                        {u.is_active
-                          ? <><UserX className="w-3 h-3" /> Desativar</>
-                          : <><UserCheck className="w-3 h-3" /> Reativar</>}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+        {tab === 'usuarios' && (
+          <button onClick={() => { setEditTarget(null); setShowForm(true) }}
+            className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+            <Plus className="w-4 h-4" />
+            Novo
+          </button>
         )}
       </div>
+
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+        {(['usuarios', 'logs'] as AdminTab[]).map((t) => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-2 text-sm font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
+            {t === 'usuarios' ? 'Usuários' : 'Logs de Auditoria'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'usuarios' && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          {users.length === 0 ? (
+            <div className="p-8 text-center text-gray-400 text-sm">Nenhum usuário encontrado.</div>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {users.map((u) => (
+                <li key={u.id} className={`flex items-center justify-between px-4 py-3 ${!u.is_active ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-[#e8f0fb] flex items-center justify-center text-[#26619c] font-bold text-sm shrink-0">
+                      {u.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">
+                        {u.full_name}
+                        {u.id === currentUserId && <span className="ml-1 text-xs text-gray-400">(você)</span>}
+                      </p>
+                      <p className="text-xs text-gray-400 truncate">{u.email}</p>
+                      {u.last_login_at && (
+                        <p className="text-xs text-gray-400">
+                          Último acesso: {new Date(u.last_login_at).toLocaleDateString('pt-BR')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5 shrink-0 ml-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getRoleColor(u.role)}`}>
+                      {getRoleLabel(u.role)}
+                    </span>
+                    {u.id !== currentUserId && (
+                      <div className="flex gap-2">
+                        <button onClick={() => { setEditTarget(u); setShowForm(true) }}
+                          className="text-xs text-[#26619c] hover:underline flex items-center gap-0.5">
+                          <Pencil className="w-3 h-3" /> Editar
+                        </button>
+                        <button onClick={() => toggleActive(u)}
+                          className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-0.5">
+                          {u.is_active
+                            ? <><UserX className="w-3 h-3" /> Desativar</>
+                            : <><UserCheck className="w-3 h-3" /> Reativar</>}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {tab === 'logs' && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          {loadingLogs ? (
+            <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+          ) : logs.length === 0 ? (
+            <div className="p-8 text-center text-gray-400 text-sm">Nenhum log encontrado.</div>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {logs.map((log) => (
+                <li key={log.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800">{log.acao.replace(/_/g, ' ')}</p>
+                      <p className="text-xs text-gray-500 truncate">{log.detalhe}</p>
+                      <p className="text-xs text-gray-400">por {log.autor}</p>
+                    </div>
+                    <p className="text-xs text-gray-400 shrink-0">{new Date(log.data).toLocaleString('pt-BR')}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {showForm && (
         <UserFormModal

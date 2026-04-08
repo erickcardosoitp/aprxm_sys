@@ -26,6 +26,7 @@ def require_superadmin(current: CurrentUser = Depends(get_current_user)) -> Curr
 class UpdateSettingsRequest(BaseModel):
     default_cash_balance: Decimal = Field(ge=0)
     max_cash_before_sangria: Decimal = Field(ge=0)
+    default_mensalidade_amount: Decimal = Field(default=Decimal("0.00"), ge=0)
 
 
 class UpdateAssocDataRequest(BaseModel):
@@ -52,11 +53,13 @@ async def get_settings(
             "association_id": str(current.association_id),
             "default_cash_balance": "200.00",
             "max_cash_before_sangria": "500.00",
+            "default_mensalidade_amount": "0.00",
         }
     return {
         "association_id": str(cfg.association_id),
         "default_cash_balance": str(cfg.default_cash_balance),
         "max_cash_before_sangria": str(cfg.max_cash_before_sangria),
+        "default_mensalidade_amount": str(getattr(cfg, "default_mensalidade_amount", "0.00")),
     }
 
 
@@ -74,6 +77,7 @@ async def update_settings(
     if cfg:
         cfg.default_cash_balance = body.default_cash_balance
         cfg.max_cash_before_sangria = body.max_cash_before_sangria
+        cfg.default_mensalidade_amount = body.default_mensalidade_amount
         cfg.updated_at = datetime.utcnow()
         cfg.updated_by = current.user_id
     else:
@@ -89,6 +93,7 @@ async def update_settings(
         "association_id": str(cfg.association_id),
         "default_cash_balance": str(cfg.default_cash_balance),
         "max_cash_before_sangria": str(cfg.max_cash_before_sangria),
+        "default_mensalidade_amount": str(getattr(cfg, "default_mensalidade_amount", "0.00")),
     }
 
 

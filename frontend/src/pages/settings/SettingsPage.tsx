@@ -112,6 +112,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
   const [defaultCash, setDefaultCash] = useState('')
   const [maxCash, setMaxCash] = useState('')
+  const [defaultMensalidade, setDefaultMensalidade] = useState('')
   const [loading, setLoading] = useState(false)
 
   // ── Association state ──
@@ -214,6 +215,7 @@ export default function SettingsPage() {
       setSettings(res.data)
       setDefaultCash(res.data.default_cash_balance)
       setMaxCash(res.data.max_cash_before_sangria)
+      setDefaultMensalidade(res.data.default_mensalidade_amount ?? '0')
     } catch {
       toast.error('Erro ao carregar configurações.')
     }
@@ -253,7 +255,8 @@ export default function SettingsPage() {
     }
     setLoading(true)
     try {
-      const res = await settingsService.update({ default_cash_balance: dc, max_cash_before_sangria: mc })
+      const dm = parseFloat(defaultMensalidade)
+      const res = await settingsService.update({ default_cash_balance: dc, max_cash_before_sangria: mc, default_mensalidade_amount: isNaN(dm) ? 0 : dm })
       setSettings(res.data)
       toast.success('Configurações salvas!')
     } catch (e: any) {
@@ -342,6 +345,23 @@ export default function SettingsPage() {
                   type="number" min="0" step="0.01" value={maxCash}
                   onChange={e => setMaxCash(e.target.value)}
                   className={`${inputCls} pl-9`} placeholder="500.00"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Valor padrão da mensalidade
+              </label>
+              <p className="text-xs text-gray-400 mb-2">
+                Valor sugerido ao criar uma nova mensalidade para um morador.
+              </p>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">R$</span>
+                <input
+                  type="number" min="0" step="0.01" value={defaultMensalidade}
+                  onChange={e => setDefaultMensalidade(e.target.value)}
+                  className={`${inputCls} pl-9`} placeholder="0.00"
                 />
               </div>
             </div>
