@@ -16,7 +16,23 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await _run_migrations()
     yield
+
+
+async def _run_migrations() -> None:
+    from sqlalchemy import text
+    from app.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        await session.execute(text("""
+            ALTER TABLE association_settings
+                ADD COLUMN IF NOT EXISTS president_name        TEXT,
+                ADD COLUMN IF NOT EXISTS president_signature_url TEXT,
+                ADD COLUMN IF NOT EXISTS assoc_logo_url        TEXT,
+                ADD COLUMN IF NOT EXISTS community_name        TEXT,
+                ADD COLUMN IF NOT EXISTS proof_stock           INTEGER DEFAULT 0
+        """))
+        await session.commit()
 
 
 app = FastAPI(

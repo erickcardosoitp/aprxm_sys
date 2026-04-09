@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,7 +48,44 @@ class ConferenciaRequest(BaseModel):
     counted_amount: Decimal = Field(ge=0)
 
 
+class ProofOfResidenceRequest(BaseModel):
+    resident_name: str
+    resident_cpf: str
+    resident_neighborhood: str
+    resident_cep: str
+    amount: Decimal = Field(gt=0)
+    payment_method_id: UUID | None = None
+    category_id: UUID | None = None
+    resident_id: UUID | None = None
+
+
 # ---- Endpoints ----
+
+@router.post("/proof-of-residence/issue", summary="Emitir Comprovante de Residência")
+async def issue_proof_of_residence(
+    body: ProofOfResidenceRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    svc = FinanceService(session)
+    _, pdf_bytes = await svc.issue_proof_of_residence(
+        association_id=current.association_id,
+        issued_by=current.user_id,
+        resident_name=body.resident_name,
+        resident_cpf=body.resident_cpf,
+        resident_neighborhood=body.resident_neighborhood,
+        resident_cep=body.resident_cep,
+        amount=body.amount,
+        payment_method_id=body.payment_method_id,
+        category_id=body.category_id,
+        resident_id=body.resident_id,
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="comprovante.pdf"'},
+    )
+
 
 @router.post("/sessions/open", response_model=dict, summary="Abrir sessão de caixa")
 async def open_session(

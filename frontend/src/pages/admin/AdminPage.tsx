@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { ShieldCheck, Plus, X, Pencil, UserX, UserCheck } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ShieldCheck, Plus, X, Pencil, UserX, UserCheck, Upload, FileText, Package } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
+import { uploadService } from '../../services/upload'
 import type { User, UserRole } from '../../types'
 import { useAuthStore } from '../../store/authStore'
 
@@ -141,7 +142,191 @@ interface AuditEntry {
   id: string; acao: string; entidade: string; entidade_id: string; detalhe: string; data: string; autor: string
 }
 
-type AdminTab = 'usuarios' | 'logs'
+type AdminTab = 'usuarios' | 'comprovante' | 'logs'
+
+interface AssocConfig {
+  assoc_logo_url?: string
+  president_signature_url?: string
+  president_name?: string
+  community_name?: string
+  address?: string
+  cep?: string
+  proof_stock: number
+}
+
+function ComprovanteTab() {
+  const [config, setConfig] = useState<AssocConfig>({ proof_stock: 0 })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [stockQty, setStockQty] = useState('')
+  const [updatingStock, setUpdatingStock] = useState(false)
+  const logoRef = useRef<HTMLInputElement>(null)
+  const sigRef = useRef<HTMLInputElement>(null)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [uploadingSig, setUploadingSig] = useState(false)
+
+  const [presidentName, setPresidentName] = useState('')
+  const [communityName, setCommunityName] = useState('')
+
+  useEffect(() => {
+    api.get<AssocConfig>('/settings/association').then(r => {
+      setConfig(r.data)
+      setPresidentName(r.data.president_name ?? '')
+      setCommunityName(r.data.community_name ?? '')
+    }).catch(() => toast.error('Erro ao carregar configurações.')).finally(() => setLoading(false))
+  }, [])
+
+  const uploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return
+    setUploadingLogo(true)
+    try {
+      const url = await uploadService.uploadFile(file, 'assoc-logos')
+      await api.put('/settings/association', { assoc_logo_url: url })
+      setConfig(c => ({ ...c, assoc_logo_url: url }))
+      toast.success('Logo salvo!')
+    } catch { toast.error('Erro ao enviar logo.') } finally { setUploadingLogo(false) }
+  }
+
+  const uploadSignature = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return
+    setUploadingSig(true)
+    try {
+      const url = await uploadService.uploadFile(file, 'signatures')
+      await api.put('/settings/association', { president_signature_url: url })
+      setConfig(c => ({ ...c, president_signature_url: url }))
+      toast.success('Assinatura salva!')
+    } catch { toast.error('Erro ao enviar assinatura.') } finally { setUploadingSig(false) }
+  }
+
+  const saveNames = async () => {
+    setSaving(true)
+    try {
+      await api.put('/settings/association', { president_name: presidentName, community_name: communityName })
+      setConfig(c => ({ ...c, president_name: presidentName, community_name: communityName }))
+      toast.success('Configurações salvas!')
+    } catch { toast.error('Erro ao salvar.') } finally { setSaving(false) }
+  }
+
+  const updateStock = async () => {
+    const qty = parseInt(stockQty)
+    if (isNaN(qty) || qty < 0) { toast.error('Quantidade inválida.'); return }
+    setUpdatingStock(true)
+    try {
+      await api.put('/settings/proof-stock', { quantity: qty })
+      setConfig(c => ({ ...c, proof_stock: qty }))
+      setStockQty('')
+      toast.success('Estoque atualizado!')
+    } catch { toast.error('Erro ao atualizar estoque.') } finally { setUpdatingStock(false) }
+  }
+
+  const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
+
+  if (loading) return <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Estoque */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+            <Package className="w-4 h-4 text-[#26619c]" /> Estoque de Comprovantes
+          </h3>
+          <span className={`text-sm font-bold px-3 py-1 rounded-full ${config.proof_stock > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+            {config.proof_stock} un.
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="number" min="0" value={stockQty}
+            onChange={e => setStockQty(e.target.value)}
+            placeholder="Nova quantidade total"
+            className={inputCls}
+          />
+          <button onClick={updateStock} disabled={updatingStock || !stockQty}
+            className="px-4 py-2 bg-[#26619c] hover:bg-[#1a4f87] text-white rounded-lg text-sm font-medium transition disabled:opacity-50 shrink-0">
+            {updatingStock ? '…' : 'Definir'}
+          </button>
+        </div>
+      </div>
+
+      {/* Logo */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 className="font-semibold text-gray-800 flex items-center gap-2 mb-4">
+          <FileText className="w-4 h-4 text-[#26619c]" /> Logo da Associação
+        </h3>
+        {config.assoc_logo_url ? (
+          <div className="mb-3">
+            <img src={config.assoc_logo_url} alt="Logo" className="h-20 object-contain border border-gray-200 rounded-lg p-2 bg-gray-50" />
+          </div>
+        ) : (
+          <p className="text-xs text-red-500 mb-3">Não cadastrado — obrigatório para emissão</p>
+        )}
+        <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={uploadLogo} />
+        <button onClick={() => logoRef.current?.click()} disabled={uploadingLogo}
+          className="flex items-center gap-2 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition disabled:opacity-50">
+          <Upload className="w-4 h-4" /> {uploadingLogo ? 'Enviando…' : config.assoc_logo_url ? 'Trocar Logo' : 'Enviar Logo'}
+        </button>
+      </div>
+
+      {/* Assinatura */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 className="font-semibold text-gray-800 flex items-center gap-2 mb-4">
+          <Upload className="w-4 h-4 text-[#26619c]" /> Assinatura da Presidente
+        </h3>
+        {config.president_signature_url ? (
+          <div className="mb-3">
+            <img src={config.president_signature_url} alt="Assinatura" className="h-16 object-contain border border-gray-200 rounded-lg p-2 bg-gray-50" />
+          </div>
+        ) : (
+          <p className="text-xs text-red-500 mb-3">Não cadastrada — obrigatória para emissão</p>
+        )}
+        <input ref={sigRef} type="file" accept="image/*" className="hidden" onChange={uploadSignature} />
+        <button onClick={() => sigRef.current?.click()} disabled={uploadingSig}
+          className="flex items-center gap-2 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition disabled:opacity-50">
+          <Upload className="w-4 h-4" /> {uploadingSig ? 'Enviando…' : config.president_signature_url ? 'Trocar Assinatura' : 'Enviar Assinatura'}
+        </button>
+      </div>
+
+      {/* Dados do documento */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 className="font-semibold text-gray-800 mb-4">Dados do Documento</h3>
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nome da Presidente</label>
+            <input value={presidentName} onChange={e => setPresidentName(e.target.value)}
+              placeholder="Ex: CARLA BARBOSA SALES" className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nome da Comunidade</label>
+            <input value={communityName} onChange={e => setCommunityName(e.target.value)}
+              placeholder="Ex: Vaz Lobo, Congonha" className={inputCls} />
+          </div>
+          <button onClick={saveNames} disabled={saving}
+            className="w-full bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+            {saving ? 'Salvando…' : 'Salvar'}
+          </button>
+        </div>
+      </div>
+
+      {/* Status de prontidão */}
+      <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+        <p className="text-xs font-semibold text-gray-600 mb-2">Status para emissão</p>
+        {[
+          { label: 'Logo cadastrado', ok: !!config.assoc_logo_url },
+          { label: 'Assinatura cadastrada', ok: !!config.president_signature_url },
+          { label: 'Nome da presidente', ok: !!presidentName },
+          { label: 'Nome da comunidade', ok: !!communityName },
+          { label: 'Estoque disponível', ok: config.proof_stock > 0 },
+        ].map(({ label, ok }) => (
+          <div key={label} className="flex items-center gap-2 text-xs py-0.5">
+            <span className={ok ? 'text-green-500' : 'text-red-400'}>{'• '}{ok ? '✓' : '✗'}</span>
+            <span className={ok ? 'text-gray-700' : 'text-red-500'}>{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function AdminPage() {
   const currentUserId = useAuthStore((s) => s.userId)
@@ -224,10 +409,14 @@ export default function AdminPage() {
       </div>
 
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-        {(['usuarios', 'logs'] as AdminTab[]).map((t) => (
+        {([
+          ['usuarios', 'Usuários'],
+          ['comprovante', 'Comprovante'],
+          ['logs', 'Auditoria'],
+        ] as [AdminTab, string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 py-2 text-sm font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
-            {t === 'usuarios' ? 'Usuários' : 'Logs de Auditoria'}
+            className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
+            {label}
           </button>
         ))}
       </div>
@@ -282,6 +471,8 @@ export default function AdminPage() {
           )}
         </div>
       )}
+
+      {tab === 'comprovante' && <ComprovanteTab />}
 
       {tab === 'logs' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">

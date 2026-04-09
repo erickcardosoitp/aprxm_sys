@@ -36,6 +36,14 @@ class UpdateAssocDataRequest(BaseModel):
     assoc_address: str | None = None
     assoc_cep: str | None = None
     president_user_id: UUID | None = None
+    president_name: str | None = None
+    president_signature_url: str | None = None
+    assoc_logo_url: str | None = None
+    community_name: str | None = None
+
+
+class UpdateProofStockRequest(BaseModel):
+    quantity: int = Field(ge=0)
 
 
 @router.get("", summary="Configurações da associação")
@@ -108,7 +116,10 @@ async def get_assoc_data(
     )
     row = result.fetchone()
     cfg_result = await session.execute(
-        text("SELECT assoc_name, assoc_phone, assoc_email, assoc_address, assoc_cep, president_user_id FROM association_settings WHERE association_id = :id"),
+        text("""SELECT assoc_name, assoc_phone, assoc_email, assoc_address, assoc_cep,
+                       president_user_id, president_name, president_signature_url,
+                       assoc_logo_url, community_name, proof_stock
+                FROM association_settings WHERE association_id = :id"""),
         {"id": str(current.association_id)},
     )
     cfg = cfg_result.fetchone()
@@ -119,6 +130,11 @@ async def get_assoc_data(
         "address": (cfg[3] if cfg and cfg[3] else row[3]) if row else "",
         "cep": (cfg[4] if cfg and cfg[4] else row[4]) if row else "",
         "president_user_id": str(cfg[5]) if cfg and cfg[5] else None,
+        "president_name": cfg[6] if cfg else None,
+        "president_signature_url": cfg[7] if cfg else None,
+        "assoc_logo_url": cfg[8] if cfg else None,
+        "community_name": cfg[9] if cfg else None,
+        "proof_stock": cfg[10] if cfg and cfg[10] is not None else 0,
     }
 
 
@@ -130,15 +146,24 @@ async def update_assoc_data(
 ) -> dict:
     await session.execute(
         text("""
-            INSERT INTO association_settings (association_id, assoc_name, assoc_phone, assoc_email, assoc_address, assoc_cep, president_user_id, updated_at)
-            VALUES (:id, :name, :phone, :email, :address, :cep, :president, NOW())
+            INSERT INTO association_settings (
+                association_id, assoc_name, assoc_phone, assoc_email, assoc_address, assoc_cep,
+                president_user_id, president_name, president_signature_url, assoc_logo_url,
+                community_name, updated_at
+            )
+            VALUES (:id, :name, :phone, :email, :address, :cep, :president,
+                    :pres_name, :sig_url, :logo_url, :community, NOW())
             ON CONFLICT (association_id) DO UPDATE SET
-                assoc_name = EXCLUDED.assoc_name,
-                assoc_phone = EXCLUDED.assoc_phone,
-                assoc_email = EXCLUDED.assoc_email,
-                assoc_address = EXCLUDED.assoc_address,
-                assoc_cep = EXCLUDED.assoc_cep,
-                president_user_id = EXCLUDED.president_user_id,
+                assoc_name = COALESCE(EXCLUDED.assoc_name, association_settings.assoc_name),
+                assoc_phone = COALESCE(EXCLUDED.assoc_phone, association_settings.assoc_phone),
+                assoc_email = COALESCE(EXCLUDED.assoc_email, association_settings.assoc_email),
+                assoc_address = COALESCE(EXCLUDED.assoc_address, association_settings.assoc_address),
+                assoc_cep = COALESCE(EXCLUDED.assoc_cep, association_settings.assoc_cep),
+                president_user_id = COALESCE(EXCLUDED.president_user_id, association_settings.president_user_id),
+                president_name = COALESCE(EXCLUDED.president_name, association_settings.president_name),
+                president_signature_url = COALESCE(EXCLUDED.president_signature_url, association_settings.president_signature_url),
+                assoc_logo_url = COALESCE(EXCLUDED.assoc_logo_url, association_settings.assoc_logo_url),
+                community_name = COALESCE(EXCLUDED.community_name, association_settings.community_name),
                 updated_at = NOW()
         """),
         {
@@ -147,10 +172,34 @@ async def update_assoc_data(
             "email": body.assoc_email, "address": body.assoc_address,
             "cep": body.assoc_cep,
             "president": str(body.president_user_id) if body.president_user_id else None,
+            "pres_name": body.president_name,
+            "sig_url": body.president_signature_url,
+            "logo_url": body.assoc_logo_url,
+            "community": body.community_name,
         },
     )
     await session.commit()
     return {"ok": True}
+
+
+@router.put("/proof-stock", summary="Atualizar estoque de comprovantes (admin)")
+async def update_proof_stock(
+    body: UpdateProofStockRequest,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await session.execute(
+        text("""
+            INSERT INTO association_settings (association_id, proof_stock, updated_at)
+            VALUES (:id, :qty, NOW())
+            ON CONFLICT (association_id) DO UPDATE SET
+                proof_stock = EXCLUDED.proof_stock,
+                updated_at = NOW()
+        """),
+        {"id": str(current.association_id), "qty": body.quantity},
+    )
+    await session.commit()
+    return {"ok": True, "proof_stock": body.quantity}
 
 
 DEFAULT_ACCESS_GROUPS = {

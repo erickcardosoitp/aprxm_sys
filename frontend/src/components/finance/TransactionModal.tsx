@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2, Download, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { financeService } from '../../services/finance'
@@ -54,6 +54,12 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
 
+  // Step 2 — proof_of_residence specific
+  const [proofName, setProofName] = useState('')
+  const [proofCpf, setProofCpf] = useState('')
+  const [proofNeighborhood, setProofNeighborhood] = useState('')
+  const [proofCep, setProofCep] = useState('')
+
   // Step 2 — expense specific
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState('')
 
@@ -73,6 +79,15 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     }
     load()
   }, [txType])
+
+  // Auto-fill from resident lookup into proof fields
+  useEffect(() => {
+    if (resident && incomeSubtype === 'proof_of_residence') {
+      setProofName(resident.full_name)
+      setProofCpf(resident.cpf ?? '')
+      setProofCep(resident.address_cep ?? '')
+    }
+  }, [resident, incomeSubtype])
 
   // Auto-fill description based on income subtype
   useEffect(() => {
@@ -119,9 +134,14 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     }
   }, [resident, incomeSubtype])
 
+  const isProof = txType === 'income' && incomeSubtype === 'proof_of_residence'
+
   const canProceed = () => {
     if (step === 0) return true
     if (step === 1) {
+      if (isProof) {
+        return !!(proofName.trim() && proofCpf.trim() && proofNeighborhood.trim() && proofCep.trim() && amount && parseFloat(amount) > 0)
+      }
       if (!amount || parseFloat(amount) <= 0) return false
       if (!description.trim()) return false
       if (txType === 'income' && incomeSubtype === 'mensalidade' && !resident) return false
@@ -131,9 +151,38 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   }
 
   const handleSubmit = async () => {
-    if (!amount || !description.trim()) return
     setSaving(true)
     try {
+      if (isProof) {
+        // Issue proof of residence — returns PDF blob
+        const res = await api.post('/finance/proof-of-residence/issue', {
+          resident_name: proofName.trim(),
+          resident_cpf: proofCpf.trim(),
+          resident_neighborhood: proofNeighborhood.trim(),
+          resident_cep: proofCep.trim(),
+          amount: parseFloat(amount),
+          payment_method_id: paymentMethodId || undefined,
+          category_id: categoryId || undefined,
+          resident_id: resident?.id || undefined,
+        }, { responseType: 'blob' })
+
+        // Trigger download + print
+        const blob = new Blob([res.data], { type: 'application/pdf' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url; a.download = 'comprovante.pdf'; a.click()
+        // Open in new tab for printing
+        const win = window.open(url, '_blank')
+        if (win) setTimeout(() => win.print(), 800)
+        URL.revokeObjectURL(url)
+
+        toast.success('Comprovante emitido! PDF gerado.')
+        onSuccess()
+        onClose()
+        return
+      }
+
+      if (!amount || !description.trim()) return
       await financeService.registerTransaction({
         type: txType,
         amount: parseFloat(amount),
@@ -222,8 +271,83 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           {/* ── Step 2: Dados ── */}
           {step === 1 && (
             <>
-              {/* Resident lookup (income only) */}
-              {txType === 'income' && (
+              {/* Proof of residence: special fields */}
+              {isProof && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                    Busque o morador pelo CPF para preencher automaticamente, ou preencha manualmente.
+                  </p>
+                  {/* CPF lookup */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Buscar por CPF</label>
+                    <div className="flex gap-2">
+                      <input value={cpfQuery} onChange={e => setCpfQuery(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && lookupCpf()}
+                        placeholder="000.000.000-00"
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                      <button type="button" onClick={lookupCpf} disabled={cpfLoading}
+                        className="px-3 py-2 bg-[#26619c] text-white rounded-lg hover:bg-[#1a4f87] disabled:opacity-50">
+                        {cpfLoading ? '…' : <Search className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {resident && (
+                      <p className="text-xs text-blue-600 mt-1 bg-blue-50 rounded px-2 py-1">
+                        ✓ {resident.full_name} — dados preenchidos automaticamente
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Nome completo *</label>
+                    <input value={proofName} onChange={e => setProofName(e.target.value)}
+                      placeholder="Nome do solicitante"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">CPF *</label>
+                    <input value={proofCpf} onChange={e => setProofCpf(e.target.value)}
+                      placeholder="000.000.000-00"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Bairro *</label>
+                      <input value={proofNeighborhood} onChange={e => setProofNeighborhood(e.target.value)}
+                        placeholder="Ex: Vaz Lobo"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">CEP *</label>
+                      <input value={proofCep} onChange={e => setProofCep(e.target.value)}
+                        placeholder="00000-000"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                    </div>
+                  </div>
+                  {/* Valor */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$) *</label>
+                    <input type="number" min="0.01" step="0.01" value={amount}
+                      onChange={e => setAmount(e.target.value)} placeholder="0,00"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                  </div>
+                  {/* Forma de pagamento */}
+                  {paymentMethods.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Forma de pagamento</label>
+                      <div className="flex flex-wrap gap-2">
+                        {paymentMethods.map(m => (
+                          <button key={m.id} type="button" onClick={() => setPaymentMethodId(m.id === paymentMethodId ? '' : m.id)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${paymentMethodId === m.id ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600 hover:border-[#26619c]'}`}>
+                            {m.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Resident lookup (income only, non-proof) */}
+              {txType === 'income' && !isProof && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     CPF do morador {incomeSubtype === 'mensalidade' ? <span className="text-red-500">*</span> : '(opcional)'}
@@ -289,64 +413,56 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                 </div>
               )}
 
-              {/* Category */}
-              {categories.length > 0 && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map((c) => (
-                      <button key={c.id} type="button" onClick={() => setCategoryId(c.id === categoryId ? '' : c.id)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-                          categoryId === c.id
-                            ? 'bg-[#26619c] text-white border-[#26619c]'
-                            : 'border-gray-300 text-gray-600 hover:border-[#26619c]'
-                        }`}>
-                        {c.name}
-                      </button>
-                    ))}
+              {/* Standard fields — hidden for proof_of_residence (has its own section above) */}
+              {!isProof && (
+                <>
+                  {/* Category */}
+                  {categories.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
+                      <div className="flex flex-wrap gap-2">
+                        {categories.map((c) => (
+                          <button key={c.id} type="button" onClick={() => setCategoryId(c.id === categoryId ? '' : c.id)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                              categoryId === c.id ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600 hover:border-[#26619c]'
+                            }`}>
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$) <span className="text-red-500">*</span></label>
+                    <input type="number" min="0.01" step="0.01" value={amount}
+                      onChange={(e) => setAmount(e.target.value)} placeholder="0,00"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
-                </div>
-              )}
-
-              {/* Amount */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$) <span className="text-red-500">*</span></label>
-                <input type="number" min="0.01" step="0.01" value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0,00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Descrição <span className="text-red-500">*</span></label>
-                <input value={description} onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Descreva a transação…"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
-              </div>
-
-              {/* Payment method */}
-              {paymentMethods.length > 0 && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Forma de pagamento</label>
-                  <div className="flex flex-wrap gap-2">
-                    {paymentMethods.map((m) => (
-                      <button key={m.id} type="button" onClick={() => setPaymentMethodId(m.id === paymentMethodId ? '' : m.id)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-                          paymentMethodId === m.id
-                            ? 'bg-[#26619c] text-white border-[#26619c]'
-                            : 'border-gray-300 text-gray-600 hover:border-[#26619c]'
-                        }`}>
-                        {m.name}
-                      </button>
-                    ))}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Descrição <span className="text-red-500">*</span></label>
+                    <input value={description} onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Descreva a transação…"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
-                </div>
-              )}
-
-              {/* Receipt photo (expense only) */}
-              {txType === 'expense' && (
-                <PhotoCapture label="Foto do Comprovante" onCapture={(e) => setReceiptPhotoUrl(e.url)} />
+                  {paymentMethods.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Forma de pagamento</label>
+                      <div className="flex flex-wrap gap-2">
+                        {paymentMethods.map((m) => (
+                          <button key={m.id} type="button" onClick={() => setPaymentMethodId(m.id === paymentMethodId ? '' : m.id)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                              paymentMethodId === m.id ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600 hover:border-[#26619c]'
+                            }`}>
+                            {m.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {txType === 'expense' && (
+                    <PhotoCapture label="Foto do Comprovante" onCapture={(e) => setReceiptPhotoUrl(e.url)} />
+                  )}
+                </>
               )}
             </>
           )}
@@ -354,20 +470,32 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           {/* ── Step 3: Confirmação ── */}
           {step === 2 && (
             <div className="flex flex-col gap-3">
-              <p className="text-sm font-medium text-gray-700">Confirmar transação:</p>
+              <p className="text-sm font-medium text-gray-700">{isProof ? 'Confirmar emissão do comprovante:' : 'Confirmar transação:'}</p>
               <div className={`rounded-xl p-4 border ${txType === 'income' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                 <p className={`text-lg font-bold ${txType === 'income' ? 'text-green-700' : 'text-red-700'}`}>
                   {txType === 'income' ? '+' : '-'} R$ {parseFloat(amount || '0').toFixed(2)}
                 </p>
-                <p className="text-sm text-gray-700 mt-1">{description}</p>
-                {txType === 'income' && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Tipo: {INCOME_SUBTYPES.find(s => s.value === incomeSubtype)?.label}
-                  </p>
+                {isProof ? (
+                  <>
+                    <p className="text-sm text-gray-800 mt-1 font-medium">{proofName}</p>
+                    <p className="text-xs text-gray-500">CPF: {proofCpf}</p>
+                    <p className="text-xs text-gray-500">Bairro: {proofNeighborhood} · CEP: {proofCep}</p>
+                    {paymentMethodId && <p className="text-xs text-gray-500">Pagamento: {paymentMethods.find(m => m.id === paymentMethodId)?.name}</p>}
+                    <p className="text-xs text-blue-600 mt-2 font-medium">O PDF será gerado e baixado automaticamente.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-700 mt-1">{description}</p>
+                    {txType === 'income' && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Tipo: {INCOME_SUBTYPES.find(s => s.value === incomeSubtype)?.label}
+                      </p>
+                    )}
+                    {resident && <p className="text-xs text-gray-500">Morador: {resident.full_name}</p>}
+                    {categoryId && <p className="text-xs text-gray-500">Categoria: {categories.find(c => c.id === categoryId)?.name}</p>}
+                    {paymentMethodId && <p className="text-xs text-gray-500">Pagamento: {paymentMethods.find(m => m.id === paymentMethodId)?.name}</p>}
+                  </>
                 )}
-                {resident && <p className="text-xs text-gray-500">Morador: {resident.full_name}</p>}
-                {categoryId && <p className="text-xs text-gray-500">Categoria: {categories.find(c => c.id === categoryId)?.name}</p>}
-                {paymentMethodId && <p className="text-xs text-gray-500">Pagamento: {paymentMethods.find(m => m.id === paymentMethodId)?.name}</p>}
               </div>
             </div>
           )}
@@ -387,8 +515,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
             </button>
           ) : (
             <button onClick={handleSubmit} disabled={saving}
-              className="bg-[#26619c] hover:bg-[#1a4f87] text-white px-6 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50">
-              {saving ? 'Salvando…' : 'Confirmar'}
+              className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-6 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+              {saving ? 'Gerando…' : isProof ? <><Download className="w-4 h-4" /> Emitir PDF</> : 'Confirmar'}
             </button>
           )}
         </div>

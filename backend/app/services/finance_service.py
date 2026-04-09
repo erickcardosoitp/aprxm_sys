@@ -1,11 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
+from io import BytesIO
 from uuid import UUID
 
+import httpx
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.exceptions import CashSessionError, NotFoundError
+from app.core.exceptions import CashSessionError, NotFoundError, UnprocessableError
 from app.models.finance import CashSession, CashSessionStatus, IncomeSubtype, Transaction, TransactionType
 
 
@@ -369,6 +372,175 @@ class FinanceService:
         self._session.add(tx)
         await self._session.flush()
         return tx
+
+    # ------------------------------------------------------------------
+    # Comprovante de Residência
+    # ------------------------------------------------------------------
+
+    async def issue_proof_of_residence(
+        self,
+        association_id: UUID,
+        issued_by: UUID,
+        resident_name: str,
+        resident_cpf: str,
+        resident_neighborhood: str,
+        resident_cep: str,
+        amount: Decimal,
+        payment_method_id: UUID | None = None,
+        category_id: UUID | None = None,
+        resident_id: UUID | None = None,
+    ) -> tuple[Transaction, bytes]:
+        # Load settings
+        row = (await self._session.execute(
+            sa_text("""
+                SELECT assoc_logo_url, president_signature_url, president_name,
+                       community_name, proof_stock, assoc_address, assoc_cep
+                FROM association_settings WHERE association_id = :aid
+            """),
+            {"aid": str(association_id)},
+        )).fetchone()
+
+        if not row:
+            raise UnprocessableError("Configurações da associação não encontradas. Configure no módulo Admin.")
+        logo_url, sig_url, president_name, community_name, proof_stock, assoc_address, assoc_cep = row
+
+        if not logo_url:
+            raise UnprocessableError("Logo da associação não cadastrado. Configure no módulo Admin.")
+        if not sig_url:
+            raise UnprocessableError("Assinatura da presidente não cadastrada. Configure no módulo Admin.")
+        if (proof_stock or 0) <= 0:
+            raise UnprocessableError("Sem estoque de comprovantes disponível. Solicite reposição ao administrador.")
+
+        # Get open session
+        cash_session = await self.get_open_session(association_id)
+
+        # Register transaction
+        tx = await self.register_transaction(
+            association_id=association_id,
+            cash_session_id=cash_session.id,
+            tx_type=TransactionType.income,
+            amount=amount,
+            description=f"Comprovante de Residência — {resident_name}",
+            created_by=issued_by,
+            income_subtype=IncomeSubtype.proof_of_residence,
+            payment_method_id=payment_method_id,
+            category_id=category_id,
+            resident_id=resident_id,
+        )
+
+        # Decrement stock
+        await self._session.execute(
+            sa_text("UPDATE association_settings SET proof_stock = proof_stock - 1 WHERE association_id = :aid"),
+            {"aid": str(association_id)},
+        )
+
+        # Download logo and signature
+        async with httpx.AsyncClient(timeout=10) as client:
+            logo_resp = await client.get(logo_url)
+            sig_resp = await client.get(sig_url)
+        logo_bytes = logo_resp.content
+        sig_bytes = sig_resp.content
+
+        # Generate PDF
+        pdf_bytes = self._build_proof_pdf(
+            resident_name=resident_name,
+            resident_cpf=resident_cpf,
+            resident_neighborhood=resident_neighborhood,
+            resident_cep=resident_cep,
+            community_name=community_name or "",
+            assoc_address=assoc_address or "",
+            assoc_cep=assoc_cep or "",
+            president_name=president_name or "PRESIDENTE",
+            logo_bytes=logo_bytes,
+            sig_bytes=sig_bytes,
+        )
+
+        return tx, pdf_bytes
+
+    @staticmethod
+    def _build_proof_pdf(
+        resident_name: str,
+        resident_cpf: str,
+        resident_neighborhood: str,
+        resident_cep: str,
+        community_name: str,
+        assoc_address: str,
+        assoc_cep: str,
+        president_name: str,
+        logo_bytes: bytes,
+        sig_bytes: bytes,
+    ) -> bytes:
+        from fpdf import FPDF  # type: ignore
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_margins(20, 20, 20)
+        pdf.set_auto_page_break(auto=True, margin=20)
+
+        # Logo centralizado
+        logo_io = BytesIO(logo_bytes)
+        pdf.image(logo_io, x=80, y=15, w=50)
+        pdf.set_y(68)
+
+        # Endereço da associação
+        pdf.set_font("Helvetica", size=9)
+        pdf.set_text_color(100, 100, 100)
+        if assoc_address:
+            pdf.cell(0, 5, assoc_address, ln=True, align="C")
+        if assoc_cep:
+            pdf.cell(0, 5, f"CEP: {assoc_cep}", ln=True, align="C")
+        pdf.ln(8)
+
+        # Linha separadora
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(20, pdf.get_y(), 190, pdf.get_y())
+        pdf.ln(8)
+
+        # Título
+        pdf.set_font("Helvetica", "B", 15)
+        pdf.set_text_color(26, 63, 111)
+        pdf.cell(0, 10, "DECLARAÇÃO DE RESIDÊNCIA", ln=True, align="C")
+        pdf.ln(6)
+
+        # Corpo
+        pdf.set_font("Helvetica", size=12)
+        pdf.set_text_color(30, 30, 30)
+        body = (
+            f"O Sr(a) {resident_name}, portador(a) do CPF {resident_cpf}, "
+            f"residente na comunidade {community_name}, CEP {resident_cep}, "
+            f"localizado nesta comunidade no bairro de {resident_neighborhood}."
+        )
+        pdf.multi_cell(0, 8, body, align="J")
+        pdf.ln(12)
+
+        # Data
+        now = datetime.utcnow()
+        months = ["janeiro","fevereiro","março","abril","maio","junho",
+                  "julho","agosto","setembro","outubro","novembro","dezembro"]
+        date_str = f"Rio de Janeiro, {now.day} de {months[now.month - 1]} de {now.year}."
+        pdf.set_font("Helvetica", size=11)
+        pdf.cell(0, 8, date_str, ln=True, align="C")
+        pdf.ln(10)
+
+        pdf.set_font("Helvetica", size=11)
+        pdf.cell(0, 7, "Atenciosamente,", ln=True, align="C")
+        pdf.ln(4)
+
+        # Assinatura
+        sig_io = BytesIO(sig_bytes)
+        page_w = pdf.w - pdf.l_margin - pdf.r_margin
+        sig_w = 60.0
+        sig_x = pdf.l_margin + (page_w - sig_w) / 2
+        pdf.image(sig_io, x=sig_x, w=sig_w)
+        pdf.ln(2)
+
+        # Nome da presidente
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, president_name.upper(), ln=True, align="C")
+        pdf.set_font("Helvetica", size=10)
+        pdf.cell(0, 6, "PRESIDENTE", ln=True, align="C")
+
+        return bytes(pdf.output())
 
     async def list_transactions(
         self, association_id: UUID, cash_session_id: UUID | None = None
