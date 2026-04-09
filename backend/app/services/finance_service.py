@@ -515,9 +515,9 @@ class FinanceService:
             bc_w = 45.0
             bc_x = pdf.w - pdf.r_margin - bc_w
             pdf.image(bc_io, x=bc_x, y=10, w=bc_w)
-            pdf.set_font("Helvetica", size=7)
+            pdf.set_font("Helvetica", size=8)
             pdf.set_text_color(80, 80, 80)
-            pdf.set_xy(bc_x, 10 + 14)
+            pdf.set_xy(bc_x, 10 + 24)
             pdf.cell(bc_w, 4, barcode_code, align="C")
 
         # Logo centralizado
@@ -561,8 +561,8 @@ class FinanceService:
         months = ["janeiro","fevereiro","março","abril","maio","junho",
                   "julho","agosto","setembro","outubro","novembro","dezembro"]
         date_str = f"Rio de Janeiro, {now.day} de {months[now.month - 1]} de {now.year}."
-        pdf.set_font("Helvetica", size=11)
-        pdf.cell(0, 8, date_str, ln=True, align="C")
+        pdf.set_font("Helvetica", size=12)
+        pdf.cell(0, 8, date_str, ln=True, align="R")
         pdf.ln(10)
 
         pdf.set_font("Helvetica", size=11)

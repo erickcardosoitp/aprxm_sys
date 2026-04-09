@@ -60,6 +60,10 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [proofNeighborhood, setProofNeighborhood] = useState('')
   const [proofCep, setProofCep] = useState('')
 
+  // Step 3 — barcode confirmation
+  const [pendingBarcodeCode, setPendingBarcodeCode] = useState('')
+  const [barcodeInput, setBarcodeInput] = useState('')
+
   // Step 2 — expense specific
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState('')
 
@@ -135,6 +139,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   }, [resident, incomeSubtype])
 
   const isProof = txType === 'income' && incomeSubtype === 'proof_of_residence'
+  const stepTitles = isProof ? ['Tipo', 'Dados', 'Confirmação', 'Verificar'] : STEP_TITLES
 
   const canProceed = () => {
     if (step === 0) return true
@@ -178,9 +183,16 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         if (win) setTimeout(() => win.print(), 800)
         URL.revokeObjectURL(url)
 
-        toast.success(barcodeCode ? `Comprovante emitido! Código: ${barcodeCode}` : 'Comprovante emitido! PDF gerado.')
-        onSuccess()
-        onClose()
+        if (barcodeCode) {
+          setPendingBarcodeCode(barcodeCode)
+          setBarcodeInput('')
+          setSaving(false)
+          setStep(3)
+        } else {
+          toast.success('Comprovante emitido! PDF gerado.')
+          onSuccess()
+          onClose()
+        }
         return
       }
 
@@ -204,6 +216,16 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     }
   }
 
+  const confirmBarcode = () => {
+    if (barcodeInput.trim() === pendingBarcodeCode) {
+      toast.success(`Venda confirmada! Código ${pendingBarcodeCode} verificado.`)
+      onSuccess()
+      onClose()
+    } else {
+      toast.error('Código incorreto. Verifique o comprovante impresso.')
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 overflow-y-auto">
       <div className="w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl mx-0 sm:mx-4">
@@ -215,7 +237,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
         {/* Step indicator */}
         <div className="flex border-b border-gray-100">
-          {STEP_TITLES.map((title, i) => (
+          {stepTitles.map((title, i) => (
             <div key={i} className={`flex-1 py-2.5 text-center text-xs font-medium transition border-b-2 ${
               step === i ? 'text-[#26619c] border-[#26619c]' :
               i < step ? 'text-green-600 border-green-400' : 'text-gray-400 border-transparent'
@@ -469,7 +491,38 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
             </>
           )}
 
-          {/* ── Step 3: Confirmação ── */}
+          {/* ── Step 3 (proof only): Verificar código de barras ── */}
+          {step === 3 && (
+            <div className="flex flex-col gap-4">
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                <p className="text-sm font-semibold text-green-700 mb-1">PDF gerado com sucesso!</p>
+                <p className="text-xs text-gray-600">Código do comprovante: <span className="font-mono font-bold text-gray-900 tracking-widest">{pendingBarcodeCode}</span></p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Bipe ou digite o código de barras do comprovante impresso:
+                </label>
+                <input
+                  autoFocus
+                  value={barcodeInput}
+                  onChange={e => setBarcodeInput(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  onKeyDown={e => e.key === 'Enter' && barcodeInput.length === 8 && confirmBarcode()}
+                  placeholder="00000000"
+                  inputMode="numeric"
+                  maxLength={8}
+                  className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-xl font-mono text-center tracking-[0.3em] focus:outline-none focus:border-[#26619c]"
+                />
+                {barcodeInput.length === 8 && barcodeInput !== pendingBarcodeCode && (
+                  <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /> Código não corresponde ao comprovante.</p>
+                )}
+                {barcodeInput === pendingBarcodeCode && (
+                  <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Código correto!</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 2: Confirmação ── */}
           {step === 2 && (
             <div className="flex flex-col gap-3">
               <p className="text-sm font-medium text-gray-700">{isProof ? 'Confirmar emissão do comprovante:' : 'Confirmar transação:'}</p>
@@ -505,12 +558,24 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
-          <button onClick={step === 0 ? onClose : () => setStep(step - 1)}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
-            <ChevronLeft className="w-4 h-4" />
-            {step === 0 ? 'Cancelar' : 'Anterior'}
-          </button>
-          {step < 2 ? (
+          {step === 3 ? (
+            <button onClick={() => { onSuccess(); onClose() }}
+              className="text-sm text-gray-400 hover:text-gray-600">
+              Pular verificação
+            </button>
+          ) : (
+            <button onClick={step === 0 ? onClose : () => setStep(step - 1)}
+              className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+              <ChevronLeft className="w-4 h-4" />
+              {step === 0 ? 'Cancelar' : 'Anterior'}
+            </button>
+          )}
+          {step === 3 ? (
+            <button onClick={confirmBarcode} disabled={barcodeInput.length !== 8}
+              className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-6 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+              <CheckCircle2 className="w-4 h-4" /> Confirmar Venda
+            </button>
+          ) : step < 2 ? (
             <button onClick={() => setStep(step + 1)} disabled={!canProceed()}
               className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-5 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50">
               Próximo <ChevronRight className="w-4 h-4" />
