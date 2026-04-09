@@ -1,4 +1,5 @@
 import axios from 'axios'
+import toast from 'react-hot-toast'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? '/api/v1',
@@ -17,7 +18,14 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401) {
       sessionStorage.removeItem('aprxm-auth')
-      window.location.href = '/login'
+      toast.error('Sessão expirada. Faça login novamente.', { duration: 4000 })
+      setTimeout(() => { window.location.href = '/login' }, 1500)
+    } else if (err.response?.status === 403) {
+      toast.error('Você não tem permissão para esta ação.')
+    } else if (err.response?.status >= 500) {
+      toast.error('Erro no servidor. Tente novamente.')
+    } else if (!err.response) {
+      toast.error('Sem conexão com o servidor.')
     }
     return Promise.reject(err)
   },
