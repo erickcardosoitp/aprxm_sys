@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 import httpx
@@ -308,7 +309,7 @@ async def packages_report(
             WHERE association_id = :aid
               AND received_at::date BETWEEN :df AND :dt
         """),
-        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+        {"aid": str(current.association_id), "df": date.fromisoformat(date_from), "dt": date.fromisoformat(date_to)},
     )
     r = result.fetchone()
     # by carrier
@@ -319,7 +320,7 @@ async def packages_report(
               AND carrier_name IS NOT NULL
             GROUP BY carrier_name ORDER BY 2 DESC LIMIT 10
         """),
-        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+        {"aid": str(current.association_id), "df": date.fromisoformat(date_from), "dt": date.fromisoformat(date_to)},
     )
     return {
         "period": {"from": date_from, "to": date_to},
