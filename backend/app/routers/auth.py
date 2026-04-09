@@ -71,7 +71,7 @@ async def associations_for_email(
     result = await session.execute(stmt)
     rows = result.all()
     return [
-        {"id": str(assoc.id), "name": assoc.name, "slug": assoc.slug, "role": user.role}
+        {"id": str(assoc.id), "name": assoc.name, "slug": assoc.slug, "role": user.role.value}
         for assoc, user in rows
     ]
 
