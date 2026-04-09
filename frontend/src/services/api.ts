@@ -6,7 +6,8 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('aprxm_token')
+  const raw = sessionStorage.getItem('aprxm-auth')
+  const token = raw ? JSON.parse(raw)?.state?.token : null
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -15,7 +16,7 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('aprxm_token')
+      sessionStorage.removeItem('aprxm-auth')
       window.location.href = '/login'
     }
     return Promise.reject(err)
