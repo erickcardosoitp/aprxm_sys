@@ -71,6 +71,7 @@ class Resident(SQLModel, table=True):
     household_profiles: list[str] = Field(default=[], sa_column=Column(_json))
     internet_access: str | None = Field(default=None, max_length=50)
     has_sewage: bool | None = None
+    has_pests: bool | None = None
     neighborhood_problems: list[str] = Field(default=[], sa_column=Column(_json))
     main_priority_request: str | None = None
 

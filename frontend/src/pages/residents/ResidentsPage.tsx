@@ -62,6 +62,7 @@ const EMPTY_FORM = {
   household_profiles: [] as string[],
   internet_access: '',
   has_sewage: null as boolean | null,
+  has_pests: null as boolean | null,
   neighborhood_problems: [] as string[],
   main_priority_request: '',
   // Sec 4
@@ -332,7 +333,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
                 <Input label="Vaga" value={form.parking_spot} onChange={(v) => set('parking_spot', v)} placeholder="12" />
               </div>
               <Select label="Localização da moradia" value={form.address_location} onChange={(v) => set('address_location', v)} options={LOCATION_OPTIONS} />
-              <MultiCheck label="Meios de acesso ao bairro" options={ACCESS_OPTIONS} selected={form.address_access} onChange={(v) => set('address_access', v)} />
+              <MultiCheck label="Formas de Locomoção para chegar em casa" options={ACCESS_OPTIONS} selected={form.address_access} onChange={(v) => set('address_access', v)} />
               <YesNo label="Usa transporte público?" value={form.uses_public_transport} onChange={(v) => set('uses_public_transport', v)} />
               {form.uses_public_transport && (
                 <Input label="Distância até o ponto" value={form.transport_distance} onChange={(v) => set('transport_distance', v)} placeholder="Ex: 500m, 1km" />
@@ -350,6 +351,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
               <MultiCheck label="Perfis no domicílio" options={PROFILE_OPTIONS} selected={form.household_profiles} onChange={(v) => set('household_profiles', v)} />
               <Select label="Acesso à internet" value={form.internet_access} onChange={(v) => set('internet_access', v)} options={INTERNET_OPTIONS} />
               <YesNo label="Tem rede de esgoto?" value={form.has_sewage} onChange={(v) => set('has_sewage', v)} />
+              <YesNo label="Sua residência conta com a presença constante de roedores/insetos?" value={form.has_pests} onChange={(v) => set('has_pests', v)} />
               <MultiCheck label="Problemas no bairro" options={NEIGHBORHOOD_OPTIONS} selected={form.neighborhood_problems} onChange={(v) => set('neighborhood_problems', v)} />
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Principal demanda / prioridade</label>
@@ -1076,6 +1078,7 @@ export default function ResidentsPage() {
             household_profiles: editTarget.household_profiles ?? [],
             internet_access: editTarget.internet_access ?? '',
             has_sewage: editTarget.has_sewage ?? null,
+            has_pests: editTarget.has_pests ?? null,
             neighborhood_problems: editTarget.neighborhood_problems ?? [],
             main_priority_request: editTarget.main_priority_request ?? '',
             ownership_type: editTarget.ownership_type ?? '',

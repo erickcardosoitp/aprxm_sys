@@ -32,6 +32,7 @@ async def _run_migrations() -> None:
                 ADD COLUMN IF NOT EXISTS community_name        TEXT,
                 ADD COLUMN IF NOT EXISTS proof_stock           INTEGER DEFAULT 0
         """))
+        await session.execute(text("ALTER TABLE residents ADD COLUMN IF NOT EXISTS has_pests BOOLEAN"))
         await session.commit()
 
 

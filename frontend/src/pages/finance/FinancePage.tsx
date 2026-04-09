@@ -598,6 +598,7 @@ export default function FinancePage() {
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-semibold uppercase tracking-wide">
                     <th className="px-3 py-2.5 text-left whitespace-nowrap">Data</th>
                     <th className="px-3 py-2.5 text-left whitespace-nowrap">Operador</th>
+                    <th className="px-3 py-2.5 text-right whitespace-nowrap">Saldo Inicial</th>
                     <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ PIX</th>
                     <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Dinheiro</th>
                     <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Total Bruto</th>
@@ -630,6 +631,7 @@ export default function FinancePage() {
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{s.operador_name ?? '—'}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap">{fmtV(parseFloat(s.opening_balance ?? '0'))}</td>
                         <td className="px-3 py-2.5 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_pix ?? '0'))}</td>
                         <td className="px-3 py-2.5 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_dinheiro ?? '0'))}</td>
                         <td className="px-3 py-2.5 text-right font-semibold text-green-700 whitespace-nowrap">{fmtV(bruto)}</td>
