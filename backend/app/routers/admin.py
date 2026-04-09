@@ -162,9 +162,10 @@ async def reset_database(
     aid = str(current.association_id)
     tables = [
         "reconciliations", "bank_statements",
-        "mensalidades", "transactions", "cash_sessions",
-        "service_order_comments", "service_order_history", "service_orders",
+        "mensalidades",
         "package_events", "packages",
+        "transactions", "cash_sessions",
+        "service_order_comments", "service_order_history", "service_orders",
         "residents",
     ]
     for table in tables:

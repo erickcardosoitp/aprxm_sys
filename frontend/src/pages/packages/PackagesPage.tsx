@@ -66,7 +66,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
   const handleNotify = async () => {
     setNotifying(true)
     try {
-      await api.post(`/packages/${pkg.id}/notify`)
+      await api.post(`/packages/${pkg.id}/notify`, {})
       toast.success('Morador notificado!')
       onRefresh?.()
       onClose()

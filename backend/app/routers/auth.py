@@ -103,6 +103,86 @@ async def change_password(
     return {"detail": "Senha alterada com sucesso."}
 
 
+class SwitchAssociationRequest(BaseModel):
+    association_id: UUID
+
+
+@router.get("/my-associations", summary="Ambientes disponíveis para o usuário atual")
+async def my_associations(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    result = await session.execute(select(User).where(User.id == current.user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    stmt = (
+        select(Association, User)
+        .join(User, User.association_id == Association.id)
+        .where(User.email == user.email, User.is_active == True, Association.is_active == True)  # noqa: E712
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        {"id": str(assoc.id), "name": assoc.name, "slug": assoc.slug, "role": u.role,
+         "current": str(assoc.id) == str(current.association_id)}
+        for assoc, u in rows
+    ]
+
+
+@router.post("/switch-association", response_model=TokenResponse, summary="Trocar de ambiente")
+async def switch_association(
+    body: SwitchAssociationRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> TokenResponse:
+    from sqlalchemy import text as sa_text
+    result = await session.execute(select(User).where(User.id == current.user_id))
+    current_user = result.scalar_one_or_none()
+    if not current_user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+    stmt = select(User).where(
+        User.email == current_user.email,
+        User.association_id == body.association_id,
+        User.is_active == True,  # noqa: E712
+    )
+    target_user = (await session.execute(stmt)).scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=403, detail="Sem acesso a este ambiente.")
+
+    from datetime import datetime as dt
+    target_user.last_login_at = dt.utcnow()
+    session.add(target_user)
+
+    linked_ids: list[str] = []
+    slugs_row = await session.execute(
+        sa_text("SELECT linked_association_slugs FROM associations WHERE id = :id"),
+        {"id": str(target_user.association_id)},
+    )
+    slugs_result = slugs_row.fetchone()
+    linked_slugs: list[str] = slugs_result[0] if slugs_result and slugs_result[0] else []
+    if linked_slugs:
+        ids_row = await session.execute(
+            sa_text("SELECT id FROM associations WHERE slug = ANY(:slugs)"),
+            {"slugs": linked_slugs},
+        )
+        linked_ids = [str(r[0]) for r in ids_row.fetchall()]
+
+    assoc_name_row = await session.execute(
+        sa_text("SELECT name FROM associations WHERE id = :id"),
+        {"id": str(target_user.association_id)},
+    )
+    assoc_name_result = assoc_name_row.fetchone()
+    association_name = assoc_name_result[0] if assoc_name_result else ""
+
+    from app.core.security import create_access_token
+    token = create_access_token(
+        target_user.id, target_user.association_id, target_user.role.value,
+        target_user.full_name, linked_ids, association_name,
+    )
+    return TokenResponse(access_token=token)
+
+
 @router.get("/me", summary="Perfil do usuário atual")
 async def me(
     current: CurrentUser = Depends(get_current_user),

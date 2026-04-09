@@ -1,17 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { jwtDecode } from 'jwt-decode'
-import { Building2, ChevronRight, Loader2, Lock, Mail } from 'lucide-react'
+import { Building2, ChevronRight, Clock, Loader2, Lock, Mail, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { UserRole } from '../types'
-
-interface JWTPayload {
-  sub: string
-  association_id: string
-  role: UserRole
-}
 
 interface OrgOption {
   id: string
@@ -20,7 +14,30 @@ interface OrgOption {
   role: UserRole
 }
 
+interface RecentLogin {
+  email: string
+  associationId: string
+  associationName: string
+  role: UserRole
+}
+
 type Step = 'email' | 'org' | 'password'
+
+const RECENT_KEY = 'aprxm-recent-logins'
+
+function loadRecent(): RecentLogin[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') } catch { return [] }
+}
+
+function saveRecent(entry: RecentLogin) {
+  const list = loadRecent().filter(r => !(r.email === entry.email && r.associationId === entry.associationId))
+  localStorage.setItem(RECENT_KEY, JSON.stringify([entry, ...list].slice(0, 5)))
+}
+
+function removeRecent(email: string, associationId: string) {
+  const list = loadRecent().filter(r => !(r.email === email && r.associationId === associationId))
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list))
+}
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -32,6 +49,10 @@ export default function LoginPage() {
   const [orgs, setOrgs] = useState<OrgOption[]>([])
   const [selectedOrg, setSelectedOrg] = useState<OrgOption | null>(null)
   const [loading, setLoading] = useState(false)
+  const [rememberAccess, setRememberAccess] = useState(true)
+  const [recentLogins, setRecentLogins] = useState<RecentLogin[]>([])
+
+  useEffect(() => { setRecentLogins(loadRecent()) }, [])
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -62,6 +83,13 @@ export default function LoginPage() {
     setStep('password')
   }
 
+  const handleQuickLogin = (recent: RecentLogin) => {
+    setEmail(recent.email)
+    setSelectedOrg({ id: recent.associationId, name: recent.associationName, role: recent.role, slug: '' })
+    setOrgs([])
+    setStep('password')
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedOrg || !password) return
@@ -75,6 +103,10 @@ export default function LoginPage() {
       const token = res.data.access_token
       const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string }>(token)
       setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '')
+      if (rememberAccess) {
+        saveRecent({ email, associationId: selectedOrg.id, associationName: selectedOrg.name, role: selectedOrg.role })
+        setRecentLogins(loadRecent())
+      }
       navigate('/')
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Credenciais inválidas.')
@@ -85,12 +117,10 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0f2a4a] p-4">
-      {/* Background pattern */}
       <div className="absolute inset-0 opacity-5"
         style={{ backgroundImage: 'radial-gradient(circle at 25% 25%, #4a90d9 0%, transparent 50%), radial-gradient(circle at 75% 75%, #26619c 0%, transparent 50%)' }} />
 
       <div className="relative w-full max-w-sm">
-        {/* Card */}
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Header */}
           <div className="bg-[#1a3f6f] px-8 py-7 text-center">
@@ -117,30 +147,69 @@ export default function LoginPage() {
 
             {/* Step 1: Email */}
             {step === 'email' && (
-              <form onSubmit={handleEmailSubmit} className="flex flex-col gap-4">
-                <div>
-                  <p className="text-sm font-semibold text-gray-700 mb-4">Informe seu e-mail</p>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="email"
-                      required
-                      autoFocus
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
-                      placeholder="seu@email.com"
-                    />
+              <div className="flex flex-col gap-4">
+                <form onSubmit={handleEmailSubmit} className="flex flex-col gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700 mb-4">Informe seu e-mail</p>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="email"
+                        required
+                        autoFocus
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                        placeholder="seu@email.com"
+                      />
+                    </div>
                   </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={loading || !email}
-                  className="w-full flex items-center justify-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white py-3 rounded-xl font-semibold transition disabled:opacity-50"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continuar <ChevronRight className="w-4 h-4" /></>}
-                </button>
-              </form>
+                  <button
+                    type="submit"
+                    disabled={loading || !email}
+                    className="w-full flex items-center justify-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white py-3 rounded-xl font-semibold transition disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continuar <ChevronRight className="w-4 h-4" /></>}
+                  </button>
+                </form>
+
+                {/* Recent logins */}
+                {recentLogins.length > 0 && (
+                  <div className="border-t border-gray-100 pt-4">
+                    <p className="text-xs text-gray-400 flex items-center gap-1 mb-2">
+                      <Clock className="w-3 h-3" /> Acessos recentes
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      {recentLogins.map((r) => (
+                        <div key={`${r.email}-${r.associationId}`} className="flex items-center gap-2 group">
+                          <button
+                            type="button"
+                            onClick={() => handleQuickLogin(r)}
+                            className="flex-1 flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:border-[#26619c] hover:bg-blue-50 transition text-left"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-[#1a3f6f] flex items-center justify-center shrink-0">
+                              <Building2 className="w-3.5 h-3.5 text-white" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-gray-800 truncate">{r.associationName}</p>
+                              <p className="text-xs text-gray-400 truncate">{r.email}</p>
+                            </div>
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-[#26619c] shrink-0" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { removeRecent(r.email, r.associationId); setRecentLogins(loadRecent()) }}
+                            className="p-1.5 text-gray-300 hover:text-red-400 transition"
+                            title="Remover"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Step 2: Select org */}
@@ -181,7 +250,6 @@ export default function LoginPage() {
                   ← voltar
                 </button>
 
-                {/* Org badge */}
                 <div className="flex items-center gap-3 bg-blue-50 rounded-xl px-4 py-3 border border-blue-100">
                   <Building2 className="w-4 h-4 text-[#26619c] shrink-0" />
                   <div className="min-w-0">
@@ -202,6 +270,16 @@ export default function LoginPage() {
                     placeholder="Senha"
                   />
                 </div>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberAccess}
+                    onChange={(e) => setRememberAccess(e.target.checked)}
+                    className="w-4 h-4 rounded accent-[#26619c]"
+                  />
+                  <span className="text-xs text-gray-500">Lembrar este acesso</span>
+                </label>
 
                 <button
                   type="submit"
