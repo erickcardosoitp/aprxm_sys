@@ -68,7 +68,7 @@ async def issue_proof_of_residence(
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     svc = FinanceService(session)
-    _, pdf_bytes = await svc.issue_proof_of_residence(
+    tx, pdf_bytes = await svc.issue_proof_of_residence(
         association_id=current.association_id,
         issued_by=current.user_id,
         resident_name=body.resident_name,
@@ -83,8 +83,44 @@ async def issue_proof_of_residence(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="comprovante.pdf"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="comprovante.pdf"',
+            "X-Barcode-Code": tx.reference_number or "",
+            "Access-Control-Expose-Headers": "X-Barcode-Code",
+        },
     )
+
+
+@router.get("/proof-of-residence/verify/{code}", summary="Verificar código de comprovante")
+async def verify_proof_of_residence(
+    code: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    result = await session.execute(
+        sa_text("""
+            SELECT t.id, t.amount, t.description, t.transaction_at, t.reference_number,
+                   t.income_subtype
+            FROM transactions t
+            WHERE t.association_id = :aid
+              AND t.reference_number = :code
+              AND t.income_subtype = 'proof_of_residence'
+            LIMIT 1
+        """),
+        {"aid": str(current.association_id), "code": code},
+    )
+    row = result.fetchone()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Comprovante não encontrado.")
+    return {
+        "id": str(row[0]),
+        "amount": str(row[1]),
+        "description": row[2],
+        "transaction_at": str(row[3]),
+        "reference_number": row[4],
+    }
 
 
 @router.post("/sessions/open", response_model=dict, summary="Abrir sessão de caixa")

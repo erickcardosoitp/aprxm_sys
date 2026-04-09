@@ -166,6 +166,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           resident_id: resident?.id || undefined,
         }, { responseType: 'blob' })
 
+        const barcodeCode: string = (res as any).headers?.['x-barcode-code'] || ''
+
         // Trigger download + print
         const blob = new Blob([res.data], { type: 'application/pdf' })
         const url = URL.createObjectURL(blob)
@@ -176,7 +178,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         if (win) setTimeout(() => win.print(), 800)
         URL.revokeObjectURL(url)
 
-        toast.success('Comprovante emitido! PDF gerado.')
+        toast.success(barcodeCode ? `Comprovante emitido! Código: ${barcodeCode}` : 'Comprovante emitido! PDF gerado.')
         onSuccess()
         onClose()
         return

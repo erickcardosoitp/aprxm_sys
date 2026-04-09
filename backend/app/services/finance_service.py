@@ -1,3 +1,5 @@
+import random
+import string
 from datetime import datetime
 from decimal import Decimal
 from io import BytesIO
@@ -414,6 +416,9 @@ class FinanceService:
         # Get open session
         cash_session = await self.get_open_session(association_id)
 
+        # Generate unique 8-digit barcode code
+        barcode_code = "".join(random.choices(string.digits, k=8))
+
         # Register transaction
         tx = await self.register_transaction(
             association_id=association_id,
@@ -426,6 +431,7 @@ class FinanceService:
             payment_method_id=payment_method_id,
             category_id=category_id,
             resident_id=resident_id,
+            reference_number=barcode_code,
         )
 
         # Decrement stock
@@ -441,6 +447,9 @@ class FinanceService:
         logo_bytes = logo_resp.content
         sig_bytes = sig_resp.content
 
+        # Generate barcode image
+        barcode_bytes = self._build_barcode_image(barcode_code)
+
         # Generate PDF
         pdf_bytes = self._build_proof_pdf(
             resident_name=resident_name,
@@ -453,9 +462,28 @@ class FinanceService:
             president_name=president_name or "PRESIDENTE",
             logo_bytes=logo_bytes,
             sig_bytes=sig_bytes,
+            barcode_code=barcode_code,
+            barcode_bytes=barcode_bytes,
         )
 
         return tx, pdf_bytes
+
+    @staticmethod
+    def _build_barcode_image(code: str) -> bytes:
+        from barcode import Code128  # type: ignore
+        from barcode.writer import ImageWriter  # type: ignore
+
+        buf = BytesIO()
+        Code128(code, writer=ImageWriter()).write(buf, options={
+            "module_height": 10.0,
+            "module_width": 0.35,
+            "quiet_zone": 2.0,
+            "text_distance": 3.0,
+            "font_size": 10,
+            "write_text": False,
+        })
+        buf.seek(0)
+        return buf.read()
 
     @staticmethod
     def _build_proof_pdf(
@@ -469,6 +497,8 @@ class FinanceService:
         president_name: str,
         logo_bytes: bytes,
         sig_bytes: bytes,
+        barcode_code: str = "",
+        barcode_bytes: bytes = b"",
     ) -> bytes:
         from fpdf import FPDF  # type: ignore
 
@@ -476,6 +506,17 @@ class FinanceService:
         pdf.add_page()
         pdf.set_margins(20, 20, 20)
         pdf.set_auto_page_break(auto=True, margin=20)
+
+        # Barcode — canto superior direito
+        if barcode_bytes:
+            bc_io = BytesIO(barcode_bytes)
+            bc_w = 45.0
+            bc_x = pdf.w - pdf.r_margin - bc_w
+            pdf.image(bc_io, x=bc_x, y=10, w=bc_w)
+            pdf.set_font("Helvetica", size=7)
+            pdf.set_text_color(80, 80, 80)
+            pdf.set_xy(bc_x, 10 + 14)
+            pdf.cell(bc_w, 4, barcode_code, align="C")
 
         # Logo centralizado
         logo_io = BytesIO(logo_bytes)
