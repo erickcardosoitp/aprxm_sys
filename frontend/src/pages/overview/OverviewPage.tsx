@@ -32,7 +32,7 @@ export default function OverviewPage() {
           api.get<Resident[]>('/residents'),
           api.get<Pkg[]>('/packages'),
           api.get<ServiceOrder[]>('/service-orders'),
-          api.get<CashSession>('/finance/session/current'),
+          api.get<CashSession>('/finance/sessions/current'),
         ])
 
         const residents = residentsRes.status === 'fulfilled' ? residentsRes.value.data : []
