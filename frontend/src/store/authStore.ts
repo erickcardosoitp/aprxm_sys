@@ -23,18 +23,23 @@ export const useAuthStore = create<AuthStore>()(
       associationName: '',
 
       setAuth: (token, userId, associationId, role, fullName, linkedAssociationIds = [], associationName = '') => {
-        localStorage.setItem('aprxm_token', token)
         set({ token, userId, associationId, role, fullName, linkedAssociationIds, associationName })
       },
 
       clearAuth: () => {
-        localStorage.removeItem('aprxm_token')
         set({ token: null, userId: null, associationId: null, role: null, fullName: null, linkedAssociationIds: [], associationName: '' })
       },
 
       isAuthenticated: () => !!get().token,
       isAggregator: () => (get().linkedAssociationIds?.length ?? 0) > 0,
     }),
-    { name: 'aprxm-auth' },
+    {
+      name: 'aprxm-auth',
+      storage: {
+        getItem: (key) => { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) : null },
+        setItem: (key, value) => sessionStorage.setItem(key, JSON.stringify(value)),
+        removeItem: (key) => sessionStorage.removeItem(key),
+      },
+    },
   ),
 )

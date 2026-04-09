@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Loader2, Save, Settings, Shield, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, KeyRound, Loader2, Save, Settings, Shield, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { settingsService } from '../../services/settings'
 import api from '../../services/api'
@@ -102,6 +102,13 @@ export default function SettingsPage() {
     role === 'conferente' || role === 'admin' || role === 'superadmin'
   const isSuperadmin = role === 'superadmin' || role === 'admin'
   const isAdmin = role === 'admin' || role === 'superadmin'
+  const canChangePassword = !isAdmin
+
+  // ── Change Password state ──
+  const [currentPwd, setCurrentPwd] = useState('')
+  const [newPwd, setNewPwd] = useState('')
+  const [confirmPwd, setConfirmPwd] = useState('')
+  const [savingPwd, setSavingPwd] = useState(false)
 
   // ── Reset DB state ──
   const [resetConfirm, setResetConfirm] = useState('')
@@ -284,6 +291,21 @@ export default function SettingsPage() {
   const setAssocField = (field: keyof AssociationData, value: string) =>
     setAssocForm((f) => ({ ...f, [field]: value }))
 
+  const handleChangePassword = async () => {
+    if (newPwd !== confirmPwd) { toast.error('As senhas não coincidem.'); return }
+    if (newPwd.length < 6) { toast.error('A nova senha deve ter pelo menos 6 caracteres.'); return }
+    setSavingPwd(true)
+    try {
+      await api.post('/auth/change-password', { current_password: currentPwd, new_password: newPwd })
+      toast.success('Senha alterada com sucesso!')
+      setCurrentPwd(''); setNewPwd(''); setConfirmPwd('')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao alterar senha.')
+    } finally {
+      setSavingPwd(false)
+    }
+  }
+
   const handleReset = async () => {
     if (resetConfirm !== 'RESETAR') { toast.error('Digite RESETAR para confirmar.'); return }
     setResetting(true)
@@ -307,6 +329,38 @@ export default function SettingsPage() {
         <Settings className="w-6 h-6 text-[#26619c]" />
         Configurações
       </h1>
+
+      {/* ── Alterar Senha (não-admin) ── */}
+      {canChangePassword && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col gap-4">
+          <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-[#26619c]" />
+            Alterar Senha
+          </h2>
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Senha atual</label>
+              <input type="password" value={currentPwd} onChange={e => setCurrentPwd(e.target.value)}
+                className={inputCls} placeholder="••••••••" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nova senha</label>
+              <input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)}
+                className={inputCls} placeholder="Mínimo 6 caracteres" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar nova senha</label>
+              <input type="password" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)}
+                className={inputCls} placeholder="••••••••" />
+            </div>
+          </div>
+          <button onClick={handleChangePassword} disabled={savingPwd || !currentPwd || !newPwd || !confirmPwd}
+            className="flex items-center justify-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl font-semibold transition disabled:opacity-50">
+            {savingPwd ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+            {savingPwd ? 'Salvando…' : 'Alterar senha'}
+          </button>
+        </div>
+      )}
 
       {/* ── Caixa section ── */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col gap-5">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, Building2, ChevronDown, ChevronRight, Package, RefreshCw, Users } from 'lucide-react'
+import { Activity, Building2, ChevronDown, ChevronRight, Monitor, Package, RefreshCw, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -26,6 +26,16 @@ interface OrgUser {
   last_login_at: string | null
 }
 
+interface ActiveSession {
+  id: string
+  opened_at: string
+  opening_balance: number
+  opened_by_name: string
+  opened_by_email: string
+  association_name: string
+  slug: string
+}
+
 interface HealthSummary {
   active_orgs: number
   active_users: number
@@ -44,6 +54,7 @@ const ROLE_LABELS: Record<string, string> = {
 export default function SuperAdminPage() {
   const [orgs, setOrgs] = useState<OrgSummary[]>([])
   const [health, setHealth] = useState<HealthSummary | null>(null)
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [orgUsers, setOrgUsers] = useState<Record<string, OrgUser[]>>({})
@@ -52,12 +63,14 @@ export default function SuperAdminPage() {
   const load = async () => {
     setLoading(true)
     try {
-      const [orgsRes, healthRes] = await Promise.all([
+      const [orgsRes, healthRes, sessionsRes] = await Promise.all([
         api.get<OrgSummary[]>('/superadmin/organizations'),
         api.get<HealthSummary>('/superadmin/health-summary'),
+        api.get<ActiveSession[]>('/superadmin/active-sessions'),
       ])
       setOrgs(orgsRes.data)
       setHealth(healthRes.data)
+      setActiveSessions(sessionsRes.data)
     } catch {
       toast.error('Erro ao carregar painel de TI.')
     } finally {
@@ -128,6 +141,52 @@ export default function SuperAdminPage() {
           ))}
         </div>
       )}
+
+      {/* Active cash sessions */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+            <Monitor className="w-4 h-4 text-amber-500" />
+            Caixas abertos
+            {activeSessions.length > 0 && (
+              <span className="ml-1 bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                {activeSessions.length}
+              </span>
+            )}
+          </h2>
+        </div>
+        {loading ? (
+          <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
+        ) : activeSessions.length === 0 ? (
+          <div className="p-6 text-center text-gray-400 text-sm">Nenhum caixa aberto.</div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50">
+              <tr className="text-gray-400">
+                <th className="text-left px-4 py-2 font-medium">Organização</th>
+                <th className="text-left px-4 py-2 font-medium">Aberto por</th>
+                <th className="text-left px-4 py-2 font-medium">Abertura</th>
+                <th className="text-right px-4 py-2 font-medium">Saldo inicial</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {activeSessions.map(s => (
+                <tr key={s.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-2.5 font-medium text-gray-800">{s.association_name}</td>
+                  <td className="px-4 py-2.5 text-gray-600">
+                    <div>{s.opened_by_name}</div>
+                    <div className="text-gray-400">{s.opened_by_email}</div>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-500">{fmtDate(s.opened_at)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-700 font-medium">
+                    R$ {s.opening_balance.toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {/* Organizations list */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">

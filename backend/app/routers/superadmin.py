@@ -77,6 +77,36 @@ async def org_users(
     ]
 
 
+@router.get("/active-sessions", summary="Caixas abertos em todas as orgs")
+async def active_sessions(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    _require_superadmin(current)
+    rows = await session.execute(text("""
+        SELECT cs.id, cs.opened_at, cs.opening_balance,
+               u.full_name AS opened_by_name, u.email AS opened_by_email,
+               a.name AS association_name, a.slug
+          FROM cash_sessions cs
+          JOIN users u ON u.id = cs.opened_by
+          JOIN associations a ON a.id = cs.association_id
+         WHERE cs.status = 'open'
+         ORDER BY cs.opened_at DESC
+    """))
+    return [
+        {
+            "id": str(r[0]),
+            "opened_at": str(r[1]),
+            "opening_balance": float(r[2]),
+            "opened_by_name": r[3],
+            "opened_by_email": r[4],
+            "association_name": r[5],
+            "slug": r[6],
+        }
+        for r in rows.fetchall()
+    ]
+
+
 @router.get("/health-summary", summary="Resumo de saúde do sistema")
 async def health_summary(
     current: CurrentUser = Depends(get_current_user),

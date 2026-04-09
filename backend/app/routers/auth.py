@@ -1,10 +1,12 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
+from app.core.security import hash_password, verify_password
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
 from app.models.association import Association
@@ -72,6 +74,33 @@ async def associations_for_email(
         {"id": str(assoc.id), "name": assoc.name, "slug": assoc.slug, "role": user.role}
         for assoc, user in rows
     ]
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password", summary="Alterar própria senha")
+async def change_password(
+    body: ChangePasswordRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if current.role in ("admin", "superadmin"):
+        raise HTTPException(status_code=403, detail="Administradores devem alterar a senha pelo painel de admin.")
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=422, detail="A nova senha deve ter pelo menos 6 caracteres.")
+
+    result = await session.execute(select(User).where(User.id == current.user_id))
+    user = result.scalar_one_or_none()
+    if not user or not verify_password(body.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Senha atual incorreta.")
+
+    user.hashed_password = hash_password(body.new_password)
+    session.add(user)
+    await session.commit()
+    return {"detail": "Senha alterada com sucesso."}
 
 
 @router.get("/me", summary="Perfil do usuário atual")
