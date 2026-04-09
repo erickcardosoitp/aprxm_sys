@@ -444,6 +444,10 @@ class FinanceService:
         async with httpx.AsyncClient(timeout=10) as client:
             logo_resp = await client.get(logo_url)
             sig_resp = await client.get(sig_url)
+        if logo_resp.status_code != 200:
+            raise UnprocessableError(f"Falha ao baixar logo ({logo_resp.status_code}). Verifique a URL no Admin.")
+        if sig_resp.status_code != 200:
+            raise UnprocessableError(f"Falha ao baixar assinatura ({sig_resp.status_code}). Verifique a URL no Admin.")
         logo_bytes = logo_resp.content
         sig_bytes = sig_resp.content
 
@@ -471,15 +475,13 @@ class FinanceService:
     @staticmethod
     def _build_barcode_image(code: str) -> bytes:
         from barcode import Code128  # type: ignore
-        from barcode.writer import ImageWriter  # type: ignore
+        from barcode.writer import SVGWriter  # type: ignore
 
         buf = BytesIO()
-        Code128(code, writer=ImageWriter()).write(buf, options={
+        Code128(code, writer=SVGWriter()).write(buf, options={
             "module_height": 10.0,
             "module_width": 0.35,
             "quiet_zone": 2.0,
-            "text_distance": 3.0,
-            "font_size": 10,
             "write_text": False,
         })
         buf.seek(0)

@@ -11,4 +11,4 @@ python-multipart==0.0.20
 fpdf2==2.8.3
 supabase==2.15.1
 httpx==0.27.2
-python-barcode[images]==0.16.1
+python-barcode==0.16.1
