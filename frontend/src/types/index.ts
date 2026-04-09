@@ -119,6 +119,7 @@ export interface Resident {
   household_profiles: string[]
   internet_access?: string
   has_sewage?: boolean
+  has_pests?: boolean
   neighborhood_problems: string[]
   main_priority_request?: string
 
