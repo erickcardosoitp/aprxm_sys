@@ -1,4 +1,3 @@
-import asyncio
 import traceback
 from contextlib import asynccontextmanager
 
@@ -14,56 +13,10 @@ from app.routers import settings as settings_router
 settings = get_settings()
 
 
-async def _auto_generate_loop() -> None:
-    """Weekly background task: auto-generate mensalidades for all active associations."""
-    import asyncio
-    from app.database import AsyncSessionLocal
-    from sqlalchemy import text as _t
-    from app.services.mensalidade_service import MensalidadeService
-    from datetime import datetime
-    from decimal import Decimal
-
-    await asyncio.sleep(60)  # initial delay to let app start up
-    while True:
-        try:
-            now = datetime.utcnow()
-            ref = now.strftime("%Y-%m")
-            async with AsyncSessionLocal() as db:
-                rows = (await db.execute(_t("""
-                    SELECT a.id, COALESCE(s.default_mensalidade_amount, 0),
-                           (SELECT u.id FROM users u WHERE u.association_id = a.id
-                            AND u.role IN ('admin','admin_master','superadmin')
-                            AND u.is_active = TRUE LIMIT 1)
-                    FROM associations a
-                    LEFT JOIN association_settings s ON s.association_id = a.id
-                    WHERE a.is_active = TRUE
-                      AND COALESCE(s.default_mensalidade_amount, 0) > 0
-                """))).fetchall()
-                svc = MensalidadeService(db)
-                for assoc_id, amount, admin_id in rows:
-                    if not admin_id:
-                        continue
-                    try:
-                        await svc.generate_month(
-                            association_id=assoc_id,
-                            reference_month=ref,
-                            due_day=10,
-                            amount=Decimal(str(amount)),
-                            created_by=admin_id,
-                        )
-                        await db.commit()
-                    except Exception:
-                        await db.rollback()
-        except Exception:
-            pass
-        await asyncio.sleep(7 * 24 * 3600)  # 7 days
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     await _run_migrations()
-    asyncio.create_task(_auto_generate_loop())
     yield
 
 
