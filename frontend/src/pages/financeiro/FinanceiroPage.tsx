@@ -110,6 +110,8 @@ export default function FinanceiroPage() {
   const [residentResults, setResidentResults] = useState<Resident[]>([])
   const [selectedResident, setSelectedResident] = useState<Resident | null>(null)
   const [historyResidentId, setHistoryResidentId] = useState<string | null>(null)
+  const [historyResidentName, setHistoryResidentName] = useState<string | null>(null)
+  const [historySearch, setHistorySearch] = useState('')
   const [history, setHistory] = useState<Mensalidade[]>([])
   const [cobrancasView, setCobrancasView] = useState<'pendentes' | 'inadimplentes' | 'pagos' | 'historico'>('pendentes')
 
@@ -254,11 +256,12 @@ export default function FinanceiroPage() {
     a.click(); URL.revokeObjectURL(url)
   }
 
-  const loadResidentHistory = async (residentId: string) => {
+  const loadResidentHistory = async (residentId: string, residentName?: string) => {
     try {
       const res = await api.get<Mensalidade[]>(`/mensalidades/residents/${residentId}`)
       setHistory(res.data)
       setHistoryResidentId(residentId)
+      if (residentName) setHistoryResidentName(residentName)
       setCobrancasView('historico')
     } catch { toast.error('Erro ao carregar histórico.') }
   }
@@ -315,6 +318,24 @@ export default function FinanceiroPage() {
     } finally {
       setGeneratingMonth(false)
     }
+  }
+
+  const [deleteMonthVal, setDeleteMonthVal] = useState(() => new Date().toISOString().slice(0, 7))
+  const [deletingMonth, setDeletingMonth] = useState(false)
+  const [showDeleteMonth, setShowDeleteMonth] = useState(false)
+
+  const handleDeleteMonth = async () => {
+    if (!deleteMonthVal) return
+    if (!window.confirm(`Excluir todas as cobranças PENDENTES de ${deleteMonthVal}? Esta ação não pode ser desfeita.`)) return
+    setDeletingMonth(true)
+    try {
+      const res = await api.delete(`/mensalidades/by-month/${deleteMonthVal}`)
+      toast.success(`${res.data.deleted} cobrança(s) excluída(s) de ${deleteMonthVal}.`)
+      setShowDeleteMonth(false)
+      loadCobrancas()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao excluir cobranças.')
+    } finally { setDeletingMonth(false) }
   }
 
   const handlePayMensalidade = async (id: string) => {
@@ -630,18 +651,38 @@ export default function FinanceiroPage() {
           </div>
 
           {/* Create button */}
-          <div className="flex gap-2">
-            <button onClick={() => { setShowCreateForm(!showCreateForm); setShowGenMonth(false) }}
-              className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-[#26619c]/40 rounded-xl py-2.5 text-sm text-[#26619c] hover:bg-blue-50 transition">
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => { setShowCreateForm(!showCreateForm); setShowGenMonth(false); setShowDeleteMonth(false) }}
+              className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-[#26619c]/40 rounded-xl py-2.5 text-sm text-[#26619c] hover:bg-blue-50 transition min-w-[120px]">
               <Plus className="w-4 h-4" />
-              Nova Mensalidade
+              Nova
             </button>
-            <button onClick={() => { setShowGenMonth(!showGenMonth); setShowCreateForm(false) }}
-              className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-green-400/60 rounded-xl py-2.5 text-sm text-green-700 hover:bg-green-50 transition">
+            <button onClick={() => { setShowGenMonth(!showGenMonth); setShowCreateForm(false); setShowDeleteMonth(false) }}
+              className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-green-400/60 rounded-xl py-2.5 text-sm text-green-700 hover:bg-green-50 transition min-w-[120px]">
               <Plus className="w-4 h-4" />
               Gerar Mês
             </button>
+            <button onClick={() => { setShowDeleteMonth(!showDeleteMonth); setShowCreateForm(false); setShowGenMonth(false) }}
+              className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-red-300/60 rounded-xl py-2.5 text-sm text-red-600 hover:bg-red-50 transition min-w-[120px]">
+              <X className="w-4 h-4" />
+              Excluir Mês
+            </button>
           </div>
+          {showDeleteMonth && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col gap-3">
+              <p className="text-sm font-semibold text-red-700">Excluir cobranças pendentes do mês</p>
+              <p className="text-xs text-red-600">Apenas cobranças com status <strong>pendente</strong> serão excluídas. Pagas não são afetadas.</p>
+              <div className="flex gap-2">
+                <input type="month" value={deleteMonthVal}
+                  onChange={e => setDeleteMonthVal(e.target.value)}
+                  className={`${inputCls} flex-1`} />
+                <button onClick={handleDeleteMonth} disabled={deletingMonth}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                  {deletingMonth ? '…' : 'Excluir'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Generate month form */}
           {showGenMonth && (
@@ -902,60 +943,109 @@ export default function FinanceiroPage() {
           {/* Histórico por morador */}
           {cobrancasView === 'historico' && (
             <div className="flex flex-col gap-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  placeholder="Buscar morador para ver histórico…"
-                  className={`${inputCls} pl-9`}
-                  onChange={e => searchResidents(e.target.value)}
-                />
-              </div>
-              {residentResults.length > 0 && (
-                <ul className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto bg-white">
-                  {residentResults.map(r => (
-                    <li key={r.id}>
-                      <button className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
-                        onClick={() => { setResidentResults([]); loadResidentHistory(r.id) }}>
-                        <span className="font-medium text-gray-800">{r.full_name}</span>
-                        {r.unit && <span className="text-xs text-gray-400 ml-2">Unid. {r.unit}</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+              {/* Search box */}
+              {!historyResidentId ? (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    value={historySearch}
+                    placeholder="Buscar morador por nome…"
+                    className={`${inputCls} pl-9`}
+                    onChange={e => { setHistorySearch(e.target.value); searchResidents(e.target.value) }}
+                  />
+                  {residentResults.length > 0 && (
+                    <ul className="absolute z-10 top-full left-0 right-0 mt-1 border border-gray-200 rounded-xl divide-y divide-gray-100 bg-white shadow-lg max-h-52 overflow-y-auto">
+                      {residentResults.map(r => (
+                        <li key={r.id}>
+                          <button className="w-full text-left px-4 py-3 text-sm hover:bg-blue-50 transition"
+                            onClick={() => {
+                              setResidentResults([])
+                              setHistorySearch('')
+                              loadResidentHistory(r.id, r.full_name)
+                            }}>
+                            <span className="font-medium text-gray-800">{r.full_name}</span>
+                            <span className="text-xs text-gray-400 ml-2">{r.unit ? `Unid. ${r.unit}` : ''}{r.cpf ? ` · ${r.cpf}` : ''}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="text-xs text-gray-500">Histórico de</p>
+                    <p className="text-sm font-semibold text-[#1a3f6f]">{historyResidentName}</p>
+                  </div>
+                  <button onClick={() => { setHistoryResidentId(null); setHistoryResidentName(null); setHistory([]) }}
+                    className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1 transition">
+                    <X className="w-3.5 h-3.5" /> Trocar
+                  </button>
+                </div>
               )}
+
+              {/* Stats */}
+              {history.length > 0 && (() => {
+                const paid = history.filter(m => m.status === 'paid').length
+                const pending = history.filter(m => m.status !== 'paid').length
+                const total = history.reduce((s, m) => s + parseFloat(m.amount), 0)
+                const paidTotal = history.filter(m => m.status === 'paid').reduce((s, m) => s + parseFloat(m.amount), 0)
+                return (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+                      <p className="text-lg font-bold text-green-600">{paid}</p>
+                      <p className="text-xs text-gray-400">Pagas</p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+                      <p className="text-lg font-bold text-red-500">{pending}</p>
+                      <p className="text-xs text-gray-400">Pendentes</p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+                      <p className="text-sm font-bold text-gray-700">{fmt(paidTotal)}</p>
+                      <p className="text-xs text-gray-400">de {fmt(total)}</p>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {history.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-sm font-semibold text-gray-800">Histórico de Mensalidades</p>
-                  </div>
                   <ul className="divide-y divide-gray-100">
-                    {history.map(m => (
-                      <li key={m.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{m.reference_month}</p>
-                          <p className="text-xs text-gray-400">Venc: {fmtDate(m.due_date)}</p>
-                          {m.paid_at && <p className="text-xs text-green-600">Pago em: {fmtDate(m.paid_at)}</p>}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-sm font-bold text-gray-800">{fmt(m.amount)}</span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            m.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                          }`}>
-                            {m.status === 'paid' ? 'Pago' : 'Pendente'}
-                          </span>
-                          {m.status !== 'paid' && (
-                            <button
-                              onClick={() => handlePayMensalidade(m.id)}
-                              disabled={!openSession || payingId === m.id}
-                              className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-2 py-1 rounded-lg transition">
-                              {payingId === m.id ? '…' : 'Pagar'}
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    ))}
+                    {history.map(m => {
+                      const isPaid = m.status === 'paid'
+                      const isOverdue = !isPaid && new Date(m.due_date) < new Date()
+                      return (
+                        <li key={m.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-2 h-2 rounded-full shrink-0 ${isPaid ? 'bg-green-400' : isOverdue ? 'bg-red-400' : 'bg-amber-400'}`} />
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800">{m.reference_month}</p>
+                              {isPaid && m.paid_at
+                                ? <p className="text-xs text-green-600">Pago em {fmtDate(m.paid_at)}</p>
+                                : <p className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>Venc. {fmtDate(m.due_date)}</p>
+                              }
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-sm font-bold text-gray-800">{fmt(m.amount)}</span>
+                            {!isPaid && (
+                              <button
+                                onClick={() => handlePayMensalidade(m.id)}
+                                disabled={!openSession || payingId === m.id}
+                                className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-3 py-1 rounded-lg transition">
+                                {payingId === m.id ? '…' : 'Pagar'}
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
                   </ul>
                 </div>
+              )}
+
+              {historyResidentId && history.length === 0 && (
+                <p className="text-sm text-center text-gray-400 py-6">Nenhuma cobrança encontrada.</p>
               )}
             </div>
           )}

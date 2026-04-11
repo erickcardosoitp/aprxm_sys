@@ -35,6 +35,26 @@ class GenerateMonthRequest(BaseModel):
     amount: Decimal = Field(gt=0)
 
 
+@router.delete("/by-month/{reference_month}", summary="Excluir cobranças pendentes de um mês")
+async def delete_by_month(
+    reference_month: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text
+    result = await session.execute(
+        text("""
+            DELETE FROM mensalidades
+            WHERE association_id = :aid AND reference_month = :month AND status = 'pending'
+            RETURNING id
+        """),
+        {"aid": str(current.association_id), "month": reference_month},
+    )
+    deleted = len(result.fetchall())
+    await session.commit()
+    return {"deleted": deleted, "reference_month": reference_month}
+
+
 @router.post("/generate-month", summary="Gerar mensalidades pendentes para todos os associados ativos do mês")
 async def generate_month(
     body: GenerateMonthRequest,
