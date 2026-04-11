@@ -24,8 +24,12 @@ def create_access_token(
     full_name: str = "",
     linked_association_ids: list[str] | None = None,
     association_name: str = "",
+    expire_days: int | None = None,
 ) -> str:
-    expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
+    if expire_days:
+        expire = datetime.now(UTC) + timedelta(days=expire_days)
+    else:
+        expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {
         "sub": str(subject),
         "association_id": str(association_id),

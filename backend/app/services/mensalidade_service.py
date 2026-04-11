@@ -261,6 +261,61 @@ class MensalidadeService:
             for m in rows
         ]
 
+    async def generate_month(
+        self,
+        association_id: UUID,
+        reference_month: str,  # "YYYY-MM"
+        due_day: int,
+        amount: Decimal,
+        created_by: UUID,
+    ) -> dict:
+        """Cria mensalidades pendentes para todos os associados ativos que ainda não têm registro no mês."""
+        from sqlalchemy import text
+        year, month = map(int, reference_month.split("-"))
+        last_day = monthrange(year, month)[1]
+        due_date = date(year, month, min(due_day, last_day))
+
+        # active members without a mensalidade for this month
+        result = await self._session.execute(text("""
+            SELECT r.id FROM residents r
+            WHERE r.association_id = :aid
+              AND r.type = 'member'
+              AND r.status = 'active'
+              AND NOT EXISTS (
+                SELECT 1 FROM mensalidades m
+                WHERE m.resident_id = r.id
+                  AND m.association_id = :aid
+                  AND m.reference_month = :ref
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM migration_payments mp
+                WHERE mp.resident_id = r.id
+                  AND mp.association_id = :aid
+                  AND mp.competencia = :ref
+              )
+        """), {"aid": str(association_id), "ref": reference_month})
+        resident_ids = [row[0] for row in result.fetchall()]
+
+        created = 0
+        skipped = 0
+        for rid in resident_ids:
+            try:
+                m = Mensalidade(
+                    association_id=association_id,
+                    resident_id=rid,
+                    reference_month=reference_month,
+                    due_date=due_date,
+                    amount=amount,
+                    status=MensalidadeStatus.pending,
+                    created_by=created_by,
+                )
+                self._session.add(m)
+                await self._session.flush()
+                created += 1
+            except Exception:
+                skipped += 1
+        return {"created": created, "skipped": skipped, "reference_month": reference_month}
+
     async def total_pending(self, association_id: UUID) -> Decimal:
         from sqlalchemy import text
         result = await self._session.execute(

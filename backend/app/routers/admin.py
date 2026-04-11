@@ -231,3 +231,45 @@ async def deactivate_user(
     user.is_active = False
     session.add(user)
     return {"id": str(user.id), "is_active": False}
+
+
+class ClearDataRequest(BaseModel):
+    confirm: str  # deve ser "CONFIRMAR"
+    clear_transactions: bool = True
+    clear_packages: bool = False
+    clear_service_orders: bool = False
+    clear_mensalidades: bool = False
+
+
+@router.post("/clear-data", summary="Limpar dados da associação atual por tipo")
+async def clear_data(
+    body: ClearDataRequest,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if body.confirm != "CONFIRMAR":
+        raise HTTPException(400, "Digite CONFIRMAR para prosseguir.")
+    aid = str(current.association_id)
+    deleted: dict[str, int] = {}
+
+    if body.clear_transactions:
+        for t in ["transactions", "cash_sessions"]:
+            r = await session.execute(text(f"DELETE FROM {t} WHERE association_id = :aid"), {"aid": aid})
+            deleted[t] = r.rowcount
+
+    if body.clear_packages:
+        for t in ["package_events", "packages"]:
+            r = await session.execute(text(f"DELETE FROM {t} WHERE association_id = :aid"), {"aid": aid})
+            deleted[t] = r.rowcount
+
+    if body.clear_service_orders:
+        for t in ["service_order_comments", "service_order_history", "service_orders"]:
+            r = await session.execute(text(f"DELETE FROM {t} WHERE association_id = :aid"), {"aid": aid})
+            deleted[t] = r.rowcount
+
+    if body.clear_mensalidades:
+        r = await session.execute(text("DELETE FROM mensalidades WHERE association_id = :aid"), {"aid": aid})
+        deleted["mensalidades"] = r.rowcount
+
+    await session.commit()
+    return {"ok": True, "deleted": deleted}

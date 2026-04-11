@@ -204,10 +204,12 @@ async def search_residents_global(
     q_clean = q.strip()
     if not q_clean:
         return []
+    q_digits = ''.join(c for c in q_clean if c.isdigit())
     result = await session.execute(
         sa_text("""
             SELECT id, full_name, cpf, phone_primary, phone_secondary,
-                   address_street, address_number, address_city, unit, block, type, status
+                   address_street, address_number, address_city, unit, block, type, status,
+                   address_cep
             FROM residents
             WHERE association_id = :aid
               AND (
@@ -215,14 +217,22 @@ async def search_residents_global(
                 OR cpf ILIKE :qraw
                 OR phone_primary ILIKE :q
                 OR phone_secondary ILIKE :q
+                OR REGEXP_REPLACE(phone_primary, '\D', '', 'g') ILIKE :qdigits
+                OR REGEXP_REPLACE(phone_secondary, '\D', '', 'g') ILIKE :qdigits
                 OR address_street ILIKE :q
                 OR address_city ILIKE :q
+                OR address_cep ILIKE :q
                 OR (unit || ' ' || COALESCE(block,'')) ILIKE :q
               )
             ORDER BY full_name
             LIMIT 20
         """),
-        {"aid": str(current.association_id), "q": f"%{q_clean}%", "qraw": f"%{q_clean.replace('.','').replace('-','')}%"},
+        {
+            "aid": str(current.association_id),
+            "q": f"%{q_clean}%",
+            "qraw": f"%{q_clean.replace('.','').replace('-','')}%",
+            "qdigits": f"%{q_digits}%" if q_digits else "%",
+        },
     )
     rows = result.fetchall()
     return [
@@ -231,6 +241,7 @@ async def search_residents_global(
             "phone_primary": r[3], "phone_secondary": r[4],
             "address_street": r[5], "address_number": r[6], "address_city": r[7],
             "unit": r[8], "block": r[9], "type": r[10], "status": r[11],
+            "address_cep": r[12],
         }
         for r in rows
     ]

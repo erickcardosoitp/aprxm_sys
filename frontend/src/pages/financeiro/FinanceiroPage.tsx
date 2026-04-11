@@ -100,6 +100,9 @@ export default function FinanceiroPage() {
   const [loadingCobrancas, setLoadingCobrancas] = useState(false)
   const [payingId, setPayingId] = useState<string | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [showGenMonth, setShowGenMonth] = useState(false)
+  const [genMonthForm, setGenMonthForm] = useState({ reference_month: new Date().toISOString().slice(0, 7), due_day: '10', amount: '' })
+  const [generatingMonth, setGeneratingMonth] = useState(false)
   const [createForm, setCreateForm] = useState({
     resident_id: '', reference_month: '', due_date: '', amount: '', notes: '',
   })
@@ -289,6 +292,28 @@ export default function FinanceiroPage() {
       loadCobrancas()
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao criar mensalidade.')
+    }
+  }
+
+  const handleGenerateMonth = async () => {
+    if (!genMonthForm.reference_month || !genMonthForm.amount) {
+      toast.error('Preencha mês e valor.')
+      return
+    }
+    setGeneratingMonth(true)
+    try {
+      const res = await api.post('/mensalidades/generate-month', {
+        reference_month: genMonthForm.reference_month,
+        due_day: parseInt(genMonthForm.due_day) || 10,
+        amount: parseFloat(genMonthForm.amount),
+      })
+      toast.success(`${res.data.created} mensalidade(s) gerada(s) para ${genMonthForm.reference_month}.`)
+      setShowGenMonth(false)
+      loadCobrancas()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao gerar mensalidades.')
+    } finally {
+      setGeneratingMonth(false)
     }
   }
 
@@ -605,11 +630,50 @@ export default function FinanceiroPage() {
           </div>
 
           {/* Create button */}
-          <button onClick={() => setShowCreateForm(!showCreateForm)}
-            className="flex items-center justify-center gap-2 border-2 border-dashed border-[#26619c]/40 rounded-xl py-2.5 text-sm text-[#26619c] hover:bg-blue-50 transition">
-            <Plus className="w-4 h-4" />
-            Nova Mensalidade
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => { setShowCreateForm(!showCreateForm); setShowGenMonth(false) }}
+              className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-[#26619c]/40 rounded-xl py-2.5 text-sm text-[#26619c] hover:bg-blue-50 transition">
+              <Plus className="w-4 h-4" />
+              Nova Mensalidade
+            </button>
+            <button onClick={() => { setShowGenMonth(!showGenMonth); setShowCreateForm(false) }}
+              className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-green-400/60 rounded-xl py-2.5 text-sm text-green-700 hover:bg-green-50 transition">
+              <Plus className="w-4 h-4" />
+              Gerar Mês
+            </button>
+          </div>
+
+          {/* Generate month form */}
+          {showGenMonth && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3 shadow-sm">
+              <p className="text-sm font-semibold text-gray-800">Gerar Mensalidades do Mês</p>
+              <p className="text-xs text-gray-500">Cria mensalidades pendentes para todos os associados ativos sem registro no mês.</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-1">
+                  <label className="block text-xs text-gray-600 mb-1">Mês *</label>
+                  <input type="month" value={genMonthForm.reference_month}
+                    onChange={e => setGenMonthForm(f => ({ ...f, reference_month: e.target.value }))}
+                    className={inputCls} />
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-xs text-gray-600 mb-1">Dia venc.</label>
+                  <input type="number" min="1" max="31" value={genMonthForm.due_day}
+                    onChange={e => setGenMonthForm(f => ({ ...f, due_day: e.target.value }))}
+                    className={inputCls} placeholder="10" />
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-xs text-gray-600 mb-1">Valor R$ *</label>
+                  <input type="number" min="0" step="0.01" value={genMonthForm.amount}
+                    onChange={e => setGenMonthForm(f => ({ ...f, amount: e.target.value }))}
+                    className={inputCls} placeholder="0.00" />
+                </div>
+              </div>
+              <button onClick={handleGenerateMonth} disabled={generatingMonth}
+                className="bg-green-600 hover:bg-green-700 text-white py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                {generatingMonth ? 'Gerando…' : 'Gerar Mensalidades'}
+              </button>
+            </div>
+          )}
 
           {/* Create form */}
           {showCreateForm && (

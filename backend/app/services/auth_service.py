@@ -14,7 +14,7 @@ class AuthService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def authenticate(self, email: str, password: str, association_id: UUID) -> str:
+    async def authenticate(self, email: str, password: str, association_id: UUID, remember_me: bool = False) -> str:
         stmt = select(User).where(
             User.email == email,
             User.association_id == association_id,
@@ -53,7 +53,8 @@ class AuthService:
         association_name = assoc_name_result[0] if assoc_name_result else ""
 
         return create_access_token(
-            user.id, user.association_id, user.role.value, user.full_name, linked_ids, association_name
+            user.id, user.association_id, user.role.value, user.full_name, linked_ids, association_name,
+            expire_days=30 if remember_me else None,
         )
 
     async def create_user(

@@ -99,10 +99,11 @@ export default function LoginPage() {
         email,
         password,
         association_id: selectedOrg.id,
+        remember_me: rememberAccess,
       })
       const token = res.data.access_token
       const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string }>(token)
-      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '')
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess)
       if (rememberAccess) {
         saveRecent({
           email,
@@ -283,7 +284,7 @@ export default function LoginPage() {
                     onChange={(e) => setRememberAccess(e.target.checked)}
                     className="w-4 h-4 rounded accent-[#26619c]"
                   />
-                  <span className="text-xs text-gray-500">Lembrar este acesso</span>
+                  <span className="text-xs text-gray-500">Manter conectado neste dispositivo</span>
                 </label>
 
                 <button

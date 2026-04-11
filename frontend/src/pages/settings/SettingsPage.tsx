@@ -117,6 +117,14 @@ export default function SettingsPage() {
   const [resetBalance, setResetBalance] = useState('0')
   const [resetting, setResetting] = useState(false)
 
+  // ── Clear Data state ──
+  const [clearConfirm, setClearConfirm] = useState('')
+  const [clearTx, setClearTx] = useState(true)
+  const [clearPkg, setClearPkg] = useState(false)
+  const [clearSO, setClearSO] = useState(false)
+  const [clearMens, setClearMens] = useState(false)
+  const [clearing, setClearing] = useState(false)
+
   // ── Caixa state ──
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
   const [defaultCash, setDefaultCash] = useState('')
@@ -310,6 +318,28 @@ export default function SettingsPage() {
       toast.error(e.response?.data?.detail ?? 'Erro ao alterar senha.')
     } finally {
       setSavingPwd(false)
+    }
+  }
+
+  const handleClearData = async () => {
+    if (clearConfirm !== 'CONFIRMAR') { toast.error('Digite CONFIRMAR para prosseguir.'); return }
+    setClearing(true)
+    try {
+      const res = await api.post('/admin/clear-data', {
+        confirm: 'CONFIRMAR',
+        clear_transactions: clearTx,
+        clear_packages: clearPkg,
+        clear_service_orders: clearSO,
+        clear_mensalidades: clearMens,
+      })
+      const deleted = res.data.deleted as Record<string, number>
+      const summary = Object.entries(deleted).map(([k, v]) => `${k}: ${v}`).join(', ')
+      toast.success(`Dados removidos — ${summary}`)
+      setClearConfirm('')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao limpar dados.')
+    } finally {
+      setClearing(false)
     }
   }
 
@@ -685,6 +715,54 @@ export default function SettingsPage() {
           >
             {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
             {resetting ? 'Resetando…' : 'Resetar Base de Dados'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Limpar Dados por tipo (admin only) ── */}
+      {isAdmin && (
+        <div className="bg-white rounded-xl border border-orange-200 shadow-sm p-5 flex flex-col gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+              <Trash2 className="w-4 h-4 text-orange-600" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-800">Limpar Dados por Tipo</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Remove dados selecionados mantendo moradores e usuários.</p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {[
+              { label: 'Transações e caixas', val: clearTx, set: setClearTx },
+              { label: 'Encomendas', val: clearPkg, set: setClearPkg },
+              { label: 'Ordens de serviço', val: clearSO, set: setClearSO },
+              { label: 'Mensalidades', val: clearMens, set: setClearMens },
+            ].map(({ label, val, set }) => (
+              <label key={label} className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={val} onChange={e => set(e.target.checked)} className="w-4 h-4 accent-orange-500" />
+                <span className="text-sm text-gray-700">{label}</span>
+              </label>
+            ))}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Digite <span className="font-mono font-bold text-orange-600">CONFIRMAR</span> para prosseguir
+            </label>
+            <input
+              type="text"
+              value={clearConfirm}
+              onChange={e => setClearConfirm(e.target.value)}
+              className={`${inputCls} border-orange-200 focus:ring-orange-300 focus:border-orange-400`}
+              placeholder="CONFIRMAR"
+            />
+          </div>
+          <button
+            onClick={handleClearData}
+            disabled={clearing || clearConfirm !== 'CONFIRMAR'}
+            className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white py-2.5 rounded-xl font-semibold transition disabled:opacity-40"
+          >
+            {clearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            {clearing ? 'Removendo…' : 'Limpar Dados Selecionados'}
           </button>
         </div>
       )}

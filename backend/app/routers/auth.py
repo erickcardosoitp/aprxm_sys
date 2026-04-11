@@ -25,6 +25,7 @@ class LoginRequest(BaseModel):
     email: str
     password: str
     association_id: UUID
+    remember_me: bool = False
 
 
 @router.post("/token", response_model=TokenResponse, summary="Login")
@@ -49,7 +50,7 @@ async def login_json(
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     svc = AuthService(session)
-    token = await svc.authenticate(body.email, body.password, body.association_id)
+    token = await svc.authenticate(body.email, body.password, body.association_id, body.remember_me)
     return TokenResponse(access_token=token)
 
 

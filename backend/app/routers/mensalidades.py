@@ -29,6 +29,30 @@ class PayMensalidadeRequest(BaseModel):
     auto_next: bool = True
 
 
+class GenerateMonthRequest(BaseModel):
+    reference_month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    due_day: int = Field(ge=1, le=31, default=10)
+    amount: Decimal = Field(gt=0)
+
+
+@router.post("/generate-month", summary="Gerar mensalidades pendentes para todos os associados ativos do mês")
+async def generate_month(
+    body: GenerateMonthRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = MensalidadeService(session)
+    result = await svc.generate_month(
+        association_id=current.association_id,
+        reference_month=body.reference_month,
+        due_day=body.due_day,
+        amount=body.amount,
+        created_by=current.user_id,
+    )
+    await session.commit()
+    return result
+
+
 @router.post("", summary="Criar mensalidade")
 async def create_mensalidade(
     body: CreateMensalidadeRequest,
