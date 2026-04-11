@@ -814,14 +814,14 @@ export default function FinanceiroPage() {
                           {pendingNames[m.resident_id] ?? '…'}
                         </p>
                         <p className="text-xs text-gray-500">
-                          Ref: {m.reference_month} · Venc: {fmtDate(m.due_date)}
+                          Ref: {m.reference_month} · Venc: {m.due_date ? fmtDate(m.due_date) : '—'}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-sm font-bold text-blue-700">{fmt(m.amount)}</span>
                         <button
                           disabled={!openSession || payingId === m.id}
-                          onClick={() => handlePayMensalidade(m.id)}
+                          onClick={() => m.id && handlePayMensalidade(m.id)}
                           className="text-xs bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg transition">
                           {payingId === m.id ? '…' : 'Pagar'}
                         </button>
