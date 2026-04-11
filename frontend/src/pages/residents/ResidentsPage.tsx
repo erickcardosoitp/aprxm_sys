@@ -943,17 +943,13 @@ export default function ResidentsPage() {
 
   const load = async () => {
     try {
-      if (search.trim() && search.trim().length >= 2) {
-        const res = await api.get<Resident[]>('/residents/search', { params: { q: search.trim() } })
-        setResidents(res.data as any)
-      } else {
-        const params: Record<string, string> = {}
-        if (activeTab === 'visitantes') params.type = 'guest'
-        else params.type = 'member'
-        if (filterStatus) params.status = filterStatus
-        const res = await api.get<Resident[]>('/residents', { params })
-        setResidents(res.data)
-      }
+      const params: Record<string, string> = {}
+      if (activeTab === 'visitantes') params.type = 'guest'
+      else params.type = 'member'
+      if (filterStatus) params.status = filterStatus
+      if (search.trim().length >= 2) params.q = search.trim()
+      const res = await api.get<Resident[]>('/residents', { params })
+      setResidents(res.data)
     } catch {
       toast.error('Erro ao carregar moradores.')
     }
