@@ -16,6 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
   viewer: 'Visualizador',
   operator: 'Operador',
   conferente: 'Conferente',
+  diretoria: 'Diretoria',
   diretoria_adjunta: 'Diretoria Adjunta',
   admin: 'Administrador',
 }
@@ -36,7 +37,7 @@ const PERM_LABELS: Record<PermKey, string> = {
   delete: 'Excluir',
 }
 
-const ALL_ROLES = ['viewer', 'operator', 'conferente', 'diretoria_adjunta', 'admin']
+const ALL_ROLES = ['viewer', 'operator', 'conferente', 'diretoria', 'diretoria_adjunta', 'admin']
 const ALL_MODULES: ModuleKey[] = ['residents', 'packages', 'service_orders', 'finance', 'admin', 'settings']
 const ALL_PERMS: PermKey[] = ['view', 'create', 'edit', 'delete']
 
@@ -94,6 +95,7 @@ interface AssociationData {
   address?: string
   cep?: string
   president_user_id?: string
+  slug?: string
 }
 
 export default function SettingsPage() {
@@ -448,6 +450,21 @@ export default function SettingsPage() {
           <div>
             <h2 className="font-semibold text-gray-800 mb-1">Dados da Associação</h2>
             <p className="text-xs text-gray-400 mb-4">Informações institucionais da associação exibidas nos documentos e relatórios.</p>
+
+            {assoc.slug && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-3 mb-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-blue-800 mb-1">Link público de cadastro</p>
+                  <p className="text-xs text-blue-600 truncate">{window.location.origin}/cadastro/{assoc.slug}</p>
+                </div>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/cadastro/${assoc.slug}`); }}
+                  className="shrink-0 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 transition"
+                >
+                  Copiar
+                </button>
+              </div>
+            )}
 
             {loadingAssoc ? (
               <div className="py-6 text-center text-gray-400 text-sm">Carregando…</div>

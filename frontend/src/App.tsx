@@ -13,6 +13,7 @@ import FinanceiroPage from './pages/financeiro/FinanceiroPage'
 import GeralPage from './pages/geral/GeralPage'
 import SuperAdminPage from './pages/superadmin/SuperAdminPage'
 import { useAuthStore } from './store/authStore'
+import PublicRegisterPage from './pages/public/PublicRegisterPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated())
@@ -58,6 +59,7 @@ export default function App() {
       <Toaster position="top-center" toastOptions={{ duration: 3500 }} />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/cadastro/:slug" element={<PublicRegisterPage />} />
         <Route
           path="/"
           element={

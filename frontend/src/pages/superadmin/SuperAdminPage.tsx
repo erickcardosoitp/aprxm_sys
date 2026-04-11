@@ -47,8 +47,8 @@ interface HealthSummary {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  superadmin: 'SuperAdmin', admin: 'Admin', conferente: 'Conferente',
-  diretoria_adjunta: 'Diretoria', operator: 'Operador', viewer: 'Visualizador',
+  superadmin: 'SuperAdmin', admin_master: 'Admin Master', admin: 'Admin', conferente: 'Conferente',
+  diretoria: 'Diretoria', diretoria_adjunta: 'Dir. Adjunta', operator: 'Operador', viewer: 'Visualizador',
 }
 
 export default function SuperAdminPage() {

@@ -6,12 +6,14 @@ import { uploadService } from '../../services/upload'
 import type { User, UserRole } from '../../types'
 import { useAuthStore } from '../../store/authStore'
 
-type ExtendedRole = UserRole | 'diretoria_adjunta'
+type ExtendedRole = UserRole | 'diretoria_adjunta' | 'diretoria' | 'admin_master'
 
 const ROLE_LABELS: Record<ExtendedRole, string> = {
   superadmin: 'Superadmin',
+  admin_master: 'Admin Master',
   admin: 'Administrador',
   conferente: 'Conferente',
+  diretoria: 'Diretoria',
   diretoria_adjunta: 'Diretoria Adjunta',
   operator: 'Operador',
   viewer: 'Visualizador',
@@ -19,14 +21,16 @@ const ROLE_LABELS: Record<ExtendedRole, string> = {
 
 const ROLE_COLORS: Record<ExtendedRole, string> = {
   superadmin: 'bg-purple-100 text-purple-700',
+  admin_master: 'bg-purple-100 text-purple-700',
   admin: 'bg-blue-100 text-blue-700',
   conferente: 'bg-teal-100 text-teal-700',
+  diretoria: 'bg-orange-100 text-orange-700',
   diretoria_adjunta: 'bg-indigo-100 text-indigo-700',
   operator: 'bg-green-100 text-green-700',
   viewer: 'bg-gray-100 text-gray-600',
 }
 
-const EDITABLE_ROLES: ExtendedRole[] = ['admin', 'conferente', 'diretoria_adjunta', 'operator', 'viewer']
+const EDITABLE_ROLES: ExtendedRole[] = ['admin', 'conferente', 'diretoria', 'diretoria_adjunta', 'operator', 'viewer']
 
 interface UserFormData {
   full_name: string

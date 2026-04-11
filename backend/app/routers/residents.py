@@ -167,6 +167,23 @@ async def create_resident(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    # Validate phone required for members
+    if body.type == ResidentType.member and not body.phone_primary:
+        raise HTTPException(status_code=422, detail="Telefone é obrigatório para associados.")
+
+    # Validate CPF uniqueness
+    if body.cpf:
+        cpf_clean = body.cpf.replace(".", "").replace("-", "").strip()
+        existing_cpf = (await session.execute(
+            select(Resident).where(
+                Resident.association_id == current.association_id,
+                Resident.cpf == cpf_clean,
+            )
+        )).scalar_one_or_none()
+        if existing_cpf:
+            raise HTTPException(status_code=409, detail=f"CPF já cadastrado para {existing_cpf.full_name}.")
+        body = body.model_copy(update={"cpf": cpf_clean})
+
     resident = Resident(
         association_id=current.association_id,
         created_by=current.user_id,
@@ -175,6 +192,48 @@ async def create_resident(
     session.add(resident)
     await session.flush()
     return _serialize(resident)
+
+
+@router.get("/search", summary="Busca global de moradores (nome, telefone, endereço, CPF)")
+async def search_residents_global(
+    q: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as sa_text
+    q_clean = q.strip()
+    if not q_clean:
+        return []
+    result = await session.execute(
+        sa_text("""
+            SELECT id, full_name, cpf, phone_primary, phone_secondary,
+                   address_street, address_number, address_city, unit, block, type, status
+            FROM residents
+            WHERE association_id = :aid
+              AND (
+                full_name ILIKE :q
+                OR cpf ILIKE :qraw
+                OR phone_primary ILIKE :q
+                OR phone_secondary ILIKE :q
+                OR address_street ILIKE :q
+                OR address_city ILIKE :q
+                OR (unit || ' ' || COALESCE(block,'')) ILIKE :q
+              )
+            ORDER BY full_name
+            LIMIT 20
+        """),
+        {"aid": str(current.association_id), "q": f"%{q_clean}%", "qraw": f"%{q_clean.replace('.','').replace('-','')}%"},
+    )
+    rows = result.fetchall()
+    return [
+        {
+            "id": str(r[0]), "full_name": r[1], "cpf": r[2],
+            "phone_primary": r[3], "phone_secondary": r[4],
+            "address_street": r[5], "address_number": r[6], "address_city": r[7],
+            "unit": r[8], "block": r[9], "type": r[10], "status": r[11],
+        }
+        for r in rows
+    ]
 
 
 @router.get("", summary="Listar moradores")
@@ -247,6 +306,21 @@ async def update_resident(
     if not resident:
         raise HTTPException(status_code=404, detail="Morador não encontrado.")
     data = body.model_dump(exclude_none=True)
+
+    # Validate CPF uniqueness on update
+    if "cpf" in data and data["cpf"]:
+        cpf_clean = data["cpf"].replace(".", "").replace("-", "").strip()
+        existing_cpf = (await session.execute(
+            select(Resident).where(
+                Resident.association_id == current.association_id,
+                Resident.cpf == cpf_clean,
+                Resident.id != resident_id,
+            )
+        )).scalar_one_or_none()
+        if existing_cpf:
+            raise HTTPException(status_code=409, detail=f"CPF já cadastrado para {existing_cpf.full_name}.")
+        data["cpf"] = cpf_clean
+
     for key, value in data.items():
         setattr(resident, key, value)
     from datetime import datetime

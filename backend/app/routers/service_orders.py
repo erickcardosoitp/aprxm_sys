@@ -19,6 +19,7 @@ class CreateSORequest(BaseModel):
     title: str
     description: str
     priority: ServiceOrderPriority = ServiceOrderPriority.medium
+    status: ServiceOrderStatus = ServiceOrderStatus.pending
     area: str | None = None
     unit: str | None = None
     block: str | None = None
@@ -34,6 +35,9 @@ class CreateSORequest(BaseModel):
     request_date: datetime | None = None
     address_cep: str | None = None
     use_requester_address: bool = False
+    assigned_to: UUID | None = None
+    assigned_to_name: str | None = None
+    energia_eletrica_data: dict | None = None
 
 
 class UpdateSORequest(BaseModel):
@@ -48,9 +52,11 @@ class UpdateSORequest(BaseModel):
     reference_point: str | None = None
     address_cep: str | None = None
     assigned_to: UUID | None = None
+    assigned_to_name: str | None = None
     requester_name: str | None = None
     requester_phone: str | None = None
     requester_email: str | None = None
+    energia_eletrica_data: dict | None = None
 
 
 class UpdateStatusRequest(BaseModel):

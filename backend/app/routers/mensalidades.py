@@ -190,12 +190,16 @@ class CreateMigrationPaymentRequest(BaseModel):
     resident_id: UUID
     competencia: str = Field(pattern=r"^\d{4}-\d{2}$")
     tipo: MigrationPaymentTipo = MigrationPaymentTipo.mensalidade
+    valor_pago: Decimal | None = None
+    data_pagamento: date | None = None
 
 
 class BulkMigrationRequest(BaseModel):
     resident_id: UUID
     quitado_ate: str = Field(pattern=r"^\d{4}-\d{2}$", description="Gera todos os meses até YYYY-MM")
     tipo: MigrationPaymentTipo = MigrationPaymentTipo.mensalidade
+    valor_pago: Decimal | None = None
+    data_pagamento: date | None = None
 
 
 @router.post("/migration", summary="Registrar histórico de migração (1 competência)")
@@ -211,6 +215,8 @@ async def create_migration_payment(
         competencia=body.competencia,
         tipo=body.tipo,
         created_by=current.user_id,
+        valor_pago=body.valor_pago,
+        data_pagamento=body.data_pagamento,
     )
     await session.commit()
     return _fmt_mp(mp)
@@ -229,6 +235,8 @@ async def bulk_migration_payment(
         quitado_ate=body.quitado_ate,
         tipo=body.tipo,
         created_by=current.user_id,
+        valor_pago=body.valor_pago,
+        data_pagamento=body.data_pagamento,
     )
     await session.commit()
     return {"created": len(created), "quitado_ate": body.quitado_ate}
@@ -265,6 +273,8 @@ def _fmt_mp(mp) -> dict:
         "competencia": mp.competencia,
         "tipo": mp.tipo,
         "origem": mp.origem,
+        "valor_pago": str(mp.valor_pago) if mp.valor_pago is not None else None,
+        "data_pagamento": str(mp.data_pagamento) if mp.data_pagamento else None,
         "created_at": mp.created_at.isoformat(),
     }
 

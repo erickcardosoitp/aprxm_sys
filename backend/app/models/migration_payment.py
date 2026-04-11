@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
 from uuid import UUID, uuid4
 
@@ -27,6 +28,8 @@ class MigrationPayment(SQLModel, table=True):
         sa_column=Column(SAEnum(MigrationPaymentTipo, name="migration_payment_tipo", create_type=True), nullable=False)
     )
     origem: str = Field(default="migracao", max_length=50)
+    valor_pago: Decimal | None = Field(default=None, decimal_places=2, max_digits=10)
+    data_pagamento: date | None = None
 
     created_by: UUID = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)

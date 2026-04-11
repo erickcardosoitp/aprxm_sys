@@ -111,7 +111,7 @@ async def get_assoc_data(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     result = await session.execute(
-        text("SELECT name, phone, email, address_street, address_zip FROM associations WHERE id = :id"),
+        text("SELECT name, phone, email, address_street, address_zip, slug FROM associations WHERE id = :id"),
         {"id": str(current.association_id)},
     )
     row = result.fetchone()
@@ -135,6 +135,7 @@ async def get_assoc_data(
         "assoc_logo_url": cfg[8] if cfg else None,
         "community_name": cfg[9] if cfg else None,
         "proof_stock": cfg[10] if cfg and cfg[10] is not None else 0,
+        "slug": row[5] if row else None,
     }
 
 

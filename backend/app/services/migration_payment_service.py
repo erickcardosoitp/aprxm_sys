@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -20,6 +21,8 @@ class MigrationPaymentService:
         competencia: str,
         tipo: MigrationPaymentTipo,
         created_by: UUID,
+        valor_pago: Decimal | None = None,
+        data_pagamento: date | None = None,
     ) -> MigrationPayment:
         mp = MigrationPayment(
             association_id=association_id,
@@ -27,6 +30,8 @@ class MigrationPaymentService:
             competencia=competencia,
             tipo=tipo,
             created_by=created_by,
+            valor_pago=valor_pago,
+            data_pagamento=data_pagamento,
         )
         self._session.add(mp)
         try:
@@ -43,6 +48,8 @@ class MigrationPaymentService:
         quitado_ate: str,  # "YYYY-MM" — gerar de 2000-01 até este mês
         tipo: MigrationPaymentTipo,
         created_by: UUID,
+        valor_pago: Decimal | None = None,
+        data_pagamento: date | None = None,
     ) -> list[MigrationPayment]:
         year_end, month_end = map(int, quitado_ate.split("-"))
 
@@ -60,6 +67,8 @@ class MigrationPaymentService:
                     competencia=comp,
                     tipo=tipo,
                     created_by=created_by,
+                    valor_pago=valor_pago,
+                    data_pagamento=data_pagamento,
                 )
                 self._session.add(mp)
                 created.append(mp)

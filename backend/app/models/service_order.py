@@ -70,6 +70,12 @@ class ServiceOrder(SQLModel, table=True):
     address_cep: str | None = None
     use_requester_address: bool = Field(default=False)
 
+    # assigned to user (name resolved at query time)
+    assigned_to_name: str | None = Field(default=None, max_length=255)
+
+    # dynamic form data for "Distribuição de Energia Elétrica"
+    energia_eletrica_data: dict | None = Field(default=None, sa_column=Column(_json_type))
+
     # resolution
     resolution_notes: str | None = None
     resolved_at: datetime | None = None

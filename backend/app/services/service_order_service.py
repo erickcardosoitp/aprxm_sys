@@ -40,6 +40,10 @@ class ServiceOrderService:
         request_date: datetime | None = None,
         address_cep: str | None = None,
         use_requester_address: bool = False,
+        status: ServiceOrderStatus = ServiceOrderStatus.pending,
+        assigned_to: UUID | None = None,
+        assigned_to_name: str | None = None,
+        energia_eletrica_data: dict | None = None,
     ) -> ServiceOrder:
         number = await self._next_number(association_id)
 
@@ -49,7 +53,7 @@ class ServiceOrderService:
             title=title,
             description=description,
             priority=priority,
-            status=ServiceOrderStatus.pending,
+            status=status,
             area=area,
             unit=unit,
             block=block,
@@ -66,6 +70,9 @@ class ServiceOrderService:
             request_date=request_date or datetime.utcnow(),
             address_cep=address_cep,
             use_requester_address=use_requester_address,
+            assigned_to=assigned_to,
+            assigned_to_name=assigned_to_name,
+            energia_eletrica_data=energia_eletrica_data,
             created_by=created_by,
         )
         self._session.add(so)

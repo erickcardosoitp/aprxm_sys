@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, auth, finance, financeiro, geral, mensalidades, packages, residents, service_orders, superadmin, uploads, transfers
+from app.routers import admin, auth, finance, financeiro, geral, mensalidades, packages, public, residents, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -92,6 +92,30 @@ async def _run_migrations() -> None:
             "ALTER TABLE transactions ALTER COLUMN cash_session_id DROP NOT NULL"
         ))
 
+        # migration_payments new fields
+        await session.execute(text(
+            "ALTER TABLE migration_payments ADD COLUMN IF NOT EXISTS valor_pago NUMERIC(10,2)"
+        ))
+        await session.execute(text(
+            "ALTER TABLE migration_payments ADD COLUMN IF NOT EXISTS data_pagamento DATE"
+        ))
+
+        # service_orders new fields
+        await session.execute(text(
+            "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS assigned_to_name VARCHAR(255)"
+        ))
+        await session.execute(text(
+            "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS energia_eletrica_data JSONB"
+        ))
+
+        # user_role: diretoria
+        await session.execute(text("""
+            DO $$ BEGIN
+                ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'diretoria';
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+
         await session.commit()
 
 
@@ -132,6 +156,7 @@ app.include_router(geral.router, prefix=PREFIX)
 app.include_router(superadmin.router, prefix=PREFIX)
 app.include_router(uploads.router, prefix=PREFIX)
 app.include_router(transfers.router, prefix=PREFIX)
+app.include_router(public.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

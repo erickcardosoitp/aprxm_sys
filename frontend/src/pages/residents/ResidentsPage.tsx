@@ -3,7 +3,7 @@ import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus, FileText, 
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import type { Resident, ResidentStatus, ResidentType } from '../../types'
-import { maskCpf } from '../../utils'
+import { maskCpf, formatCpf, formatPhone, formatCep, formatDateInput, parseDateInput } from '../../utils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -285,14 +285,14 @@ function ResidentForm({ initial, onSave, onCancel }: {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
                   placeholder="Nome completo" />
               </div>
-              <Input label="CPF" value={form.cpf} onChange={(v) => set('cpf', v)} placeholder="000.000.000-00" />
-              <Input label="Data de nascimento" value={form.date_of_birth} onChange={(v) => set('date_of_birth', v)} type="date" />
+              <Input label="CPF" value={form.cpf} onChange={(v) => set('cpf', formatCpf(v))} placeholder="000.000.000-00" />
+              <Input label="Data de nascimento" value={form.date_of_birth} onChange={(v) => set('date_of_birth', formatDateInput(v))} placeholder="DD/MM/AAAA" />
               <div className="grid grid-cols-2 gap-3">
                 <Select label="Raça/Cor" value={form.race} onChange={(v) => set('race', v)} options={RACE_OPTIONS} />
                 <Select label="Escolaridade" value={form.education_level} onChange={(v) => set('education_level', v)} options={EDU_OPTIONS} />
               </div>
-              <Input label="Telefone principal" value={form.phone_primary} onChange={(v) => set('phone_primary', v)} placeholder="(21) 99999-9999" />
-              <Input label="Telefone secundário" value={form.phone_secondary} onChange={(v) => set('phone_secondary', v)} placeholder="(21) 99999-9999" />
+              <Input label="Telefone principal" value={form.phone_primary} onChange={(v) => set('phone_primary', formatPhone(v))} placeholder="(21) 99999-9999" />
+              <Input label="Telefone secundário" value={form.phone_secondary} onChange={(v) => set('phone_secondary', formatPhone(v))} placeholder="(21) 99999-9999" />
               <Input label="E-mail" value={form.email} onChange={(v) => set('email', v)} type="email" placeholder="email@exemplo.com" />
             </>
           )}
@@ -304,7 +304,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
                 <label className="block text-xs font-medium text-gray-600 mb-1">CEP</label>
                 <div className="flex gap-2">
                   <input value={form.address_cep}
-                    onChange={(e) => set('address_cep', e.target.value)}
+                    onChange={(e) => set('address_cep', formatCep(e.target.value))}
                     onBlur={lookupCep}
                     placeholder="00000-000"
                     className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
@@ -600,6 +600,7 @@ interface ResidentPackage {
 
 interface MigrationEntry {
   id: string; competencia: string; tipo: string; origem: string
+  valor_pago?: string | null; data_pagamento?: string | null
 }
 
 type ProfileTab = 'mensalidades' | 'inadimplencia' | 'encomendas' | 'migracao'
@@ -617,7 +618,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [migracoes, setMigracoes] = useState<MigrationEntry[]>([])
   const [tab, setTab] = useState<ProfileTab>('mensalidades')
   const [loading, setLoading] = useState(true)
-  const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_ate: '', mode: 'single' as 'single' | 'bulk' })
+  const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_ate: '', mode: 'single' as 'single' | 'bulk', valor_pago: '', data_pagamento: '' })
   const [migSaving, setMigSaving] = useState(false)
 
   const loadMigracoes = async () => {
@@ -655,6 +656,8 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           resident_id: resident.id,
           quitado_ate: migForm.quitado_ate,
           tipo: migForm.tipo,
+          valor_pago: migForm.valor_pago ? parseFloat(migForm.valor_pago) : null,
+          data_pagamento: migForm.data_pagamento || null,
         })
         toast.success('Histórico de migração gerado!')
       } else {
@@ -663,6 +666,8 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           resident_id: resident.id,
           competencia: migForm.competencia,
           tipo: migForm.tipo,
+          valor_pago: migForm.valor_pago ? parseFloat(migForm.valor_pago) : null,
+          data_pagamento: migForm.data_pagamento || null,
         })
         toast.success('Registro de migração criado!')
       }
@@ -846,6 +851,21 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                         className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
                     </div>
                   )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-amber-700 mb-1 block">Valor pago (opcional)</label>
+                      <input type="number" step="0.01" min="0" value={migForm.valor_pago}
+                        onChange={e => setMigForm(f => ({ ...f, valor_pago: e.target.value }))}
+                        placeholder="0,00"
+                        className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-amber-700 mb-1 block">Data do pagamento</label>
+                      <input type="date" value={migForm.data_pagamento}
+                        onChange={e => setMigForm(f => ({ ...f, data_pagamento: e.target.value }))}
+                        className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
+                    </div>
+                  </div>
                   <button onClick={handleMigSave} disabled={migSaving}
                     className="bg-amber-600 hover:bg-amber-700 text-white py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50">
                     {migSaving ? 'Salvando…' : 'Registrar'}
@@ -898,13 +918,17 @@ export default function ResidentsPage() {
 
   const load = async () => {
     try {
-      const params: Record<string, string> = {}
-      if (activeTab === 'visitantes') params.type = 'guest'
-      else params.type = 'member'
-      if (search.trim()) params.q = search.trim()
-      if (filterStatus) params.status = filterStatus
-      const res = await api.get<Resident[]>('/residents', { params })
-      setResidents(res.data)
+      if (search.trim() && search.trim().length >= 2) {
+        const res = await api.get<Resident[]>('/residents/search', { params: { q: search.trim() } })
+        setResidents(res.data as any)
+      } else {
+        const params: Record<string, string> = {}
+        if (activeTab === 'visitantes') params.type = 'guest'
+        else params.type = 'member'
+        if (filterStatus) params.status = filterStatus
+        const res = await api.get<Resident[]>('/residents', { params })
+        setResidents(res.data)
+      }
     } catch {
       toast.error('Erro ao carregar moradores.')
     }
@@ -946,9 +970,9 @@ export default function ResidentsPage() {
       address_rooms: form.address_rooms ? parseInt(form.address_rooms) : null,
       household_count: form.household_count ? parseInt(form.household_count) : null,
       monthly_payment_day: form.monthly_payment_day ? parseInt(form.monthly_payment_day) : null,
-      date_of_birth: form.date_of_birth || null,
+      date_of_birth: form.date_of_birth ? (parseDateInput(form.date_of_birth) ?? form.date_of_birth) : null,
       move_in_date: form.move_in_date || null,
-      cpf: form.cpf || null,
+      cpf: form.cpf ? form.cpf.replace(/\D/g, '') : null,
     }
     try {
       if (editTarget) {

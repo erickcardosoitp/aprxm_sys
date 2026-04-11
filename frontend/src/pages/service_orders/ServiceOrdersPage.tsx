@@ -81,7 +81,8 @@ const PRIORITY_TEXT: Record<ServiceOrderPriority, string> = {
 }
 
 const SERVICES_IMPACTED = [
-  'Abastecimento de Água', 'Saneamento Básico', 'Fornecimento de Energia Elétrica',
+  'Abastecimento de Água', 'Distribuição de Água', 'Saneamento Básico',
+  'Fornecimento de Energia Elétrica', 'Distribuição de Energia Elétrica',
   'Coleta de Lixo', 'Iluminação Pública', 'Pavimentação e Vias', 'Drenagem Pluvial',
   'Poda e Áreas Verdes', 'Segurança e Vigilância', 'Transporte Público',
   'Violência Doméstica', 'Furto e Roubo', 'Desaparecimento de Pessoas',
@@ -148,10 +149,13 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
   const [referencePoint, setReferencePoint] = useState('')
   const [description, setDescription] = useState('')
 
+  const [assignedToName, setAssignedToName] = useState('')
+  const [energiaData, setEnergiaData] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const orgOptions = category ? (ORG_BY_CATEGORY[category] ?? []) : []
+  const isEnergiaEletrica = serviceImpacted === 'Distribuição de Energia Elétrica'
 
   const searchResidents = useCallback((q: string) => {
     if (searchTimer.current) clearTimeout(searchTimer.current)
@@ -198,6 +202,8 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
         requester_phone: requesterPhone || undefined,
         requester_email: requesterEmail || undefined,
         request_date: requestDate || undefined,
+        assigned_to_name: assignedToName || undefined,
+        energia_eletrica_data: isEnergiaEletrica && Object.keys(energiaData).length ? energiaData : undefined,
       })
       toast.success('Ordem de serviço criada!')
       onCreated()
@@ -376,6 +382,37 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                 <label className="block text-xs text-gray-600 mb-1">Ponto de referência</label>
                 <input value={referencePoint} onChange={e => setReferencePoint(e.target.value)} className={inputCls} placeholder="Ex: Em frente à escola" />
               </div>
+
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Atribuído a (nome)</label>
+                <input value={assignedToName} onChange={e => setAssignedToName(e.target.value)} className={inputCls} placeholder="Nome do responsável pela OS" />
+              </div>
+
+              {isEnergiaEletrica && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-yellow-800">Dados — Distribuição de Energia Elétrica</p>
+                  {[
+                    { key: 'numero_uc', label: 'Nº da UC (Unidade Consumidora)' },
+                    { key: 'nome_titular', label: 'Nome do titular' },
+                    { key: 'tipo_problema', label: 'Tipo de problema' },
+                    { key: 'data_ocorrencia', label: 'Data da ocorrência', type: 'date' },
+                    { key: 'ultima_leitura', label: 'Última leitura (kWh)' },
+                    { key: 'transformador_referencia', label: 'Transformador de referência' },
+                    { key: 'observacoes_tecnicas', label: 'Observações técnicas' },
+                    { key: 'protocolo_concessionaria', label: 'Protocolo junto à concessionária' },
+                  ].map(({ key, label, type }) => (
+                    <div key={key}>
+                      <label className="block text-xs text-yellow-700 mb-1">{label}</label>
+                      <input
+                        type={type ?? 'text'}
+                        value={energiaData[key] ?? ''}
+                        onChange={e => setEnergiaData(d => ({ ...d, [key]: e.target.value }))}
+                        className="w-full border border-yellow-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Descrição detalhada <span className="text-red-500">*</span></label>
