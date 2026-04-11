@@ -57,21 +57,24 @@ class FinanceService:
         manual_dinheiro: Decimal | None = None,
         manual_total_bruto: Decimal | None = None,
         manual_total_baixas: Decimal | None = None,
-        quebra_caixa: Decimal | None = None,
+        reviewed_by: UUID | None = None,
     ) -> CashSession:
         bruto = manual_total_bruto or Decimal("0")
         baixas = manual_total_baixas or Decimal("0")
         expected = opening_balance + bruto - baixas
         diff = closing_balance - expected
+        quebra = expected - closing_balance  # + = falta, - = sobra
         session = CashSession(
             association_id=association_id,
             opened_by=created_by,
             closed_by=created_by,
+            reviewed_by=reviewed_by,
             status=CashSessionStatus.closed,
             opening_balance=opening_balance,
             closing_balance=closing_balance,
             expected_balance=expected,
             difference=diff,
+            quebra_caixa=quebra,
             notes=notes,
             origin="Manual",
             opened_at=opened_at,
@@ -80,7 +83,6 @@ class FinanceService:
             manual_dinheiro=manual_dinheiro,
             manual_total_bruto=manual_total_bruto,
             manual_total_baixas=manual_total_baixas,
-            quebra_caixa=quebra_caixa,
         )
         self._session.add(session)
         await self._session.flush()
@@ -103,6 +105,7 @@ class FinanceService:
         closed_by: UUID,
         closing_balance: Decimal,
         notes: str | None = None,
+        reviewed_by: UUID | None = None,
     ) -> CashSession:
         session = await self.get_open_session(association_id)
 
@@ -110,11 +113,14 @@ class FinanceService:
         session.expected_balance = expected
         session.closing_balance = closing_balance
         session.difference = closing_balance - expected
+        session.quebra_caixa = expected - closing_balance  # + = falta, - = sobra
         session.status = CashSessionStatus.closed
         session.closed_by = closed_by
         session.closed_at = datetime.utcnow()
         session.notes = notes or session.notes
         session.updated_at = datetime.utcnow()
+        if reviewed_by:
+            session.reviewed_by = reviewed_by
 
         self._session.add(session)
         return session

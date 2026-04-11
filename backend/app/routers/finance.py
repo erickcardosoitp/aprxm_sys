@@ -24,6 +24,7 @@ class OpenSessionRequest(BaseModel):
 class CloseSessionRequest(BaseModel):
     closing_balance: Decimal = Field(ge=0)
     notes: str | None = None
+    reviewed_by_id: UUID | None = None
 
 
 class ManualSessionRequest(BaseModel):
@@ -36,8 +37,22 @@ class ManualSessionRequest(BaseModel):
     manual_dinheiro: Decimal | None = Field(default=None, ge=0)
     manual_total_bruto: Decimal | None = Field(default=None, ge=0)
     manual_total_baixas: Decimal | None = Field(default=None, ge=0)
-    quebra_caixa: Decimal | None = Field(default=None, ge=0)
-    funcionario: str | None = None
+    reviewed_by_id: UUID | None = None
+
+
+class TransactionReview(BaseModel):
+    transaction_id: str
+    conferido: bool
+    observacao: str | None = None
+
+
+class ReviewsRequest(BaseModel):
+    reviews: list[TransactionReview]
+    reviewed_by_id: UUID | None = None
+
+
+class SangriaDestinationRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
 
 
 class SangriaRequest(BaseModel):
@@ -173,7 +188,7 @@ async def create_manual_session(
         manual_dinheiro=body.manual_dinheiro,
         manual_total_bruto=body.manual_total_bruto,
         manual_total_baixas=body.manual_total_baixas,
-        quebra_caixa=body.quebra_caixa,
+        reviewed_by=body.reviewed_by_id,
     )
     await session.commit()
     return {"id": str(cash.id), "origin": cash.origin}
@@ -210,6 +225,7 @@ async def close_session(
         closed_by=current.user_id,
         closing_balance=body.closing_balance,
         notes=body.notes,
+        reviewed_by=body.reviewed_by_id,
     )
     return {
         "id": str(cash.id),
@@ -691,3 +707,122 @@ async def delete_payment_method(
     session.add(pm)
     await session.commit()
     return {"deleted": True}
+
+
+# ── Conferentes ──────────────────────────────────────────────────────────────
+
+@router.get("/conferentes", summary="Usuários com papel de conferente ou superior")
+async def list_conferentes(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as t
+    ROLES = ['conferente', 'diretoria_adjunta', 'diretoria', 'admin', 'superadmin']
+    rows = (await session.execute(t("""
+        SELECT id, full_name, role FROM users
+         WHERE association_id = :aid AND is_active = true
+           AND role = ANY(:roles) ORDER BY full_name
+    """), {"aid": str(current.association_id), "roles": ROLES})).fetchall()
+    return [{"id": str(r[0]), "full_name": r[1], "role": r[2]} for r in rows]
+
+
+# ── Session Transaction Reviews ───────────────────────────────────────────────
+
+@router.get("/sessions/{session_id}/transactions", summary="Transações da sessão com status de conferência")
+async def get_session_transactions(
+    session_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as t
+    rows = (await session.execute(t("""
+        SELECT t.id, t.type, t.income_subtype, t.amount, t.description,
+               t.transaction_at, t.is_sangria, t.created_by,
+               u.full_name AS created_by_name,
+               COALESCE(r.conferido, false) AS conferido,
+               r.observacao
+          FROM transactions t
+          LEFT JOIN users u ON u.id = t.created_by
+          LEFT JOIN session_transaction_reviews r
+                 ON r.transaction_id = t.id AND r.cash_session_id = :sid
+         WHERE t.cash_session_id = :sid AND t.association_id = :aid
+         ORDER BY t.transaction_at
+    """), {"sid": session_id, "aid": str(current.association_id)})).fetchall()
+    return [{
+        "id": str(r[0]), "type": r[1], "income_subtype": r[2],
+        "amount": str(r[3]), "description": r[4],
+        "transaction_at": str(r[5]), "is_sangria": r[6],
+        "created_by_name": r[8], "conferido": r[9], "observacao": r[10],
+    } for r in rows]
+
+
+@router.put("/sessions/{session_id}/reviews", summary="Salvar revisões de transações")
+async def save_session_reviews(
+    session_id: str,
+    body: ReviewsRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as t
+    for rev in body.reviews:
+        await session.execute(t("""
+            INSERT INTO session_transaction_reviews
+                (id, association_id, cash_session_id, transaction_id, conferido, observacao, reviewed_by, updated_at)
+            VALUES (gen_random_uuid(), :aid, :sid, :tid, :conf, :obs, :rev, NOW())
+            ON CONFLICT (cash_session_id, transaction_id)
+            DO UPDATE SET conferido=:conf, observacao=:obs, reviewed_by=:rev, updated_at=NOW()
+        """), {
+            "aid": str(current.association_id), "sid": session_id,
+            "tid": rev.transaction_id, "conf": rev.conferido,
+            "obs": rev.observacao, "rev": str(body.reviewed_by_id) if body.reviewed_by_id else None,
+        })
+    if body.reviewed_by_id:
+        await session.execute(t("""
+            UPDATE cash_sessions SET reviewed_by=:rev WHERE id=:sid AND association_id=:aid
+        """), {"rev": str(body.reviewed_by_id), "sid": session_id, "aid": str(current.association_id)})
+    await session.commit()
+    return {"ok": True}
+
+
+# ── Sangria Destinations ─────────────────────────────────────────────────────
+
+@router.get("/sangria-destinations", summary="Destinos de sangria configurados")
+async def list_sangria_destinations(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as t
+    rows = (await session.execute(t("""
+        SELECT id, name FROM sangria_destinations
+         WHERE association_id=:aid AND is_active=true ORDER BY name
+    """), {"aid": str(current.association_id)})).fetchall()
+    return [{"id": str(r[0]), "name": r[1]} for r in rows]
+
+
+@router.post("/sangria-destinations", summary="Criar destino de sangria")
+async def create_sangria_destination(
+    body: SangriaDestinationRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as t
+    r = (await session.execute(t("""
+        INSERT INTO sangria_destinations (id, association_id, name)
+        VALUES (gen_random_uuid(), :aid, :name) RETURNING id, name
+    """), {"aid": str(current.association_id), "name": body.name})).fetchone()
+    await session.commit()
+    return {"id": str(r[0]), "name": r[1]}
+
+
+@router.delete("/sangria-destinations/{dest_id}", summary="Remover destino de sangria")
+async def delete_sangria_destination(
+    dest_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as t
+    await session.execute(t("""
+        UPDATE sangria_destinations SET is_active=false WHERE id=:id AND association_id=:aid
+    """), {"id": dest_id, "aid": str(current.association_id)})
+    await session.commit()
+    return {"ok": True}

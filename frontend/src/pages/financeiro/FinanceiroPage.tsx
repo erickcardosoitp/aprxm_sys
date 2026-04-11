@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import {
   TrendingUp, TrendingDown, DollarSign, BarChart2, Upload,
   CheckCircle, AlertCircle, Clock, Plus, Search, X, RotateCcw,
-  CreditCard, Users,
+  CreditCard, Users, ArrowLeftRight, Pencil, Trash2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import type { Resident } from '../../types'
 
-type Tab = 'dashboard' | 'receitas' | 'despesas' | 'cobrancas' | 'relatorios' | 'conciliacao'
+type Tab = 'dashboard' | 'receitas' | 'despesas' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'transferencias'
 
 interface FinanceSummary {
   total_income: number
@@ -50,7 +50,6 @@ interface ManualSessionForm {
   opened_at: string; closed_at: string; notes: string
   manual_pix: string; manual_dinheiro: string
   manual_total_bruto: string; manual_total_baixas: string
-  quebra_caixa: string
 }
 
 interface Mensalidade {
@@ -59,6 +58,23 @@ interface Mensalidade {
   paid_at: string | null; transaction_id: string | null; notes: string | null
   origem?: 'sistema' | 'migracao'; tipo?: string
 }
+
+interface TxReview {
+  id: string; type: string; income_subtype?: string; amount: string
+  description: string; transaction_at: string; is_sangria: boolean
+  created_by_name?: string; conferido: boolean; observacao?: string
+}
+
+interface CashBox {
+  id: string; name: string; description?: string; balance: string; is_active: boolean
+}
+
+interface BoxMovement {
+  id: string; amount: string; movement_type: string; description: string
+  created_at: string; created_by_name?: string
+}
+
+interface Conferente { id: string; full_name: string; role: string }
 
 interface DelinquentItem {
   id: string; resident_id: string; reference_month: string
@@ -103,8 +119,29 @@ export default function FinanceiroPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [showManualSession, setShowManualSession] = useState(false)
-  const [manualForm, setManualForm] = useState<ManualSessionForm>({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_bruto: '', manual_total_baixas: '', quebra_caixa: '' })
+  const [manualForm, setManualForm] = useState<ManualSessionForm>({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_bruto: '', manual_total_baixas: '' })
   const [savingManual, setSavingManual] = useState(false)
+  const [conferentes, setConferentes] = useState<Conferente[]>([])
+  const [manualReviewedBy, setManualReviewedBy] = useState('')
+
+  // Session reviews
+  const [reviewSession, setReviewSession] = useState<Session | null>(null)
+  const [reviewTxs, setReviewTxs] = useState<TxReview[]>([])
+  const [reviewConferidoPor, setReviewConferidoPor] = useState('')
+  const [savingReviews, setSavingReviews] = useState(false)
+
+  // Transferências / Cash Boxes
+  const [cashBoxes, setCashBoxes] = useState<CashBox[]>([])
+  const [boxSummary, setBoxSummary] = useState<{ open_session_balance: string | null; total_in_boxes: string; sangria_by_destination: { destination: string; total: string }[] } | null>(null)
+  const [loadingBoxes, setLoadingBoxes] = useState(false)
+  const [selectedBox, setSelectedBox] = useState<CashBox | null>(null)
+  const [boxMovements, setBoxMovements] = useState<BoxMovement[]>([])
+  const [showBoxForm, setShowBoxForm] = useState(false)
+  const [boxForm, setBoxForm] = useState({ name: '', description: '' })
+  const [editBox, setEditBox] = useState<CashBox | null>(null)
+  const [showMoveForm, setShowMoveForm] = useState(false)
+  const [moveForm, setMoveForm] = useState({ amount: '', movement_type: 'credit', description: '' })
+  const [savingBox, setSavingBox] = useState(false)
 
   // Open cash session
   const [openSession, setOpenSession] = useState<{ id: string } | null | undefined>(undefined)
@@ -162,8 +199,9 @@ export default function FinanceiroPage() {
   useEffect(() => {
     if (tab === 'dashboard') loadSummary()
     if (tab === 'receitas' || tab === 'despesas') loadTransactions()
-    if (tab === 'relatorios') loadSessions()
+    if (tab === 'relatorios') { loadSessions(); loadConferentes() }
     if (tab === 'cobrancas') { loadOpenSession(); loadCobrancas() }
+    if (tab === 'transferencias') loadBoxSummary()
   }, [tab, period])
 
   const loadOpenSession = async () => {
@@ -210,6 +248,84 @@ export default function FinanceiroPage() {
     } catch { setSessions([]) } finally { setLoadingSessions(false) }
   }
 
+  const loadConferentes = async () => {
+    try { const r = await api.get<Conferente[]>('/finance/conferentes'); setConferentes(r.data) } catch { /* ignore */ }
+  }
+
+  const openReview = async (s: Session) => {
+    setReviewSession(s)
+    setReviewConferidoPor('')
+    try {
+      const r = await api.get<TxReview[]>(`/finance/sessions/${s.id}/transactions`)
+      setReviewTxs(r.data)
+    } catch { setReviewTxs([]) }
+  }
+
+  const handleSaveReviews = async () => {
+    if (!reviewSession) return
+    setSavingReviews(true)
+    try {
+      await api.put(`/finance/sessions/${reviewSession.id}/reviews`, {
+        reviews: reviewTxs.map(t => ({ transaction_id: t.id, conferido: t.conferido, observacao: t.observacao || null })),
+        reviewed_by_id: reviewConferidoPor || null,
+      })
+      setReviewSession(null)
+      loadSessions()
+    } catch { /* ignore */ } finally { setSavingReviews(false) }
+  }
+
+  const loadBoxSummary = async () => {
+    setLoadingBoxes(true)
+    try {
+      const [sumR, boxR] = await Promise.all([
+        api.get('/cash-boxes/summary'),
+        api.get<CashBox[]>('/cash-boxes'),
+      ])
+      setBoxSummary(sumR.data)
+      setCashBoxes(boxR.data)
+    } catch { /* ignore */ } finally { setLoadingBoxes(false) }
+  }
+
+  const loadBoxMovements = async (boxId: string) => {
+    try { const r = await api.get<BoxMovement[]>(`/cash-boxes/${boxId}/movements`); setBoxMovements(r.data) } catch { setBoxMovements([]) }
+  }
+
+  const handleSaveBox = async () => {
+    if (!boxForm.name.trim()) return
+    setSavingBox(true)
+    try {
+      if (editBox) {
+        await api.put(`/cash-boxes/${editBox.id}`, boxForm)
+      } else {
+        await api.post('/cash-boxes', boxForm)
+      }
+      setShowBoxForm(false); setEditBox(null); setBoxForm({ name: '', description: '' })
+      loadBoxSummary()
+    } catch { /* ignore */ } finally { setSavingBox(false) }
+  }
+
+  const handleDeactivateBox = async (id: string) => {
+    if (!window.confirm('Desativar esta caixinha?')) return
+    await api.delete(`/cash-boxes/${id}`)
+    loadBoxSummary()
+    if (selectedBox?.id === id) setSelectedBox(null)
+  }
+
+  const handleAddMovement = async () => {
+    if (!selectedBox || !moveForm.amount || !moveForm.description) return
+    setSavingBox(true)
+    try {
+      await api.post(`/cash-boxes/${selectedBox.id}/movements`, {
+        amount: parseFloat(moveForm.amount),
+        movement_type: moveForm.movement_type,
+        description: moveForm.description,
+      })
+      setShowMoveForm(false); setMoveForm({ amount: '', movement_type: 'credit', description: '' })
+      loadBoxSummary()
+      loadBoxMovements(selectedBox.id)
+    } catch { /* ignore */ } finally { setSavingBox(false) }
+  }
+
   const handleCreateManualSession = async () => {
     if (!manualForm.opening_balance || !manualForm.closing_balance || !manualForm.opened_at || !manualForm.closed_at) return
     setSavingManual(true)
@@ -224,10 +340,11 @@ export default function FinanceiroPage() {
         manual_dinheiro: manualForm.manual_dinheiro ? parseFloat(manualForm.manual_dinheiro) : null,
         manual_total_bruto: manualForm.manual_total_bruto ? parseFloat(manualForm.manual_total_bruto) : null,
         manual_total_baixas: manualForm.manual_total_baixas ? parseFloat(manualForm.manual_total_baixas) : null,
-        quebra_caixa: manualForm.quebra_caixa ? parseFloat(manualForm.quebra_caixa) : null,
+        reviewed_by_id: manualReviewedBy || null,
       })
       setShowManualSession(false)
-      setManualForm({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_bruto: '', manual_total_baixas: '', quebra_caixa: '' })
+      setManualForm({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_bruto: '', manual_total_baixas: '' })
+      setManualReviewedBy('')
       loadSessions()
     } catch { /* ignore */ } finally { setSavingManual(false) }
   }
@@ -447,8 +564,9 @@ export default function FinanceiroPage() {
     { key: 'receitas',     label: 'Receitas',  icon: TrendingUp },
     { key: 'despesas',     label: 'Despesas',  icon: TrendingDown },
     { key: 'cobrancas',    label: 'Cobranças', icon: CreditCard },
-    { key: 'relatorios',   label: 'Sessões',   icon: DollarSign },
-    { key: 'conciliacao',  label: 'PIX',       icon: CheckCircle },
+    { key: 'relatorios',     label: 'Sessões',        icon: DollarSign },
+    { key: 'transferencias', label: 'Transferências', icon: ArrowLeftRight },
+    { key: 'conciliacao',    label: 'PIX',            icon: CheckCircle },
   ]
 
   const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
@@ -1143,7 +1261,7 @@ export default function FinanceiroPage() {
                         const diff = s.difference != null ? parseFloat(s.difference) : null
                         const isManual = s.origin === 'Manual'
                         return (
-                          <tr key={s.id} className="hover:bg-gray-50">
+                          <tr key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openReview(s)}>
                             <td className="px-3 py-2 whitespace-nowrap text-gray-800 font-medium">{fmtDate(s.opened_at)}</td>
                             <td className="px-3 py-2 whitespace-nowrap text-gray-600">{s.association_name ?? '—'}</td>
                             <td className="px-3 py-2 whitespace-nowrap text-gray-600">{s.operador_name ?? '—'}</td>
@@ -1255,6 +1373,161 @@ export default function FinanceiroPage() {
           </div>
         )
       })()}
+
+      {/* ── TRANSFERÊNCIAS / CAIXINHAS ── */}
+      {tab === 'transferencias' && (
+        <div className="flex flex-col gap-4">
+          {loadingBoxes ? (
+            <div className="text-center text-gray-400 text-sm py-8">Carregando…</div>
+          ) : (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                  <p className="text-xs text-gray-500 mb-1">Caixa Aberto</p>
+                  <p className="text-xl font-bold text-gray-800">{boxSummary?.open_session_balance ? fmt(boxSummary.open_session_balance) : '—'}</p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                  <p className="text-xs text-gray-500 mb-1">Total em Caixinhas</p>
+                  <p className="text-xl font-bold text-indigo-700">{boxSummary ? fmt(boxSummary.total_in_boxes) : '—'}</p>
+                </div>
+              </div>
+
+              {/* Sangrias por destino */}
+              {boxSummary && boxSummary.sangria_by_destination.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                  <p className="text-sm font-semibold text-gray-800 mb-3">Sangrias — últimos 30 dias</p>
+                  <ul className="flex flex-col gap-1">
+                    {boxSummary.sangria_by_destination.map((s, i) => (
+                      <li key={i} className="flex justify-between text-sm">
+                        <span className="text-gray-600">{s.destination}</span>
+                        <span className="font-semibold text-amber-700">{fmt(s.total)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Caixinhas list */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-800">Caixinhas</h3>
+                  <button onClick={() => { setEditBox(null); setBoxForm({ name: '', description: '' }); setShowBoxForm(true) }}
+                    className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-medium">+ Nova</button>
+                </div>
+                {cashBoxes.length === 0 ? (
+                  <p className="p-4 text-sm text-gray-400">Nenhuma caixinha cadastrada.</p>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {cashBoxes.map(box => (
+                      <li key={box.id} className="px-4 py-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{box.name}</p>
+                            {box.description && <p className="text-xs text-gray-400">{box.description}</p>}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-base font-bold text-indigo-700">{fmt(box.balance)}</span>
+                            <button onClick={() => { setEditBox(box); setBoxForm({ name: box.name, description: box.description ?? '' }); setShowBoxForm(true) }}
+                              className="text-gray-400 hover:text-gray-600"><Pencil className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => handleDeactivateBox(box.id)} className="text-red-400 hover:text-red-600">
+                              <Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          <button onClick={() => { setSelectedBox(box); setMoveForm({ amount: '', movement_type: 'credit', description: '' }); setShowMoveForm(true); loadBoxMovements(box.id) }}
+                            className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-1 rounded font-medium">+ Entrada</button>
+                          <button onClick={() => { setSelectedBox(box); setMoveForm({ amount: '', movement_type: 'debit', description: '' }); setShowMoveForm(true); loadBoxMovements(box.id) }}
+                            className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded font-medium">− Saída</button>
+                          <button onClick={() => { setSelectedBox(box); setShowMoveForm(false); loadBoxMovements(box.id) }}
+                            className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-medium">Histórico</button>
+                        </div>
+                        {selectedBox?.id === box.id && !showMoveForm && boxMovements.length > 0 && (
+                          <ul className="mt-2 flex flex-col gap-1 border-t border-gray-100 pt-2">
+                            {boxMovements.slice(0, 10).map(m => (
+                              <li key={m.id} className="flex justify-between text-xs text-gray-500">
+                                <span>{m.description}</span>
+                                <span className={m.movement_type === 'credit' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                  {m.movement_type === 'credit' ? '+' : '−'}{fmt(m.amount)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Box form modal */}
+          {showBoxForm && (
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
+              <div className="bg-white rounded-2xl w-full max-w-md p-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-gray-800">{editBox ? 'Editar Caixinha' : 'Nova Caixinha'}</h2>
+                  <button onClick={() => setShowBoxForm(false)} className="text-gray-400 text-xl">×</button>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Nome *</label>
+                  <input value={boxForm.name} onChange={e => setBoxForm(f => ({ ...f, name: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Ex: Cofre, Banco X…" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Descrição</label>
+                  <input value={boxForm.description} onChange={e => setBoxForm(f => ({ ...f, description: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Opcional" />
+                </div>
+                <button onClick={handleSaveBox} disabled={savingBox}
+                  className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  {savingBox ? 'Salvando…' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Movement modal */}
+          {showMoveForm && selectedBox && (
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
+              <div className="bg-white rounded-2xl w-full max-w-md p-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-gray-800">
+                    {moveForm.movement_type === 'credit' ? 'Entrada' : 'Saída'} — {selectedBox.name}
+                  </h2>
+                  <button onClick={() => setShowMoveForm(false)} className="text-gray-400 text-xl">×</button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Tipo</label>
+                    <select value={moveForm.movement_type} onChange={e => setMoveForm(f => ({ ...f, movement_type: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+                      <option value="credit">Entrada (+)</option>
+                      <option value="debit">Saída (−)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Valor (R$)</label>
+                    <input type="number" min="0.01" step="0.01" value={moveForm.amount}
+                      onChange={e => setMoveForm(f => ({ ...f, amount: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Descrição *</label>
+                  <input value={moveForm.description} onChange={e => setMoveForm(f => ({ ...f, description: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Ex: Depósito do caixa do dia" />
+                </div>
+                <button onClick={handleAddMovement} disabled={savingBox}
+                  className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  {savingBox ? 'Salvando…' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── CONCILIAÇÃO PIX ── */}
       {tab === 'conciliacao' && (
@@ -1396,6 +1669,76 @@ export default function FinanceiroPage() {
           </div>
         </div>
       )}
+      {/* ── SESSION REVIEW MODAL ── */}
+      {reviewSession && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-2xl p-5 flex flex-col gap-4 my-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-800">Conferência — {fmtDate(reviewSession.opened_at)}</h2>
+              <button onClick={() => setReviewSession(null)} className="text-gray-400 text-xl">×</button>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Conferido por</label>
+              <select value={reviewConferidoPor} onChange={e => setReviewConferidoPor(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+                <option value="">Selecionar conferente…</option>
+                {conferentes.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+              </select>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs min-w-[500px]">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="px-2 py-2 text-left text-gray-600">Data</th>
+                    <th className="px-2 py-2 text-left text-gray-600">Tipo</th>
+                    <th className="px-2 py-2 text-left text-gray-600">Descrição</th>
+                    <th className="px-2 py-2 text-right text-gray-600">Valor</th>
+                    <th className="px-2 py-2 text-center text-gray-600">Conferido</th>
+                    <th className="px-2 py-2 text-left text-gray-600">Observação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {reviewTxs.map((tx, i) => (
+                    <tr key={tx.id} className={tx.conferido ? '' : 'bg-red-50'}>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-gray-500">{fmtDate(tx.transaction_at)}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${tx.type === 'income' ? 'bg-green-100 text-green-700' : tx.type === 'sangria' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
+                          {tx.type === 'income' ? 'Receita' : tx.type === 'sangria' ? 'Sangria' : 'Despesa'}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-gray-700 max-w-[160px] truncate">{tx.description}</td>
+                      <td className="px-2 py-1.5 text-right font-medium text-gray-800">{fmt(tx.amount)}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        <input type="checkbox" checked={tx.conferido}
+                          onChange={e => setReviewTxs(prev => prev.map((t, j) => j === i ? { ...t, conferido: e.target.checked } : t))}
+                          className="w-4 h-4 accent-indigo-600" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="text" value={tx.observacao ?? ''} placeholder={tx.conferido ? '' : 'Observação…'}
+                          onChange={e => setReviewTxs(prev => prev.map((t, j) => j === i ? { ...t, observacao: e.target.value } : t))}
+                          className="w-full border border-gray-200 rounded px-2 py-1 text-xs" />
+                      </td>
+                    </tr>
+                  ))}
+                  {reviewTxs.length === 0 && (
+                    <tr><td colSpan={6} className="px-2 py-4 text-center text-gray-400">Nenhuma transação nesta sessão.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {reviewTxs.some(t => !t.conferido) && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
+                {reviewTxs.filter(t => !t.conferido).length} movimentação(ões) não conferida(s) — adicione uma observação explicando a irregularidade.
+              </div>
+            )}
+            <button onClick={handleSaveReviews} disabled={savingReviews}
+              className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+              {savingReviews ? 'Salvando…' : 'Salvar Conferência'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {showManualSession && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-lg p-5 flex flex-col gap-4 my-4">
@@ -1453,10 +1796,12 @@ export default function FinanceiroPage() {
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Quebra de Caixa (R$)</label>
-                <input type="number" min="0" step="0.01" value={manualForm.quebra_caixa}
-                  onChange={e => setManualForm(f => ({ ...f, quebra_caixa: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+                <label className="block text-xs text-gray-500 mb-1">Conferido por</label>
+                <select value={manualReviewedBy} onChange={e => setManualReviewedBy(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+                  <option value="">Selecionar…</option>
+                  {conferentes.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Observações</label>
@@ -1469,8 +1814,8 @@ export default function FinanceiroPage() {
               <div className="bg-gray-50 rounded-lg px-4 py-2 text-xs text-gray-600 flex gap-4">
                 <span>Líquido: <strong className="text-gray-800">{fmt((parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0))}</strong></span>
                 {manualForm.closing_balance && manualForm.opening_balance && (
-                  <span>Sobra/Falta: <strong className={(() => { const d = (parseFloat(manualForm.closing_balance)||0) - ((parseFloat(manualForm.opening_balance)||0) + (parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0)); return d === 0 ? 'text-green-600' : d > 0 ? 'text-blue-600' : 'text-red-600' })()}>
-                    {(() => { const d = (parseFloat(manualForm.closing_balance)||0) - ((parseFloat(manualForm.opening_balance)||0) + (parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0)); return `${d >= 0 ? '+' : ''}${fmt(d)}` })()}
+                  <span>Quebra de Caixa: <strong className={(() => { const qc = ((parseFloat(manualForm.opening_balance)||0) + (parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0)) - (parseFloat(manualForm.closing_balance)||0); return qc === 0 ? 'text-green-600' : qc > 0 ? 'text-red-600' : 'text-blue-600' })()}>
+                    {(() => { const qc = ((parseFloat(manualForm.opening_balance)||0) + (parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0)) - (parseFloat(manualForm.closing_balance)||0); return `${qc >= 0 ? '+' : ''}${fmt(qc)} (${qc > 0 ? 'falta' : qc < 0 ? 'sobra' : 'ok'})` })()}
                   </strong></span>
                 )}
               </div>

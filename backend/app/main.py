@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, finance, financeiro, geral, mensalidades, packages, public, residents, senso, service_orders, superadmin, uploads, transfers
+from app.routers import admin, agent, auth, cash_boxes, finance, financeiro, geral, mensalidades, packages, public, residents, senso, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -130,9 +130,51 @@ async def _run_migrations() -> None:
             "manual_total_bruto NUMERIC(12,2)",
             "manual_total_baixas NUMERIC(12,2)",
             "quebra_caixa NUMERIC(12,2)",
+            "reviewed_by UUID REFERENCES users(id)",
         ]:
-            name = col.split()[0]
             await session.execute(text(f"ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS {col}"))
+
+        for ddl in [
+            """CREATE TABLE IF NOT EXISTS sangria_destinations (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                name VARCHAR(100) NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT true,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS cash_boxes (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                name VARCHAR(100) NOT NULL,
+                description TEXT,
+                balance NUMERIC(12,2) NOT NULL DEFAULT 0,
+                is_active BOOLEAN NOT NULL DEFAULT true,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS cash_box_movements (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                cash_box_id UUID NOT NULL REFERENCES cash_boxes(id) ON DELETE CASCADE,
+                amount NUMERIC(12,2) NOT NULL,
+                movement_type VARCHAR(10) NOT NULL,
+                description TEXT NOT NULL,
+                created_by UUID REFERENCES users(id),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS session_transaction_reviews (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                cash_session_id UUID NOT NULL REFERENCES cash_sessions(id) ON DELETE CASCADE,
+                transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+                conferido BOOLEAN NOT NULL DEFAULT false,
+                observacao TEXT,
+                reviewed_by UUID REFERENCES users(id),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(cash_session_id, transaction_id)
+            )""",
+        ]:
+            await session.execute(text(ddl))
 
         await session.commit()
 
@@ -177,6 +219,7 @@ app.include_router(transfers.router, prefix=PREFIX)
 app.include_router(public.router, prefix=PREFIX)
 app.include_router(senso.router, prefix=PREFIX)
 app.include_router(agent.router, prefix=PREFIX)
+app.include_router(cash_boxes.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

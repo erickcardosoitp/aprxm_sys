@@ -149,11 +149,14 @@ export default function SettingsPage() {
   // ── Finance categories & payment methods ──
   type FinCat = { id: string; name: string; type: string; color?: string }
   type FinPM = { id: string; name: string }
+  type SangriaDest = { id: string; name: string }
   const [finCats, setFinCats] = useState<FinCat[]>([])
   const [finPMs, setFinPMs] = useState<FinPM[]>([])
+  const [sangriaDests, setSangriaDests] = useState<SangriaDest[]>([])
   const [newCatName, setNewCatName] = useState('')
   const [newCatType, setNewCatType] = useState<'income' | 'expense'>('expense')
   const [newPMName, setNewPMName] = useState('')
+  const [newDestName, setNewDestName] = useState('')
 
   // ── Access Groups state ──
   const [accessGroups, setAccessGroups] = useState<AccessGroups>({})
@@ -176,6 +179,7 @@ export default function SettingsPage() {
     loadCadastros()
     api.get<FinCat[]>('/finance/categories').then(r => setFinCats(r.data)).catch(() => {})
     api.get<FinPM[]>('/finance/payment-methods').then(r => setFinPMs(r.data)).catch(() => {})
+    api.get<SangriaDest[]>('/finance/sangria-destinations').then(r => setSangriaDests(r.data)).catch(() => {})
   }, [canSeeAssociation])
 
   const handleSaveCadastros = async () => {
@@ -225,6 +229,22 @@ export default function SettingsPage() {
     try {
       await api.delete(`/finance/payment-methods/${id}`)
       setFinPMs(p => p.filter(m => m.id !== id))
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handleAddDest = async () => {
+    if (!newDestName.trim()) return
+    try {
+      const r = await api.post<SangriaDest>('/finance/sangria-destinations', { name: newDestName.trim() })
+      setSangriaDests(p => [...p, r.data])
+      setNewDestName('')
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handleDeleteDest = async (id: string) => {
+    try {
+      await api.delete(`/finance/sangria-destinations/${id}`)
+      setSangriaDests(p => p.filter(d => d.id !== id))
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
   }
 
@@ -956,6 +976,28 @@ export default function SettingsPage() {
                       <li key={m.id} className="flex items-center justify-between bg-gray-50 px-3 py-1.5 rounded-lg text-sm">
                         <span>{m.name}</span>
                         <button onClick={() => handleDeletePM(m.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* 5g. Destinos de Sangria */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Destinos de Sangria</p>
+                <div className="flex gap-2 mb-2">
+                  <input value={newDestName} onChange={e => setNewDestName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddDest() }}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+                    placeholder="Ex: Cofre, Banco X…" />
+                  <button onClick={handleAddDest} className="px-3 py-2 bg-[#26619c] text-white rounded-lg text-sm font-medium">+</button>
+                </div>
+                {sangriaDests.length > 0 && (
+                  <ul className="flex flex-col gap-1">
+                    {sangriaDests.map(d => (
+                      <li key={d.id} className="flex items-center justify-between bg-gray-50 px-3 py-1.5 rounded-lg text-sm">
+                        <span>{d.name}</span>
+                        <button onClick={() => handleDeleteDest(d.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
                       </li>
                     ))}
                   </ul>
