@@ -49,7 +49,7 @@ interface ManualSessionForm {
   opening_balance: string; closing_balance: string
   opened_at: string; closed_at: string; notes: string
   manual_pix: string; manual_dinheiro: string
-  manual_total_bruto: string; manual_total_baixas: string
+  manual_total_baixas: string
 }
 
 interface Mensalidade {
@@ -119,7 +119,7 @@ export default function FinanceiroPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [showManualSession, setShowManualSession] = useState(false)
-  const [manualForm, setManualForm] = useState<ManualSessionForm>({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_bruto: '', manual_total_baixas: '' })
+  const [manualForm, setManualForm] = useState<ManualSessionForm>({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_baixas: '' })
   const [savingManual, setSavingManual] = useState(false)
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [manualReviewedBy, setManualReviewedBy] = useState('')
@@ -338,12 +338,11 @@ export default function FinanceiroPage() {
         notes: manualForm.notes || null,
         manual_pix: manualForm.manual_pix ? parseFloat(manualForm.manual_pix) : null,
         manual_dinheiro: manualForm.manual_dinheiro ? parseFloat(manualForm.manual_dinheiro) : null,
-        manual_total_bruto: manualForm.manual_total_bruto ? parseFloat(manualForm.manual_total_bruto) : null,
         manual_total_baixas: manualForm.manual_total_baixas ? parseFloat(manualForm.manual_total_baixas) : null,
         reviewed_by_id: manualReviewedBy || null,
       })
       setShowManualSession(false)
-      setManualForm({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_bruto: '', manual_total_baixas: '' })
+      setManualForm({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_baixas: '' })
       setManualReviewedBy('')
       loadSessions()
     } catch { /* ignore */ } finally { setSavingManual(false) }
@@ -1784,10 +1783,10 @@ export default function FinanceiroPage() {
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">R$ Total Bruto Lançado</label>
-                <input type="number" min="0" step="0.01" value={manualForm.manual_total_bruto}
-                  onChange={e => setManualForm(f => ({ ...f, manual_total_bruto: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+                <label className="block text-xs text-gray-500 mb-1">R$ Total Bruto (PIX + Dinheiro)</label>
+                <div className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 font-medium">
+                  {fmt((parseFloat(manualForm.manual_pix)||0) + (parseFloat(manualForm.manual_dinheiro)||0))}
+                </div>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">R$ Baixas</label>
@@ -1810,16 +1809,20 @@ export default function FinanceiroPage() {
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Opcional" />
               </div>
             </div>
-            {manualForm.manual_total_bruto && manualForm.manual_total_baixas && (
-              <div className="bg-gray-50 rounded-lg px-4 py-2 text-xs text-gray-600 flex gap-4">
-                <span>Líquido: <strong className="text-gray-800">{fmt((parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0))}</strong></span>
-                {manualForm.closing_balance && manualForm.opening_balance && (
-                  <span>Quebra de Caixa: <strong className={(() => { const qc = ((parseFloat(manualForm.opening_balance)||0) + (parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0)) - (parseFloat(manualForm.closing_balance)||0); return qc === 0 ? 'text-green-600' : qc > 0 ? 'text-red-600' : 'text-blue-600' })()}>
-                    {(() => { const qc = ((parseFloat(manualForm.opening_balance)||0) + (parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0)) - (parseFloat(manualForm.closing_balance)||0); return `${qc >= 0 ? '+' : ''}${fmt(qc)} (${qc > 0 ? 'falta' : qc < 0 ? 'sobra' : 'ok'})` })()}
-                  </strong></span>
-                )}
-              </div>
-            )}
+            {(() => {
+              const bruto = (parseFloat(manualForm.manual_pix)||0) + (parseFloat(manualForm.manual_dinheiro)||0)
+              const baixas = parseFloat(manualForm.manual_total_baixas)||0
+              const liquido = bruto - baixas
+              const closing = parseFloat(manualForm.closing_balance)||0
+              const qc = liquido - closing
+              return (bruto > 0 || baixas > 0) ? (
+                <div className="bg-gray-50 rounded-lg px-4 py-2 text-xs text-gray-600 flex flex-wrap gap-4">
+                  <span>Bruto: <strong className="text-gray-800">{fmt(bruto)}</strong></span>
+                  <span>Líquido: <strong className="text-gray-800">{fmt(liquido)}</strong></span>
+                  {closing > 0 && <span>Quebra: <strong className={qc === 0 ? 'text-green-600' : qc > 0 ? 'text-blue-600' : 'text-red-600'}>{`${qc >= 0 ? '+' : ''}${fmt(qc)} (${qc > 0 ? 'sobra' : qc < 0 ? 'falta' : 'ok'})`}</strong></span>}
+                </div>
+              ) : null
+            })()}
             <button onClick={handleCreateManualSession} disabled={savingManual}
               className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
               {savingManual ? 'Salvando…' : 'Criar Sessão Manual'}

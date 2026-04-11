@@ -35,7 +35,6 @@ class ManualSessionRequest(BaseModel):
     notes: str | None = None
     manual_pix: Decimal | None = Field(default=None, ge=0)
     manual_dinheiro: Decimal | None = Field(default=None, ge=0)
-    manual_total_bruto: Decimal | None = Field(default=None, ge=0)
     manual_total_baixas: Decimal | None = Field(default=None, ge=0)
     reviewed_by_id: UUID | None = None
 
@@ -186,7 +185,6 @@ async def create_manual_session(
         notes=body.notes,
         manual_pix=body.manual_pix,
         manual_dinheiro=body.manual_dinheiro,
-        manual_total_bruto=body.manual_total_bruto,
         manual_total_baixas=body.manual_total_baixas,
         reviewed_by=body.reviewed_by_id,
     )

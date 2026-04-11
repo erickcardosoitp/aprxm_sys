@@ -59,11 +59,14 @@ class FinanceService:
         manual_total_baixas: Decimal | None = None,
         reviewed_by: UUID | None = None,
     ) -> CashSession:
-        bruto = manual_total_bruto or Decimal("0")
+        pix = manual_pix or Decimal("0")
+        dinheiro = manual_dinheiro or Decimal("0")
+        bruto = pix + dinheiro
         baixas = manual_total_baixas or Decimal("0")
-        expected = opening_balance + bruto - baixas
+        liquido = bruto - baixas
+        expected = opening_balance + liquido
         diff = closing_balance - expected
-        quebra = expected - closing_balance  # + = falta, - = sobra
+        quebra = liquido - closing_balance  # + = sobra, - = falta
         session = CashSession(
             association_id=association_id,
             opened_by=created_by,
@@ -79,9 +82,9 @@ class FinanceService:
             origin="Manual",
             opened_at=opened_at,
             closed_at=closed_at,
-            manual_pix=manual_pix,
-            manual_dinheiro=manual_dinheiro,
-            manual_total_bruto=manual_total_bruto,
+            manual_pix=pix,
+            manual_dinheiro=dinheiro,
+            manual_total_bruto=bruto,
             manual_total_baixas=manual_total_baixas,
         )
         self._session.add(session)
@@ -109,11 +112,12 @@ class FinanceService:
     ) -> CashSession:
         session = await self.get_open_session(association_id)
 
-        expected = await self._compute_expected_balance(session)
+        expected, bruto, baixas = await self._compute_expected_balance(session)
+        liquido = bruto - baixas
         session.expected_balance = expected
         session.closing_balance = closing_balance
         session.difference = closing_balance - expected
-        session.quebra_caixa = expected - closing_balance  # + = falta, - = sobra
+        session.quebra_caixa = liquido - closing_balance  # + = sobra, - = falta
         session.status = CashSessionStatus.closed
         session.closed_by = closed_by
         session.closed_at = datetime.utcnow()
@@ -125,23 +129,26 @@ class FinanceService:
         self._session.add(session)
         return session
 
-    async def _compute_expected_balance(self, cash_session: CashSession) -> Decimal:
+    async def _compute_expected_balance(self, cash_session: CashSession) -> tuple[Decimal, Decimal, Decimal]:
+        """Returns (expected_balance, total_bruto, total_baixas)"""
         stmt = select(Transaction).where(Transaction.cash_session_id == cash_session.id)
         result = await self._session.execute(stmt)
         transactions = result.scalars().all()
 
+        bruto = Decimal("0")
+        baixas = Decimal("0")
         balance = cash_session.opening_balance
         for tx in transactions:
             if tx.type == TransactionType.income:
                 balance += tx.amount
+                bruto += tx.amount
             elif tx.type == TransactionType.expense:
-                # Only approved expenses affect balance
                 if tx.approval_status == "approved":
                     balance -= tx.amount
             else:
-                # sangria always affects balance
                 balance -= tx.amount
-        return balance
+                baixas += tx.amount
+        return balance, bruto, baixas
 
     async def _assert_no_open_session(self, association_id: UUID) -> None:
         stmt = select(CashSession).where(
