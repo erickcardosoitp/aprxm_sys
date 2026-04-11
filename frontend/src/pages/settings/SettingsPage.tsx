@@ -337,9 +337,10 @@ export default function SettingsPage() {
   const handleSaveAssoc = async () => {
     setSavingAssoc(true)
     try {
-      const res = await api.put<AssociationData>('/settings/association', assocForm)
-      setAssoc(res.data)
-      setAssocForm(res.data)
+      await api.put('/settings/association', assocForm)
+      const fresh = await api.get<AssociationData>('/settings/association')
+      setAssoc(fresh.data)
+      setAssocForm(fresh.data)
       toast.success('Dados da associação salvos!')
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao salvar dados da associação.')
@@ -526,20 +527,23 @@ export default function SettingsPage() {
             <h2 className="font-semibold text-gray-800 mb-1">Dados da Associação</h2>
             <p className="text-xs text-gray-400 mb-4">Informações institucionais da associação exibidas nos documentos e relatórios.</p>
 
-            {assoc.slug && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-3 mb-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-blue-800 mb-1">Link público de cadastro</p>
-                  <p className="text-xs text-blue-600 truncate">{window.location.origin}/cadastro/{assoc.slug}</p>
-                </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-3 mb-2">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-blue-800 mb-1">Link público de cadastro</p>
+                {assoc.slug
+                  ? <p className="text-xs text-blue-600 truncate">{window.location.origin}/cadastro/{assoc.slug}</p>
+                  : <p className="text-xs text-gray-400">Defina o slug abaixo para ativar o link.</p>
+                }
+              </div>
+              {assoc.slug && (
                 <button
-                  onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/cadastro/${assoc.slug}`); }}
+                  onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/cadastro/${assoc.slug}`); toast.success('Link copiado!') }}
                   className="shrink-0 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 transition"
                 >
                   Copiar
                 </button>
-              </div>
-            )}
+              )}
+            </div>
 
             {loadingAssoc ? (
               <div className="py-6 text-center text-gray-400 text-sm">Carregando…</div>
@@ -554,6 +558,21 @@ export default function SettingsPage() {
                     className={inputCls}
                     placeholder="Ex: Instituto Tia Pretinha"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Slug (link público)</label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 shrink-0">/cadastro/</span>
+                    <input
+                      type="text"
+                      value={assocForm.slug ?? ''}
+                      onChange={e => setAssocField('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                      className={inputCls}
+                      placeholder="vaz-lobo"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Apenas letras minúsculas, números e hífens.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">

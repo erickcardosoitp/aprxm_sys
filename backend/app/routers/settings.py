@@ -40,6 +40,7 @@ class UpdateAssocDataRequest(BaseModel):
     president_signature_url: str | None = None
     assoc_logo_url: str | None = None
     community_name: str | None = None
+    slug: str | None = None
 
 
 class UpdateProofStockRequest(BaseModel):
@@ -179,6 +180,12 @@ async def update_assoc_data(
             "community": body.community_name,
         },
     )
+    if body.slug:
+        slug_clean = body.slug.strip().lower().replace(" ", "-")
+        await session.execute(
+            text("UPDATE associations SET slug = :slug WHERE id = :id"),
+            {"slug": slug_clean, "id": str(current.association_id)},
+        )
     await session.commit()
     return {"ok": True}
 
