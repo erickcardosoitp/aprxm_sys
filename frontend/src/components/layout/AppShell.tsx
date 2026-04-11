@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import AgentWidget from '../agent/AgentWidget'
 import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, FileText, LogOut, Package, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
@@ -191,6 +192,8 @@ export function AppShell() {
       <main className="flex-1 overflow-y-auto" style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom))' }}>
         <Outlet />
       </main>
+
+      <AgentWidget />
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>

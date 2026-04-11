@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Business rules
     delivery_fee_default: float = 2.50
 
+    # AI Agent
+    anthropic_api_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, auth, finance, financeiro, geral, mensalidades, packages, public, residents, service_orders, superadmin, uploads, transfers
+from app.routers import admin, agent, auth, finance, financeiro, geral, mensalidades, packages, public, residents, senso, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -157,6 +157,8 @@ app.include_router(superadmin.router, prefix=PREFIX)
 app.include_router(uploads.router, prefix=PREFIX)
 app.include_router(transfers.router, prefix=PREFIX)
 app.include_router(public.router, prefix=PREFIX)
+app.include_router(senso.router, prefix=PREFIX)
+app.include_router(agent.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])
