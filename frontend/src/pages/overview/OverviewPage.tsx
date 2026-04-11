@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  PieChart, Pie, Cell,
 } from 'recharts'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
@@ -27,6 +27,7 @@ interface SensoData {
   neighborhood_problems: { problem: string; count: number }[]
   internet_types: { type: string; count: number }[]
   cep_distribution: { cep: string; count: number }[]
+  completion_distribution: { critical: number; improving: number; regular: number; excellent: number }
 }
 
 interface SensoFilters {
@@ -37,28 +38,44 @@ interface SensoFilters {
   has_sewage: string
   has_pests: string
   uses_transport: string
+  completion_pct_min: string
 }
 
 const EMPTY_FILTERS: SensoFilters = {
   cep_prefix: '', age_min: '', age_max: '',
   has_internet: '', has_sewage: '', has_pests: '', uses_transport: '',
+  completion_pct_min: '',
 }
 
-const PIE_COLORS = ['#26619c', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe']
-const BAR_COLOR = '#26619c'
+const PIE_COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
 
-// ── Infra badge ───────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function InfraBar({ label, pct, color }: { label: string; pct: number; color: string }) {
+function InfraRow({ icon, label, pct, color, bg }: { icon: React.ReactNode; label: string; pct: number; color: string; bg: string }) {
   return (
-    <div>
-      <div className="flex justify-between text-xs mb-1">
-        <span className="text-gray-600">{label}</span>
-        <span className="font-semibold" style={{ color }}>{pct}%</span>
+    <div className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ${bg}`}>
+      <div className="shrink-0">{icon}</div>
+      <div className="flex-1 min-w-0">
+        <div className="flex justify-between items-center mb-1">
+          <span className="text-xs font-medium text-gray-700">{label}</span>
+          <span className="text-xs font-bold" style={{ color }}>{pct}%</span>
+        </div>
+        <div className="h-1.5 bg-white/60 rounded-full overflow-hidden">
+          <div className="h-1.5 rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
+        </div>
       </div>
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+    </div>
+  )
+}
+
+function SectionCard({ icon, title, accent, children }: { icon: React.ReactNode; title: string; accent: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className={`flex items-center gap-2.5 px-4 py-3 border-b border-gray-100 ${accent}`}>
+        {icon}
+        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
       </div>
+      <div className="p-4">{children}</div>
     </div>
   )
 }
@@ -81,6 +98,7 @@ function SensoTab() {
       if (filters.has_sewage !== '') params.has_sewage = filters.has_sewage
       if (filters.has_pests !== '') params.has_pests = filters.has_pests
       if (filters.uses_transport !== '') params.uses_transport = filters.uses_transport
+      if (filters.completion_pct_min !== '') params.completion_pct_min = filters.completion_pct_min
       const res = await api.get<SensoData>('/senso/analytics', { params })
       setData(res.data)
     } catch {
@@ -93,32 +111,52 @@ function SensoTab() {
   useEffect(() => { load() }, [])
 
   const set = (k: keyof SensoFilters, v: string) => setFilters(f => ({ ...f, [k]: v }))
-  const inputCls = 'border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#26619c]/40'
-  const selectCls = `${inputCls} bg-white`
+  const inputCls = 'border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c] bg-gray-50'
+  const selectCls = `${inputCls}`
+
+  const activeFilters = Object.values(filters).filter(Boolean).length
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Filtros</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div className="flex flex-col gap-4">
+
+      {/* ── Filter panel ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-[#1a3f6f]/5 to-transparent">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-[#26619c]" />
+            <span className="text-sm font-semibold text-gray-800">Filtros</span>
+            {activeFilters > 0 && (
+              <span className="text-xs bg-[#26619c] text-white rounded-full px-1.5 py-0.5 font-bold">{activeFilters}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setFilters(EMPTY_FILTERS)}
+              className="text-xs text-gray-400 hover:text-gray-600 transition">Limpar</button>
+            <button onClick={load} disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#26619c] text-white rounded-lg text-xs font-semibold hover:bg-[#1a4f87] transition disabled:opacity-50">
+              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+              Aplicar
+            </button>
+          </div>
+        </div>
+        <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">CEP (prefixo)</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">CEP</label>
             <input value={filters.cep_prefix} onChange={e => set('cep_prefix', e.target.value)}
               className={inputCls + ' w-full'} placeholder="Ex: 22000" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Idade mín.</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Idade mín.</label>
             <input type="number" value={filters.age_min} onChange={e => set('age_min', e.target.value)}
               className={inputCls + ' w-full'} placeholder="0" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Idade máx.</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Idade máx.</label>
             <input type="number" value={filters.age_max} onChange={e => set('age_max', e.target.value)}
               className={inputCls + ' w-full'} placeholder="100" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Internet</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Internet</label>
             <select value={filters.has_internet} onChange={e => set('has_internet', e.target.value)} className={selectCls + ' w-full'}>
               <option value="">Todos</option>
               <option value="true">Com internet</option>
@@ -126,7 +164,7 @@ function SensoTab() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Esgoto</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Esgoto</label>
             <select value={filters.has_sewage} onChange={e => set('has_sewage', e.target.value)} className={selectCls + ' w-full'}>
               <option value="">Todos</option>
               <option value="true">Com esgoto</option>
@@ -134,7 +172,7 @@ function SensoTab() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Vetores</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Vetores</label>
             <select value={filters.has_pests} onChange={e => set('has_pests', e.target.value)} className={selectCls + ' w-full'}>
               <option value="">Todos</option>
               <option value="true">Com vetores</option>
@@ -142,144 +180,207 @@ function SensoTab() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Transporte</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Transporte</label>
             <select value={filters.uses_transport} onChange={e => set('uses_transport', e.target.value)} className={selectCls + ' w-full'}>
               <option value="">Todos</option>
               <option value="true">Usa transporte</option>
               <option value="false">Não usa</option>
             </select>
           </div>
-          <div className="flex items-end gap-2">
-            <button onClick={load} disabled={loading}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#26619c] text-white rounded-lg text-xs font-medium hover:bg-[#1a4f87] transition disabled:opacity-50">
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-              Aplicar
-            </button>
-            <button onClick={() => { setFilters(EMPTY_FILTERS) }}
-              className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs hover:bg-gray-50 transition">
-              Limpar
-            </button>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Completude mín.</label>
+            <select value={filters.completion_pct_min} onChange={e => set('completion_pct_min', e.target.value)} className={selectCls + ' w-full'}>
+              <option value="">Todos</option>
+              <option value="60">≥ 60% (Regular)</option>
+              <option value="80">≥ 80% (Excelente)</option>
+              <option value="21">≥ 21% (A melhorar+)</option>
+            </select>
           </div>
         </div>
       </div>
 
-      {loading && <div className="text-center py-10 text-gray-400 text-sm animate-pulse">Carregando dados…</div>}
+      {loading && (
+        <div className="flex items-center justify-center py-16 gap-3">
+          <RefreshCw className="w-5 h-5 text-[#26619c] animate-spin" />
+          <span className="text-sm text-gray-400">Carregando análise…</span>
+        </div>
+      )}
 
       {data && !loading && (
         <>
-          {/* KPI row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-[#26619c]">{data.total}</p>
-              <p className="text-xs text-[#26619c] mt-1">Associados</p>
+          {/* ── KPI row ── */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl p-4 text-white bg-gradient-to-br from-[#1a3f6f] to-[#26619c] flex flex-col gap-1">
+              <Users className="w-5 h-5 text-white/70" />
+              <p className="text-3xl font-extrabold">{data.total}</p>
+              <p className="text-xs text-white/80 font-medium">Associados no filtro</p>
             </div>
-            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-emerald-700">{data.avg_household}</p>
-              <p className="text-xs text-emerald-700 mt-1">Média/residência</p>
+            <div className="rounded-2xl p-4 text-white bg-gradient-to-br from-emerald-500 to-emerald-600 flex flex-col gap-1">
+              <Home className="w-5 h-5 text-white/70" />
+              <p className="text-3xl font-extrabold">{data.avg_household}</p>
+              <p className="text-xs text-white/80 font-medium">Pessoas/domicílio</p>
             </div>
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-amber-700">{data.infrastructure.internet_pct}%</p>
-              <p className="text-xs text-amber-700 mt-1">Com internet</p>
+            <div className="rounded-2xl p-4 text-white bg-gradient-to-br from-sky-400 to-sky-600 flex flex-col gap-1">
+              <Wifi className="w-5 h-5 text-white/70" />
+              <p className="text-3xl font-extrabold">{data.infrastructure.internet_pct}%</p>
+              <p className="text-xs text-white/80 font-medium">Acesso à internet</p>
             </div>
-            <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-red-700">{data.infrastructure.pests_pct}%</p>
-              <p className="text-xs text-red-700 mt-1">Com vetores</p>
+            <div className="rounded-2xl p-4 text-white bg-gradient-to-br from-red-500 to-red-600 flex flex-col gap-1">
+              <Bug className="w-5 h-5 text-white/70" />
+              <p className="text-3xl font-extrabold">{data.infrastructure.pests_pct}%</p>
+              <p className="text-xs text-white/80 font-medium">Incidência de vetores</p>
             </div>
           </div>
 
-          {/* Age + Education charts */}
+          {/* ── Completude de cadastro ── */}
+          {(() => {
+            const cd = data.completion_distribution
+            const tot = Math.max(cd.critical + cd.improving + cd.regular + cd.excellent, 1)
+            const tiers = [
+              { key: 'excellent', label: 'Excelente', count: cd.excellent, color: '#10b981', bg: 'bg-emerald-500' },
+              { key: 'regular', label: 'Regular', count: cd.regular, color: '#3b82f6', bg: 'bg-blue-500' },
+              { key: 'improving', label: 'A melhorar', count: cd.improving, color: '#f59e0b', bg: 'bg-amber-500' },
+              { key: 'critical', label: 'Crítico', count: cd.critical, color: '#ef4444', bg: 'bg-red-500' },
+            ]
+            return (
+              <SectionCard
+                icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                title="Completude de Cadastro"
+                accent="bg-emerald-50/50"
+              >
+                <div className="flex flex-col gap-3">
+                  {/* Segmented bar */}
+                  <div className="flex h-3 rounded-full overflow-hidden gap-0.5">
+                    {tiers.map(t => (
+                      <div key={t.key} className={`${t.bg} transition-all duration-500`}
+                        style={{ width: `${(t.count / tot) * 100}%`, minWidth: t.count > 0 ? '4px' : '0' }}
+                        title={`${t.label}: ${t.count}`} />
+                    ))}
+                  </div>
+                  {/* Legend */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {tiers.map(t => (
+                      <div key={t.key} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-gray-800">{t.count}</p>
+                          <p className="text-xs text-gray-400 leading-tight">{t.label}</p>
+                        </div>
+                        <p className="ml-auto text-xs font-bold" style={{ color: t.color }}>
+                          {tot > 0 ? Math.round((t.count / tot) * 100) : 0}%
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 text-center">Crítico 0–20% · A melhorar 21–59% · Regular 60–79% · Excelente 80–100%</p>
+                </div>
+              </SectionCard>
+            )
+          })()}
+
+          {/* ── Infraestrutura ── */}
+          <SectionCard icon={<Home className="w-4 h-4 text-blue-600" />} title="Infraestrutura" accent="bg-blue-50/50">
+            <div className="flex flex-col gap-2">
+              <InfraRow icon={<Wifi className="w-3.5 h-3.5 text-sky-500" />} label="Internet" pct={data.infrastructure.internet_pct} color="#0ea5e9" bg="bg-sky-50" />
+              <InfraRow icon={<Droplets className="w-3.5 h-3.5 text-emerald-500" />} label="Rede de esgoto" pct={data.infrastructure.sewage_pct} color="#10b981" bg="bg-emerald-50" />
+              <InfraRow icon={<Bus className="w-3.5 h-3.5 text-amber-500" />} label="Transporte público" pct={data.infrastructure.transport_pct} color="#f59e0b" bg="bg-amber-50" />
+              <InfraRow icon={<Bug className="w-3.5 h-3.5 text-red-500" />} label="Vetores" pct={data.infrastructure.pests_pct} color="#ef4444" bg="bg-red-50" />
+            </div>
+          </SectionCard>
+
+          {/* ── Faixa etária + Escolaridade ── */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Distribuição por Faixa Etária</h3>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={data.age_distribution} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill={BAR_COLOR} radius={[4, 4, 0, 0]} />
+            <SectionCard icon={<Users className="w-4 h-4 text-violet-600" />} title="Faixa Etária" accent="bg-violet-50/50">
+              <ResponsiveContainer width="100%" height={170}>
+                <BarChart data={data.age_distribution} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', fontSize: 12 }} cursor={{ fill: '#f3f4f6' }} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                    {data.age_distribution.map((_, i) => (
+                      <Cell key={i} fill={`hsl(${220 + i * 12}, 70%, ${55 + i * 4}%)`} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </div>
+            </SectionCard>
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Escolaridade</h3>
+            <SectionCard icon={<GraduationCap className="w-4 h-4 text-indigo-600" />} title="Escolaridade" accent="bg-indigo-50/50">
               {data.education.length === 0 ? (
-                <p className="text-xs text-gray-400 py-8 text-center">Sem dados</p>
+                <p className="text-xs text-gray-400 py-10 text-center">Sem dados</p>
               ) : (
-                <ResponsiveContainer width="100%" height={180}>
+                <ResponsiveContainer width="100%" height={170}>
                   <PieChart>
                     <Pie data={data.education} dataKey="count" nameKey="level" cx="50%" cy="50%"
-                      outerRadius={65} label={(p) => `${(p as any).level?.split(' ')[0]} ${((p.percent ?? 0) * 100).toFixed(0)}%`}
+                      outerRadius={70} innerRadius={28}
+                      label={(p) => `${((p.percent ?? 0) * 100).toFixed(0)}%`}
                       labelLine={false}>
                       {data.education.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                     </Pie>
-                    <Tooltip formatter={(v, n) => [v, n]} />
+                    <Tooltip formatter={(v, n) => [v, n]} contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', fontSize: 12 }} />
                   </PieChart>
                 </ResponsiveContainer>
               )}
-            </div>
+            </SectionCard>
           </div>
 
-          {/* Race + Infrastructure */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Cor/Raça</h3>
-              {data.race.length === 0 ? (
-                <p className="text-xs text-gray-400 py-8 text-center">Sem dados</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={180}>
-                  <PieChart>
-                    <Pie data={data.race} dataKey="count" nameKey="race" cx="50%" cy="50%"
-                      outerRadius={65} label={(p) => `${(p as any).race} ${((p.percent ?? 0) * 100).toFixed(0)}%`}
-                      labelLine={false}>
-                      {data.race.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Infraestrutura</h3>
-              <div className="flex flex-col gap-3 mt-2">
-                <InfraBar label="Acesso à internet" pct={data.infrastructure.internet_pct} color="#3b82f6" />
-                <InfraBar label="Rede de esgoto" pct={data.infrastructure.sewage_pct} color="#10b981" />
-                <InfraBar label="Usa transporte público" pct={data.infrastructure.transport_pct} color="#f59e0b" />
-                <InfraBar label="Incidência de vetores" pct={data.infrastructure.pests_pct} color="#ef4444" />
+          {/* ── Cor/Raça ── */}
+          <SectionCard icon={<UserCircle2 className="w-4 h-4 text-rose-600" />} title="Cor / Raça" accent="bg-rose-50/50">
+            {data.race.length === 0 ? (
+              <p className="text-xs text-gray-400 py-8 text-center">Sem dados</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {data.race.map((item, i) => {
+                  const pct = data.total > 0 ? Math.round(item.count / data.total * 100) : 0
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      <span className="text-xs text-gray-600 flex-1 truncate">{item.race}</span>
+                      <div className="flex items-center gap-2 w-32">
+                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                        </div>
+                        <span className="text-xs font-semibold text-gray-700 w-8 text-right">{pct}%</span>
+                      </div>
+                      <span className="text-xs text-gray-400 w-6 text-right">{item.count}</span>
+                    </div>
+                  )
+                })}
               </div>
-            </div>
-          </div>
+            )}
+          </SectionCard>
 
-          {/* Neighborhood problems */}
+          {/* ── Problemas da comunidade ── */}
           {data.neighborhood_problems.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Problemas da Comunidade (ranking)</h3>
-              <ResponsiveContainer width="100%" height={Math.max(160, data.neighborhood_problems.length * 32)}>
+            <SectionCard icon={<MapPin className="w-4 h-4 text-orange-600" />} title="Problemas da Comunidade" accent="bg-orange-50/50">
+              <ResponsiveContainer width="100%" height={Math.max(160, data.neighborhood_problems.length * 34)}>
                 <BarChart data={data.neighborhood_problems} layout="vertical"
-                  margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
-                  <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <YAxis type="category" dataKey="problem" width={160} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#ef4444" radius={[0, 4, 4, 0]} />
+                  margin={{ top: 4, right: 32, left: 8, bottom: 0 }}>
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="problem" width={150} tick={{ fontSize: 11, fill: '#4b5563' }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', fontSize: 12 }} cursor={{ fill: '#fff7ed' }} />
+                  <Bar dataKey="count" radius={[0, 6, 6, 0]} fill="#f97316">
+                    {data.neighborhood_problems.map((_, i) => (
+                      <Cell key={i} fill={`hsl(24, ${90 - i * 6}%, ${50 + i * 3}%)`} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </div>
+            </SectionCard>
           )}
 
-          {/* CEP distribution */}
+          {/* ── CEP ── */}
           {data.cep_distribution.length > 1 && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Distribuição por CEP</h3>
+            <SectionCard icon={<MapPin className="w-4 h-4 text-teal-600" />} title="Distribuição por CEP" accent="bg-teal-50/50">
               <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={data.cep_distribution} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                  <XAxis dataKey="cep" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill={BAR_COLOR} radius={[4, 4, 0, 0]} />
+                <BarChart data={data.cep_distribution} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                  <XAxis dataKey="cep" tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', fontSize: 12 }} cursor={{ fill: '#f0fdfa' }} />
+                  <Bar dataKey="count" fill="#0d9488" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
+            </SectionCard>
           )}
         </>
       )}

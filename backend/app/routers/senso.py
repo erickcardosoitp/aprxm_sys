@@ -19,6 +19,7 @@ async def analytics(
     has_sewage: bool | None = Query(default=None),
     has_pests: bool | None = Query(default=None),
     uses_transport: bool | None = Query(default=None),
+    completion_pct_min: int | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -51,6 +52,33 @@ async def analytics(
         conditions.append("uses_public_transport = :uses_transport")
         params["uses_transport"] = uses_transport
 
+    _COMPLETION_EXPR = """(
+    CASE WHEN cpf IS NOT NULL AND cpf != '' THEN 1 ELSE 0 END
+    + CASE WHEN phone_primary IS NOT NULL AND phone_primary != '' THEN 1 ELSE 0 END
+    + CASE WHEN phone_secondary IS NOT NULL AND phone_secondary != '' THEN 1 ELSE 0 END
+    + CASE WHEN email IS NOT NULL AND email != '' THEN 1 ELSE 0 END
+    + CASE WHEN date_of_birth IS NOT NULL THEN 1 ELSE 0 END
+    + CASE WHEN race IS NOT NULL AND race != '' THEN 1 ELSE 0 END
+    + CASE WHEN education_level IS NOT NULL AND education_level != '' THEN 1 ELSE 0 END
+    + CASE WHEN unit IS NOT NULL AND unit != '' THEN 1 ELSE 0 END
+    + CASE WHEN block IS NOT NULL AND block != '' THEN 1 ELSE 0 END
+    + CASE WHEN address_cep IS NOT NULL AND address_cep != '' THEN 1 ELSE 0 END
+    + CASE WHEN address_street IS NOT NULL AND address_street != '' THEN 1 ELSE 0 END
+    + CASE WHEN address_number IS NOT NULL AND address_number != '' THEN 1 ELSE 0 END
+    + CASE WHEN household_count IS NOT NULL AND household_count > 0 THEN 1 ELSE 0 END
+    + CASE WHEN address_rooms IS NOT NULL AND address_rooms > 0 THEN 1 ELSE 0 END
+    + CASE WHEN internet_access IS NOT NULL AND internet_access != '' THEN 1 ELSE 0 END
+    + CASE WHEN has_sewage IS NOT NULL THEN 1 ELSE 0 END
+    + CASE WHEN neighborhood_problems IS NOT NULL AND neighborhood_problems != '[]' THEN 1 ELSE 0 END
+    + CASE WHEN main_priority_request IS NOT NULL AND main_priority_request != '' THEN 1 ELSE 0 END
+    + CASE WHEN terms_accepted = TRUE THEN 1 ELSE 0 END
+    + CASE WHEN lgpd_accepted = TRUE THEN 1 ELSE 0 END
+) * 5"""
+
+    if completion_pct_min is not None:
+        conditions.append(f"({_COMPLETION_EXPR}) >= :cpct_min")
+        params["cpct_min"] = completion_pct_min
+
     where = " AND ".join(conditions)
 
     main = await session.execute(text(f"""
@@ -66,7 +94,11 @@ async def analytics(
             COUNT(*) FILTER (WHERE has_sewage = TRUE) AS has_sewage,
             COUNT(*) FILTER (WHERE uses_public_transport = TRUE) AS uses_transport,
             COUNT(*) FILTER (WHERE has_pests = TRUE) AS has_pests,
-            COALESCE(AVG(NULLIF(household_count, 0)), 0) AS avg_household
+            COALESCE(AVG(NULLIF(household_count, 0)), 0) AS avg_household,
+            COUNT(*) FILTER (WHERE ({_COMPLETION_EXPR}) <= 20) AS comp_critical,
+            COUNT(*) FILTER (WHERE ({_COMPLETION_EXPR}) > 20 AND ({_COMPLETION_EXPR}) <= 59) AS comp_improving,
+            COUNT(*) FILTER (WHERE ({_COMPLETION_EXPR}) > 59 AND ({_COMPLETION_EXPR}) <= 79) AS comp_regular,
+            COUNT(*) FILTER (WHERE ({_COMPLETION_EXPR}) >= 80) AS comp_excellent
         FROM residents WHERE {where}
     """), params)
     r = main.fetchone()
@@ -126,6 +158,12 @@ async def analytics(
             "pests_pct": round(r[10] / total * 100, 1),
         },
         "avg_household": round(float(r[11]), 1),
+        "completion_distribution": {
+            "critical": r[12],
+            "improving": r[13],
+            "regular": r[14],
+            "excellent": r[15],
+        },
         "education": [{"level": x[0], "count": x[1]} for x in edu.fetchall()],
         "race": [{"race": x[0], "count": x[1]} for x in race.fetchall()],
         "neighborhood_problems": [{"problem": x[0], "count": x[1]} for x in problems.fetchall()],

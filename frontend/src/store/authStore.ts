@@ -44,11 +44,11 @@ export const useAuthStore = create<AuthStore>()(
           return v ? JSON.parse(v) : null
         },
         setItem: (key, value) => {
-          const parsed = JSON.parse(value)
-          if (parsed.state?.rememberDevice) {
-            localStorage.setItem(key, value)
+          const str = JSON.stringify(value)
+          if ((value as any).state?.rememberDevice) {
+            localStorage.setItem(key, str)
           } else {
-            sessionStorage.setItem(key, value)
+            sessionStorage.setItem(key, str)
             localStorage.removeItem(key)
           }
         },

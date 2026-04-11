@@ -20,6 +20,31 @@ const STATUS_LABELS: Record<ResidentStatus, string> = {
   active: 'Ativo', inactive: 'Inativo', suspended: 'Suspenso',
 }
 
+function calcCompletion(r: Resident): number {
+  const checks = [
+    !!r.cpf, !!r.phone_primary, !!r.phone_secondary, !!r.email, !!r.date_of_birth,
+    !!r.race, !!r.education_level, !!r.unit, !!r.block, !!r.address_cep,
+    !!r.address_street, !!r.address_number, (r.household_count ?? 0) > 0,
+    (r.address_rooms ?? 0) > 0, !!r.internet_access, r.has_sewage != null,
+    (r.neighborhood_problems?.length ?? 0) > 0, !!r.main_priority_request,
+    r.terms_accepted, r.lgpd_accepted,
+  ]
+  return Math.round(checks.filter(Boolean).length * 5)
+}
+
+function CompletionBadge({ pct }: { pct: number }) {
+  const cfg =
+    pct <= 20 ? { color: 'text-red-600', bg: 'bg-red-50', label: 'Crítico' } :
+    pct <= 59 ? { color: 'text-amber-600', bg: 'bg-amber-50', label: 'A melhorar' } :
+    pct <= 79 ? { color: 'text-blue-600', bg: 'bg-blue-50', label: 'Regular' } :
+                { color: 'text-emerald-600', bg: 'bg-emerald-50', label: 'Excelente' }
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded-lg ${cfg.bg} ${cfg.color}`}>
+      {pct}%
+    </span>
+  )
+}
+
 const RACE_OPTIONS = ['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena', 'Não declarar']
 const EDU_OPTIONS = ['Sem escolaridade', 'Fundamental incompleto', 'Fundamental completo', 'Médio incompleto', 'Médio completo', 'Superior incompleto', 'Superior completo', 'Pós-graduação']
 const ACCESS_OPTIONS = ['Ônibus', 'Metrô', 'Van', 'Bicicleta', 'A pé', 'Moto', 'Carro próprio']
@@ -1110,7 +1135,10 @@ export default function ResidentsPage() {
                     {r.full_name.charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
+                      {activeTab === 'associados' && <CompletionBadge pct={calcCompletion(r)} />}
+                    </div>
                     <p className="text-xs text-gray-400">
                       {r.responsible_id ? 'Dependente' : TYPE_LABELS[r.type]}
                       {r.unit ? ` · Unid. ${r.unit}` : ''}
