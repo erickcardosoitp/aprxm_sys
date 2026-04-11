@@ -538,3 +538,99 @@ async def list_payment_methods(
     ).order_by(PaymentMethod.name)
     result = await session.execute(stmt)
     return [{"id": str(m.id), "name": m.name} for m in result.scalars().all()]
+
+
+class CreateCategoryRequest(BaseModel):
+    name: str
+    type: TransactionType
+    color: str | None = None
+
+
+@router.post("/categories", summary="Criar categoria de transação")
+async def create_category(
+    body: CreateCategoryRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from datetime import datetime as dt
+    cat = TransactionCategory(
+        association_id=current.association_id,
+        name=body.name,
+        type=body.type,
+        color=body.color,
+        created_at=dt.utcnow(),
+        updated_at=dt.utcnow(),
+    )
+    session.add(cat)
+    await session.flush()
+    await session.commit()
+    return {"id": str(cat.id), "name": cat.name, "type": cat.type, "color": cat.color}
+
+
+@router.delete("/categories/{category_id}", summary="Desativar categoria")
+async def delete_category(
+    category_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlmodel import select as sa_select
+    from datetime import datetime as dt
+    stmt = sa_select(TransactionCategory).where(
+        TransactionCategory.id == category_id,
+        TransactionCategory.association_id == current.association_id,
+    )
+    cat = (await session.execute(stmt)).scalar_one_or_none()
+    if not cat:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Categoria não encontrada.")
+    cat.is_active = False
+    cat.updated_at = dt.utcnow()
+    session.add(cat)
+    await session.commit()
+    return {"deleted": True}
+
+
+class CreatePaymentMethodRequest(BaseModel):
+    name: str
+
+
+@router.post("/payment-methods", summary="Criar método de pagamento")
+async def create_payment_method(
+    body: CreatePaymentMethodRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from datetime import datetime as dt
+    pm = PaymentMethod(
+        association_id=current.association_id,
+        name=body.name,
+        created_at=dt.utcnow(),
+        updated_at=dt.utcnow(),
+    )
+    session.add(pm)
+    await session.flush()
+    await session.commit()
+    return {"id": str(pm.id), "name": pm.name}
+
+
+@router.delete("/payment-methods/{pm_id}", summary="Desativar método de pagamento")
+async def delete_payment_method(
+    pm_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlmodel import select as sa_select
+    from datetime import datetime as dt
+    stmt = sa_select(PaymentMethod).where(
+        PaymentMethod.id == pm_id,
+        PaymentMethod.association_id == current.association_id,
+    )
+    pm = (await session.execute(stmt)).scalar_one_or_none()
+    if not pm:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Método não encontrado.")
+    pm.is_active = False
+    pm.updated_at = dt.utcnow()
+    session.add(pm)
+    await session.commit()
+    return {"deleted": True}

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell,
+  PieChart, Pie, Cell, LabelList,
 } from 'recharts'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
@@ -26,7 +26,7 @@ interface SensoData {
   race: { race: string; count: number }[]
   neighborhood_problems: { problem: string; count: number }[]
   internet_types: { type: string; count: number }[]
-  cep_distribution: { cep: string; count: number }[]
+  street_distribution: { street: string; count: number }[]
   completion_distribution: { critical: number; improving: number; regular: number; excellent: number }
 }
 
@@ -39,12 +39,13 @@ interface SensoFilters {
   has_pests: string
   uses_transport: string
   completion_pct_min: string
+  hide_blank: boolean
 }
 
 const EMPTY_FILTERS: SensoFilters = {
   cep_prefix: '', age_min: '', age_max: '',
   has_internet: '', has_sewage: '', has_pests: '', uses_transport: '',
-  completion_pct_min: '',
+  completion_pct_min: '', hide_blank: false,
 }
 
 const PIE_COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
@@ -99,6 +100,7 @@ function SensoTab() {
       if (filters.has_pests !== '') params.has_pests = filters.has_pests
       if (filters.uses_transport !== '') params.uses_transport = filters.uses_transport
       if (filters.completion_pct_min !== '') params.completion_pct_min = filters.completion_pct_min
+      if (filters.hide_blank) params.hide_blank = 'true'
       const res = await api.get<SensoData>('/senso/analytics', { params })
       setData(res.data)
     } catch {
@@ -195,6 +197,14 @@ function SensoTab() {
               <option value="80">≥ 80% (Excelente)</option>
               <option value="21">≥ 21% (A melhorar+)</option>
             </select>
+          </div>
+          <div className="col-span-2 md:col-span-4 flex items-center gap-2 pt-1">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={filters.hide_blank}
+                onChange={e => setFilters(f => ({ ...f, hide_blank: e.target.checked }))}
+                className="w-4 h-4 accent-[#26619c]" />
+              <span className="text-xs font-medium text-gray-600">Ocultar dados em branco (usar denominadores reais por campo)</span>
+            </label>
           </div>
         </div>
       </div>
@@ -353,35 +363,65 @@ function SensoTab() {
           {/* ── Problemas da comunidade ── */}
           {data.neighborhood_problems.length > 0 && (
             <SectionCard icon={<MapPin className="w-4 h-4 text-orange-600" />} title="Problemas da Comunidade" accent="bg-orange-50/50">
-              <ResponsiveContainer width="100%" height={Math.max(160, data.neighborhood_problems.length * 34)}>
+              <ResponsiveContainer width="100%" height={Math.max(160, data.neighborhood_problems.length * 38)}>
                 <BarChart data={data.neighborhood_problems} layout="vertical"
-                  margin={{ top: 4, right: 32, left: 8, bottom: 0 }}>
+                  margin={{ top: 4, right: 48, left: 8, bottom: 0 }}>
                   <XAxis type="number" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <YAxis type="category" dataKey="problem" width={150} tick={{ fontSize: 11, fill: '#4b5563' }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="problem" width={155} tick={{ fontSize: 11, fill: '#4b5563' }} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', fontSize: 12 }} cursor={{ fill: '#fff7ed' }} />
-                  <Bar dataKey="count" radius={[0, 6, 6, 0]} fill="#f97316">
+                  <Bar dataKey="count" radius={[0, 6, 6, 0]}>
                     {data.neighborhood_problems.map((_, i) => (
                       <Cell key={i} fill={`hsl(24, ${90 - i * 6}%, ${50 + i * 3}%)`} />
                     ))}
+                    <LabelList dataKey="count" position="right" style={{ fontSize: 11, fontWeight: 700, fill: '#6b7280' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </SectionCard>
           )}
 
-          {/* ── CEP ── */}
-          {data.cep_distribution.length > 1 && (
-            <SectionCard icon={<MapPin className="w-4 h-4 text-teal-600" />} title="Distribuição por CEP" accent="bg-teal-50/50">
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={data.cep_distribution} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                  <XAxis dataKey="cep" tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', fontSize: 12 }} cursor={{ fill: '#f0fdfa' }} />
-                  <Bar dataKey="count" fill="#0d9488" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </SectionCard>
-          )}
+          {/* ── Logradouros ── */}
+          <SectionCard icon={<MapPin className="w-4 h-4 text-teal-600" />} title="Associados por Logradouro — Madureira/RJ" accent="bg-teal-50/50">
+            <div className="flex flex-col gap-4">
+              {/* Map embed */}
+              <div className="rounded-xl overflow-hidden border border-gray-100">
+                <iframe
+                  title="Mapa Madureira"
+                  src="https://www.openstreetmap.org/export/embed.html?bbox=-43.3800%2C-22.9100%2C-43.2900%2C-22.8500&layer=mapnik"
+                  width="100%"
+                  height="240"
+                  style={{ border: 0, display: 'block' }}
+                  loading="lazy"
+                />
+              </div>
+              {/* Street ranking */}
+              {data.street_distribution.length > 0 ? (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-xs font-medium text-gray-500 mb-1">Ranking de ruas (associados cadastrados)</p>
+                  {data.street_distribution.map((item, i) => {
+                    const maxCount = data.street_distribution[0]?.count ?? 1
+                    const pct = Math.round((item.count / maxCount) * 100)
+                    return (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400 w-4 text-right shrink-0">{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-center mb-0.5">
+                            <span className="text-xs text-gray-700 truncate font-medium">{item.street}</span>
+                            <span className="text-xs font-bold text-teal-700 ml-2 shrink-0">{item.count}</span>
+                          </div>
+                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-1.5 bg-teal-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 text-center py-4">Nenhum logradouro cadastrado nos filtros atuais.</p>
+              )}
+            </div>
+          </SectionCard>
         </>
       )}
     </div>

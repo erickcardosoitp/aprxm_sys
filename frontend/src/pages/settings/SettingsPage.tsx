@@ -145,6 +145,15 @@ export default function SettingsPage() {
   const [orgaos, setOrgaos] = useState<string[]>([])
   const [savingCadastros, setSavingCadastros] = useState(false)
 
+  // ── Finance categories & payment methods ──
+  type FinCat = { id: string; name: string; type: string; color?: string }
+  type FinPM = { id: string; name: string }
+  const [finCats, setFinCats] = useState<FinCat[]>([])
+  const [finPMs, setFinPMs] = useState<FinPM[]>([])
+  const [newCatName, setNewCatName] = useState('')
+  const [newCatType, setNewCatType] = useState<'income' | 'expense'>('expense')
+  const [newPMName, setNewPMName] = useState('')
+
   // ── Access Groups state ──
   const [accessGroups, setAccessGroups] = useState<AccessGroups>({})
   const [loadingAccessGroups, setLoadingAccessGroups] = useState(false)
@@ -164,6 +173,8 @@ export default function SettingsPage() {
       }
     }
     loadCadastros()
+    api.get<FinCat[]>('/finance/categories').then(r => setFinCats(r.data)).catch(() => {})
+    api.get<FinPM[]>('/finance/payment-methods').then(r => setFinPMs(r.data)).catch(() => {})
   }, [canSeeAssociation])
 
   const handleSaveCadastros = async () => {
@@ -180,6 +191,40 @@ export default function SettingsPage() {
     } finally {
       setSavingCadastros(false)
     }
+  }
+
+  const handleAddFinCat = async () => {
+    if (!newCatName.trim()) return
+    try {
+      const r = await api.post<FinCat>('/finance/categories', { name: newCatName.trim(), type: newCatType })
+      setFinCats(p => [...p, r.data])
+      setNewCatName('')
+      toast.success('Categoria criada.')
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handleDeleteFinCat = async (id: string) => {
+    try {
+      await api.delete(`/finance/categories/${id}`)
+      setFinCats(p => p.filter(c => c.id !== id))
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handleAddPM = async () => {
+    if (!newPMName.trim()) return
+    try {
+      const r = await api.post<FinPM>('/finance/payment-methods', { name: newPMName.trim() })
+      setFinPMs(p => [...p, r.data])
+      setNewPMName('')
+      toast.success('Método criado.')
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handleDeletePM = async (id: string) => {
+    try {
+      await api.delete(`/finance/payment-methods/${id}`)
+      setFinPMs(p => p.filter(m => m.id !== id))
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
   }
 
   // ── Load Access Groups ──
@@ -826,6 +871,60 @@ export default function SettingsPage() {
                 onAdd={item => setOrgaos(prev => [...prev, item])}
                 onRemove={idx => setOrgaos(prev => prev.filter((_, i) => i !== idx))}
               />
+
+              {/* 5e. Categorias de Transação (Financeiro) */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Categorias de Transação (Financeiro)</p>
+                <div className="flex gap-2 mb-2">
+                  <select value={newCatType} onChange={e => setNewCatType(e.target.value as 'income' | 'expense')}
+                    className="border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 bg-white">
+                    <option value="expense">Despesa</option>
+                    <option value="income">Receita</option>
+                  </select>
+                  <input value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddFinCat() }}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+                    placeholder="Nome da categoria…" />
+                  <button onClick={handleAddFinCat} className="px-3 py-2 bg-[#26619c] text-white rounded-lg text-sm font-medium">+</button>
+                </div>
+                {finCats.length > 0 && (
+                  <ul className="flex flex-col gap-1">
+                    {finCats.map(c => (
+                      <li key={c.id} className="flex items-center justify-between bg-gray-50 px-3 py-1.5 rounded-lg text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${c.type === 'income' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                            {c.type === 'income' ? 'Receita' : 'Despesa'}
+                          </span>
+                          <span>{c.name}</span>
+                        </div>
+                        <button onClick={() => handleDeleteFinCat(c.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* 5f. Métodos de Pagamento */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Métodos de Pagamento</p>
+                <div className="flex gap-2 mb-2">
+                  <input value={newPMName} onChange={e => setNewPMName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddPM() }}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+                    placeholder="Ex: Cartão débito, Pix…" />
+                  <button onClick={handleAddPM} className="px-3 py-2 bg-[#26619c] text-white rounded-lg text-sm font-medium">+</button>
+                </div>
+                {finPMs.length > 0 && (
+                  <ul className="flex flex-col gap-1">
+                    {finPMs.map(m => (
+                      <li key={m.id} className="flex items-center justify-between bg-gray-50 px-3 py-1.5 rounded-lg text-sm">
+                        <span>{m.name}</span>
+                        <button onClick={() => handleDeletePM(m.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
 

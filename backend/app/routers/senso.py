@@ -20,6 +20,7 @@ async def analytics(
     has_pests: bool | None = Query(default=None),
     uses_transport: bool | None = Query(default=None),
     completion_pct_min: int | None = Query(default=None),
+    hide_blank: bool = Query(default=False, description="Excluir registros sem resposta nos campos analisados"),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -98,7 +99,11 @@ async def analytics(
             COUNT(*) FILTER (WHERE ({_COMPLETION_EXPR}) <= 20) AS comp_critical,
             COUNT(*) FILTER (WHERE ({_COMPLETION_EXPR}) > 20 AND ({_COMPLETION_EXPR}) <= 59) AS comp_improving,
             COUNT(*) FILTER (WHERE ({_COMPLETION_EXPR}) > 59 AND ({_COMPLETION_EXPR}) <= 79) AS comp_regular,
-            COUNT(*) FILTER (WHERE ({_COMPLETION_EXPR}) >= 80) AS comp_excellent
+            COUNT(*) FILTER (WHERE ({_COMPLETION_EXPR}) >= 80) AS comp_excellent,
+            COUNT(*) FILTER (WHERE has_pests IS NOT NULL) AS pests_answered,
+            COUNT(*) FILTER (WHERE has_sewage IS NOT NULL) AS sewage_answered,
+            COUNT(*) FILTER (WHERE uses_public_transport IS NOT NULL) AS transport_answered,
+            COUNT(*) FILTER (WHERE internet_access IS NOT NULL) AS internet_answered
         FROM residents WHERE {where}
     """), params)
     r = main.fetchone()
@@ -135,11 +140,19 @@ async def analytics(
         GROUP BY internet_access ORDER BY 2 DESC
     """), params)
 
-    cep_dist = await session.execute(text(f"""
-        SELECT SUBSTRING(address_cep FROM 1 FOR 5) AS cep5, COUNT(*) FROM residents
-        WHERE {where} AND address_cep IS NOT NULL
-        GROUP BY cep5 ORDER BY 2 DESC LIMIT 10
+    street_dist = await session.execute(text(f"""
+        SELECT address_street, COUNT(*) AS cnt FROM residents
+        WHERE {where} AND address_street IS NOT NULL AND address_street != ''
+        GROUP BY address_street ORDER BY cnt DESC LIMIT 15
     """), params)
+
+    def _pct(numerator, denominator):
+        return round(numerator / max(denominator, 1) * 100, 1)
+
+    internet_denom = r[19] if hide_blank else total
+    sewage_denom = r[17] if hide_blank else total
+    transport_denom = r[18] if hide_blank else total
+    pests_denom = r[16] if hide_blank else total
 
     return {
         "total": r[0],
@@ -152,10 +165,10 @@ async def analytics(
             {"label": "N/I", "count": r[6]},
         ],
         "infrastructure": {
-            "internet_pct": round(r[7] / total * 100, 1),
-            "sewage_pct": round(r[8] / total * 100, 1),
-            "transport_pct": round(r[9] / total * 100, 1),
-            "pests_pct": round(r[10] / total * 100, 1),
+            "internet_pct": _pct(r[7], internet_denom),
+            "sewage_pct": _pct(r[8], sewage_denom),
+            "transport_pct": _pct(r[9], transport_denom),
+            "pests_pct": _pct(r[10], pests_denom),
         },
         "avg_household": round(float(r[11]), 1),
         "completion_distribution": {
@@ -168,5 +181,5 @@ async def analytics(
         "race": [{"race": x[0], "count": x[1]} for x in race.fetchall()],
         "neighborhood_problems": [{"problem": x[0], "count": x[1]} for x in problems.fetchall()],
         "internet_types": [{"type": x[0], "count": x[1]} for x in internet_types.fetchall()],
-        "cep_distribution": [{"cep": x[0], "count": x[1]} for x in cep_dist.fetchall()],
+        "street_distribution": [{"street": x[0], "count": x[1]} for x in street_dist.fetchall()],
     }

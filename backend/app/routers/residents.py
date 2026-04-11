@@ -46,6 +46,7 @@ class CreateResidentRequest(BaseModel):
     household_profiles: list[str] = []
     internet_access: str | None = None
     has_sewage: bool | None = None
+    has_pests: bool | None = None
     neighborhood_problems: list[str] = []
     main_priority_request: str | None = None
 
@@ -96,6 +97,7 @@ class UpdateResidentRequest(BaseModel):
     household_profiles: list[str] | None = None
     internet_access: str | None = None
     has_sewage: bool | None = None
+    has_pests: bool | None = None
     neighborhood_problems: list[str] | None = None
     main_priority_request: str | None = None
 
