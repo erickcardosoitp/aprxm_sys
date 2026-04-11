@@ -944,10 +944,13 @@ export default function ResidentsPage() {
   const load = async () => {
     try {
       const params: Record<string, string> = {}
-      if (activeTab === 'visitantes') params.type = 'guest'
-      else params.type = 'member'
-      if (filterStatus) params.status = filterStatus
-      if (search.trim().length >= 2) params.q = search.trim()
+      if (search.trim().length >= 2) {
+        params.q = search.trim()
+      } else {
+        if (activeTab === 'visitantes') params.type = 'guest'
+        else params.type = 'member'
+        if (filterStatus) params.status = filterStatus
+      }
       const res = await api.get<Resident[]>('/residents', { params })
       setResidents(res.data)
     } catch {
@@ -977,10 +980,12 @@ export default function ResidentsPage() {
   useEffect(() => { load() }, [activeTab, filterStatus, search])
   useEffect(() => { loadDelinquents(); loadCounts() }, [])
 
-  // Client-side split: associados = members without responsible_id, dependentes = members with responsible_id
+  const isSearching = search.trim().length >= 2
   const displayedResidents = residents.filter(r => {
-    if (activeTab === 'associados') { if (r.type !== 'member' || r.responsible_id) return false }
-    else if (activeTab === 'dependentes') { if (r.type !== 'member' || !r.responsible_id) return false }
+    if (!isSearching) {
+      if (activeTab === 'associados') { if (r.type !== 'member' || r.responsible_id) return false }
+      else if (activeTab === 'dependentes') { if (r.type !== 'member' || !r.responsible_id) return false }
+    }
     if (filterDelinquent && !delinquentIds.has(r.id)) return false
     return true
   })
