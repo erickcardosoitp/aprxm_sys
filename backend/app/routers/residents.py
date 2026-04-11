@@ -2,6 +2,7 @@ from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -264,7 +265,16 @@ async def list_residents(
     if type:
         stmt = stmt.where(Resident.type == type)
     if q:
-        stmt = stmt.where(Resident.full_name.ilike(f"%{q}%"))
+        q_digits = ''.join(c for c in q if c.isdigit())
+        filters = [Resident.full_name.ilike(f"%{q}%")]
+        if q_digits:
+            from sqlalchemy import func
+            filters.append(func.regexp_replace(Resident.phone_primary, r'\D', '', 'g').ilike(f"%{q_digits}%"))
+            filters.append(func.regexp_replace(Resident.phone_secondary, r'\D', '', 'g').ilike(f"%{q_digits}%"))
+        else:
+            filters.append(Resident.phone_primary.ilike(f"%{q}%"))
+            filters.append(Resident.phone_secondary.ilike(f"%{q}%"))
+        stmt = stmt.where(or_(*filters))
     stmt = stmt.order_by(Resident.full_name)
     result = await session.execute(stmt)
     return [_serialize(r) for r in result.scalars().all()]
