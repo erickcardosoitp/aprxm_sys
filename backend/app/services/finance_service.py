@@ -53,9 +53,16 @@ class FinanceService:
         opened_at: datetime,
         closed_at: datetime,
         notes: str | None = None,
+        manual_pix: Decimal | None = None,
+        manual_dinheiro: Decimal | None = None,
+        manual_total_bruto: Decimal | None = None,
+        manual_total_baixas: Decimal | None = None,
+        quebra_caixa: Decimal | None = None,
     ) -> CashSession:
-        expected = opening_balance + closing_balance
-        diff = closing_balance - opening_balance
+        bruto = manual_total_bruto or Decimal("0")
+        baixas = manual_total_baixas or Decimal("0")
+        expected = opening_balance + bruto - baixas
+        diff = closing_balance - expected
         session = CashSession(
             association_id=association_id,
             opened_by=created_by,
@@ -69,6 +76,11 @@ class FinanceService:
             origin="Manual",
             opened_at=opened_at,
             closed_at=closed_at,
+            manual_pix=manual_pix,
+            manual_dinheiro=manual_dinheiro,
+            manual_total_bruto=manual_total_bruto,
+            manual_total_baixas=manual_total_baixas,
+            quebra_caixa=quebra_caixa,
         )
         self._session.add(session)
         await self._session.flush()

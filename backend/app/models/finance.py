@@ -72,6 +72,11 @@ class CashSession(SQLModel, table=True):
     difference: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
     notes: str | None = None
     origin: str = Field(default="Sessão de Caixa", max_length=50)
+    manual_pix: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
+    manual_dinheiro: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
+    manual_total_bruto: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
+    manual_total_baixas: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
+    quebra_caixa: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
     opened_at: datetime = Field(default_factory=datetime.utcnow)
     closed_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -38,12 +38,19 @@ interface Session {
   id: string; status: string; opening_balance: string
   closing_balance: string | null; expected_balance: string | null
   difference: string | null; opened_at: string; closed_at: string | null
-  origin?: string
+  origin?: string; association_name?: string
+  operador_name?: string; conferido_por?: string
+  total_pix?: string; total_dinheiro?: string
+  total_bruto?: string; total_baixas?: string
+  quebra_caixa?: string | null
 }
 
 interface ManualSessionForm {
   opening_balance: string; closing_balance: string
   opened_at: string; closed_at: string; notes: string
+  manual_pix: string; manual_dinheiro: string
+  manual_total_bruto: string; manual_total_baixas: string
+  quebra_caixa: string
 }
 
 interface Mensalidade {
@@ -96,7 +103,7 @@ export default function FinanceiroPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [showManualSession, setShowManualSession] = useState(false)
-  const [manualForm, setManualForm] = useState<ManualSessionForm>({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '' })
+  const [manualForm, setManualForm] = useState<ManualSessionForm>({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_bruto: '', manual_total_baixas: '', quebra_caixa: '' })
   const [savingManual, setSavingManual] = useState(false)
 
   // Open cash session
@@ -208,14 +215,19 @@ export default function FinanceiroPage() {
     setSavingManual(true)
     try {
       await api.post('/finance/sessions/manual', {
-        opening_balance: parseFloat(manualForm.opening_balance),
-        closing_balance: parseFloat(manualForm.closing_balance),
+        opening_balance: parseFloat(manualForm.opening_balance) || 0,
+        closing_balance: parseFloat(manualForm.closing_balance) || 0,
         opened_at: new Date(manualForm.opened_at).toISOString(),
         closed_at: new Date(manualForm.closed_at).toISOString(),
         notes: manualForm.notes || null,
+        manual_pix: manualForm.manual_pix ? parseFloat(manualForm.manual_pix) : null,
+        manual_dinheiro: manualForm.manual_dinheiro ? parseFloat(manualForm.manual_dinheiro) : null,
+        manual_total_bruto: manualForm.manual_total_bruto ? parseFloat(manualForm.manual_total_bruto) : null,
+        manual_total_baixas: manualForm.manual_total_baixas ? parseFloat(manualForm.manual_total_baixas) : null,
+        quebra_caixa: manualForm.quebra_caixa ? parseFloat(manualForm.quebra_caixa) : null,
       })
       setShowManualSession(false)
-      setManualForm({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '' })
+      setManualForm({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_bruto: '', manual_total_baixas: '', quebra_caixa: '' })
       loadSessions()
     } catch { /* ignore */ } finally { setSavingManual(false) }
   }
@@ -1114,35 +1126,49 @@ export default function FinanceiroPage() {
               ) : sessions.length === 0 ? (
                 <div className="p-6 text-center text-gray-400 text-sm">Nenhuma sessão encontrada.</div>
               ) : (
-                <ul className="divide-y divide-gray-100">
-                  {sessions.map(s => {
-                    const diff = s.difference ? parseFloat(s.difference) : null
-                    const isManual = s.origin === 'Manual'
-                    return (
-                      <li key={s.id} className="px-4 py-3">
-                        <div className="flex items-center justify-between gap-3 mb-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium text-gray-800">{fmtDate(s.opened_at)}</p>
-                            {isManual && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">Manual</span>}
-                          </div>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                            {s.status === 'open' ? 'Aberta' : 'Fechada'}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-                          <span>Abertura: <strong>{fmt(s.opening_balance)}</strong></span>
-                          {s.closing_balance && <span>Fechamento: <strong>{fmt(s.closing_balance)}</strong></span>}
-                          {diff !== null && (
-                            <span className={diff === 0 ? 'text-green-600' : diff > 0 ? 'text-blue-600' : 'text-red-600'}>
-                              Dif: <strong>{diff >= 0 ? '+' : ''}{fmt(diff)}</strong>
-                            </span>
-                          )}
-                        </div>
-                        {s.closed_at && <p className="text-xs text-gray-400 mt-0.5">Fechado: {fmtDate(s.closed_at)}</p>}
-                      </li>
-                    )
-                  })}
-                </ul>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs min-w-[1100px]">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr>
+                        {['Data','Associação','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Origem'].map(h => (
+                          <th key={h} className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {sessions.map(s => {
+                        const bruto = parseFloat(s.total_bruto ?? '0')
+                        const baixas = parseFloat(s.total_baixas ?? '0')
+                        const liquido = bruto - baixas
+                        const diff = s.difference != null ? parseFloat(s.difference) : null
+                        const isManual = s.origin === 'Manual'
+                        return (
+                          <tr key={s.id} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-800 font-medium">{fmtDate(s.opened_at)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-600">{s.association_name ?? '—'}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-600">{s.operador_name ?? '—'}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{fmt(s.total_pix ?? '0')}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{fmt(s.total_dinheiro ?? '0')}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{fmt(bruto)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{fmt(baixas)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap font-semibold text-gray-800">{fmt(liquido)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{s.closing_balance ? fmt(s.closing_balance) : '—'}</td>
+                            <td className={`px-3 py-2 whitespace-nowrap font-semibold ${diff === null ? 'text-gray-400' : diff === 0 ? 'text-green-600' : diff > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                              {diff !== null ? `${diff >= 0 ? '+' : ''}${fmt(diff)}` : '—'}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-600">{s.conferido_por ?? '—'}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{s.quebra_caixa ? fmt(s.quebra_caixa) : '—'}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded-full font-medium ${isManual ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-600'}`}>
+                                {s.origin ?? 'Sessão de Caixa'}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
 
@@ -1371,44 +1397,84 @@ export default function FinanceiroPage() {
         </div>
       )}
       {showManualSession && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-5 flex flex-col gap-4">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-5 flex flex-col gap-4 my-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-gray-800">Nova Sessão Manual</h2>
               <button onClick={() => setShowManualSession(false)} className="text-gray-400 text-xl leading-none">×</button>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Saldo inicial (R$)</label>
-                <input type="number" min="0" step="0.01" value={manualForm.opening_balance}
-                  onChange={e => setManualForm(f => ({ ...f, opening_balance: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Saldo final (R$)</label>
-                <input type="number" min="0" step="0.01" value={manualForm.closing_balance}
-                  onChange={e => setManualForm(f => ({ ...f, closing_balance: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Data/hora abertura</label>
+                <label className="block text-xs text-gray-500 mb-1">Data/hora abertura *</label>
                 <input type="datetime-local" value={manualForm.opened_at}
                   onChange={e => setManualForm(f => ({ ...f, opened_at: e.target.value }))}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Data/hora fechamento</label>
+                <label className="block text-xs text-gray-500 mb-1">Data/hora fechamento *</label>
                 <input type="datetime-local" value={manualForm.closed_at}
                   onChange={e => setManualForm(f => ({ ...f, closed_at: e.target.value }))}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
               </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Saldo inicial (R$) *</label>
+                <input type="number" min="0" step="0.01" value={manualForm.opening_balance}
+                  onChange={e => setManualForm(f => ({ ...f, opening_balance: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Conf. Cega / Saldo final (R$) *</label>
+                <input type="number" min="0" step="0.01" value={manualForm.closing_balance}
+                  onChange={e => setManualForm(f => ({ ...f, closing_balance: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">R$ PIX</label>
+                <input type="number" min="0" step="0.01" value={manualForm.manual_pix}
+                  onChange={e => setManualForm(f => ({ ...f, manual_pix: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">R$ Dinheiro</label>
+                <input type="number" min="0" step="0.01" value={manualForm.manual_dinheiro}
+                  onChange={e => setManualForm(f => ({ ...f, manual_dinheiro: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">R$ Total Bruto Lançado</label>
+                <input type="number" min="0" step="0.01" value={manualForm.manual_total_bruto}
+                  onChange={e => setManualForm(f => ({ ...f, manual_total_bruto: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">R$ Baixas</label>
+                <input type="number" min="0" step="0.01" value={manualForm.manual_total_baixas}
+                  onChange={e => setManualForm(f => ({ ...f, manual_total_baixas: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Quebra de Caixa (R$)</label>
+                <input type="number" min="0" step="0.01" value={manualForm.quebra_caixa}
+                  onChange={e => setManualForm(f => ({ ...f, quebra_caixa: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Observações</label>
+                <input type="text" value={manualForm.notes}
+                  onChange={e => setManualForm(f => ({ ...f, notes: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Opcional" />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Observações</label>
-              <input type="text" value={manualForm.notes}
-                onChange={e => setManualForm(f => ({ ...f, notes: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Opcional" />
-            </div>
+            {manualForm.manual_total_bruto && manualForm.manual_total_baixas && (
+              <div className="bg-gray-50 rounded-lg px-4 py-2 text-xs text-gray-600 flex gap-4">
+                <span>Líquido: <strong className="text-gray-800">{fmt((parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0))}</strong></span>
+                {manualForm.closing_balance && manualForm.opening_balance && (
+                  <span>Sobra/Falta: <strong className={(() => { const d = (parseFloat(manualForm.closing_balance)||0) - ((parseFloat(manualForm.opening_balance)||0) + (parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0)); return d === 0 ? 'text-green-600' : d > 0 ? 'text-blue-600' : 'text-red-600' })()}>
+                    {(() => { const d = (parseFloat(manualForm.closing_balance)||0) - ((parseFloat(manualForm.opening_balance)||0) + (parseFloat(manualForm.manual_total_bruto)||0) - (parseFloat(manualForm.manual_total_baixas)||0)); return `${d >= 0 ? '+' : ''}${fmt(d)}` })()}
+                  </strong></span>
+                )}
+              </div>
+            )}
             <button onClick={handleCreateManualSession} disabled={savingManual}
               className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
               {savingManual ? 'Salvando…' : 'Criar Sessão Manual'}

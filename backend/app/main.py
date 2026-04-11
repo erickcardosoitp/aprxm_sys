@@ -124,6 +124,15 @@ async def _run_migrations() -> None:
         await session.execute(text(
             "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS origin VARCHAR(50) DEFAULT 'Sessão de Caixa'"
         ))
+        for col in [
+            "manual_pix NUMERIC(12,2)",
+            "manual_dinheiro NUMERIC(12,2)",
+            "manual_total_bruto NUMERIC(12,2)",
+            "manual_total_baixas NUMERIC(12,2)",
+            "quebra_caixa NUMERIC(12,2)",
+        ]:
+            name = col.split()[0]
+            await session.execute(text(f"ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS {col}"))
 
         await session.commit()
 

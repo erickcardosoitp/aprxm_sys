@@ -32,6 +32,12 @@ class ManualSessionRequest(BaseModel):
     opened_at: datetime
     closed_at: datetime
     notes: str | None = None
+    manual_pix: Decimal | None = Field(default=None, ge=0)
+    manual_dinheiro: Decimal | None = Field(default=None, ge=0)
+    manual_total_bruto: Decimal | None = Field(default=None, ge=0)
+    manual_total_baixas: Decimal | None = Field(default=None, ge=0)
+    quebra_caixa: Decimal | None = Field(default=None, ge=0)
+    funcionario: str | None = None
 
 
 class SangriaRequest(BaseModel):
@@ -163,6 +169,11 @@ async def create_manual_session(
         opened_at=body.opened_at,
         closed_at=body.closed_at,
         notes=body.notes,
+        manual_pix=body.manual_pix,
+        manual_dinheiro=body.manual_dinheiro,
+        manual_total_bruto=body.manual_total_bruto,
+        manual_total_baixas=body.manual_total_baixas,
+        quebra_caixa=body.quebra_caixa,
     )
     await session.commit()
     return {"id": str(cash.id), "origin": cash.origin}
@@ -353,24 +364,37 @@ async def list_sessions(
                 u_open.full_name  AS operador_name,
                 u_close.full_name AS conferido_por,
                 cs.origin,
-                COALESCE(SUM(CASE WHEN t.type = 'income'
-                    AND pm.name ILIKE '%pix%' THEN t.amount ELSE 0 END), 0) AS total_pix,
-                COALESCE(SUM(CASE WHEN t.type = 'income'
-                    AND (pm.name ILIKE '%dinheiro%' OR pm.name ILIKE '%espécie%'
-                         OR pm.name ILIKE '%especie%' OR t.payment_method_id IS NULL)
-                    THEN t.amount ELSE 0 END), 0) AS total_dinheiro,
-                COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) AS total_bruto,
-                COALESCE(SUM(CASE WHEN t.type = 'sangria' THEN t.amount ELSE 0 END), 0) AS total_baixas
+                a.name            AS association_name,
+                cs.quebra_caixa,
+                CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_pix, 0)
+                     ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
+                          AND pm.name ILIKE '%pix%' THEN t.amount ELSE 0 END), 0)
+                END AS total_pix,
+                CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_dinheiro, 0)
+                     ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
+                          AND (pm.name ILIKE '%dinheiro%' OR pm.name ILIKE '%espécie%'
+                               OR pm.name ILIKE '%especie%' OR t.payment_method_id IS NULL)
+                          THEN t.amount ELSE 0 END), 0)
+                END AS total_dinheiro,
+                CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_total_bruto, 0)
+                     ELSE COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0)
+                END AS total_bruto,
+                CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_total_baixas, 0)
+                     ELSE COALESCE(SUM(CASE WHEN t.type = 'sangria' THEN t.amount ELSE 0 END), 0)
+                END AS total_baixas
             FROM cash_sessions cs
             LEFT JOIN users u_open  ON u_open.id  = cs.opened_by
             LEFT JOIN users u_close ON u_close.id = cs.closed_by
+            LEFT JOIN associations a ON a.id = cs.association_id
             LEFT JOIN transactions t
                 ON t.cash_session_id = cs.id AND t.association_id = cs.association_id
             LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
             WHERE cs.association_id = :aid
             GROUP BY cs.id, cs.status, cs.opened_at, cs.closed_at,
                      cs.opening_balance, cs.closing_balance, cs.expected_balance,
-                     cs.difference, u_open.full_name, u_close.full_name, cs.origin
+                     cs.difference, u_open.full_name, u_close.full_name, cs.origin,
+                     a.name, cs.quebra_caixa, cs.manual_pix, cs.manual_dinheiro,
+                     cs.manual_total_bruto, cs.manual_total_baixas
             ORDER BY cs.opened_at DESC
         """),
         {"aid": str(current.association_id)},
@@ -389,10 +413,12 @@ async def list_sessions(
             "operador_name": r[8],
             "conferido_por": r[9],
             "origin": r[10] or "Sessão de Caixa",
-            "total_pix": str(round(float(r[11]), 2)),
-            "total_dinheiro": str(round(float(r[12]), 2)),
-            "total_bruto": str(round(float(r[13]), 2)),
-            "total_baixas": str(round(float(r[14]), 2)),
+            "association_name": r[11],
+            "quebra_caixa": str(round(float(r[12]), 2)) if r[12] is not None else None,
+            "total_pix": str(round(float(r[13]), 2)),
+            "total_dinheiro": str(round(float(r[14]), 2)),
+            "total_bruto": str(round(float(r[15]), 2)),
+            "total_baixas": str(round(float(r[16]), 2)),
         }
         for r in rows
     ]
