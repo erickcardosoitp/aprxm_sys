@@ -7,7 +7,7 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const raw = sessionStorage.getItem('aprxm-auth')
+  const raw = localStorage.getItem('aprxm-auth') ?? sessionStorage.getItem('aprxm-auth')
   const token = raw ? JSON.parse(raw)?.state?.token : null
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
@@ -17,6 +17,7 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
+      localStorage.removeItem('aprxm-auth')
       sessionStorage.removeItem('aprxm-auth')
       toast.error('Sessão expirada. Faça login novamente.', { duration: 4000 })
       setTimeout(() => { window.location.href = '/login' }, 1500)
