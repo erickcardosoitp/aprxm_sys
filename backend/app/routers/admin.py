@@ -150,7 +150,7 @@ async def get_audit_log(
              "detalhe": r[4], "data": str(r[5]), "autor": r[6]} for r in result.fetchall()]
 
 
-@router.post("/reset-database", summary="Resetar base de dados (manter usuários)")
+@router.post("/reset-database", summary="Resetar base de dados (manter usuários e moradores)")
 async def reset_database(
     body: ResetDatabaseRequest,
     current: CurrentUser = Depends(require_admin),
@@ -162,11 +162,11 @@ async def reset_database(
     aid = str(current.association_id)
     tables = [
         "reconciliations", "bank_statements",
+        "migration_payments",
         "mensalidades",
         "package_events", "packages",
         "transactions", "cash_sessions",
         "service_order_comments", "service_order_history", "service_orders",
-        "residents",
     ]
     for table in tables:
         await session.execute(
@@ -174,20 +174,41 @@ async def reset_database(
             {"aid": aid},
         )
 
-    # Update association settings initial balance
-    await session.execute(
-        text("""
-            UPDATE association_settings
-               SET default_cash_balance = :bal, updated_at = NOW()
-             WHERE association_id = :aid
-        """),
-        {"aid": aid, "bal": str(body.initial_balance)},
-    )
+    tx_id = None
+    if body.initial_balance > 0:
+        from uuid import uuid4
+        from datetime import datetime
+        session_id = uuid4()
+        tx_id = uuid4()
+        now = datetime.utcnow()
+
+        await session.execute(
+            text("""
+                INSERT INTO cash_sessions (id, association_id, opened_by, status,
+                    opening_balance, closing_balance, expected_balance, difference,
+                    notes, opened_at, closed_at, created_at, updated_at)
+                VALUES (:sid, :aid, :uid, 'closed', 0, :bal, :bal, 0,
+                    'Saldo inicial (migração)', :now, :now, :now, :now)
+            """),
+            {"sid": str(session_id), "aid": aid, "uid": str(current.user_id),
+             "bal": str(body.initial_balance), "now": now},
+        )
+        await session.execute(
+            text("""
+                INSERT INTO transactions (id, association_id, cash_session_id, type,
+                    amount, description, created_by, transaction_at, created_at, updated_at)
+                VALUES (:tid, :aid, :sid, 'income', :bal, 'Saldo inicial (migração)',
+                    :uid, :now, :now, :now)
+            """),
+            {"tid": str(tx_id), "aid": aid, "sid": str(session_id),
+             "bal": str(body.initial_balance), "uid": str(current.user_id), "now": now},
+        )
 
     return {
         "ok": True,
-        "message": "Base de dados resetada. Usuários mantidos.",
+        "message": "Movimentações resetadas. Usuários e moradores mantidos.",
         "initial_balance": str(body.initial_balance),
+        "initial_transaction_id": str(tx_id) if tx_id else None,
     }
 
 

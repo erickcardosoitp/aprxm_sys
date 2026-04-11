@@ -127,6 +127,7 @@ export default function SettingsPage() {
   const [assocForm, setAssocForm] = useState<AssociationData>({})
   const [loadingAssoc, setLoadingAssoc] = useState(false)
   const [savingAssoc, setSavingAssoc] = useState(false)
+  const [users, setUsers] = useState<{ id: string; full_name: string; role: string }[]>([])
 
   // ── Cadastros Básicos state ──
   const [categorias, setCategorias] = useState<string[]>([])
@@ -230,17 +231,21 @@ export default function SettingsPage() {
 
   useEffect(() => { load() }, [])
 
-  // ── Load Association data ──
+  // ── Load Association data + users ──
   useEffect(() => {
     if (!canSeeAssociation) return
     const loadAssoc = async () => {
       setLoadingAssoc(true)
       try {
-        const res = await api.get<AssociationData>('/settings/association')
-        setAssoc(res.data)
-        setAssocForm(res.data)
+        const [assocRes, usersRes] = await Promise.all([
+          api.get<AssociationData>('/settings/association'),
+          api.get<{ id: string; full_name: string; role: string }[]>('/admin/users'),
+        ])
+        setAssoc(assocRes.data)
+        setAssocForm(assocRes.data)
+        setUsers(usersRes.data)
       } catch {
-        // Association settings may not exist yet; ignore silently
+        // ignore silently
       } finally {
         setLoadingAssoc(false)
       }
@@ -505,15 +510,18 @@ export default function SettingsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">ID do Presidente (UUID)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Presidente</label>
                   <p className="text-xs text-gray-400 mb-2">Usuário responsável pela presidência da associação.</p>
-                  <input
-                    type="text"
+                  <select
                     value={assocForm.president_user_id ?? ''}
                     onChange={e => setAssocField('president_user_id', e.target.value)}
-                    className={inputCls}
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  />
+                    className={`${inputCls} bg-white`}
+                  >
+                    <option value="">— Nenhum —</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             )}
@@ -615,7 +623,7 @@ export default function SettingsPage() {
             <div>
               <h2 className="font-semibold text-gray-800">Resetar Base de Dados</h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Apaga todos os dados operacionais (moradores, transações, encomendas, ordens) mantendo os usuários.
+                Apaga todos os dados operacionais (transações, encomendas, ordens) mantendo os usuários e moradores.
                 Use para reiniciar o ambiente de testes com saldo inicial limpo.
               </p>
             </div>

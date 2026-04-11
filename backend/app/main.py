@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, auth, finance, financeiro, geral, mensalidades, packages, residents, service_orders, superadmin, uploads
+from app.routers import admin, auth, finance, financeiro, geral, mensalidades, packages, residents, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -33,6 +33,65 @@ async def _run_migrations() -> None:
                 ADD COLUMN IF NOT EXISTS proof_stock           INTEGER DEFAULT 0
         """))
         await session.execute(text("ALTER TABLE residents ADD COLUMN IF NOT EXISTS has_pests BOOLEAN"))
+
+        # admin_master role
+        await session.execute(text("""
+            DO $$ BEGIN
+                ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'admin_master';
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+
+        # associations: presidente
+        await session.execute(text(
+            "ALTER TABLE associations ADD COLUMN IF NOT EXISTS presidente_user_id UUID REFERENCES users(id)"
+        ))
+
+        # association_settings: permitir_transferencia
+        await session.execute(text(
+            "ALTER TABLE association_settings ADD COLUMN IF NOT EXISTS permitir_transferencia BOOLEAN DEFAULT FALSE"
+        ))
+
+        # transactions: transfer fields
+        await session.execute(text(
+            "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_transfer BOOLEAN DEFAULT FALSE"
+        ))
+        await session.execute(text(
+            "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_counterpart_id UUID"
+        ))
+
+        # migration_payments table
+        await session.execute(text("""
+            DO $$ BEGIN
+                CREATE TYPE migration_payment_tipo AS ENUM ('mensalidade', 'acordo');
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS migration_payments (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id),
+                resident_id UUID NOT NULL REFERENCES residents(id),
+                competencia VARCHAR(7) NOT NULL,
+                tipo migration_payment_tipo NOT NULL,
+                origem VARCHAR(50) NOT NULL DEFAULT 'migracao',
+                created_by UUID NOT NULL REFERENCES users(id),
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_migration_payment_period UNIQUE (association_id, resident_id, competencia)
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_migration_payments_association_id ON migration_payments(association_id)"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_migration_payments_resident_id ON migration_payments(resident_id)"
+        ))
+
+        # transactions.cash_session_id nullable (saída externa)
+        await session.execute(text(
+            "ALTER TABLE transactions ALTER COLUMN cash_session_id DROP NOT NULL"
+        ))
+
         await session.commit()
 
 
@@ -72,6 +131,7 @@ app.include_router(mensalidades.router, prefix=PREFIX)
 app.include_router(geral.router, prefix=PREFIX)
 app.include_router(superadmin.router, prefix=PREFIX)
 app.include_router(uploads.router, prefix=PREFIX)
+app.include_router(transfers.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

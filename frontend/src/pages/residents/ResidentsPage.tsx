@@ -598,14 +598,34 @@ interface ResidentPackage {
   id: string; status: string; received_at: string; carrier_name?: string; tracking_code?: string; object_type?: string
 }
 
-type ProfileTab = 'mensalidades' | 'inadimplencia' | 'encomendas'
+interface MigrationEntry {
+  id: string; competencia: string; tipo: string; origem: string
+}
+
+type ProfileTab = 'mensalidades' | 'inadimplencia' | 'encomendas' | 'migracao'
+
+const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+function fmtComp(comp: string) {
+  const [y, m] = comp.split('-')
+  return `${MONTH_NAMES[parseInt(m) - 1]}/${y}`
+}
 
 function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClose: () => void }) {
   const [mensalidades, setMensalidades] = useState<MensalidadeEntry[]>([])
   const [inadimplencias, setInadimplencias] = useState<InadimplenciaEntry[]>([])
   const [pkgs, setPkgs] = useState<ResidentPackage[]>([])
+  const [migracoes, setMigracoes] = useState<MigrationEntry[]>([])
   const [tab, setTab] = useState<ProfileTab>('mensalidades')
   const [loading, setLoading] = useState(true)
+  const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_ate: '', mode: 'single' as 'single' | 'bulk' })
+  const [migSaving, setMigSaving] = useState(false)
+
+  const loadMigracoes = async () => {
+    try {
+      const res = await api.get<MigrationEntry[]>(`/mensalidades/migration/residents/${resident.id}`)
+      setMigracoes(res.data)
+    } catch { /* silent */ }
+  }
 
   useEffect(() => {
     const fetch = async () => {
@@ -623,7 +643,43 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
       setLoading(false)
     }
     fetch()
+    loadMigracoes()
   }, [resident.id])
+
+  const handleMigSave = async () => {
+    setMigSaving(true)
+    try {
+      if (migForm.mode === 'bulk') {
+        if (!migForm.quitado_ate) { toast.error('Informe o mês quitado até.'); return }
+        await api.post('/mensalidades/migration/bulk', {
+          resident_id: resident.id,
+          quitado_ate: migForm.quitado_ate,
+          tipo: migForm.tipo,
+        })
+        toast.success('Histórico de migração gerado!')
+      } else {
+        if (!migForm.competencia) { toast.error('Informe a competência.'); return }
+        await api.post('/mensalidades/migration', {
+          resident_id: resident.id,
+          competencia: migForm.competencia,
+          tipo: migForm.tipo,
+        })
+        toast.success('Registro de migração criado!')
+      }
+      await loadMigracoes()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
+    } finally {
+      setMigSaving(false)
+    }
+  }
+
+  const handleMigDelete = async (competencia: string) => {
+    try {
+      await api.delete(`/mensalidades/migration/residents/${resident.id}/${competencia}`)
+      await loadMigracoes()
+    } catch { toast.error('Erro ao remover.') }
+  }
 
   const handleComprovante = async (id: string) => {
     try {
@@ -669,10 +725,10 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
         </div>
 
         <div className="flex gap-1 bg-gray-100 p-1 m-4 rounded-xl shrink-0">
-          {(['mensalidades', 'inadimplencia', 'encomendas'] as ProfileTab[]).map(t => (
+          {(['mensalidades', 'inadimplencia', 'encomendas', 'migracao'] as ProfileTab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
-              {t === 'mensalidades' ? 'Mensalidades' : t === 'inadimplencia' ? 'Inadimplência' : 'Encomendas'}
+              {t === 'mensalidades' ? 'Mensalidades' : t === 'inadimplencia' ? 'Inadimplência' : t === 'encomendas' ? 'Encomendas' : 'Migração'}
             </button>
           ))}
         </div>
@@ -730,7 +786,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                 ))}
               </ul>
             )
-          ) : (
+          ) : tab === 'encomendas' ? (
             pkgs.length === 0 ? (
               <div className="py-8 text-center text-gray-400 text-sm">Nenhuma encomenda registrada.</div>
             ) : (
@@ -759,6 +815,63 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                 ))}
               </ul>
             )
+          ) : (
+            /* ── Migração ── */
+            <div className="flex flex-col gap-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <p className="text-xs font-semibold text-amber-800 mb-3">Histórico de Pagamentos (Migração)</p>
+                <div className="flex gap-2 mb-3">
+                  {(['single', 'bulk'] as const).map(m => (
+                    <button key={m} onClick={() => setMigForm(f => ({ ...f, mode: m }))}
+                      className={`flex-1 py-1.5 text-xs rounded-lg border font-medium transition ${migForm.mode === m ? 'bg-amber-600 text-white border-amber-600' : 'border-amber-300 text-amber-700'}`}>
+                      {m === 'single' ? '1 Mês' : 'Quitado até…'}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <select value={migForm.tipo} onChange={e => setMigForm(f => ({ ...f, tipo: e.target.value }))}
+                    className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none">
+                    <option value="mensalidade">Mensalidade</option>
+                    <option value="acordo">Acordo</option>
+                  </select>
+                  {migForm.mode === 'single' ? (
+                    <input type="month" value={migForm.competencia}
+                      onChange={e => setMigForm(f => ({ ...f, competencia: e.target.value }))}
+                      className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
+                  ) : (
+                    <div>
+                      <label className="text-xs text-amber-700 mb-1 block">Quitado até (gera todos os meses anteriores)</label>
+                      <input type="month" value={migForm.quitado_ate}
+                        onChange={e => setMigForm(f => ({ ...f, quitado_ate: e.target.value }))}
+                        className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
+                    </div>
+                  )}
+                  <button onClick={handleMigSave} disabled={migSaving}
+                    className="bg-amber-600 hover:bg-amber-700 text-white py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50">
+                    {migSaving ? 'Salvando…' : 'Registrar'}
+                  </button>
+                </div>
+              </div>
+
+              {migracoes.length === 0 ? (
+                <p className="text-center text-gray-400 text-xs py-4">Nenhum registro de migração.</p>
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {migracoes.map(mp => (
+                    <li key={mp.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                      <div>
+                        <span className="text-sm font-medium text-gray-800">{fmtComp(mp.competencia)}</span>
+                        <span className="ml-2 text-xs text-gray-400">{mp.tipo === 'mensalidade' ? 'Mensalidade' : 'Acordo'}</span>
+                      </div>
+                      <button onClick={() => handleMigDelete(mp.competencia)}
+                        className="text-gray-300 hover:text-red-500 transition ml-2">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       </div>

@@ -32,8 +32,12 @@ class CurrentUser:
         return self.linked_association_ids
 
     @property
+    def is_admin_master(self) -> bool:
+        return self.role in ("admin_master", "superadmin")
+
+    @property
     def is_admin(self) -> bool:
-        return self.role in ("admin", "superadmin")
+        return self.role in ("admin", "admin_master", "superadmin")
 
     @property
     def is_conferente(self) -> bool:

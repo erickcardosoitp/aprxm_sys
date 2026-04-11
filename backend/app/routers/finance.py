@@ -225,6 +225,41 @@ async def register_transaction(
     return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
 
 
+@router.post("/transactions/offline", summary="Registrar saída externa (sem sessão ativa)")
+async def register_offline_transaction(
+    body: TransactionRequest,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Saída para pagamentos externos que não passam pelo caixa. Não afeta saldo de sessão."""
+    from datetime import datetime
+    from app.models.finance import Transaction
+
+    if body.type != TransactionType.expense:
+        from fastapi import HTTPException
+        raise HTTPException(400, "Saída externa só é permitida para despesas (expense).")
+
+    tx = Transaction(
+        association_id=current.association_id,
+        cash_session_id=None,
+        category_id=body.category_id,
+        payment_method_id=body.payment_method_id,
+        resident_id=body.resident_id,
+        type=TransactionType.expense,
+        amount=body.amount,
+        description=body.description,
+        reference_number=body.reference_number,
+        approval_status="approved",
+        approved_by=current.user_id,
+        approved_at=datetime.utcnow(),
+        created_by=current.user_id,
+    )
+    session.add(tx)
+    await session.flush()
+    await session.commit()
+    return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount), "offline": True}
+
+
 @router.get("/transactions", summary="Listar transações da sessão atual")
 async def list_transactions(
     session_id: UUID | None = None,

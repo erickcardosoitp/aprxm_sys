@@ -82,7 +82,7 @@ class Transaction(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     association_id: UUID = Field(foreign_key="associations.id", index=True)
-    cash_session_id: UUID = Field(foreign_key="cash_sessions.id", index=True)
+    cash_session_id: UUID | None = Field(default=None, foreign_key="cash_sessions.id", index=True)
     category_id: UUID | None = Field(default=None, foreign_key="transaction_categories.id")
     payment_method_id: UUID | None = Field(default=None, foreign_key="payment_methods.id")
     resident_id: UUID | None = Field(default=None, foreign_key="residents.id")
@@ -101,6 +101,10 @@ class Transaction(SQLModel, table=True):
     income_subtype: IncomeSubtype | None = Field(default=None, sa_column=Column(SAEnum(IncomeSubtype, name='income_subtype', create_type=False), nullable=True))
 
     package_id: UUID | None = Field(default=None, foreign_key="packages.id")
+
+    # transfer between associations
+    is_transfer: bool = Field(default=False)
+    transfer_counterpart_id: UUID | None = Field(default=None)
 
     # reversal (estorno)
     is_reversal: bool = Field(default=False)

@@ -21,6 +21,7 @@ class Association(SQLModel, table=True):
     phone: str | None = Field(default=None, max_length=20)
     email: str | None = Field(default=None, max_length=255)
     logo_url: str | None = None
+    presidente_user_id: UUID | None = Field(default=None, foreign_key="users.id")
     is_active: bool = Field(default=True)
     plan_name: str = Field(default="basic", max_length=50)
     plan_expires_at: datetime | None = None

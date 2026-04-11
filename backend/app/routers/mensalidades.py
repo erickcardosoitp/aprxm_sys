@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
 from app.models.mensalidade import Mensalidade
+from app.models.migration_payment import MigrationPaymentTipo
 from app.services.mensalidade_service import MensalidadeService
+from app.services.migration_payment_service import MigrationPaymentService
 
 router = APIRouter(prefix="/mensalidades", tags=["Mensalidades"])
 
@@ -181,6 +183,93 @@ async def pay_mensalidade(
         "next_month": _fmt(result["next"]) if result["next"] else None,
     }
 
+
+# ── Migration Payment endpoints ─────────────────────────────────────────────
+
+class CreateMigrationPaymentRequest(BaseModel):
+    resident_id: UUID
+    competencia: str = Field(pattern=r"^\d{4}-\d{2}$")
+    tipo: MigrationPaymentTipo = MigrationPaymentTipo.mensalidade
+
+
+class BulkMigrationRequest(BaseModel):
+    resident_id: UUID
+    quitado_ate: str = Field(pattern=r"^\d{4}-\d{2}$", description="Gera todos os meses até YYYY-MM")
+    tipo: MigrationPaymentTipo = MigrationPaymentTipo.mensalidade
+
+
+@router.post("/migration", summary="Registrar histórico de migração (1 competência)")
+async def create_migration_payment(
+    body: CreateMigrationPaymentRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = MigrationPaymentService(session)
+    mp = await svc.create(
+        association_id=current.association_id,
+        resident_id=body.resident_id,
+        competencia=body.competencia,
+        tipo=body.tipo,
+        created_by=current.user_id,
+    )
+    await session.commit()
+    return _fmt_mp(mp)
+
+
+@router.post("/migration/bulk", summary="Registrar migração em lote via quitado_ate")
+async def bulk_migration_payment(
+    body: BulkMigrationRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = MigrationPaymentService(session)
+    created = await svc.bulk_create_until(
+        association_id=current.association_id,
+        resident_id=body.resident_id,
+        quitado_ate=body.quitado_ate,
+        tipo=body.tipo,
+        created_by=current.user_id,
+    )
+    await session.commit()
+    return {"created": len(created), "quitado_ate": body.quitado_ate}
+
+
+@router.get("/migration/residents/{resident_id}", summary="Histórico de migração do morador")
+async def list_migration_payments(
+    resident_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    svc = MigrationPaymentService(session)
+    items = await svc.list_by_resident(current.association_id, resident_id)
+    return [_fmt_mp(mp) for mp in items]
+
+
+@router.delete("/migration/residents/{resident_id}/{competencia}", summary="Remover registro de migração")
+async def delete_migration_payment(
+    resident_id: UUID,
+    competencia: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = MigrationPaymentService(session)
+    deleted = await svc.delete(current.association_id, resident_id, competencia)
+    await session.commit()
+    return {"deleted": deleted}
+
+
+def _fmt_mp(mp) -> dict:
+    return {
+        "id": str(mp.id),
+        "resident_id": str(mp.resident_id),
+        "competencia": mp.competencia,
+        "tipo": mp.tipo,
+        "origem": mp.origem,
+        "created_at": mp.created_at.isoformat(),
+    }
+
+
+# ── Mensalidade fmt ──────────────────────────────────────────────────────────
 
 def _fmt(m: Mensalidade) -> dict:
     return {

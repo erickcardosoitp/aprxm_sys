@@ -326,6 +326,10 @@ export default function FinancePage() {
   const [selectedSession, setSelectedSession] = useState<CashSessionSummary | null>(null)
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
   const [approvalItem, setApprovalItem] = useState<PendingApproval | null>(null)
+  const [showOfflineExpense, setShowOfflineExpense] = useState(false)
+  const [offlineForm, setOfflineForm] = useState({ description: '', amount: '', category_id: '' })
+  const [offlineCategories, setOfflineCategories] = useState<{ id: string; name: string }[]>([])
+  const [savingOffline, setSavingOffline] = useState(false)
 
   // ── Extrato state ──
   const today = new Date().toISOString().slice(0, 10)
@@ -388,7 +392,11 @@ export default function FinancePage() {
     finally { setLoadingRel(false) }
   }
 
-  useEffect(() => { loadSession() }, [])
+  useEffect(() => {
+    loadSession()
+    api.get<{ id: string; name: string }[]>('/finance/categories', { params: { type: 'expense' } })
+      .then(r => setOfflineCategories(r.data)).catch(() => {})
+  }, [])
   useEffect(() => { loadTransactions() }, [session?.id])
   useEffect(() => { if (tab === 'sessoes') loadSessions() }, [tab])
   useEffect(() => { if (tab === 'extrato') loadExtrato() }, [tab])
@@ -404,12 +412,82 @@ export default function FinancePage() {
   const maxCash = settings ? parseFloat(settings.max_cash_before_sangria) : null
   const sangriaAlert = canSeeTotals && maxCash !== null && currentBalance > maxCash
 
+  const handleOfflineExpense = async () => {
+    if (!offlineForm.description.trim()) { toast.error('Informe a descrição.'); return }
+    const amt = parseFloat(offlineForm.amount)
+    if (!amt || amt <= 0) { toast.error('Valor inválido.'); return }
+    setSavingOffline(true)
+    try {
+      await api.post('/finance/transactions/offline', {
+        type: 'expense',
+        amount: amt,
+        description: offlineForm.description,
+        category_id: offlineForm.category_id || null,
+      })
+      toast.success('Saída externa registrada!')
+      setShowOfflineExpense(false)
+      setOfflineForm({ description: '', amount: '', category_id: '' })
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao registrar.')
+    } finally {
+      setSavingOffline(false)
+    }
+  }
+
   const fmtBRL = (v: string | undefined) => v != null ? `R$ ${parseFloat(v).toFixed(2)}` : '—'
   const fmtDate = (s: string) => new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 
   return (
     <div className="flex flex-col gap-6 p-4 max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900">Operação de Caixa</h1>
+
+      {/* ── Modal Saída Externa ── */}
+      {showOfflineExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="font-bold text-gray-900 text-sm">Adicionar Saída (sem caixa)</h2>
+              <button onClick={() => setShowOfflineExpense(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="px-5 py-4 flex flex-col gap-3">
+              <p className="text-xs text-gray-400">Registra uma saída que não passa pelo caixa. Não afeta saldo de sessão.</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Descrição</label>
+                <input value={offlineForm.description} onChange={e => setOfflineForm(f => ({ ...f, description: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+                  placeholder="Ex: Conta de luz, aluguel…" autoFocus />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Valor</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">R$</span>
+                  <input type="number" min="0.01" step="0.01" value={offlineForm.amount}
+                    onChange={e => setOfflineForm(f => ({ ...f, amount: e.target.value }))}
+                    className="w-full pl-9 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+                </div>
+              </div>
+              {offlineCategories.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
+                  <select value={offlineForm.category_id} onChange={e => setOfflineForm(f => ({ ...f, category_id: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#26619c]/40">
+                    <option value="">— Sem categoria —</option>
+                    {offlineCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 px-5 pb-5">
+              <button onClick={() => setShowOfflineExpense(false)}
+                className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50">Cancelar</button>
+              <button onClick={handleOfflineExpense} disabled={savingOffline}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                {savingOffline ? 'Salvando…' : 'Registrar Saída'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs — operators only see Frente de Caixa */}
       {isConferenteOrAbove && (
@@ -428,6 +506,14 @@ export default function FinancePage() {
       {tab === 'caixa' && (
         <>
           <CashSessionPanel session={session} onRefresh={loadSession} canConferencia={isConferenteOrAbove} />
+
+          {/* Saída Externa — disponível mesmo sem caixa aberto (admin+) */}
+          {isConferenteOrAbove && (
+            <button onClick={() => setShowOfflineExpense(true)}
+              className="flex items-center justify-center gap-2 border border-red-300 text-red-600 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-red-50 transition w-full">
+              <TrendingDown className="w-4 h-4" /> Adicionar Saída (sem caixa)
+            </button>
+          )}
 
           {session && (
             <>

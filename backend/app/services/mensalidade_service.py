@@ -25,6 +25,13 @@ class MensalidadeService:
         created_by: UUID,
         notes: str | None = None,
     ) -> Mensalidade:
+        from app.services.migration_payment_service import MigrationPaymentService
+        mig_svc = MigrationPaymentService(self._session)
+        if await mig_svc.exists(association_id, resident_id, reference_month):
+            raise UnprocessableError(
+                f"Competência {reference_month} já consta no histórico de migração. Mensalidade não gerada."
+            )
+
         m = Mensalidade(
             association_id=association_id,
             resident_id=resident_id,
@@ -134,7 +141,7 @@ class MensalidadeService:
 
         next_ref = f"{next_year:04d}-{next_month:02d}"
 
-        # Check if already exists
+        # Check if already exists in mensalidades or migration_payments
         stmt = select(Mensalidade).where(
             Mensalidade.association_id == current.association_id,
             Mensalidade.resident_id == current.resident_id,
@@ -142,7 +149,12 @@ class MensalidadeService:
         )
         result = await self._session.execute(stmt)
         if result.scalar_one_or_none():
-            return None  # already exists, skip silently
+            return None
+
+        from app.services.migration_payment_service import MigrationPaymentService
+        mig_svc = MigrationPaymentService(self._session)
+        if await mig_svc.exists(current.association_id, current.resident_id, next_ref):
+            return None
 
         # Due date: same day of month as current, next month
         day = current.due_date.day
