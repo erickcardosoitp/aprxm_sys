@@ -219,8 +219,8 @@ async def search_residents_global(
                 OR cpf ILIKE :qraw
                 OR phone_primary ILIKE :q
                 OR phone_secondary ILIKE :q
-                OR REGEXP_REPLACE(phone_primary, '\D', '', 'g') ILIKE :qdigits
-                OR REGEXP_REPLACE(phone_secondary, '\D', '', 'g') ILIKE :qdigits
+                OR REGEXP_REPLACE(phone_primary, '\\D', '', 'g') ILIKE :qdigits
+                OR REGEXP_REPLACE(phone_secondary, '\\D', '', 'g') ILIKE :qdigits
                 OR address_street ILIKE :q
                 OR address_city ILIKE :q
                 OR address_cep ILIKE :q

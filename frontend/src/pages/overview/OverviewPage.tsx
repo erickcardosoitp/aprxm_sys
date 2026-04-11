@@ -381,47 +381,21 @@ function SensoTab() {
           )}
 
           {/* ── Logradouros ── */}
-          <SectionCard icon={<MapPin className="w-4 h-4 text-teal-600" />} title="Associados por Logradouro — Madureira/RJ" accent="bg-teal-50/50">
-            <div className="flex flex-col gap-4">
-              {/* Map embed */}
-              <div className="rounded-xl overflow-hidden border border-gray-100">
-                <iframe
-                  title="Mapa Madureira"
-                  src="https://www.openstreetmap.org/export/embed.html?bbox=-43.3800%2C-22.9100%2C-43.2900%2C-22.8500&layer=mapnik"
-                  width="100%"
-                  height="240"
-                  style={{ border: 0, display: 'block' }}
-                  loading="lazy"
-                />
-              </div>
-              {/* Street ranking */}
-              {data.street_distribution.length > 0 ? (
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-xs font-medium text-gray-500 mb-1">Ranking de ruas (associados cadastrados)</p>
-                  {data.street_distribution.map((item, i) => {
-                    const maxCount = data.street_distribution[0]?.count ?? 1
-                    const pct = Math.round((item.count / maxCount) * 100)
-                    return (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400 w-4 text-right shrink-0">{i + 1}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between items-center mb-0.5">
-                            <span className="text-xs text-gray-700 truncate font-medium">{item.street}</span>
-                            <span className="text-xs font-bold text-teal-700 ml-2 shrink-0">{item.count}</span>
-                          </div>
-                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-1.5 bg-teal-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400 text-center py-4">Nenhum logradouro cadastrado nos filtros atuais.</p>
-              )}
-            </div>
-          </SectionCard>
+          {data.street_distribution.length > 0 && (
+            <SectionCard icon={<MapPin className="w-4 h-4 text-teal-600" />} title="Associados por Logradouro" accent="bg-teal-50/50">
+              <ResponsiveContainer width="100%" height={Math.max(160, data.street_distribution.length * 36)}>
+                <BarChart data={data.street_distribution} layout="vertical"
+                  margin={{ top: 4, right: 48, left: 8, bottom: 0 }}>
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="street" width={180} tick={{ fontSize: 11, fill: '#4b5563' }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', fontSize: 12 }} cursor={{ fill: '#f0fdfa' }} />
+                  <Bar dataKey="count" radius={[0, 6, 6, 0]} fill="#0d9488">
+                    <LabelList dataKey="count" position="right" style={{ fontSize: 11, fontWeight: 700, fill: '#0d9488' }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </SectionCard>
+          )}
         </>
       )}
     </div>
