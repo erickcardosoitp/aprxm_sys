@@ -188,12 +188,20 @@ class MensalidadeService:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def _grace_days(self, association_id: UUID) -> int:
+        from sqlalchemy import text
+        row = (await self._session.execute(
+            text("SELECT delinquency_grace_days FROM association_settings WHERE association_id = :aid"),
+            {"aid": str(association_id)},
+        )).fetchone()
+        return row[0] if row and row[0] is not None else 2
+
     async def has_delinquent_mensalidade(
         self, association_id: UUID, resident_id: UUID
     ) -> bool:
-        """Returns True if resident has any mensalidade overdue by more than 2 days."""
+        """Returns True if resident has any mensalidade overdue beyond the grace period."""
         today = date.today()
-        grace_cutoff = today - timedelta(days=2)
+        grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
         stmt = select(Mensalidade).where(
             Mensalidade.association_id == association_id,
             Mensalidade.resident_id == resident_id,
@@ -205,7 +213,7 @@ class MensalidadeService:
 
     async def list_delinquent(self, association_id: UUID) -> list[dict]:
         today = date.today()
-        grace_cutoff = today - timedelta(days=2)
+        grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
         stmt = (
             select(Mensalidade)
             .where(
@@ -234,9 +242,9 @@ class MensalidadeService:
         return delinquent
 
     async def list_pending(self, association_id: UUID) -> list[dict]:
-        """Mensalidades pendentes (inclui período de carência de 2 dias após vencimento)."""
+        """Mensalidades pendentes dentro do período de carência configurado."""
         today = date.today()
-        grace_cutoff = today - timedelta(days=2)
+        grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
         stmt = (
             select(Mensalidade)
             .where(
@@ -269,15 +277,15 @@ class MensalidadeService:
         amount: Decimal,
         created_by: UUID,
     ) -> dict:
-        """Cria mensalidades pendentes para todos os associados ativos que ainda não têm registro no mês."""
+        """Cria mensalidades pendentes para todos os associados ativos que ainda não têm registro no mês.
+        Usa monthly_payment_day do morador se disponível, senão usa due_day padrão."""
         from sqlalchemy import text
         year, month = map(int, reference_month.split("-"))
         last_day = monthrange(year, month)[1]
-        due_date = date(year, month, min(due_day, last_day))
 
-        # active members without a mensalidade for this month
+        # active members without a mensalidade for this month, including their payment day
         result = await self._session.execute(text("""
-            SELECT r.id FROM residents r
+            SELECT r.id, r.monthly_payment_day FROM residents r
             WHERE r.association_id = :aid
               AND r.type = 'member'
               AND r.status = 'active'
@@ -294,17 +302,19 @@ class MensalidadeService:
                   AND mp.competencia = :ref
               )
         """), {"aid": str(association_id), "ref": reference_month})
-        resident_ids = [row[0] for row in result.fetchall()]
+        residents = result.fetchall()
 
         created = 0
         skipped = 0
-        for rid in resident_ids:
+        for rid, r_due_day in residents:
+            effective_day = r_due_day if r_due_day else due_day
+            effective_due = date(year, month, min(effective_day, last_day))
             try:
                 m = Mensalidade(
                     association_id=association_id,
                     resident_id=rid,
                     reference_month=reference_month,
-                    due_date=due_date,
+                    due_date=effective_due,
                     amount=amount,
                     status=MensalidadeStatus.pending,
                     created_by=created_by,

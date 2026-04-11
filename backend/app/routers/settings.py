@@ -27,6 +27,7 @@ class UpdateSettingsRequest(BaseModel):
     default_cash_balance: Decimal = Field(ge=0)
     max_cash_before_sangria: Decimal = Field(ge=0)
     default_mensalidade_amount: Decimal = Field(default=Decimal("0.00"), ge=0)
+    delinquency_grace_days: int = Field(default=2, ge=0, le=60)
 
 
 class UpdateAssocDataRequest(BaseModel):
@@ -63,12 +64,14 @@ async def get_settings(
             "default_cash_balance": "200.00",
             "max_cash_before_sangria": "500.00",
             "default_mensalidade_amount": "0.00",
+            "delinquency_grace_days": 2,
         }
     return {
         "association_id": str(cfg.association_id),
         "default_cash_balance": str(cfg.default_cash_balance),
         "max_cash_before_sangria": str(cfg.max_cash_before_sangria),
         "default_mensalidade_amount": str(getattr(cfg, "default_mensalidade_amount", "0.00")),
+        "delinquency_grace_days": getattr(cfg, "delinquency_grace_days", 2) or 2,
     }
 
 
@@ -89,6 +92,9 @@ async def update_settings(
         cfg.default_mensalidade_amount = body.default_mensalidade_amount
         cfg.updated_at = datetime.utcnow()
         cfg.updated_by = current.user_id
+        await session.execute(text(
+            "UPDATE association_settings SET delinquency_grace_days = :v WHERE association_id = :id"
+        ), {"v": body.delinquency_grace_days, "id": str(current.association_id)})
     else:
         cfg = AssociationSettings(
             association_id=current.association_id,
@@ -96,13 +102,18 @@ async def update_settings(
             max_cash_before_sangria=body.max_cash_before_sangria,
             updated_by=current.user_id,
         )
-    session.add(cfg)
+        session.add(cfg)
+        await session.flush()
+        await session.execute(text(
+            "UPDATE association_settings SET delinquency_grace_days = :v WHERE association_id = :id"
+        ), {"v": body.delinquency_grace_days, "id": str(current.association_id)})
     await session.flush()
     return {
         "association_id": str(cfg.association_id),
         "default_cash_balance": str(cfg.default_cash_balance),
         "max_cash_before_sangria": str(cfg.max_cash_before_sangria),
         "default_mensalidade_amount": str(getattr(cfg, "default_mensalidade_amount", "0.00")),
+        "delinquency_grace_days": body.delinquency_grace_days,
     }
 
 

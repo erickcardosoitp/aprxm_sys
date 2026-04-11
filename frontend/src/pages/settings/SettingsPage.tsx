@@ -130,6 +130,7 @@ export default function SettingsPage() {
   const [defaultCash, setDefaultCash] = useState('')
   const [maxCash, setMaxCash] = useState('')
   const [defaultMensalidade, setDefaultMensalidade] = useState('')
+  const [graceDays, setGraceDays] = useState('2')
   const [loading, setLoading] = useState(false)
 
   // ── Association state ──
@@ -279,6 +280,7 @@ export default function SettingsPage() {
       setDefaultCash(res.data.default_cash_balance)
       setMaxCash(res.data.max_cash_before_sangria)
       setDefaultMensalidade(res.data.default_mensalidade_amount ?? '0')
+      setGraceDays(String(res.data.delinquency_grace_days ?? 2))
     } catch {
       toast.error('Erro ao carregar configurações.')
     }
@@ -323,7 +325,8 @@ export default function SettingsPage() {
     setLoading(true)
     try {
       const dm = parseFloat(defaultMensalidade)
-      const res = await settingsService.update({ default_cash_balance: dc, max_cash_before_sangria: mc, default_mensalidade_amount: isNaN(dm) ? 0 : dm })
+      const gd = parseInt(graceDays) || 2
+      const res = await settingsService.update({ default_cash_balance: dc, max_cash_before_sangria: mc, default_mensalidade_amount: isNaN(dm) ? 0 : dm, delinquency_grace_days: gd })
       setSettings(res.data)
       toast.success('Configurações salvas!')
     } catch (e: any) {
@@ -501,6 +504,20 @@ export default function SettingsPage() {
                   className={`${inputCls} pl-9`} placeholder="0.00"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Carência para inadimplência (dias)
+              </label>
+              <p className="text-xs text-gray-400 mb-2">
+                Dias após o vencimento até o morador ser considerado inadimplente e pagar taxa de entrega.
+              </p>
+              <input
+                type="number" min="0" max="60" value={graceDays}
+                onChange={e => setGraceDays(e.target.value)}
+                className={inputCls} placeholder="2"
+              />
             </div>
           </div>
         </div>

@@ -235,6 +235,7 @@ export interface AssociationSettings {
   default_cash_balance: string
   max_cash_before_sangria: string
   default_mensalidade_amount?: string
+  delinquency_grace_days?: number
 }
 
 export interface AssociationData {

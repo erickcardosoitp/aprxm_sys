@@ -392,14 +392,14 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                 <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex flex-col gap-2">
                   <p className="text-xs font-semibold text-yellow-800">Dados — Distribuição de Energia Elétrica</p>
                   {[
-                    { key: 'numero_uc', label: 'Nº da UC (Unidade Consumidora)' },
-                    { key: 'nome_titular', label: 'Nome do titular' },
-                    { key: 'tipo_problema', label: 'Tipo de problema' },
-                    { key: 'data_ocorrencia', label: 'Data da ocorrência', type: 'date' },
-                    { key: 'ultima_leitura', label: 'Última leitura (kWh)' },
-                    { key: 'transformador_referencia', label: 'Transformador de referência' },
-                    { key: 'observacoes_tecnicas', label: 'Observações técnicas' },
-                    { key: 'protocolo_concessionaria', label: 'Protocolo junto à concessionária' },
+                    { key: 'data', label: 'Data', type: 'date' },
+                    { key: 'comunidade', label: 'Comunidade' },
+                    { key: 'ponto_focal', label: 'Ponto focal' },
+                    { key: 'contato', label: 'Contato' },
+                    { key: 'instalacao', label: 'Instalação' },
+                    { key: 'protocolo', label: 'Protocolo' },
+                    { key: 'servico', label: 'Serviço' },
+                    { key: 'endereco', label: 'Endereço' },
                   ].map(({ key, label, type }) => (
                     <div key={key}>
                       <label className="block text-xs text-yellow-700 mb-1">{label}</label>

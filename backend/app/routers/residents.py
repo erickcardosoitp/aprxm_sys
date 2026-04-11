@@ -180,6 +180,7 @@ async def create_resident(
             select(Resident).where(
                 Resident.association_id == current.association_id,
                 Resident.cpf == cpf_clean,
+                Resident.status != "inactive",
             )
         )).scalar_one_or_none()
         if existing_cpf:
@@ -318,21 +319,26 @@ async def update_resident(
     resident = result.scalar_one_or_none()
     if not resident:
         raise HTTPException(status_code=404, detail="Morador não encontrado.")
-    data = body.model_dump(exclude_none=True)
+    # Use model_fields_set so explicit null (e.g. clearing CPF) is applied
+    data = {k: v for k, v in body.model_dump().items() if k in body.model_fields_set}
 
-    # Validate CPF uniqueness on update
-    if "cpf" in data and data["cpf"]:
-        cpf_clean = data["cpf"].replace(".", "").replace("-", "").strip()
-        existing_cpf = (await session.execute(
-            select(Resident).where(
-                Resident.association_id == current.association_id,
-                Resident.cpf == cpf_clean,
-                Resident.id != resident_id,
-            )
-        )).scalar_one_or_none()
-        if existing_cpf:
-            raise HTTPException(status_code=409, detail=f"CPF já cadastrado para {existing_cpf.full_name}.")
-        data["cpf"] = cpf_clean
+    if "cpf" in data:
+        cpf_val = data["cpf"]
+        if cpf_val:
+            cpf_clean = cpf_val.replace(".", "").replace("-", "").strip()
+            existing_cpf = (await session.execute(
+                select(Resident).where(
+                    Resident.association_id == current.association_id,
+                    Resident.cpf == cpf_clean,
+                    Resident.id != resident_id,
+                    Resident.status != "inactive",
+                )
+            )).scalar_one_or_none()
+            if existing_cpf:
+                raise HTTPException(status_code=409, detail=f"CPF já cadastrado para {existing_cpf.full_name}.")
+            data["cpf"] = cpf_clean
+        else:
+            data["cpf"] = None
 
     for key, value in data.items():
         setattr(resident, key, value)

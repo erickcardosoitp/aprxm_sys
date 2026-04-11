@@ -55,6 +55,56 @@ async def delete_by_month(
     return {"deleted": deleted, "reference_month": reference_month}
 
 
+@router.post("/cron-generate", summary="Geração automática semanal (chamada por cron externo)")
+async def cron_generate(
+    request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    import os
+    from fastapi import Request
+    from sqlalchemy import text
+    from decimal import Decimal
+    from datetime import datetime
+
+    secret = os.environ.get("CRON_SECRET", "")
+    auth = request.headers.get("x-cron-secret", "")
+    if not secret or auth != secret:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Não autorizado.")
+
+    now = datetime.utcnow()
+    ref = now.strftime("%Y-%m")
+    rows = (await session.execute(text("""
+        SELECT a.id, COALESCE(s.default_mensalidade_amount, 0),
+               (SELECT u.id FROM users u WHERE u.association_id = a.id
+                AND u.role IN ('admin','admin_master','superadmin')
+                AND u.is_active = TRUE LIMIT 1)
+        FROM associations a
+        LEFT JOIN association_settings s ON s.association_id = a.id
+        WHERE a.is_active = TRUE
+          AND COALESCE(s.default_mensalidade_amount, 0) > 0
+    """))).fetchall()
+
+    total_created = 0
+    svc = MensalidadeService(session)
+    for assoc_id, amount, admin_id in rows:
+        if not admin_id:
+            continue
+        try:
+            result = await svc.generate_month(
+                association_id=assoc_id,
+                reference_month=ref,
+                due_day=10,
+                amount=Decimal(str(amount)),
+                created_by=admin_id,
+            )
+            total_created += result.get("created", 0)
+            await session.commit()
+        except Exception:
+            await session.rollback()
+    return {"reference_month": ref, "total_created": total_created}
+
+
 @router.post("/generate-month", summary="Gerar mensalidades pendentes para todos os associados ativos do mês")
 async def generate_month(
     body: GenerateMonthRequest,

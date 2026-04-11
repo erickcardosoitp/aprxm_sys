@@ -100,6 +100,11 @@ async def _run_migrations() -> None:
             "ALTER TABLE migration_payments ADD COLUMN IF NOT EXISTS data_pagamento DATE"
         ))
 
+        # association_settings: delinquency_grace_days
+        await session.execute(text(
+            "ALTER TABLE association_settings ADD COLUMN IF NOT EXISTS delinquency_grace_days INTEGER DEFAULT 2"
+        ))
+
         # service_orders new fields
         await session.execute(text(
             "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS assigned_to_name VARCHAR(255)"
