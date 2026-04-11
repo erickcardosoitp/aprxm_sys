@@ -117,9 +117,33 @@ async def list_by_resident(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    from sqlalchemy import text
     svc = MensalidadeService(session)
-    items = await svc.list_by_resident(current.association_id, resident_id)
-    return [_fmt(m) for m in items]
+    mensalidades = await svc.list_by_resident(current.association_id, resident_id)
+    mig_rows = (await session.execute(
+        text("""
+            SELECT competencia, tipo, valor_pago, data_pagamento
+            FROM migration_payments
+            WHERE association_id = :aid AND resident_id = :rid
+            ORDER BY competencia DESC
+        """),
+        {"aid": str(current.association_id), "rid": str(resident_id)},
+    )).fetchall()
+
+    mig_months = {r[0] for r in mig_rows}
+    migration_items = [
+        {
+            "id": None, "resident_id": str(resident_id),
+            "reference_month": r[0], "due_date": None,
+            "amount": str(r[2]) if r[2] is not None else "0.00",
+            "status": "paid", "paid_at": str(r[3]) if r[3] else None,
+            "transaction_id": None, "notes": None,
+            "origem": "migracao", "tipo": str(r[1]),
+        }
+        for r in mig_rows
+    ]
+    regular = [{**_fmt(m), "origem": "sistema"} for m in mensalidades if m.reference_month not in mig_months]
+    return sorted(regular + migration_items, key=lambda x: x["reference_month"], reverse=True)
 
 
 @router.get("/paid", summary="Mensalidades pagas (com nome do morador)")

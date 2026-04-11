@@ -41,9 +41,10 @@ interface Session {
 }
 
 interface Mensalidade {
-  id: string; resident_id: string; reference_month: string
-  due_date: string; amount: string; status: string
+  id: string | null; resident_id: string; reference_month: string
+  due_date: string | null; amount: string; status: string
   paid_at: string | null; transaction_id: string | null; notes: string | null
+  origem?: 'sistema' | 'migracao'; tipo?: string
 }
 
 interface DelinquentItem {
@@ -1011,26 +1012,32 @@ export default function FinanceiroPage() {
               {history.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                   <ul className="divide-y divide-gray-100">
-                    {history.map(m => {
+                    {history.map((m, idx) => {
                       const isPaid = m.status === 'paid'
-                      const isOverdue = !isPaid && new Date(m.due_date) < new Date()
+                      const isMig = m.origem === 'migracao'
+                      const isOverdue = !isPaid && m.due_date && new Date(m.due_date) < new Date()
                       return (
-                        <li key={m.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                        <li key={m.id ?? `mig-${idx}`} className="px-4 py-3 flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
                             <div className={`w-2 h-2 rounded-full shrink-0 ${isPaid ? 'bg-green-400' : isOverdue ? 'bg-red-400' : 'bg-amber-400'}`} />
                             <div>
-                              <p className="text-sm font-semibold text-gray-800">{m.reference_month}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold text-gray-800">{m.reference_month}</p>
+                                {isMig && <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Migração</span>}
+                              </div>
                               {isPaid && m.paid_at
                                 ? <p className="text-xs text-green-600">Pago em {fmtDate(m.paid_at)}</p>
-                                : <p className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>Venc. {fmtDate(m.due_date)}</p>
+                                : m.due_date
+                                  ? <p className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>Venc. {fmtDate(m.due_date)}</p>
+                                  : <p className="text-xs text-gray-400">Histórico anterior</p>
                               }
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="text-sm font-bold text-gray-800">{fmt(m.amount)}</span>
-                            {!isPaid && (
+                            {!isPaid && !isMig && (
                               <button
-                                onClick={() => handlePayMensalidade(m.id)}
+                                onClick={() => handlePayMensalidade(m.id!)}
                                 disabled={!openSession || payingId === m.id}
                                 className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-3 py-1 rounded-lg transition">
                                 {payingId === m.id ? '…' : 'Pagar'}
