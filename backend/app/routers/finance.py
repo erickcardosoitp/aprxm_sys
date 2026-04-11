@@ -36,6 +36,7 @@ class ManualSessionRequest(BaseModel):
     manual_pix: Decimal | None = Field(default=None, ge=0)
     manual_dinheiro: Decimal | None = Field(default=None, ge=0)
     manual_total_baixas: Decimal | None = Field(default=None, ge=0)
+    operated_by_id: UUID | None = None
     reviewed_by_id: UUID | None = None
 
 
@@ -186,6 +187,7 @@ async def create_manual_session(
         manual_pix=body.manual_pix,
         manual_dinheiro=body.manual_dinheiro,
         manual_total_baixas=body.manual_total_baixas,
+        operated_by=body.operated_by_id,
         reviewed_by=body.reviewed_by_id,
     )
     await session.commit()
@@ -708,6 +710,21 @@ async def delete_payment_method(
 
 
 # ── Conferentes ──────────────────────────────────────────────────────────────
+
+@router.get("/operadores", summary="Usuários com papel de operador ou superior")
+async def list_operadores(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as t
+    ROLES = ['operator', 'conferente', 'diretoria_adjunta', 'diretoria', 'admin', 'superadmin']
+    rows = (await session.execute(t("""
+        SELECT id, full_name, role FROM users
+         WHERE association_id = :aid AND is_active = true
+           AND role = ANY(:roles) ORDER BY full_name
+    """), {"aid": str(current.association_id), "roles": ROLES})).fetchall()
+    return [{"id": str(r[0]), "full_name": r[1], "role": r[2]} for r in rows]
+
 
 @router.get("/conferentes", summary="Usuários com papel de conferente ou superior")
 async def list_conferentes(

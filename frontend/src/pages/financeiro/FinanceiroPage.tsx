@@ -122,6 +122,8 @@ export default function FinanceiroPage() {
   const [manualForm, setManualForm] = useState<ManualSessionForm>({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_baixas: '' })
   const [savingManual, setSavingManual] = useState(false)
   const [conferentes, setConferentes] = useState<Conferente[]>([])
+  const [operadores, setOperadores] = useState<Conferente[]>([])
+  const [manualOperatedBy, setManualOperatedBy] = useState('')
   const [manualReviewedBy, setManualReviewedBy] = useState('')
 
   // Session reviews
@@ -249,7 +251,14 @@ export default function FinanceiroPage() {
   }
 
   const loadConferentes = async () => {
-    try { const r = await api.get<Conferente[]>('/finance/conferentes'); setConferentes(r.data) } catch { /* ignore */ }
+    try {
+      const [rc, ro] = await Promise.all([
+        api.get<Conferente[]>('/finance/conferentes'),
+        api.get<Conferente[]>('/finance/operadores'),
+      ])
+      setConferentes(rc.data)
+      setOperadores(ro.data)
+    } catch { /* ignore */ }
   }
 
   const openReview = async (s: Session) => {
@@ -339,10 +348,12 @@ export default function FinanceiroPage() {
         manual_pix: manualForm.manual_pix ? parseFloat(manualForm.manual_pix) : null,
         manual_dinheiro: manualForm.manual_dinheiro ? parseFloat(manualForm.manual_dinheiro) : null,
         manual_total_baixas: manualForm.manual_total_baixas ? parseFloat(manualForm.manual_total_baixas) : null,
+        operated_by_id: manualOperatedBy || null,
         reviewed_by_id: manualReviewedBy || null,
       })
       setShowManualSession(false)
       setManualForm({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '', manual_pix: '', manual_dinheiro: '', manual_total_baixas: '' })
+      setManualOperatedBy('')
       setManualReviewedBy('')
       loadSessions()
     } catch { /* ignore */ } finally { setSavingManual(false) }
@@ -1793,6 +1804,14 @@ export default function FinanceiroPage() {
                 <input type="number" min="0" step="0.01" value={manualForm.manual_total_baixas}
                   onChange={e => setManualForm(f => ({ ...f, manual_total_baixas: e.target.value }))}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Operado por</label>
+                <select value={manualOperatedBy} onChange={e => setManualOperatedBy(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+                  <option value="">Selecionar operador…</option>
+                  {operadores.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Conferido por</label>

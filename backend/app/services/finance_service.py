@@ -57,6 +57,7 @@ class FinanceService:
         manual_dinheiro: Decimal | None = None,
         manual_total_bruto: Decimal | None = None,
         manual_total_baixas: Decimal | None = None,
+        operated_by: UUID | None = None,
         reviewed_by: UUID | None = None,
     ) -> CashSession:
         pix = manual_pix or Decimal("0")
@@ -69,7 +70,7 @@ class FinanceService:
         quebra = liquido - closing_balance  # + = sobra, - = falta
         session = CashSession(
             association_id=association_id,
-            opened_by=created_by,
+            opened_by=operated_by or created_by,
             closed_by=created_by,
             reviewed_by=reviewed_by,
             status=CashSessionStatus.closed,
