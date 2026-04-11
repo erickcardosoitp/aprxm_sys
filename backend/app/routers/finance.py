@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -22,6 +23,14 @@ class OpenSessionRequest(BaseModel):
 
 class CloseSessionRequest(BaseModel):
     closing_balance: Decimal = Field(ge=0)
+    notes: str | None = None
+
+
+class ManualSessionRequest(BaseModel):
+    opening_balance: Decimal = Field(ge=0)
+    closing_balance: Decimal = Field(ge=0)
+    opened_at: datetime
+    closed_at: datetime
     notes: str | None = None
 
 
@@ -137,6 +146,26 @@ async def open_session(
         notes=body.notes,
     )
     return {"id": str(cash.id), "status": cash.status, "opened_at": str(cash.opened_at)}
+
+
+@router.post("/sessions/manual", response_model=dict, summary="Criar sessão de caixa manual")
+async def create_manual_session(
+    body: ManualSessionRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = FinanceService(session)
+    cash = await svc.create_manual_session(
+        association_id=current.association_id,
+        created_by=current.user_id,
+        opening_balance=body.opening_balance,
+        closing_balance=body.closing_balance,
+        opened_at=body.opened_at,
+        closed_at=body.closed_at,
+        notes=body.notes,
+    )
+    await session.commit()
+    return {"id": str(cash.id), "origin": cash.origin}
 
 
 @router.get("/sessions/current", summary="Sessão de caixa atual")
@@ -323,6 +352,7 @@ async def list_sessions(
                 cs.difference,
                 u_open.full_name  AS operador_name,
                 u_close.full_name AS conferido_por,
+                cs.origin,
                 COALESCE(SUM(CASE WHEN t.type = 'income'
                     AND pm.name ILIKE '%pix%' THEN t.amount ELSE 0 END), 0) AS total_pix,
                 COALESCE(SUM(CASE WHEN t.type = 'income'
@@ -340,7 +370,7 @@ async def list_sessions(
             WHERE cs.association_id = :aid
             GROUP BY cs.id, cs.status, cs.opened_at, cs.closed_at,
                      cs.opening_balance, cs.closing_balance, cs.expected_balance,
-                     cs.difference, u_open.full_name, u_close.full_name
+                     cs.difference, u_open.full_name, u_close.full_name, cs.origin
             ORDER BY cs.opened_at DESC
         """),
         {"aid": str(current.association_id)},
@@ -358,10 +388,11 @@ async def list_sessions(
             "difference": str(r[7]) if r[7] is not None else None,
             "operador_name": r[8],
             "conferido_por": r[9],
-            "total_pix": str(round(float(r[10]), 2)),
-            "total_dinheiro": str(round(float(r[11]), 2)),
-            "total_bruto": str(round(float(r[12]), 2)),
-            "total_baixas": str(round(float(r[13]), 2)),
+            "origin": r[10] or "Sessão de Caixa",
+            "total_pix": str(round(float(r[11]), 2)),
+            "total_dinheiro": str(round(float(r[12]), 2)),
+            "total_bruto": str(round(float(r[13]), 2)),
+            "total_baixas": str(round(float(r[14]), 2)),
         }
         for r in rows
     ]

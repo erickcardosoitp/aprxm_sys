@@ -38,6 +38,12 @@ interface Session {
   id: string; status: string; opening_balance: string
   closing_balance: string | null; expected_balance: string | null
   difference: string | null; opened_at: string; closed_at: string | null
+  origin?: string
+}
+
+interface ManualSessionForm {
+  opening_balance: string; closing_balance: string
+  opened_at: string; closed_at: string; notes: string
 }
 
 interface Mensalidade {
@@ -89,6 +95,9 @@ export default function FinanceiroPage() {
   // Sessions
   const [sessions, setSessions] = useState<Session[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
+  const [showManualSession, setShowManualSession] = useState(false)
+  const [manualForm, setManualForm] = useState<ManualSessionForm>({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '' })
+  const [savingManual, setSavingManual] = useState(false)
 
   // Open cash session
   const [openSession, setOpenSession] = useState<{ id: string } | null | undefined>(undefined)
@@ -192,6 +201,23 @@ export default function FinanceiroPage() {
       const res = await api.get<Session[]>('/finance/sessions')
       setSessions(res.data)
     } catch { setSessions([]) } finally { setLoadingSessions(false) }
+  }
+
+  const handleCreateManualSession = async () => {
+    if (!manualForm.opening_balance || !manualForm.closing_balance || !manualForm.opened_at || !manualForm.closed_at) return
+    setSavingManual(true)
+    try {
+      await api.post('/finance/sessions/manual', {
+        opening_balance: parseFloat(manualForm.opening_balance),
+        closing_balance: parseFloat(manualForm.closing_balance),
+        opened_at: new Date(manualForm.opened_at).toISOString(),
+        closed_at: new Date(manualForm.closed_at).toISOString(),
+        notes: manualForm.notes || null,
+      })
+      setShowManualSession(false)
+      setManualForm({ opening_balance: '', closing_balance: '', opened_at: '', closed_at: '', notes: '' })
+      loadSessions()
+    } catch { /* ignore */ } finally { setSavingManual(false) }
   }
 
   const loadResidentNames = async (ids: string[]): Promise<Record<string, string>> => {
@@ -1079,8 +1105,9 @@ export default function FinanceiroPage() {
               </div>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100">
+              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-800">Histórico de Sessões</h3>
+                <button onClick={() => setShowManualSession(true)} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-medium">+ Manual</button>
               </div>
               {loadingSessions ? (
                 <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
@@ -1090,10 +1117,14 @@ export default function FinanceiroPage() {
                 <ul className="divide-y divide-gray-100">
                   {sessions.map(s => {
                     const diff = s.difference ? parseFloat(s.difference) : null
+                    const isManual = s.origin === 'Manual'
                     return (
                       <li key={s.id} className="px-4 py-3">
                         <div className="flex items-center justify-between gap-3 mb-1">
-                          <p className="text-sm font-medium text-gray-800">{fmtDate(s.opened_at)}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-gray-800">{fmtDate(s.opened_at)}</p>
+                            {isManual && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">Manual</span>}
+                          </div>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                             {s.status === 'open' ? 'Aberta' : 'Fechada'}
                           </span>
@@ -1336,6 +1367,52 @@ export default function FinanceiroPage() {
                 {reversing === reversalTarget.id ? 'Estornando…' : 'Confirmar Estorno'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {showManualSession && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-800">Nova Sessão Manual</h2>
+              <button onClick={() => setShowManualSession(false)} className="text-gray-400 text-xl leading-none">×</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Saldo inicial (R$)</label>
+                <input type="number" min="0" step="0.01" value={manualForm.opening_balance}
+                  onChange={e => setManualForm(f => ({ ...f, opening_balance: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Saldo final (R$)</label>
+                <input type="number" min="0" step="0.01" value={manualForm.closing_balance}
+                  onChange={e => setManualForm(f => ({ ...f, closing_balance: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Data/hora abertura</label>
+                <input type="datetime-local" value={manualForm.opened_at}
+                  onChange={e => setManualForm(f => ({ ...f, opened_at: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Data/hora fechamento</label>
+                <input type="datetime-local" value={manualForm.closed_at}
+                  onChange={e => setManualForm(f => ({ ...f, closed_at: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Observações</label>
+              <input type="text" value={manualForm.notes}
+                onChange={e => setManualForm(f => ({ ...f, notes: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Opcional" />
+            </div>
+            <button onClick={handleCreateManualSession} disabled={savingManual}
+              className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+              {savingManual ? 'Salvando…' : 'Criar Sessão Manual'}
+            </button>
           </div>
         </div>
       )}

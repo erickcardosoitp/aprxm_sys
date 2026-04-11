@@ -38,6 +38,37 @@ class FinanceService:
             opened_by=opened_by,
             opening_balance=opening_balance,
             notes=notes,
+            origin="Sessão de Caixa",
+        )
+        self._session.add(session)
+        await self._session.flush()
+        return session
+
+    async def create_manual_session(
+        self,
+        association_id: UUID,
+        created_by: UUID,
+        opening_balance: Decimal,
+        closing_balance: Decimal,
+        opened_at: datetime,
+        closed_at: datetime,
+        notes: str | None = None,
+    ) -> CashSession:
+        expected = opening_balance + closing_balance
+        diff = closing_balance - opening_balance
+        session = CashSession(
+            association_id=association_id,
+            opened_by=created_by,
+            closed_by=created_by,
+            status=CashSessionStatus.closed,
+            opening_balance=opening_balance,
+            closing_balance=closing_balance,
+            expected_balance=expected,
+            difference=diff,
+            notes=notes,
+            origin="Manual",
+            opened_at=opened_at,
+            closed_at=closed_at,
         )
         self._session.add(session)
         await self._session.flush()

@@ -121,6 +121,10 @@ async def _run_migrations() -> None:
             END $$
         """))
 
+        await session.execute(text(
+            "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS origin VARCHAR(50) DEFAULT 'Sessão de Caixa'"
+        ))
+
         await session.commit()
 
 

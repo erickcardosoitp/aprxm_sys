@@ -71,6 +71,7 @@ class CashSession(SQLModel, table=True):
     expected_balance: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
     difference: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
     notes: str | None = None
+    origin: str = Field(default="Sessão de Caixa", max_length=50)
     opened_at: datetime = Field(default_factory=datetime.utcnow)
     closed_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
