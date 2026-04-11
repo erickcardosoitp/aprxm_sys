@@ -3,6 +3,7 @@ Router /superadmin — painel de TI interno.
 Apenas superadmin (role=superadmin) pode acessar.
 """
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +11,21 @@ from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
 
 router = APIRouter(prefix="/superadmin", tags=["SuperAdmin TI"])
+
+
+class UpdateOrgRequest(BaseModel):
+    name: str | None = None
+    slug: str | None = None
+    plan_name: str | None = None
+    is_active: bool | None = None
+
+
+class UpdateOrgSettingsRequest(BaseModel):
+    default_cash_balance: float | None = None
+    max_cash_before_sangria: float | None = None
+    default_mensalidade_amount: float | None = None
+    delinquency_grace_days: int | None = None
+    permitir_transferencia: bool | None = None
 
 
 def _require_superadmin(current: CurrentUser) -> CurrentUser:
@@ -105,6 +121,95 @@ async def active_sessions(
         }
         for r in rows.fetchall()
     ]
+
+
+@router.put("/organizations/{org_id}", summary="Editar organização")
+async def update_org(
+    org_id: str,
+    body: UpdateOrgRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    _require_superadmin(current)
+    updates = {k: v for k, v in body.model_dump().items() if k in body.model_fields_set and v is not None}
+    if not updates:
+        raise HTTPException(400, "Nenhum campo para atualizar.")
+    set_clauses = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["org_id"] = org_id
+    await session.execute(
+        text(f"UPDATE associations SET {set_clauses} WHERE id = :org_id"),
+        updates,
+    )
+    await session.commit()
+    return {"ok": True}
+
+
+@router.delete("/organizations/{org_id}", summary="Desativar organização")
+async def deactivate_org(
+    org_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    _require_superadmin(current)
+    await session.execute(
+        text("UPDATE associations SET is_active = FALSE WHERE id = :id"),
+        {"id": org_id},
+    )
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/organizations/{org_id}/settings", summary="Configurações de uma organização")
+async def get_org_settings(
+    org_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    _require_superadmin(current)
+    row = (await session.execute(
+        text("""
+            SELECT default_cash_balance, max_cash_before_sangria,
+                   default_mensalidade_amount, delinquency_grace_days, permitir_transferencia
+            FROM association_settings WHERE association_id = :id
+        """),
+        {"id": org_id},
+    )).fetchone()
+    if not row:
+        return {"default_cash_balance": 200, "max_cash_before_sangria": 500,
+                "default_mensalidade_amount": 0, "delinquency_grace_days": 2,
+                "permitir_transferencia": False}
+    return {
+        "default_cash_balance": float(row[0] or 200),
+        "max_cash_before_sangria": float(row[1] or 500),
+        "default_mensalidade_amount": float(row[2] or 0),
+        "delinquency_grace_days": row[3] or 2,
+        "permitir_transferencia": row[4] or False,
+    }
+
+
+@router.put("/organizations/{org_id}/settings", summary="Atualizar configurações de uma organização")
+async def update_org_settings(
+    org_id: str,
+    body: UpdateOrgSettingsRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    _require_superadmin(current)
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not data:
+        return {"ok": True}
+    set_clauses = ", ".join(f"{k} = :{k}" for k in data)
+    data["org_id"] = org_id
+    await session.execute(
+        text(f"""
+            INSERT INTO association_settings (association_id, {', '.join(k for k in data if k != 'org_id')})
+            VALUES (:org_id, {', '.join(f':{k}' for k in data if k != 'org_id')})
+            ON CONFLICT (association_id) DO UPDATE SET {set_clauses}, updated_at = NOW()
+        """),
+        data,
+    )
+    await session.commit()
+    return {"ok": True}
 
 
 @router.get("/health-summary", summary="Resumo de saúde do sistema")
