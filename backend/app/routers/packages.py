@@ -42,15 +42,14 @@ class DeliverPackageRequest(BaseModel):
     signature_url: str
     delivered_to_cpf: str | None = None
     delivered_to_resident_id: UUID | None = None
-    # anti-fraud
     proof_of_residence_url: str | None = None
     recipient_id_photo_url: str | None = None
     delivery_person_name: str | None = None
-    # third-party pickup
     third_party_pickup: bool = False
     owner_id_photo_url: str | None = None
     picker_id_photo_url: str | None = None
     picker_phone: str | None = None
+    payment_method_id: UUID | None = None
 
 
 @router.post("", summary="Registrar recebimento de encomenda")
@@ -100,6 +99,7 @@ async def deliver_package(
         owner_id_photo_url=body.owner_id_photo_url,
         picker_id_photo_url=body.picker_id_photo_url,
         picker_phone=body.picker_phone,
+        payment_method_id=body.payment_method_id,
     )
     return {
         "id": str(pkg.id),
@@ -121,6 +121,7 @@ class BulkDeliverRequest(BaseModel):
     owner_id_photo_url: str | None = None
     picker_id_photo_url: str | None = None
     picker_phone: str | None = None
+    payment_method_id: UUID | None = None
 
 
 @router.post("/bulk-deliver", summary="Entrega múltipla — mesma assinatura para N encomendas")
@@ -150,6 +151,7 @@ async def bulk_deliver_packages(
                 owner_id_photo_url=body.owner_id_photo_url,
                 picker_id_photo_url=body.picker_id_photo_url,
                 picker_phone=body.picker_phone,
+                payment_method_id=body.payment_method_id,
             )
             results.append({
                 "id": str(pkg.id),

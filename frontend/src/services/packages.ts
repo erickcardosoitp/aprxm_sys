@@ -30,6 +30,7 @@ export const packageService = {
       owner_id_photo_url?: string
       picker_id_photo_url?: string
       picker_phone?: string
+      payment_method_id?: string
     },
   ) => api.post<Package>(`/packages/${packageId}/deliver`, data),
 

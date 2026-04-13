@@ -471,6 +471,35 @@ export default function PackagesPage() {
   const [ownerIdPhoto, setOwnerIdPhoto] = useState('')
   const [pickerIdPhoto, setPickerIdPhoto] = useState('')
   const [pickerPhone, setPickerPhone] = useState('')
+  const [deliveryPaymentMethodId, setDeliveryPaymentMethodId] = useState('')
+  const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
+
+  // Upgrade guest to member modal
+  const [showUpgrade, setShowUpgrade] = useState(false)
+  const [upgradeCpf, setUpgradeCpf] = useState('')
+  const [upgradeLoading, setUpgradeLoading] = useState(false)
+
+  const handleUpgradeToMember = async () => {
+    if (!deliveryTarget?.resident_id) return
+    if (!upgradeCpf.trim()) { toast.error('CPF obrigatório para associado.'); return }
+    setUpgradeLoading(true)
+    try {
+      await api.put(`/residents/${deliveryTarget.resident_id}`, {
+        type: 'member', cpf: upgradeCpf.trim(), status: 'active',
+        is_member_confirmed: true, terms_accepted: true, lgpd_accepted: true,
+      })
+      toast.success('Morador cadastrado como associado!')
+      setShowUpgrade(false); setUpgradeCpf('')
+      loadPackages()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao atualizar cadastro.')
+    } finally { setUpgradeLoading(false) }
+  }
+
+  useEffect(() => {
+    if (!deliveryTarget) return
+    api.get<{ id: string; name: string }[]>('/finance/payment-methods').then(r => setPaymentMethods(r.data)).catch(() => {})
+  }, [deliveryTarget])
 
   // Bulk delivery flow
   const [showBulkDeliver, setShowBulkDeliver] = useState(false)
@@ -698,6 +727,7 @@ export default function PackagesPage() {
         owner_id_photo_url: ownerIdPhoto || undefined,
         picker_id_photo_url: pickerIdPhoto || undefined,
         picker_phone: pickerPhone.trim() || undefined,
+        payment_method_id: deliveryPaymentMethodId || undefined,
       })
       const pkg = res.data as any
       toast.success(pkg.has_delivery_fee
@@ -717,6 +747,7 @@ export default function PackagesPage() {
     setRecipientName(''); setRecipientSig('')
     setProofResidenceUrl(''); setRecipientIdPhoto(''); setDeliveryPersonName('')
     setIsThirdParty(false); setOwnerIdPhoto(''); setPickerIdPhoto(''); setPickerPhone('')
+    setDeliveryPaymentMethodId(''); setShowUpgrade(false); setUpgradeCpf('')
   }
 
   const pendingCount = packages.filter(p => p.status === 'received' || p.status === 'notified').length
@@ -1321,6 +1352,46 @@ export default function PackagesPage() {
                         type="tel" placeholder="(00) 00000-0000" className={inputCls} />
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Guest upgrade banner */}
+              {deliveryTarget?.resident_type === 'guest' && deliveryTarget?.resident_id && (
+                <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+                  <p className="text-xs font-semibold text-orange-800 mb-1">Visitante — taxa R$ 2,50 será cobrada</p>
+                  {!showUpgrade ? (
+                    <button onClick={() => setShowUpgrade(true)}
+                      className="text-xs text-[#26619c] underline">
+                      Cadastrar como associado agora
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-2 mt-2">
+                      <input value={upgradeCpf} onChange={e => setUpgradeCpf(e.target.value)}
+                        className={inputCls} placeholder="CPF do morador *" />
+                      <div className="flex gap-2">
+                        <button onClick={() => { setShowUpgrade(false); setUpgradeCpf('') }}
+                          className="flex-1 border border-gray-300 text-gray-600 py-1.5 rounded-lg text-xs">Cancelar</button>
+                        <button onClick={handleUpgradeToMember} disabled={upgradeLoading}
+                          className="flex-1 bg-[#26619c] text-white py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50">
+                          {upgradeLoading ? '…' : 'Confirmar'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Payment method for fee */}
+              {(deliveryTarget?.resident_type === 'guest') && paymentMethods.length > 0 && (
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa</label>
+                  <select value={deliveryPaymentMethodId} onChange={e => setDeliveryPaymentMethodId(e.target.value)}
+                    className={inputCls}>
+                    <option value="">Selecione (opcional)</option>
+                    {paymentMethods.map(pm => (
+                      <option key={pm.id} value={pm.id}>{pm.name}</option>
+                    ))}
+                  </select>
                 </div>
               )}
 

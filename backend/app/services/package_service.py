@@ -92,6 +92,7 @@ class PackageService:
         owner_id_photo_url: str | None = None,
         picker_id_photo_url: str | None = None,
         picker_phone: str | None = None,
+        payment_method_id: UUID | None = None,
     ) -> Package:
         package = await self._get_package(package_id, association_id)
 
@@ -145,6 +146,7 @@ class PackageService:
                 package_id=package_id,
                 resident_id=effective_resident_id,
                 category_id=fee_category.id if fee_category else None,
+                payment_method_id=payment_method_id,
             )
             package.has_delivery_fee = True
             package.delivery_fee_amount = DELIVERY_FEE
