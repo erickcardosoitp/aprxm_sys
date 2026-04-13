@@ -861,7 +861,7 @@ export default function PackagesPage() {
                   <input
                     id="recipient-search"
                     value={recipientSearch}
-                    onChange={e => { setRecipientSearch(e.target.value); searchResidents(e.target.value) }}
+                    onChange={e => { setRecipientSearch(e.target.value); setSearchEmpty(false); setShowGuestForm(false); searchResidents(e.target.value) }}
                     className={`${inputCls} pl-9`}
                     placeholder="Buscar por nome, CPF ou CEP…"
                   />
