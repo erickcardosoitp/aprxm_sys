@@ -1,7 +1,8 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -9,6 +10,7 @@ from sqlmodel import select
 from app.database import get_session
 from app.models.association import Association
 from app.models.resident import Resident, ResidentStatus, ResidentType
+from app.services.storage_service import StorageService
 
 router = APIRouter(prefix="/public", tags=["Público"])
 
@@ -29,6 +31,7 @@ class PublicRegisterRequest(BaseModel):
     address_city: str | None = None
     address_state: str | None = None
     notes: str | None = None
+    proof_of_payment_url: str | None = None
 
 
 @router.get("/associations/{slug}", summary="Info pública da associação")
@@ -104,8 +107,39 @@ async def public_register_resident(
         address_state=body.address_state,
         notes=body.notes,
         wants_to_join=True,
+        proof_of_payment_url=body.proof_of_payment_url,
     )
     session.add(resident)
     await session.flush()
     await session.commit()
     return {"id": str(resident.id), "message": "Cadastro recebido com sucesso."}
+
+
+ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+MAX_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+@router.post("/associations/{slug}/upload", summary="Upload público de comprovante")
+async def public_upload(
+    slug: str,
+    file: UploadFile = File(...),
+    folder: str = Form(default="public/proofs"),
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+    assoc_result = await session.execute(
+        select(Association).where(Association.slug == slug, Association.is_active == True)
+    )
+    assoc = assoc_result.scalar_one_or_none()
+    if not assoc:
+        raise HTTPException(404, "Associação não encontrada.")
+
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(400, "Tipo de arquivo não permitido. Use JPG, PNG ou PDF.")
+
+    file_bytes = await file.read()
+    if len(file_bytes) > MAX_SIZE:
+        raise HTTPException(400, "Arquivo muito grande (máx. 10 MB).")
+
+    svc = StorageService(str(assoc.id))
+    url = svc.upload(file_bytes, file.filename or "comprovante.jpg", folder)
+    return JSONResponse({"url": url})

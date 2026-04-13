@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import axios from 'axios'
+import { CheckCircle2, Upload, X } from 'lucide-react'
 import { formatCpf, formatPhone, formatCep } from '../../utils'
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'https://aprxm-backend.onrender.com/api/v1'
+// Always use relative URL — Vercel rewrite proxies /api/* to backend
+const API = '/api/v1'
 
 interface AssocInfo {
   id: string; name: string; slug: string
@@ -19,32 +21,81 @@ export default function PublicRegisterPage() {
   const [notFound, setNotFound] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [cepLoading, setCepLoading] = useState(false)
+
+  // proof upload
+  const [proofFile, setProofFile] = useState<File | null>(null)
+  const [proofUrl, setProofUrl] = useState('')
+  const [uploadingProof, setUploadingProof] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState({
     full_name: '', cpf: '', phone_primary: '', phone_secondary: '',
     email: '', date_of_birth: '', unit: '', block: '',
     address_cep: '', address_street: '', address_number: '',
-    address_complement: '', address_city: '', address_state: '', notes: '',
+    address_complement: '', address_district: '', address_city: '',
+    address_state: '', notes: '',
   })
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   useEffect(() => {
     if (!slug) return
-    axios.get(`${API_BASE}/public/associations/${slug}`)
+    axios.get(`${API}/public/associations/${slug}`)
       .then(r => setAssoc(r.data))
       .catch(() => setNotFound(true))
   }, [slug])
 
+  const lookupCep = async (cep: string) => {
+    const clean = cep.replace(/\D/g, '')
+    if (clean.length !== 8) return
+    setCepLoading(true)
+    try {
+      const r = await axios.get(`https://viacep.com.br/ws/${clean}/json/`)
+      if (!r.data.erro) {
+        setForm(f => ({
+          ...f,
+          address_street: r.data.logradouro || f.address_street,
+          address_district: r.data.bairro || f.address_district,
+          address_city: r.data.localidade || f.address_city,
+          address_state: r.data.uf || f.address_state,
+        }))
+      }
+    } catch { /* silent */ } finally { setCepLoading(false) }
+  }
+
+  const handleProofSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !slug) return
+    setProofFile(file)
+    setUploadingProof(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('folder', 'public/proofs')
+      const r = await axios.post<{ url: string }>(`${API}/public/associations/${slug}/upload`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setProofUrl(r.data.url)
+      toast.success('Comprovante enviado!')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao enviar comprovante.')
+      setProofFile(null)
+    } finally {
+      setUploadingProof(false)
+    }
+  }
+
   const handleSubmit = async () => {
     if (!form.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
+    if (!form.cpf.trim()) { toast.error('CPF é obrigatório.'); return }
     if (!form.phone_primary.trim()) { toast.error('Telefone é obrigatório.'); return }
+    if (!proofUrl) { toast.error('Comprovante de pagamento é obrigatório.'); return }
     setSaving(true)
     try {
-      await axios.post(`${API_BASE}/public/associations/${slug}/residents`, {
+      await axios.post(`${API}/public/associations/${slug}/residents`, {
         ...form,
         cpf: form.cpf ? form.cpf.replace(/\D/g, '') : null,
-        phone_primary: form.phone_primary,
         date_of_birth: form.date_of_birth || null,
         unit: form.unit || null,
         block: form.block || null,
@@ -55,6 +106,7 @@ export default function PublicRegisterPage() {
         address_city: form.address_city || null,
         address_state: form.address_state || null,
         notes: form.notes || null,
+        proof_of_payment_url: proofUrl,
       })
       setSubmitted(true)
     } catch (e: any) {
@@ -82,7 +134,7 @@ export default function PublicRegisterPage() {
   if (submitted) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
-        <div className="text-5xl mb-4">✅</div>
+        <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto mb-4" />
         <h1 className="text-xl font-bold text-gray-900 mb-2">Cadastro enviado!</h1>
         <p className="text-gray-500 text-sm">Seu cadastro foi recebido pela <strong>{assoc.name}</strong> e será analisado em breve.</p>
       </div>
@@ -101,6 +153,8 @@ export default function PublicRegisterPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm p-6 flex flex-col gap-4">
+
+          {/* Dados pessoais */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
             <input value={form.full_name} onChange={e => set('full_name', e.target.value)} className={inputCls} placeholder="Seu nome completo" />
@@ -108,7 +162,7 @@ export default function PublicRegisterPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">CPF</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">CPF <span className="text-red-500">*</span></label>
               <input value={form.cpf} onChange={e => set('cpf', formatCpf(e.target.value))} className={inputCls} placeholder="000.000.000-00" />
             </div>
             <div>
@@ -141,25 +195,75 @@ export default function PublicRegisterPage() {
             </div>
           </div>
 
+          {/* Endereço */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">CEP</label>
-            <input value={form.address_cep} onChange={e => set('address_cep', formatCep(e.target.value))} className={inputCls} placeholder="00000-000" />
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              CEP {cepLoading && <span className="text-gray-400 font-normal">buscando…</span>}
+            </label>
+            <input
+              value={form.address_cep}
+              onChange={e => {
+                const v = formatCep(e.target.value)
+                set('address_cep', v)
+                lookupCep(v)
+              }}
+              className={inputCls} placeholder="00000-000"
+            />
           </div>
-
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Logradouro</label>
             <input value={form.address_street} onChange={e => set('address_street', e.target.value)} className={inputCls} placeholder="Rua, Av…" />
           </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Número</label>
               <input value={form.address_number} onChange={e => set('address_number', e.target.value)} className={inputCls} placeholder="123" />
             </div>
             <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Complemento</label>
+              <input value={form.address_complement} onChange={e => set('address_complement', e.target.value)} className={inputCls} placeholder="Apto, Bloco…" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Bairro</label>
+            <input value={form.address_district} onChange={e => set('address_district', e.target.value)} className={inputCls} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Cidade</label>
               <input value={form.address_city} onChange={e => set('address_city', e.target.value)} className={inputCls} />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Estado</label>
+              <input value={form.address_state} onChange={e => set('address_state', e.target.value)} className={inputCls} placeholder="RJ" maxLength={2} />
+            </div>
+          </div>
+
+          {/* Comprovante de pagamento — obrigatório */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <p className="text-xs font-semibold text-blue-900 mb-1">
+              Comprovante de pagamento <span className="text-red-500">*</span>
+            </p>
+            <p className="text-xs text-blue-700 mb-3">Envie uma foto ou PDF do comprovante de pagamento da mensalidade ou taxa de associação.</p>
+
+            {proofUrl ? (
+              <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-green-200">
+                <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                <span className="text-xs text-green-700 flex-1 truncate">{proofFile?.name ?? 'Comprovante enviado'}</span>
+                <button type="button" onClick={() => { setProofUrl(''); setProofFile(null) }}
+                  className="text-gray-400 hover:text-red-500 shrink-0">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingProof}
+                className="w-full border-2 border-dashed border-blue-300 rounded-xl py-4 flex flex-col items-center gap-1.5 text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-50">
+                <Upload className="w-5 h-5" />
+                <span className="text-xs font-medium">{uploadingProof ? 'Enviando…' : 'Selecionar arquivo (foto ou PDF)'}</span>
+              </button>
+            )}
+            <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleProofSelect} />
           </div>
 
           <div>
@@ -167,7 +271,7 @@ export default function PublicRegisterPage() {
             <textarea rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} className={`${inputCls} resize-none`} placeholder="Informações adicionais…" />
           </div>
 
-          <button onClick={handleSubmit} disabled={saving}
+          <button onClick={handleSubmit} disabled={saving || uploadingProof}
             className="w-full bg-[#26619c] hover:bg-[#1a4f87] text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50 mt-2">
             {saving ? 'Enviando…' : 'Enviar cadastro'}
           </button>

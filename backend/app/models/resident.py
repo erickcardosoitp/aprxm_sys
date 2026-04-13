@@ -87,6 +87,7 @@ class Resident(SQLModel, table=True):
     is_member_confirmed: bool = Field(default=False)
     wants_to_join: bool | None = None
     monthly_payment_day: int | None = None
+    proof_of_payment_url: str | None = None
 
     # --- legal ---
     terms_accepted: bool = Field(default=False)
