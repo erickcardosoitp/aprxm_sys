@@ -31,6 +31,69 @@ const INCOME_SUBTYPES: { value: IncomeSubtype; label: string; icon: string }[] =
 
 const STEP_TITLES = ['Tipo', 'Dados', 'Confirmação']
 
+function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, setRegCpf, regUnit, setRegUnit, regProofUrl, setRegProofUrl, registerAs, setRegisterAs, registering, onRegister }: {
+  regName: string; setRegName: (v: string) => void
+  regPhone: string; setRegPhone: (v: string) => void
+  regCpf: string; setRegCpf: (v: string) => void
+  regUnit: string; setRegUnit: (v: string) => void
+  regProofUrl: string; setRegProofUrl: (v: string) => void
+  registerAs: 'member' | 'guest' | null; setRegisterAs: (v: 'member' | 'guest' | null) => void
+  registering: boolean; onRegister: () => void
+}) {
+  return (
+    <div className="mt-2 border border-dashed border-gray-300 rounded-xl p-4 flex flex-col gap-3">
+      <p className="text-xs text-gray-500 font-medium">Não encontrado. Cadastrar como:</p>
+      <div className="flex gap-2">
+        {(['member', 'guest'] as const).map(t => (
+          <button key={t} type="button"
+            onClick={() => setRegisterAs(registerAs === t ? null : t)}
+            className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${
+              registerAs === t
+                ? t === 'member' ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-orange-500 text-white border-orange-500'
+                : 'border-gray-300 text-gray-600 hover:border-gray-400'
+            }`}>
+            {t === 'member' ? 'Associado' : 'Visitante'}
+          </button>
+        ))}
+      </div>
+      {registerAs && (
+        <div className="flex flex-col gap-2">
+          <input value={regName} onChange={e => setRegName(e.target.value)}
+            placeholder="Nome completo *"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={regPhone} onChange={e => setRegPhone(e.target.value)}
+              placeholder="Telefone" type="tel"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+            <input value={regCpf} onChange={e => setRegCpf(e.target.value)}
+              placeholder="CPF"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+          </div>
+          {registerAs === 'member' && (
+            <input value={regUnit} onChange={e => setRegUnit(e.target.value)}
+              placeholder="Unidade (ex: 201)"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+          )}
+          {registerAs === 'member' && (
+            <div>
+              <p className="text-xs font-medium text-gray-600 mb-1">
+                Comprovante de pagamento <span className="text-red-500">*</span>
+              </p>
+              <PhotoCapture label="Foto do comprovante" onCapture={e => setRegProofUrl(e.url)} />
+              {regProofUrl && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Comprovante anexado</p>}
+            </div>
+          )}
+          <button type="button" onClick={onRegister}
+            disabled={registering || !regName.trim() || (registerAs === 'member' && !regProofUrl)}
+            className="w-full py-2 rounded-lg text-sm font-semibold text-white bg-[#26619c] hover:bg-[#1a4f87] disabled:opacity-50 transition">
+            {registering ? 'Cadastrando…' : `Cadastrar como ${registerAs === 'member' ? 'Associado' : 'Visitante'}`}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function TransactionModal({ onClose, onSuccess }: Props) {
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -121,14 +184,18 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
   const searchFeeResident = async (q: string) => {
     setFeeQuery(q)
-    resetNotFound()
+    setNotFound(false)
+    setRegisterAs(null)
     if (q.length < 2) { setFeeResults([]); return }
     setFeeSearching(true)
     try {
       const res = await api.get<Resident[]>('/residents/search', { params: { q } })
       const results = res.data.slice(0, 8)
       setFeeResults(results)
-      if (results.length === 0) { setNotFound(true); setRegName(q) }
+      if (results.length === 0) {
+        setNotFound(true)
+        setRegName(q)
+      }
     } catch { /* silent */ } finally { setFeeSearching(false) }
   }
 
@@ -495,12 +562,23 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                               </p>
                             )}
                           </div>
-                          <button type="button" onClick={() => { setResident(null); setFeeQuery(''); setPaymentHistory(null) }}
+                          <button type="button" onClick={() => { setResident(null); setFeeQuery(''); setPaymentHistory(null); setNotFound(false) }}
                             className="text-gray-400 hover:text-red-500 shrink-0">
                             <X className="w-4 h-4" />
                           </button>
                         </div>
                       )}
+
+                      {/* Sugestão de cadastro inline — delivery_fee */}
+                      {notFound && !resident && <InlineRegister
+                        regName={regName} setRegName={setRegName}
+                        regPhone={regPhone} setRegPhone={setRegPhone}
+                        regCpf={regCpf} setRegCpf={setRegCpf}
+                        regUnit={regUnit} setRegUnit={setRegUnit}
+                        regProofUrl={regProofUrl} setRegProofUrl={setRegProofUrl}
+                        registerAs={registerAs} setRegisterAs={setRegisterAs}
+                        registering={registering} onRegister={registerResident}
+                      />}
                     </div>
                   ) : (
                   <div>
@@ -533,62 +611,16 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                   </div>
                   )}
 
-                  {/* ── Cadastro inline quando não encontrado ── */}
-                  {notFound && !resident && (
-                    <div className="mt-2 border border-dashed border-gray-300 rounded-xl p-4 flex flex-col gap-3">
-                      <p className="text-xs text-gray-500 font-medium">Morador não encontrado. Cadastrar como:</p>
-                      <div className="flex gap-2">
-                        {(['member', 'guest'] as const).map(t => (
-                          <button key={t} type="button"
-                            onClick={() => setRegisterAs(registerAs === t ? null : t)}
-                            className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${
-                              registerAs === t
-                                ? t === 'member' ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-orange-500 text-white border-orange-500'
-                                : 'border-gray-300 text-gray-600 hover:border-gray-400'
-                            }`}>
-                            {t === 'member' ? 'Associado' : 'Visitante'}
-                          </button>
-                        ))}
-                      </div>
-
-                      {registerAs && (
-                        <div className="flex flex-col gap-2">
-                          <input value={regName} onChange={e => setRegName(e.target.value)}
-                            placeholder="Nome completo *"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
-                          <div className="grid grid-cols-2 gap-2">
-                            <input value={regPhone} onChange={e => setRegPhone(e.target.value)}
-                              placeholder="Telefone" type="tel"
-                              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
-                            <input value={regCpf} onChange={e => setRegCpf(e.target.value)}
-                              placeholder="CPF"
-                              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
-                          </div>
-                          {registerAs === 'member' && (
-                            <input value={regUnit} onChange={e => setRegUnit(e.target.value)}
-                              placeholder="Unidade (ex: 201)"
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
-                          )}
-                          {registerAs === 'member' && (
-                            <div>
-                              <p className="text-xs font-medium text-gray-600 mb-1">
-                                Comprovante de pagamento <span className="text-red-500">*</span>
-                              </p>
-                              <PhotoCapture
-                                label="Foto do comprovante"
-                                onCapture={e => setRegProofUrl(e.url)}
-                              />
-                              {regProofUrl && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Comprovante anexado</p>}
-                            </div>
-                          )}
-                          <button type="button" onClick={registerResident} disabled={registering || !regName.trim() || (registerAs === 'member' && !regProofUrl)}
-                            className="w-full py-2 rounded-lg text-sm font-semibold text-white bg-[#26619c] hover:bg-[#1a4f87] disabled:opacity-50 transition">
-                            {registering ? 'Cadastrando…' : `Cadastrar como ${registerAs === 'member' ? 'Associado' : 'Visitante'}`}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {/* Sugestão de cadastro inline — CPF path */}
+                  {notFound && !resident && <InlineRegister
+                    regName={regName} setRegName={setRegName}
+                    regPhone={regPhone} setRegPhone={setRegPhone}
+                    regCpf={regCpf} setRegCpf={setRegCpf}
+                    regUnit={regUnit} setRegUnit={setRegUnit}
+                    regProofUrl={regProofUrl} setRegProofUrl={setRegProofUrl}
+                    registerAs={registerAs} setRegisterAs={setRegisterAs}
+                    registering={registering} onRegister={registerResident}
+                  />}
 
                   {/* Mensalidade payment history */}
                   {incomeSubtype === 'mensalidade' && resident && (

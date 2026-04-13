@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import AgentWidget from '../agent/AgentWidget'
-import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, FileText, LogOut, Package, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
+import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, FileText, LogOut, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
@@ -31,6 +31,7 @@ const VIEWER_NAV = [
 ]
 
 const ADMIN_NAV      = { to: '/admin',      label: 'Admin',  icon: ShieldCheck }
+const LOGS_NAV       = { to: '/logs',       label: 'Logs',   icon: RotateCcw }
 const SETTINGS_NAV   = { to: '/settings',   label: 'Config', icon: Settings }
 const SUPERADMIN_NAV = { to: '/superadmin', label: 'TI',     icon: Activity }
 
@@ -63,8 +64,8 @@ export function AppShell() {
   const isViewer     = role === 'viewer'
 
   let navItems = [...FULL_NAV]
-  if (isSuperAdmin) navItems = [...FULL_NAV, ADMIN_NAV, SETTINGS_NAV, SUPERADMIN_NAV]
-  else if (isAdmin) navItems = [...FULL_NAV, ADMIN_NAV, SETTINGS_NAV]
+  if (isSuperAdmin) navItems = [...FULL_NAV, ADMIN_NAV, LOGS_NAV, SETTINGS_NAV, SUPERADMIN_NAV]
+  else if (isAdmin) navItems = [...FULL_NAV, ADMIN_NAV, LOGS_NAV, SETTINGS_NAV]
   else if (isConferente) navItems = [...FULL_NAV, SETTINGS_NAV]
   else if (isDiretoria) navItems = [...FULL_NAV, SETTINGS_NAV]
   else if (isOperator) navItems = [...OPERATOR_NAV]

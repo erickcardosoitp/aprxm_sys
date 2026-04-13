@@ -12,6 +12,7 @@ import SettingsPage from './pages/settings/SettingsPage'
 import FinanceiroPage from './pages/financeiro/FinanceiroPage'
 import GeralPage from './pages/geral/GeralPage'
 import SuperAdminPage from './pages/superadmin/SuperAdminPage'
+import LogsPage from './pages/logs/LogsPage'
 import { useAuthStore } from './store/authStore'
 import PublicRegisterPage from './pages/public/PublicRegisterPage'
 
@@ -79,6 +80,7 @@ export default function App() {
           <Route path="financeiro"     element={<RequireConferente><FinanceiroPage /></RequireConferente>} />
           <Route path="geral"          element={<RequireAggregator><GeralPage /></RequireAggregator>} />
           <Route path="superadmin"     element={<RequireSuperAdmin><SuperAdminPage /></RequireSuperAdmin>} />
+          <Route path="logs"           element={<RequireAdmin><LogsPage /></RequireAdmin>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

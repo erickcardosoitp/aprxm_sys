@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowDownLeft, Check, ClipboardCheck, DollarSign, List, Loader2, Plus, RefreshCw, Scale, TrendingDown, TrendingUp, X, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, Check, ClipboardCheck, DollarSign, List, Loader2, Plus, RefreshCw, RotateCcw, Scale, TrendingDown, TrendingUp, X, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
@@ -331,6 +331,12 @@ export default function FinancePage() {
   const [offlineCategories, setOfflineCategories] = useState<{ id: string; name: string }[]>([])
   const [savingOffline, setSavingOffline] = useState(false)
 
+  // ── Estorno state ──
+  const [estornoTarget, setEstornoTarget] = useState<Transaction | null>(null)
+  const [estornoReason, setEstornoReason] = useState('')
+  const [estornoPassword, setEstornoPassword] = useState('')
+  const [savingEstorno, setSavingEstorno] = useState(false)
+
   // ── Extrato state ──
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
@@ -434,12 +440,85 @@ export default function FinancePage() {
     }
   }
 
+  const handleEstorno = async () => {
+    if (!estornoTarget) return
+    if (!estornoReason.trim() || estornoReason.trim().length < 5) { toast.error('Motivo deve ter ao menos 5 caracteres.'); return }
+    if (!estornoPassword.trim()) { toast.error('Senha obrigatória.'); return }
+    setSavingEstorno(true)
+    try {
+      await api.post(`/finance/transactions/${estornoTarget.id}/reverse`, {
+        reason: estornoReason.trim(),
+        admin_password: estornoPassword,
+      })
+      toast.success('Estorno registrado com sucesso!')
+      setEstornoTarget(null)
+      setEstornoReason('')
+      setEstornoPassword('')
+      loadTransactions()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao estornar.')
+    } finally {
+      setSavingEstorno(false)
+    }
+  }
+
   const fmtBRL = (v: string | undefined) => v != null ? `R$ ${parseFloat(v).toFixed(2)}` : '—'
   const fmtDate = (s: string) => new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 
   return (
     <div className="flex flex-col gap-6 p-4 max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900">Operação de Caixa</h1>
+
+      {/* ── Modal Estorno ── */}
+      {estornoTarget && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="w-4 h-4 text-orange-500" />
+                  <h2 className="font-bold text-gray-900 text-sm">Estorno de Transação</h2>
+                </div>
+                <button onClick={() => { setEstornoTarget(null); setEstornoReason(''); setEstornoPassword('') }}>
+                  <X className="w-5 h-5 text-gray-400" />
+                </button>
+              </div>
+              <div className="px-5 py-4 flex flex-col gap-4">
+                <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+                  <p className="text-xs text-orange-700 font-medium mb-1">{estornoTarget.description}</p>
+                  <p className="text-sm font-bold text-orange-800">
+                    {estornoTarget.type === 'income' ? '+' : '-'} R$ {parseFloat(estornoTarget.amount).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-orange-600 mt-0.5">
+                    {new Date(estornoTarget.transaction_at).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Motivo do estorno <span className="text-red-500">*</span></label>
+                  <textarea rows={2} value={estornoReason} onChange={e => setEstornoReason(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400"
+                    placeholder="Descreva o motivo do estorno (mín. 5 caracteres)…" autoFocus />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Senha do administrador <span className="text-red-500">*</span></label>
+                  <input type="password" value={estornoPassword} onChange={e => setEstornoPassword(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleEstorno() }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400"
+                    placeholder="Sua senha de acesso" />
+                </div>
+              </div>
+              <div className="flex gap-3 px-5 pb-5">
+                <button onClick={() => { setEstornoTarget(null); setEstornoReason(''); setEstornoPassword('') }}
+                  className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50">Cancelar</button>
+                <button onClick={handleEstorno} disabled={savingEstorno || !estornoReason.trim() || !estornoPassword}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                  {savingEstorno ? 'Estornando…' : 'Confirmar Estorno'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal Saída Externa ── */}
       {showOfflineExpense && (
@@ -638,22 +717,32 @@ export default function FinancePage() {
                 ) : (
                   <ul className="divide-y divide-gray-100">
                     {transactions.map(tx => (
-                      <li key={tx.id} className={`flex items-center justify-between px-4 py-3 ${tx.approval_status === 'pending' ? 'bg-amber-50/50' : tx.approval_status === 'rejected' ? 'bg-red-50/40' : ''}`}>
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{tx.description}</p>
+                      <li key={tx.id} className={`flex items-center justify-between px-4 py-3 gap-2 ${tx.approval_status === 'pending' ? 'bg-amber-50/50' : tx.approval_status === 'rejected' ? 'bg-red-50/40' : (tx as any).is_reversal ? 'bg-orange-50/40' : ''}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-800 truncate">{tx.description}</p>
                           <p className="text-xs text-gray-400">
                             {new Date(tx.transaction_at).toLocaleString('pt-BR')}
                             {' · '}
                             <span className={TYPE_COLORS[tx.type]}>{TYPE_LABELS[tx.type]}</span>
+                            {(tx as any).is_reversal && <span className="ml-1.5 text-orange-600 font-medium">· Estorno</span>}
                             {tx.approval_status === 'pending' && <span className="ml-1.5 text-amber-600 font-medium">· Aguarda aprovação</span>}
                             {tx.approval_status === 'rejected' && <span className="ml-1.5 text-red-500 font-medium">· Recusada</span>}
                           </p>
                         </div>
-                        {canSeeTotals && (
-                          <span className={`text-sm font-semibold ${tx.type === 'income' ? 'text-green-600' : tx.approval_status === 'pending' ? 'text-amber-500' : 'text-red-600'}`}>
-                            {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {canSeeTotals && (
+                            <span className={`text-sm font-semibold ${tx.type === 'income' ? 'text-green-600' : tx.approval_status === 'pending' ? 'text-amber-500' : 'text-red-600'}`}>
+                              {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
+                            </span>
+                          )}
+                          {isConferenteOrAbove && !(tx as any).is_reversal && !(tx as any).reversed_at && (
+                            <button onClick={() => setEstornoTarget(tx)}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition"
+                              title="Estornar">
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>

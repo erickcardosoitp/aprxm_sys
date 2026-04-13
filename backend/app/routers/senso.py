@@ -182,4 +182,33 @@ async def analytics(
         "neighborhood_problems": [{"problem": x[0], "count": x[1]} for x in problems.fetchall()],
         "internet_types": [{"type": x[0], "count": x[1]} for x in internet_types.fetchall()],
         "street_distribution": [{"street": x[0], "count": x[1]} for x in street_dist.fetchall()],
+        "guest_completion_distribution": await _guest_completion(session, str(current.association_id)),
     }
+
+
+async def _guest_completion(session, association_id: str) -> dict:
+    """Completion distribution for guests using guest-relevant fields (10 fields × 10%)."""
+    _GUEST_EXPR = """(
+        CASE WHEN phone_primary IS NOT NULL AND phone_primary != '' THEN 1 ELSE 0 END
+        + CASE WHEN phone_secondary IS NOT NULL AND phone_secondary != '' THEN 1 ELSE 0 END
+        + CASE WHEN email IS NOT NULL AND email != '' THEN 1 ELSE 0 END
+        + CASE WHEN address_cep IS NOT NULL AND address_cep != '' THEN 1 ELSE 0 END
+        + CASE WHEN address_street IS NOT NULL AND address_street != '' THEN 1 ELSE 0 END
+        + CASE WHEN address_number IS NOT NULL AND address_number != '' THEN 1 ELSE 0 END
+        + CASE WHEN address_city IS NOT NULL AND address_city != '' THEN 1 ELSE 0 END
+        + CASE WHEN address_state IS NOT NULL AND address_state != '' THEN 1 ELSE 0 END
+        + CASE WHEN date_of_birth IS NOT NULL THEN 1 ELSE 0 END
+        + CASE WHEN notes IS NOT NULL AND notes != '' THEN 1 ELSE 0 END
+    ) * 10"""
+    result = await session.execute(text(f"""
+        SELECT
+            COUNT(*) FILTER (WHERE ({_GUEST_EXPR}) <= 20) AS critical,
+            COUNT(*) FILTER (WHERE ({_GUEST_EXPR}) > 20 AND ({_GUEST_EXPR}) <= 59) AS improving,
+            COUNT(*) FILTER (WHERE ({_GUEST_EXPR}) > 59 AND ({_GUEST_EXPR}) <= 79) AS regular,
+            COUNT(*) FILTER (WHERE ({_GUEST_EXPR}) >= 80) AS excellent,
+            COUNT(*) AS total
+        FROM residents
+        WHERE association_id = :aid AND type = 'guest' AND status = 'active'
+    """), {"aid": association_id})
+    row = result.fetchone()
+    return {"critical": row[0], "improving": row[1], "regular": row[2], "excellent": row[3], "total": row[4]}

@@ -2,10 +2,11 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import verify_password
 from app.core.tenant import CurrentUser, get_current_user, require_admin, require_conferente
 from app.database import get_session
 from app.models.finance import CashSession, IncomeSubtype, PaymentMethod, Transaction, TransactionCategory, TransactionType
@@ -523,6 +524,7 @@ async def reject_transaction_approval(
 
 class ReversalRequest(BaseModel):
     reason: str = Field(min_length=5, description="Motivo do estorno")
+    admin_password: str = Field(min_length=1, description="Senha do administrador")
 
 
 @router.post("/transactions/{transaction_id}/reverse", summary="Estornar transação")
@@ -532,6 +534,13 @@ async def reverse_transaction(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    from sqlmodel import select as sq_select
+    from app.models.user import User
+    user_row = await session.execute(sq_select(User).where(User.id == current.user_id))
+    user = user_row.scalar_one_or_none()
+    if not user or not verify_password(body.admin_password, user.hashed_password):
+        raise HTTPException(status_code=403, detail="Senha de administrador incorreta.")
+
     svc = FinanceService(session)
     reversal = await svc.reverse_transaction(
         transaction_id=transaction_id,
@@ -550,43 +559,76 @@ async def reverse_transaction(
 
 @router.get("/audit", summary="Trilha de auditoria financeira")
 async def get_audit_trail(
-    limit: int = 50,
+    limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    tx_type: str | None = Query(default=None, alias="type"),
+    is_reversal: bool | None = Query(default=None),
+    q: str | None = Query(default=None, description="Busca em descrição ou nome"),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> list[dict]:
+) -> dict:
     from sqlalchemy import text as sa_text
+    conditions = ["t.association_id = :aid"]
+    params: dict = {"aid": str(current.association_id), "lim": limit, "off": offset}
+
+    if date_from:
+        conditions.append("t.transaction_at >= :date_from")
+        params["date_from"] = date_from
+    if date_to:
+        conditions.append("t.transaction_at <= :date_to || ' 23:59:59'")
+        params["date_to"] = date_to
+    if tx_type:
+        conditions.append("t.type = :tx_type")
+        params["tx_type"] = tx_type
+    if is_reversal is not None:
+        conditions.append("t.is_reversal = :is_reversal")
+        params["is_reversal"] = is_reversal
+    if q:
+        conditions.append("(t.description ILIKE :q OR u.full_name ILIKE :q)")
+        params["q"] = f"%{q}%"
+
+    where = " AND ".join(conditions)
     result = await session.execute(
-        sa_text("""
+        sa_text(f"""
             SELECT t.id, t.type, t.income_subtype, t.amount, t.description,
                    t.is_sangria, t.is_reversal, t.reversal_of_id, t.reversal_reason,
                    t.transaction_at, t.created_by,
                    u.full_name AS creator_name,
-                   t.reversed_by, ur.full_name AS reverser_name, t.reversed_at
+                   t.reversed_by, ur.full_name AS reverser_name, t.reversed_at,
+                   t.reversed_at IS NOT NULL AS is_reversed,
+                   COUNT(*) OVER() AS total_count
             FROM transactions t
             JOIN users u ON u.id = t.created_by
             LEFT JOIN users ur ON ur.id = t.reversed_by
-            WHERE t.association_id = :aid
+            WHERE {where}
             ORDER BY t.transaction_at DESC
-            LIMIT :lim
+            LIMIT :lim OFFSET :off
         """),
-        {"aid": str(current.association_id), "lim": limit},
+        params,
     )
     rows = result.fetchall()
-    return [
-        {
-            "id": str(r[0]), "type": r[1], "income_subtype": r[2],
-            "amount": str(r[3]), "description": r[4],
-            "is_sangria": r[5], "is_reversal": r[6],
-            "reversal_of_id": str(r[7]) if r[7] else None,
-            "reversal_reason": r[8],
-            "transaction_at": str(r[9]),
-            "created_by": str(r[10]), "creator_name": r[11],
-            "reversed_by": str(r[12]) if r[12] else None,
-            "reverser_name": r[13],
-            "reversed_at": str(r[14]) if r[14] else None,
-        }
-        for r in rows
-    ]
+    total = rows[0][16] if rows else 0
+    return {
+        "total": total,
+        "items": [
+            {
+                "id": str(r[0]), "type": r[1], "income_subtype": r[2],
+                "amount": str(r[3]), "description": r[4],
+                "is_sangria": r[5], "is_reversal": r[6],
+                "reversal_of_id": str(r[7]) if r[7] else None,
+                "reversal_reason": r[8],
+                "transaction_at": str(r[9]),
+                "created_by": str(r[10]), "creator_name": r[11],
+                "reversed_by": str(r[12]) if r[12] else None,
+                "reverser_name": r[13],
+                "reversed_at": str(r[14]) if r[14] else None,
+                "is_reversed": r[15],
+            }
+            for r in rows
+        ],
+    }
 
 
 @router.get("/residents/{resident_id}/payment-history", summary="Histórico de mensalidades do morador")

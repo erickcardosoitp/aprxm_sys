@@ -570,9 +570,7 @@ export default function PackagesPage() {
   const handleDeliver = async () => {
     if (!deliveryTarget) return
     const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
-    const proofRequired = isGuest || isThirdParty
     if (!recipientName || !recipientSig) { toast.error('Nome e assinatura do recebedor obrigatórios.'); return }
-    if (proofRequired && !proofResidenceUrl) { toast.error('Comprovante de residência obrigatório.'); return }
     if (isThirdParty && !ownerIdPhoto) { toast.error('Identidade do dono da encomenda obrigatória.'); return }
     if (isThirdParty && !pickerIdPhoto) { toast.error('Identidade de quem está retirando obrigatória.'); return }
     if (isThirdParty && !pickerPhone.trim()) { toast.error('Telefone de contato obrigatório.'); return }
@@ -1116,16 +1114,13 @@ export default function PackagesPage() {
 
               {/* Proof of residence — obrigatório p/ visitante ou terceiro */}
               {(() => {
-                const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
-                const proofRequired = isGuest || isThirdParty
                 return (
                   <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
                     <p className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
                       <Shield className="w-3.5 h-3.5 text-[#26619c]" />
                       Comprovante de Residência
-                      {proofRequired ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(opcional)</span>}
+                      <span className="text-gray-400 font-normal">(opcional)</span>
                     </p>
-                    {proofRequired && <p className="text-xs text-gray-400 mb-2">Obrigatório para {isGuest ? 'visitantes' : 'retirada por terceiros'}</p>}
                     <PhotoCapture
                       label="Foto do comprovante"
                       onCapture={entry => setProofResidenceUrl(entry.url)}
