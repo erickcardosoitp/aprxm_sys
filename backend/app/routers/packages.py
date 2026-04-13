@@ -353,6 +353,74 @@ async def return_package(
     return {"id": str(pkg.id), "status": pkg.status, "return_reason": pkg.return_reason}
 
 
+class ReverseDeliveryRequest(BaseModel):
+    reason: str
+    admin_password: str
+
+
+@router.post("/{package_id}/reverse-delivery", summary="Estornar entrega de encomenda")
+async def reverse_delivery(
+    package_id: UUID,
+    body: ReverseDeliveryRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from datetime import datetime
+    from fastapi import HTTPException
+    from sqlmodel import select as sq_select
+    from app.core.security import verify_password
+    from app.models.user import User
+    from app.services.finance_service import FinanceService
+
+    # Verify admin password
+    user_row = await session.execute(sq_select(User).where(User.id == current.user_id))
+    user = user_row.scalar_one_or_none()
+    if not user or not verify_password(body.admin_password, user.hashed_password):
+        raise HTTPException(403, "Senha de administrador incorreta.")
+
+    pkg = await session.get(Package, package_id)
+    if not pkg or str(pkg.association_id) != str(current.association_id):
+        raise HTTPException(404, "Encomenda não encontrada.")
+    if pkg.status != PackageStatus.delivered:
+        raise HTTPException(422, "Apenas encomendas entregues podem ser estornadas.")
+
+    # Reverse fee transaction if exists
+    if pkg.delivery_fee_tx_id:
+        svc = FinanceService(session)
+        try:
+            await svc.reverse_transaction(
+                transaction_id=pkg.delivery_fee_tx_id,
+                association_id=current.association_id,
+                reversed_by=current.user_id,
+                reason=f"Estorno de entrega: {body.reason}",
+            )
+        except Exception:
+            pass  # Fee already reversed or not found — continue
+
+    # Revert package to notified
+    pkg.status = PackageStatus.notified
+    pkg.delivered_to_name = None
+    pkg.delivered_to_cpf = None
+    pkg.delivered_to_resident_id = None
+    pkg.delivered_at = None
+    pkg.delivered_by = None
+    pkg.signature_url = None
+    pkg.has_delivery_fee = False
+    pkg.delivery_fee_paid = False
+    pkg.delivery_fee_tx_id = None
+    pkg.updated_at = datetime.utcnow()
+    session.add(pkg)
+
+    await session.execute(
+        text("""INSERT INTO package_events (association_id, package_id, created_by, event_type, comment)
+                VALUES (:a, :p, :u, 'reversal', :msg)"""),
+        {"a": str(current.association_id), "p": str(package_id), "u": str(current.user_id),
+         "msg": f"Entrega estornada por {user.full_name}: {body.reason}"},
+    )
+    await session.commit()
+    return {"id": str(pkg.id), "status": pkg.status}
+
+
 @router.get("/report", summary="Relatório de encomendas por período")
 async def packages_report(
     date_from: str,

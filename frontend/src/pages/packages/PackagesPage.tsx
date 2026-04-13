@@ -62,6 +62,10 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
   const [showReturnForm, setShowReturnForm] = useState(false)
   const [returnReason, setReturnReason] = useState('')
   const [returning, setReturning] = useState(false)
+  const [showReversal, setShowReversal] = useState(false)
+  const [reversalReason, setReversalReason] = useState('')
+  const [reversalPassword, setReversalPassword] = useState('')
+  const [reversing, setReversing] = useState(false)
 
   const handleNotify = async () => {
     setNotifying(true)
@@ -82,6 +86,21 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
       onRefresh?.()
       onClose()
     } catch { toast.error('Erro ao registrar devolução.') } finally { setReturning(false) }
+  }
+
+  const handleReversal = async () => {
+    if (!reversalReason.trim()) { toast.error('Informe o motivo.'); return }
+    if (!reversalPassword.trim()) { toast.error('Senha de admin obrigatória.'); return }
+    setReversing(true)
+    try {
+      await api.post(`/packages/${pkg.id}/reverse-delivery`, {
+        reason: reversalReason.trim(), admin_password: reversalPassword,
+      })
+      toast.success('Entrega estornada. Encomenda voltou para Notificado.')
+      onRefresh?.(); onClose()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao estornar.')
+    } finally { setReversing(false) }
   }
 
   useEffect(() => {
@@ -263,6 +282,34 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
                     />
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {pkg.status === 'delivered' && !showReversal && (
+            <button onClick={() => setShowReversal(true)}
+              className="w-full border border-red-300 text-red-600 py-2.5 rounded-xl text-sm font-medium hover:bg-red-50 transition">
+              Estornar Entrega
+            </button>
+          )}
+
+          {pkg.status === 'delivered' && showReversal && (
+            <div className="border border-red-200 rounded-xl p-4 flex flex-col gap-3 bg-red-50">
+              <p className="text-sm font-semibold text-red-700">Estorno de Entrega</p>
+              <p className="text-xs text-red-600">A encomenda voltará para <strong>Notificado</strong> e a taxa será estornada se houver.</p>
+              <textarea value={reversalReason} onChange={e => setReversalReason(e.target.value)}
+                placeholder="Motivo do estorno *" rows={2}
+                className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 resize-none" />
+              <input type="password" value={reversalPassword} onChange={e => setReversalPassword(e.target.value)}
+                placeholder="Senha de administrador *"
+                className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300" />
+              <div className="flex gap-2">
+                <button onClick={() => { setShowReversal(false); setReversalReason(''); setReversalPassword('') }}
+                  className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
+                <button onClick={handleReversal} disabled={reversing}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+                  {reversing ? 'Estornando…' : 'Confirmar Estorno'}
+                </button>
               </div>
             </div>
           )}
