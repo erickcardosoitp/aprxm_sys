@@ -35,8 +35,10 @@ class CreateResidentRequest(BaseModel):
     address_street: str | None = None
     address_number: str | None = None
     address_complement: str | None = None
+    address_neighborhood: str | None = None
     address_city: str | None = None
     address_state: str | None = None
+    address_country: str | None = 'Brasil'
 
     address_rooms: int | None = None
     address_location: str | None = None
@@ -86,8 +88,10 @@ class UpdateResidentRequest(BaseModel):
     address_street: str | None = None
     address_number: str | None = None
     address_complement: str | None = None
+    address_neighborhood: str | None = None
     address_city: str | None = None
     address_state: str | None = None
+    address_country: str | None = None
 
     address_rooms: int | None = None
     address_location: str | None = None

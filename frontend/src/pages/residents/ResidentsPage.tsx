@@ -72,8 +72,10 @@ const EMPTY_FORM = {
   address_street: '',
   address_number: '',
   address_complement: '',
+  address_neighborhood: '',
   address_city: '',
   address_state: '',
+  address_country: 'Brasil',
   unit: '',
   block: '',
   parking_spot: '',
@@ -218,8 +220,10 @@ function ResidentForm({ initial, onSave, onCancel }: {
         ...f,
         address_street: data.logradouro || f.address_street,
         address_complement: data.complemento || f.address_complement,
+        address_neighborhood: data.bairro || f.address_neighborhood,
         address_city: data.localidade || f.address_city,
         address_state: data.uf || f.address_state,
+        address_country: f.address_country || 'Brasil',
       }))
     } catch {
       toast.error('Erro ao consultar CEP.')
@@ -286,7 +290,35 @@ function ResidentForm({ initial, onSave, onCancel }: {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
                   placeholder="Nome completo" />
               </div>
-              <Input label="Telefone" value={form.phone_primary} onChange={(v) => set('phone_primary', v)} placeholder="(21) 99999-9999" />
+              <Input label="Telefone (opcional)" value={form.phone_primary} onChange={(v) => set('phone_primary', v)} placeholder="(21) 99999-9999" />
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">CEP</label>
+                <div className="flex gap-2">
+                  <input value={form.address_cep}
+                    onChange={(e) => set('address_cep', formatCep(e.target.value))}
+                    onBlur={lookupCep}
+                    placeholder="00000-000"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                  <button type="button" onClick={lookupCep} disabled={cepLoading}
+                    className="px-3 py-2 bg-[#26619c] text-white rounded-lg text-sm hover:bg-[#1a4f87] disabled:opacity-50">
+                    {cepLoading ? '…' : <Search className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Input label="Número" value={form.address_number} onChange={(v) => set('address_number', v)} placeholder="123" />
+                <div className="col-span-2">
+                  <Input label="Complemento" value={form.address_complement} onChange={(v) => set('address_complement', v)} placeholder="Apto, casa…" />
+                </div>
+              </div>
+              <Input label="Bairro" value={form.address_neighborhood} onChange={(v) => set('address_neighborhood', v)} placeholder="Bairro" />
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <Input label="Cidade" value={form.address_city} onChange={(v) => set('address_city', v)} />
+                </div>
+                <Input label="Estado" value={form.address_state} onChange={(v) => set('address_state', v.toUpperCase().slice(0, 2))} placeholder="RJ" />
+              </div>
+              <Input label="País" value={form.address_country} onChange={(v) => set('address_country', v)} placeholder="Brasil" />
             </>
           )}
 
@@ -1230,8 +1262,10 @@ export default function ResidentsPage() {
             address_street: editTarget.address_street ?? '',
             address_number: editTarget.address_number ?? '',
             address_complement: editTarget.address_complement ?? '',
+            address_neighborhood: editTarget.address_neighborhood ?? '',
             address_city: editTarget.address_city ?? '',
             address_state: editTarget.address_state ?? '',
+            address_country: editTarget.address_country ?? 'Brasil',
             unit: editTarget.unit ?? '',
             block: editTarget.block ?? '',
             parking_spot: editTarget.parking_spot ?? '',

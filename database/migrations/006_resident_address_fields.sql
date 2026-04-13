@@ -1,0 +1,37 @@
+-- Migration 006: Add address fields to residents table
+-- Adds: address_cep, address_street, address_number, address_complement,
+--       address_neighborhood, address_city, address_state, address_country
+-- Also adds: is_member_confirmed, wants_to_join, monthly_payment_day,
+--            terms_accepted, lgpd_accepted (if missing)
+
+ALTER TABLE residents
+  ADD COLUMN IF NOT EXISTS address_cep           VARCHAR(9),
+  ADD COLUMN IF NOT EXISTS address_street        VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS address_number        VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS address_complement    VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS address_neighborhood  VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS address_city          VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS address_state         CHAR(2),
+  ADD COLUMN IF NOT EXISTS address_country       VARCHAR(100) DEFAULT 'Brasil',
+  ADD COLUMN IF NOT EXISTS address_rooms         INTEGER,
+  ADD COLUMN IF NOT EXISTS address_location      VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS address_access        JSONB        NOT NULL DEFAULT '[]',
+  ADD COLUMN IF NOT EXISTS uses_public_transport BOOLEAN,
+  ADD COLUMN IF NOT EXISTS transport_distance    VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS household_count       INTEGER,
+  ADD COLUMN IF NOT EXISTS household_profiles    JSONB        NOT NULL DEFAULT '[]',
+  ADD COLUMN IF NOT EXISTS internet_access       VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS has_sewage            BOOLEAN,
+  ADD COLUMN IF NOT EXISTS has_pests             BOOLEAN,
+  ADD COLUMN IF NOT EXISTS neighborhood_problems JSONB        NOT NULL DEFAULT '[]',
+  ADD COLUMN IF NOT EXISTS main_priority_request TEXT,
+  ADD COLUMN IF NOT EXISTS ownership_type        VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS move_in_date          DATE,
+  ADD COLUMN IF NOT EXISTS move_out_date         DATE,
+  ADD COLUMN IF NOT EXISTS is_member_confirmed   BOOLEAN      NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS wants_to_join         BOOLEAN,
+  ADD COLUMN IF NOT EXISTS monthly_payment_day   INTEGER,
+  ADD COLUMN IF NOT EXISTS terms_accepted        BOOLEAN      NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS lgpd_accepted         BOOLEAN      NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS race                  VARCHAR(30),
+  ADD COLUMN IF NOT EXISTS education_level       VARCHAR(50);

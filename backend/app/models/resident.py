@@ -58,8 +58,10 @@ class Resident(SQLModel, table=True):
     address_street: str | None = Field(default=None, max_length=255)
     address_number: str | None = Field(default=None, max_length=20)
     address_complement: str | None = Field(default=None, max_length=100)
+    address_neighborhood: str | None = Field(default=None, max_length=100)
     address_city: str | None = Field(default=None, max_length=100)
     address_state: str | None = Field(default=None, max_length=2)
+    address_country: str | None = Field(default='Brasil', max_length=100)
 
     # --- housing profile ---
     address_rooms: int | None = None

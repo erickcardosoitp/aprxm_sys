@@ -107,8 +107,10 @@ export interface Resident {
   address_street?: string
   address_number?: string
   address_complement?: string
+  address_neighborhood?: string
   address_city?: string
   address_state?: string
+  address_country?: string
 
   address_rooms?: number
   address_location?: string
