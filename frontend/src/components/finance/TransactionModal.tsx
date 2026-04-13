@@ -54,6 +54,11 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
 
+  // delivery_fee — full-text search
+  const [feeQuery, setFeeQuery] = useState('')
+  const [feeResults, setFeeResults] = useState<Resident[]>([])
+  const [feeSearching, setFeeSearching] = useState(false)
+
   // Step 2 — proof_of_residence specific
   const [proofName, setProofName] = useState('')
   const [proofCpf, setProofCpf] = useState('')
@@ -101,6 +106,24 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       setDescription(sub.label + (resident ? ` — ${resident.full_name}` : ''))
     }
   }, [incomeSubtype, resident, txType])
+
+  const searchFeeResident = async (q: string) => {
+    setFeeQuery(q)
+    if (q.length < 2) { setFeeResults([]); return }
+    setFeeSearching(true)
+    try {
+      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
+      setFeeResults(res.data.slice(0, 8))
+    } catch { /* silent */ } finally { setFeeSearching(false) }
+  }
+
+  const selectFeeResident = (r: Resident) => {
+    setResident(r)
+    setFeeResults([])
+    setFeeQuery(r.full_name)
+    if (r.type === 'member') loadPaymentHistory(r.id)
+    else setPaymentHistory(null)
+  }
 
   const lookupCpf = async () => {
     const cpf = cpfQuery.replace(/\D/g, '')
@@ -150,6 +173,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       if (!amount || parseFloat(amount) <= 0) return false
       if (!description.trim()) return false
       if (txType === 'income' && incomeSubtype === 'mensalidade' && !resident) return false
+      if (txType === 'income' && incomeSubtype === 'delivery_fee' && !resident) return false
       return true
     }
     return true
@@ -373,6 +397,66 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
               {/* Resident lookup (income only, non-proof) */}
               {txType === 'income' && !isProof && (
                 <div>
+                  {/* delivery_fee: busca por nome / telefone / CEP */}
+                  {incomeSubtype === 'delivery_fee' ? (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Morador / Visitante <span className="text-red-500">*</span>
+                        <span className="text-gray-400 font-normal ml-1">(nome, telefone ou CEP)</span>
+                      </label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          value={feeQuery}
+                          onChange={e => { searchFeeResident(e.target.value); if (!e.target.value) { setResident(null); setPaymentHistory(null) } }}
+                          placeholder="Buscar por nome, telefone ou CEP…"
+                          className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                        />
+                        {feeSearching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">…</span>}
+                      </div>
+                      {feeResults.length > 0 && !resident && (
+                        <ul className="mt-1 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-44 overflow-y-auto">
+                          {feeResults.map(r => {
+                            const isGuest = r.type === 'guest'
+                            return (
+                              <li key={r.id}>
+                                <button type="button" onClick={() => selectFeeResident(r)}
+                                  className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 text-sm">
+                                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${isGuest ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    {isGuest ? 'Visitante' : 'Associado'}
+                                  </span>
+                                  <span className="font-medium text-gray-800 truncate">{r.full_name}</span>
+                                  {r.phone_primary && <span className="text-xs text-gray-400 shrink-0">{r.phone_primary}</span>}
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                      {resident && (
+                        <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-blue-800">{resident.full_name}</p>
+                            <p className="text-xs text-blue-600">
+                              {resident.type === 'guest' ? 'Visitante (não associado)' : 'Associado'}
+                              {resident.phone_primary ? ` · ${resident.phone_primary}` : ''}
+                              {resident.address_cep ? ` · CEP ${resident.address_cep}` : ''}
+                            </p>
+                            {paymentHistory?.is_delinquent && (
+                              <p className="text-xs text-red-600 font-semibold mt-0.5 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" /> Inadimplente
+                              </p>
+                            )}
+                          </div>
+                          <button type="button" onClick={() => { setResident(null); setFeeQuery(''); setPaymentHistory(null) }}
+                            className="text-gray-400 hover:text-red-500 shrink-0">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                  <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     CPF do morador {incomeSubtype === 'mensalidade' ? <span className="text-red-500">*</span> : '(opcional)'}
                   </label>
@@ -398,6 +482,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                         </span>
                       </p>
                     </div>
+                  )}
+                  </div>
                   )}
 
                   {/* Mensalidade payment history */}
