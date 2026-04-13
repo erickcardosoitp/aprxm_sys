@@ -42,10 +42,16 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
   const role = useAuthStore((s) => s.role)
   const isOperator = role === 'operator'
   const [step, setStep] = useState<CloseStep>('blind')
-  const [blindAmount, setBlindAmount] = useState('')
+  const [blindPix, setBlindPix] = useState('')
+  const [blindDinheiro, setBlindDinheiro] = useState('')
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ expected: number; counted: number; diff: number } | null>(null)
+  const [result, setResult] = useState<{ expected: number; counted: number; diff: number; blindPix: number; blindDinheiro: number } | null>(null)
+
+  const blindPixVal = parseFloat(blindPix.replace(',', '.')) || 0
+  const blindDinheiroVal = parseFloat(blindDinheiro.replace(',', '.')) || 0
+  const blindTotal = blindPixVal + blindDinheiroVal
+  const canProceed = (blindPix !== '' || blindDinheiro !== '') && blindTotal >= 0
 
   // Signature canvas (operator only)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -80,8 +86,8 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
   }
 
   const fetchAndContinue = async () => {
-    const counted = parseFloat(blindAmount.replace(',', '.'))
-    if (isNaN(counted) || counted < 0) { toast.error('Valor inválido.'); return }
+    if (!canProceed) { toast.error('Informe ao menos um valor.'); return }
+    const counted = blindTotal
     setLoading(true)
     try {
       const res = await financeService.listTransactions()
@@ -90,7 +96,7 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
       const income = txs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
       const exits = txs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
       const expected = openingBalance + income - exits
-      setResult({ expected, counted, diff: counted - expected })
+      setResult({ expected, counted, diff: counted - expected, blindPix: blindPixVal, blindDinheiro: blindDinheiroVal })
       setStep(isOperator ? 'sign' : 'review')
     } catch {
       toast.error('Erro ao buscar movimentações.')
@@ -161,17 +167,30 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
                   <p className="text-xs text-amber-700 mt-1">Conte o dinheiro na gaveta <strong>sem olhar o sistema</strong>. Informe o valor contado abaixo.</p>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Valor total contado (R$) *</label>
-                <input type="number" min="0" step="0.01" value={blindAmount}
-                  onChange={e => setBlindAmount(e.target.value)} placeholder="0,00" autoFocus
-                  onKeyDown={e => { if (e.key === 'Enter' && blindAmount) fetchAndContinue() }}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg font-semibold text-center focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
-                />
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">PIX (R$)</label>
+                  <input type="number" min="0" step="0.01" value={blindPix}
+                    onChange={e => setBlindPix(e.target.value)} placeholder="0,00" autoFocus
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg font-semibold text-center focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Dinheiro (R$)</label>
+                  <input type="number" min="0" step="0.01" value={blindDinheiro}
+                    onChange={e => setBlindDinheiro(e.target.value)} placeholder="0,00"
+                    onKeyDown={e => { if (e.key === 'Enter' && canProceed) fetchAndContinue() }}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg font-semibold text-center focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                  />
+                </div>
+                <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between border border-gray-200">
+                  <span className="text-xs font-medium text-gray-500">Total contado</span>
+                  <span className="text-lg font-bold text-gray-900">R$ {fmt(blindTotal)}</span>
+                </div>
               </div>
               <div className="flex gap-3">
                 <button onClick={onCancel} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
-                <button onClick={fetchAndContinue} disabled={!blindAmount || loading}
+                <button onClick={fetchAndContinue} disabled={!canProceed || loading}
                   className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
                   {loading ? 'Calculando…' : isOperator ? 'Próximo →' : 'Ver Conferência →'}
                 </button>
@@ -244,8 +263,11 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
                     <p className="text-xl font-bold text-gray-800">R$ {fmt(result.expected)}</p>
                   </div>
                   <div className="flex-1 p-4 text-center">
-                    <p className="text-xs text-gray-500 mb-1">Você contou</p>
+                    <p className="text-xs text-gray-500 mb-1">Total contado</p>
                     <p className="text-xl font-bold text-[#26619c]">R$ {fmt(result.counted)}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      PIX R$ {fmt(result.blindPix)} · Din. R$ {fmt(result.blindDinheiro)}
+                    </p>
                   </div>
                 </div>
                 <div className={`px-4 py-3 text-center border-t border-gray-200 ${result.diff === 0 ? 'bg-green-50' : result.diff > 0 ? 'bg-blue-50' : 'bg-red-50'}`}>
@@ -305,13 +327,19 @@ interface ConferenciaModalProps {
 
 function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) {
   const [step, setStep] = useState<'blind' | 'review' | 'done'>('blind')
-  const [blindAmount, setBlindAmount] = useState('')
+  const [blindPix, setBlindPix] = useState('')
+  const [blindDinheiro, setBlindDinheiro] = useState('')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ expected: number; counted: number; diff: number; income: number; exits: number } | null>(null)
+  const [result, setResult] = useState<{ expected: number; counted: number; diff: number; income: number; exits: number; blindPix: number; blindDinheiro: number } | null>(null)
+
+  const blindPixVal = parseFloat(blindPix.replace(',', '.')) || 0
+  const blindDinheiroVal = parseFloat(blindDinheiro.replace(',', '.')) || 0
+  const blindTotal = blindPixVal + blindDinheiroVal
+  const canProceed = (blindPix !== '' || blindDinheiro !== '') && blindTotal >= 0
 
   const handleConferencia = async () => {
-    const counted = parseFloat(blindAmount.replace(',', '.'))
-    if (isNaN(counted) || counted < 0) { toast.error('Valor inválido.'); return }
+    if (!canProceed) { toast.error('Informe ao menos um valor.'); return }
+    const counted = blindTotal
     setLoading(true)
     try {
       const res = await financeService.conferencia(counted)
@@ -322,6 +350,8 @@ function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) 
         diff: parseFloat(d.difference),
         income: parseFloat(d.income),
         exits: parseFloat(d.exits),
+        blindPix: blindPixVal,
+        blindDinheiro: blindDinheiroVal,
       })
       setStep('review')
     } catch (e: any) {
@@ -379,19 +409,30 @@ function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) 
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Valor total contado (R$) *</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={blindAmount}
-                  onChange={e => setBlindAmount(e.target.value)}
-                  placeholder="0,00"
-                  autoFocus
-                  onKeyDown={e => { if (e.key === 'Enter' && blindAmount) handleConferencia() }}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg font-semibold text-center focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
-                />
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">PIX (R$)</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={blindPix} onChange={e => setBlindPix(e.target.value)}
+                    placeholder="0,00" autoFocus
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg font-semibold text-center focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Dinheiro (R$)</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={blindDinheiro} onChange={e => setBlindDinheiro(e.target.value)}
+                    placeholder="0,00"
+                    onKeyDown={e => { if (e.key === 'Enter' && canProceed) handleConferencia() }}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg font-semibold text-center focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                  />
+                </div>
+                <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between border border-gray-200">
+                  <span className="text-xs font-medium text-gray-500">Total contado</span>
+                  <span className="text-lg font-bold text-gray-900">R$ {fmt(blindTotal)}</span>
+                </div>
               </div>
 
               <div className="flex gap-3">
@@ -399,7 +440,7 @@ function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) 
                   className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
                   Cancelar
                 </button>
-                <button onClick={handleConferencia} disabled={!blindAmount || loading}
+                <button onClick={handleConferencia} disabled={!canProceed || loading}
                   className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
                   {loading ? 'Calculando…' : 'Ver Resultado →'}
                 </button>
@@ -444,8 +485,11 @@ function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) 
                     <p className="text-xl font-bold text-gray-800">R$ {fmt(result.expected)}</p>
                   </div>
                   <div className="flex-1 p-4 text-center">
-                    <p className="text-xs text-gray-500 mb-1">Você contou</p>
+                    <p className="text-xs text-gray-500 mb-1">Total contado</p>
                     <p className="text-xl font-bold text-[#26619c]">R$ {fmt(result.counted)}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      PIX R$ {fmt(result.blindPix)} · Din. R$ {fmt(result.blindDinheiro)}
+                    </p>
                   </div>
                 </div>
                 <div className={`px-4 py-3 text-center border-t border-gray-200 ${
