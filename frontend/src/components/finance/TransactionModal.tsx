@@ -59,6 +59,16 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [feeResults, setFeeResults] = useState<Resident[]>([])
   const [feeSearching, setFeeSearching] = useState(false)
 
+  // inline resident registration
+  const [notFound, setNotFound] = useState(false)
+  const [registerAs, setRegisterAs] = useState<'member' | 'guest' | null>(null)
+  const [regName, setRegName] = useState('')
+  const [regPhone, setRegPhone] = useState('')
+  const [regCpf, setRegCpf] = useState('')
+  const [regUnit, setRegUnit] = useState('')
+  const [regProofUrl, setRegProofUrl] = useState('')
+  const [registering, setRegistering] = useState(false)
+
   // Step 2 — proof_of_residence specific
   const [proofName, setProofName] = useState('')
   const [proofCpf, setProofCpf] = useState('')
@@ -107,13 +117,18 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     }
   }, [incomeSubtype, resident, txType])
 
+  const resetNotFound = () => { setNotFound(false); setRegisterAs(null); setRegName(''); setRegPhone(''); setRegCpf(''); setRegUnit(''); setRegProofUrl('') }
+
   const searchFeeResident = async (q: string) => {
     setFeeQuery(q)
+    resetNotFound()
     if (q.length < 2) { setFeeResults([]); return }
     setFeeSearching(true)
     try {
       const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      setFeeResults(res.data.slice(0, 8))
+      const results = res.data.slice(0, 8)
+      setFeeResults(results)
+      if (results.length === 0) { setNotFound(true); setRegName(q) }
     } catch { /* silent */ } finally { setFeeSearching(false) }
   }
 
@@ -121,6 +136,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     setResident(r)
     setFeeResults([])
     setFeeQuery(r.full_name)
+    resetNotFound()
     if (r.type === 'member') loadPaymentHistory(r.id)
     else setPaymentHistory(null)
   }
@@ -129,15 +145,46 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     const cpf = cpfQuery.replace(/\D/g, '')
     if (cpf.length !== 11) { toast.error('CPF inválido.'); return }
     setCpfLoading(true)
+    resetNotFound()
     try {
       const res = await api.get<Resident>(`/residents/cpf/${cpfQuery}`)
       setResident(res.data)
     } catch {
-      toast.error('Morador não encontrado para este CPF.')
       setResident(null)
       setPaymentHistory(null)
+      setNotFound(true)
+      setRegCpf(cpfQuery)
     } finally {
       setCpfLoading(false)
+    }
+  }
+
+  const registerResident = async () => {
+    if (!regName.trim()) { toast.error('Nome é obrigatório.'); return }
+    if (registerAs === 'member' && !regProofUrl) { toast.error('Anexe o comprovante de pagamento.'); return }
+    setRegistering(true)
+    try {
+      const res = await api.post<Resident>('/residents', {
+        type: registerAs,
+        full_name: regName.trim(),
+        phone_primary: regPhone || undefined,
+        cpf: regCpf || undefined,
+        unit: regUnit || undefined,
+        status: 'active',
+        is_member_confirmed: registerAs === 'member',
+        terms_accepted: false,
+        lgpd_accepted: false,
+      })
+      setResident(res.data)
+      setFeeQuery(res.data.full_name)
+      setCpfQuery(regCpf)
+      resetNotFound()
+      toast.success(`${registerAs === 'member' ? 'Associado' : 'Visitante'} cadastrado!`)
+      if (registerAs === 'member') loadPaymentHistory(res.data.id)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao cadastrar.')
+    } finally {
+      setRegistering(false)
     }
   }
 
@@ -484,6 +531,63 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                     </div>
                   )}
                   </div>
+                  )}
+
+                  {/* ── Cadastro inline quando não encontrado ── */}
+                  {notFound && !resident && (
+                    <div className="mt-2 border border-dashed border-gray-300 rounded-xl p-4 flex flex-col gap-3">
+                      <p className="text-xs text-gray-500 font-medium">Morador não encontrado. Cadastrar como:</p>
+                      <div className="flex gap-2">
+                        {(['member', 'guest'] as const).map(t => (
+                          <button key={t} type="button"
+                            onClick={() => setRegisterAs(registerAs === t ? null : t)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${
+                              registerAs === t
+                                ? t === 'member' ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-orange-500 text-white border-orange-500'
+                                : 'border-gray-300 text-gray-600 hover:border-gray-400'
+                            }`}>
+                            {t === 'member' ? 'Associado' : 'Visitante'}
+                          </button>
+                        ))}
+                      </div>
+
+                      {registerAs && (
+                        <div className="flex flex-col gap-2">
+                          <input value={regName} onChange={e => setRegName(e.target.value)}
+                            placeholder="Nome completo *"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input value={regPhone} onChange={e => setRegPhone(e.target.value)}
+                              placeholder="Telefone" type="tel"
+                              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+                            <input value={regCpf} onChange={e => setRegCpf(e.target.value)}
+                              placeholder="CPF"
+                              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+                          </div>
+                          {registerAs === 'member' && (
+                            <input value={regUnit} onChange={e => setRegUnit(e.target.value)}
+                              placeholder="Unidade (ex: 201)"
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+                          )}
+                          {registerAs === 'member' && (
+                            <div>
+                              <p className="text-xs font-medium text-gray-600 mb-1">
+                                Comprovante de pagamento <span className="text-red-500">*</span>
+                              </p>
+                              <PhotoCapture
+                                label="Foto do comprovante"
+                                onCapture={e => setRegProofUrl(e.url)}
+                              />
+                              {regProofUrl && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Comprovante anexado</p>}
+                            </div>
+                          )}
+                          <button type="button" onClick={registerResident} disabled={registering || !regName.trim() || (registerAs === 'member' && !regProofUrl)}
+                            className="w-full py-2 rounded-lg text-sm font-semibold text-white bg-[#26619c] hover:bg-[#1a4f87] disabled:opacity-50 transition">
+                            {registering ? 'Cadastrando…' : `Cadastrar como ${registerAs === 'member' ? 'Associado' : 'Visitante'}`}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* Mensalidade payment history */}
