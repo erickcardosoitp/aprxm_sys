@@ -574,10 +574,10 @@ async def get_audit_trail(
     params: dict = {"aid": str(current.association_id), "lim": limit, "off": offset}
 
     if date_from:
-        conditions.append("t.transaction_at >= :date_from::timestamptz")
+        conditions.append("t.transaction_at >= CAST(:date_from AS timestamptz)")
         params["date_from"] = date_from
     if date_to:
-        conditions.append("t.transaction_at <= (:date_to || ' 23:59:59')::timestamptz")
+        conditions.append("t.transaction_at <= CAST((:date_to || ' 23:59:59') AS timestamptz)")
         params["date_to"] = date_to
     if tx_type:
         conditions.append("t.type = :tx_type")
