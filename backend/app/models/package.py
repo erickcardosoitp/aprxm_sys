@@ -67,6 +67,12 @@ class Package(SQLModel, table=True):
     proof_of_residence_url: str | None = None
     recipient_id_photo_url: str | None = None
 
+    # third-party pickup
+    third_party_pickup: bool = Field(default=False)
+    owner_id_photo_url: str | None = None   # xerox/pdf da identidade do dono
+    picker_id_photo_url: str | None = None  # identidade de quem retira
+    picker_phone: str | None = Field(default=None, max_length=30)
+
     # return
     returned_at: datetime | None = None
     return_reason: str | None = None

@@ -23,9 +23,13 @@ export const packageService = {
       signature_url: string
       delivered_to_cpf?: string
       delivered_to_resident_id?: string
-      proof_of_residence_url: string
+      proof_of_residence_url?: string
       recipient_id_photo_url?: string
       delivery_person_name?: string
+      third_party_pickup?: boolean
+      owner_id_photo_url?: string
+      picker_id_photo_url?: string
+      picker_phone?: string
     },
   ) => api.post<Package>(`/packages/${packageId}/deliver`, data),
 

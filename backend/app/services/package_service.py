@@ -88,6 +88,10 @@ class PackageService:
         proof_of_residence_url: str | None = None,
         recipient_id_photo_url: str | None = None,
         delivery_person_name: str | None = None,
+        third_party_pickup: bool = False,
+        owner_id_photo_url: str | None = None,
+        picker_id_photo_url: str | None = None,
+        picker_phone: str | None = None,
     ) -> Package:
         package = await self._get_package(package_id, association_id)
 
@@ -155,6 +159,10 @@ class PackageService:
         package.signature_url = signature_url
         package.proof_of_residence_url = proof_of_residence_url
         package.recipient_id_photo_url = recipient_id_photo_url
+        package.third_party_pickup = third_party_pickup
+        package.owner_id_photo_url = owner_id_photo_url
+        package.picker_id_photo_url = picker_id_photo_url
+        package.picker_phone = picker_phone
         package.delivered_at = datetime.utcnow()
         package.delivered_by = delivered_by
         package.updated_at = datetime.utcnow()

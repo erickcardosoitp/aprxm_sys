@@ -465,6 +465,10 @@ export default function PackagesPage() {
   const [proofResidenceUrl, setProofResidenceUrl] = useState('')
   const [recipientIdPhoto, setRecipientIdPhoto] = useState('')
   const [deliveryPersonName, setDeliveryPersonName] = useState('')
+  const [isThirdParty, setIsThirdParty] = useState(false)
+  const [ownerIdPhoto, setOwnerIdPhoto] = useState('')
+  const [pickerIdPhoto, setPickerIdPhoto] = useState('')
+  const [pickerPhone, setPickerPhone] = useState('')
 
   // Receive flow — deliverer
   const [delivererName, setDelivererName] = useState('')
@@ -563,17 +567,26 @@ export default function PackagesPage() {
 
   const handleDeliver = async () => {
     if (!deliveryTarget) return
+    const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
+    const proofRequired = isGuest || isThirdParty
     if (!recipientName || !recipientSig) { toast.error('Nome e assinatura do recebedor obrigatórios.'); return }
-    if (!proofResidenceUrl) { toast.error('Foto do comprovante de residência obrigatória.'); return }
+    if (proofRequired && !proofResidenceUrl) { toast.error('Comprovante de residência obrigatório.'); return }
+    if (isThirdParty && !ownerIdPhoto) { toast.error('Identidade do dono da encomenda obrigatória.'); return }
+    if (isThirdParty && !pickerIdPhoto) { toast.error('Identidade de quem está retirando obrigatória.'); return }
+    if (isThirdParty && !pickerPhone.trim()) { toast.error('Telefone de contato obrigatório.'); return }
     setLoading(true)
     try {
       const res = await packageService.deliver(deliveryTarget.id, {
         delivered_to_name: recipientName,
         signature_url: recipientSig,
         delivered_to_resident_id: deliveryTarget.resident_id,
-        proof_of_residence_url: proofResidenceUrl,
+        proof_of_residence_url: proofResidenceUrl || undefined,
         recipient_id_photo_url: recipientIdPhoto || undefined,
         delivery_person_name: deliveryPersonName || fullName || undefined,
+        third_party_pickup: isThirdParty,
+        owner_id_photo_url: ownerIdPhoto || undefined,
+        picker_id_photo_url: pickerIdPhoto || undefined,
+        picker_phone: pickerPhone.trim() || undefined,
       })
       const pkg = res.data as any
       toast.success(pkg.has_delivery_fee
@@ -592,6 +605,7 @@ export default function PackagesPage() {
   const resetDelivery = () => {
     setRecipientName(''); setRecipientSig('')
     setProofResidenceUrl(''); setRecipientIdPhoto(''); setDeliveryPersonName('')
+    setIsThirdParty(false); setOwnerIdPhoto(''); setPickerIdPhoto(''); setPickerPhone('')
   }
 
   const pendingCount = packages.filter(p => p.status === 'received' || p.status === 'notified').length
@@ -1075,43 +1089,102 @@ export default function PackagesPage() {
             </div>
 
             <div className="p-5 flex flex-col gap-4">
-              {/* Proof of residence */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                <p className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
-                  <Shield className="w-3.5 h-3.5 text-[#26619c]" />
-                  Comprovante de Residência <span className="text-red-500">*</span>
+              {/* Third-party toggle */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <p className="text-xs font-semibold text-amber-900 mb-2 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                  Quem está retirando?
                 </p>
-                <p className="text-xs text-gray-400 mb-2">Foto obrigatória para confirmar a entrega</p>
-                <PhotoCapture
-                  label="Foto do comprovante"
-                  onCapture={entry => setProofResidenceUrl(entry.url)}
-                  onUpload={file => uploadService.uploadFile(file, 'packages/proofs')}
-                />
-                {proofResidenceUrl && <p className="text-xs text-green-600 mt-1">✓ Comprovante registrado</p>}
+                <div className="flex gap-2">
+                  <button type="button"
+                    onClick={() => setIsThirdParty(false)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${!isThirdParty ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600'}`}>
+                    O próprio morador
+                  </button>
+                  <button type="button"
+                    onClick={() => setIsThirdParty(true)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${isThirdParty ? 'bg-amber-500 text-white border-amber-500' : 'border-gray-300 text-gray-600'}`}>
+                    Outra pessoa
+                  </button>
+                </div>
               </div>
 
-              {/* Anti-fraud photo */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
-                  <Shield className="w-3.5 h-3.5 text-gray-400" /> Foto do documento (antifraude — opcional)
-                </p>
-                <PhotoCapture
-                  label="Documento do recebedor"
-                  onCapture={entry => setRecipientIdPhoto(entry.url)}
-                  onUpload={file => uploadService.uploadFile(file, 'packages/ids')}
-                />
-              </div>
+              {/* Proof of residence — obrigatório p/ visitante ou terceiro */}
+              {(() => {
+                const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
+                const proofRequired = isGuest || isThirdParty
+                return (
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                    <p className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-[#26619c]" />
+                      Comprovante de Residência
+                      {proofRequired ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(opcional)</span>}
+                    </p>
+                    {proofRequired && <p className="text-xs text-gray-400 mb-2">Obrigatório para {isGuest ? 'visitantes' : 'retirada por terceiros'}</p>}
+                    <PhotoCapture
+                      label="Foto do comprovante"
+                      onCapture={entry => setProofResidenceUrl(entry.url)}
+                      onUpload={file => uploadService.uploadFile(file, 'packages/proofs')}
+                    />
+                    {proofResidenceUrl && <p className="text-xs text-green-600 mt-1">✓ Comprovante registrado</p>}
+                  </div>
+                )
+              })()}
+
+              {/* Third-party extra docs */}
+              {isThirdParty && (
+                <div className="rounded-xl border border-amber-200 overflow-hidden">
+                  <div className="bg-amber-500 px-4 py-2.5 flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-white" />
+                    <span className="text-sm font-semibold text-white">Documentação — Retirada por Terceiros</span>
+                  </div>
+                  <div className="p-4 flex flex-col gap-4">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700 mb-2">
+                        Identidade do dono da encomenda (xerox ou PDF) <span className="text-red-500">*</span>
+                      </p>
+                      <PhotoCapture
+                        label="RG/CNH do morador dono"
+                        onCapture={entry => setOwnerIdPhoto(entry.url)}
+                        onUpload={file => uploadService.uploadFile(file, 'packages/ids')}
+                      />
+                      {ownerIdPhoto && <p className="text-xs text-green-600 mt-1">✓ Documento registrado</p>}
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700 mb-2">
+                        Identidade de quem está retirando <span className="text-red-500">*</span>
+                      </p>
+                      <PhotoCapture
+                        label="RG/CNH do portador"
+                        onCapture={entry => setPickerIdPhoto(entry.url)}
+                        onUpload={file => uploadService.uploadFile(file, 'packages/ids')}
+                      />
+                      {pickerIdPhoto && <p className="text-xs text-green-600 mt-1">✓ Documento registrado</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Telefone de contato de quem retira <span className="text-red-500">*</span>
+                      </label>
+                      <input value={pickerPhone} onChange={e => setPickerPhone(e.target.value)}
+                        type="tel" placeholder="(00) 00000-0000" className={inputCls} />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Recipient section */}
               <div className="rounded-xl border border-blue-200 overflow-hidden">
                 <div className="bg-blue-600 px-4 py-2.5 flex items-center gap-2">
                   <User className="w-4 h-4 text-white" />
-                  <span className="text-sm font-semibold text-white">Recebedor (Morador)</span>
+                  <span className="text-sm font-semibold text-white">
+                    {isThirdParty ? 'Portador (quem está retirando)' : 'Recebedor (Morador)'}
+                  </span>
                 </div>
                 <div className="p-4 flex flex-col gap-3">
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
-                    <input value={recipientName} onChange={e => setRecipientName(e.target.value)} className={inputCls} placeholder="Nome de quem está recebendo" />
+                    <input value={recipientName} onChange={e => setRecipientName(e.target.value)} className={inputCls}
+                      placeholder={isThirdParty ? 'Nome de quem está retirando' : 'Nome de quem está recebendo'} />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Funcionário que está entregando</label>
@@ -1134,7 +1207,7 @@ export default function PackagesPage() {
               <button onClick={() => { setDeliveryTarget(null); resetDelivery() }}
                 className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
               <button onClick={handleDeliver}
-                disabled={loading || !recipientSig || !proofResidenceUrl || !recipientName}
+                disabled={loading || !recipientSig || !recipientName}
                 className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
                 {loading ? 'Registrando…' : 'Confirmar Entrega'}
               </button>

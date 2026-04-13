@@ -43,9 +43,14 @@ class DeliverPackageRequest(BaseModel):
     delivered_to_cpf: str | None = None
     delivered_to_resident_id: UUID | None = None
     # anti-fraud
-    proof_of_residence_url: str
+    proof_of_residence_url: str | None = None
     recipient_id_photo_url: str | None = None
     delivery_person_name: str | None = None
+    # third-party pickup
+    third_party_pickup: bool = False
+    owner_id_photo_url: str | None = None
+    picker_id_photo_url: str | None = None
+    picker_phone: str | None = None
 
 
 @router.post("", summary="Registrar recebimento de encomenda")
@@ -91,6 +96,10 @@ async def deliver_package(
         proof_of_residence_url=body.proof_of_residence_url,
         recipient_id_photo_url=body.recipient_id_photo_url,
         delivery_person_name=body.delivery_person_name,
+        third_party_pickup=body.third_party_pickup,
+        owner_id_photo_url=body.owner_id_photo_url,
+        picker_id_photo_url=body.picker_id_photo_url,
+        picker_phone=body.picker_phone,
     )
     return {
         "id": str(pkg.id),
