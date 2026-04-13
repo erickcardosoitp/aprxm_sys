@@ -273,6 +273,8 @@ async def list_packages(
             "resident_type": r.type if r else None,
             "resident_cep": rcep,
             "resident_phone": r.phone_primary if r else None,
+            "resident_address_street": r.address_street if r else None,
+            "resident_address_number": r.address_number if r else None,
             "photo_urls": p.photo_urls or [],
             "notes": p.notes,
             "object_type": p.object_type,

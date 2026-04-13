@@ -729,13 +729,18 @@ export default function PackagesPage() {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-800">
-            {pkg.resident_name ?? '—'}
-            {pkg.unit ? ` · Unid. ${pkg.unit}${pkg.block ? `/Bl.${pkg.block}` : ''}` : ''}
+          <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5 flex-wrap">
+            <span>{pkg.resident_name ?? '—'}{pkg.unit ? ` · Unid. ${pkg.unit}${pkg.block ? `/Bl.${pkg.block}` : ''}` : ''}</span>
+            {pkg.resident_type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-semibold shrink-0">VISITANTE</span>}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
             {pkg.carrier_name ?? '—'}{pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
           </p>
+          {(pkg.resident_address_street || pkg.resident_cep) && (
+            <p className="text-xs text-gray-400">
+              {pkg.resident_address_street ? `${pkg.resident_address_street}${pkg.resident_address_number ? `, ${pkg.resident_address_number}` : ''}` : `CEP: ${pkg.resident_cep}`}
+            </p>
+          )}
           <p className="text-xs text-gray-400">
             {new Date(pkg.received_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
           </p>
@@ -996,7 +1001,7 @@ export default function PackagesPage() {
                     value={recipientSearch}
                     onChange={e => { setRecipientSearch(e.target.value); setSearchEmpty(false); setShowGuestForm(false); searchResidents(e.target.value) }}
                     className={`${inputCls} pl-9`}
-                    placeholder="Buscar por nome, CPF ou CEP…"
+                    placeholder="Buscar por nome, telefone, CPF ou CEP…"
                   />
                 </div>
 

@@ -159,6 +159,8 @@ export interface Package {
   resident_cep?: string
   resident_phone?: string
   resident_type?: string
+  resident_address_street?: string
+  resident_address_number?: string
   photo_urls?: Array<{ url: string; label: string; taken_at: string }>
   notes?: string
   object_type?: string
