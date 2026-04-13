@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, Barcode, Camera, FileText, MessageCircle, Package as PackageIcon, Plus,
-  Search, Shield, User, UserX, List, Columns, Workflow, X, ChevronDown,
+  Search, Shield, User, UserX, List, Columns, Workflow, X, ChevronDown, Layers,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SignaturePad } from '../../components/packages/SignaturePad'
@@ -472,6 +472,117 @@ export default function PackagesPage() {
   const [pickerIdPhoto, setPickerIdPhoto] = useState('')
   const [pickerPhone, setPickerPhone] = useState('')
 
+  // Bulk delivery flow
+  const [showBulkDeliver, setShowBulkDeliver] = useState(false)
+  const [bulkStep, setBulkStep] = useState<'select' | 'sign'>('select')
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set())
+  const [bulkRecipientName, setBulkRecipientName] = useState('')
+  const [bulkSig, setBulkSig] = useState('')
+  const [bulkDeliveryPersonName, setBulkDeliveryPersonName] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkResult, setBulkResult] = useState<{ delivered: number; errors: string[]; items: any[] } | null>(null)
+
+  const pendingPackages = packages.filter(p => p.status === 'received' || p.status === 'notified')
+
+  const resetBulk = () => {
+    setShowBulkDeliver(false); setBulkStep('select'); setBulkSelected(new Set())
+    setBulkRecipientName(''); setBulkSig(''); setBulkDeliveryPersonName('')
+    setBulkLoading(false); setBulkResult(null)
+  }
+
+  const handleBulkDeliver = async () => {
+    if (!bulkRecipientName || !bulkSig) { toast.error('Nome e assinatura obrigatórios.'); return }
+    if (bulkSelected.size === 0) { toast.error('Selecione ao menos uma encomenda.'); return }
+    setBulkLoading(true)
+    try {
+      const res = await api.post<{ delivered: number; errors: string[]; items: any[] }>('/packages/bulk-deliver', {
+        package_ids: Array.from(bulkSelected),
+        delivered_to_name: bulkRecipientName,
+        signature_url: bulkSig,
+        delivery_person_name: bulkDeliveryPersonName || fullName || undefined,
+      })
+      setBulkResult(res.data)
+      loadPackages()
+      toast.success(`${res.data.delivered} encomenda(s) entregue(s)!`)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro na entrega múltipla.')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  // Receive mode choice
+  const [showReceiveMode, setShowReceiveMode] = useState(false)
+
+  // Bulk receive flow
+  const [showBulkReceive, setShowBulkReceive] = useState(false)
+  const [bulkRxStep, setBulkRxStep] = useState<'add' | 'sign'>('add')
+  type BulkRxItem = { id: string; tracking_code: string; carrier_name: string; resident_id?: string; resident_name: string; resident_type?: string; unit?: string; block?: string }
+  const [bulkRxQueue, setBulkRxQueue] = useState<BulkRxItem[]>([])
+  const [brxDelivererName, setBrxDelivererName] = useState('')
+  const [brxDelivererSig, setBrxDelivererSig] = useState('')
+  const [brxLoading, setBrxLoading] = useState(false)
+  const [brxResult, setBrxResult] = useState<{ received: number; errors: string[] } | null>(null)
+  const [brxTracking, setBrxTracking] = useState('')
+  const [brxCarrier, setBrxCarrier] = useState('')
+  const [brxSearch, setBrxSearch] = useState('')
+  const [brxResults, setBrxResults] = useState<Resident[]>([])
+  const [brxSelected, setBrxSelected] = useState<Resident | null>(null)
+  const brxBarcodeRef = useRef<HTMLInputElement>(null)
+
+  const searchBrxResidents = async (q: string) => {
+    if (q.length < 2) { setBrxResults([]); return }
+    try {
+      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
+      setBrxResults(res.data.slice(0, 6))
+    } catch { /* silent */ }
+  }
+
+  const addToBulkRxQueue = () => {
+    if (!brxSelected) { toast.error('Selecione o destinatário.'); return }
+    setBulkRxQueue(q => [...q, {
+      id: crypto.randomUUID(),
+      tracking_code: brxTracking, carrier_name: brxCarrier,
+      resident_id: brxSelected.id, resident_name: brxSelected.full_name,
+      resident_type: brxSelected.type,
+      unit: (brxSelected as any).unit, block: (brxSelected as any).block,
+    }])
+    setBrxTracking(''); setBrxCarrier(''); setBrxSearch(''); setBrxResults([]); setBrxSelected(null)
+    setTimeout(() => brxBarcodeRef.current?.focus(), 50)
+  }
+
+  const handleBulkRxSubmit = async () => {
+    if (bulkRxQueue.length === 0) return
+    setBrxLoading(true)
+    let received = 0
+    const errors: string[] = []
+    for (const item of bulkRxQueue) {
+      try {
+        await packageService.receive({
+          resident_id: item.resident_id,
+          unit: item.unit, block: item.block,
+          carrier_name: item.carrier_name || undefined,
+          tracking_code: item.tracking_code || undefined,
+          photo_urls: [],
+          deliverer_name: brxDelivererName || undefined,
+          deliverer_signature_url: brxDelivererSig || undefined,
+        })
+        received++
+      } catch {
+        errors.push(item.resident_name + (item.tracking_code ? ` (${item.tracking_code})` : ''))
+      }
+    }
+    setBrxResult({ received, errors })
+    loadPackages()
+    setBrxLoading(false)
+  }
+
+  const resetBulkRx = () => {
+    setShowBulkReceive(false); setBulkRxStep('add'); setBulkRxQueue([])
+    setBrxDelivererName(''); setBrxDelivererSig(''); setBrxLoading(false); setBrxResult(null)
+    setBrxTracking(''); setBrxCarrier(''); setBrxSearch(''); setBrxResults([]); setBrxSelected(null)
+  }
+
   // Receive flow — deliverer
   const [delivererName, setDelivererName] = useState('')
   const [delivererSig, setDelivererSig] = useState('')
@@ -675,7 +786,14 @@ export default function PackagesPage() {
             <FileText className="w-4 h-4" /><span className="hidden sm:inline">Relatório</span>
           </button>
           <button
-            onClick={() => { setShowReceive(true); setStep('recipient') }}
+            onClick={() => { setBulkDeliveryPersonName(fullName ?? ''); setShowBulkDeliver(true); setBulkStep('select') }}
+            className="flex items-center gap-1.5 border border-[#26619c] text-[#26619c] px-3 py-2 rounded-xl text-sm font-medium hover:bg-[#26619c]/5 transition"
+            title="Entrega Múltipla"
+          >
+            <Layers className="w-4 h-4" /><span className="hidden sm:inline">Múltipla</span>
+          </button>
+          <button
+            onClick={() => setShowReceiveMode(true)}
             className="flex items-center gap-1.5 bg-[#26619c] hover:bg-[#1a4f87] text-white px-3 py-2 rounded-xl text-sm font-medium transition"
           >
             <Plus className="w-4 h-4" /><span className="hidden sm:inline">Receber</span>
@@ -1091,6 +1209,35 @@ export default function PackagesPage() {
               </button>
             </div>
 
+            {(() => {
+              const otherPending = packages.filter(p =>
+                p.id !== deliveryTarget!.id &&
+                p.resident_id === deliveryTarget!.resident_id &&
+                deliveryTarget!.resident_id &&
+                (p.status === 'received' || p.status === 'notified')
+              )
+              if (!otherPending.length) return null
+              return (
+                <div className="mx-5 mt-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                  <p className="text-xs font-semibold text-blue-800 mb-1">Este morador tem mais {otherPending.length} encomenda(s) pendente(s)</p>
+                  <p className="text-xs text-gray-500 mb-2">A taxa é por retirada — retirar todas de uma vez é mais vantajoso.</p>
+                  <button
+                    onClick={() => {
+                      const allIds = new Set([deliveryTarget!.id, ...otherPending.map(p => p.id)])
+                      setBulkSelected(allIds)
+                      setBulkRecipientName(deliveryTarget!.resident_name ?? '')
+                      setBulkDeliveryPersonName(fullName ?? '')
+                      setDeliveryTarget(null); resetDelivery()
+                      setShowBulkDeliver(true); setBulkStep('sign')
+                    }}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-xs font-semibold transition"
+                  >
+                    Retirar todas ({otherPending.length + 1} encomendas)
+                  </button>
+                </div>
+              )
+            })()}
+
             <div className="p-5 flex flex-col gap-4">
               {/* Third-party toggle */}
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -1212,6 +1359,325 @@ export default function PackagesPage() {
                 {loading ? 'Registrando…' : 'Confirmar Entrega'}
               </button>
             </div>
+          </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delivery Modal */}
+      {showBulkDeliver && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40">
+          <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-[#26619c]" />
+                  Entrega Múltipla
+                </h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {bulkStep === 'select' ? 'Selecione as encomendas a entregar' : 'Dados do recebedor'}
+                </p>
+              </div>
+              <button onClick={resetBulk}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+
+            {/* Step: select */}
+            {bulkStep === 'select' && !bulkResult && (
+              <>
+                <div className="p-5 flex flex-col gap-3 max-h-[60vh] overflow-y-auto">
+                  {pendingPackages.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">Nenhuma encomenda pendente.</p>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-500">{bulkSelected.size} selecionada(s)</span>
+                        <button
+                          onClick={() => setBulkSelected(bulkSelected.size === pendingPackages.length
+                            ? new Set()
+                            : new Set(pendingPackages.map(p => p.id)))}
+                          className="text-xs text-[#26619c] hover:underline"
+                        >
+                          {bulkSelected.size === pendingPackages.length ? 'Desmarcar todas' : 'Selecionar todas'}
+                        </button>
+                      </div>
+                      {pendingPackages.map(pkg => (
+                        <label key={pkg.id}
+                          className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition ${bulkSelected.has(pkg.id) ? 'border-[#26619c] bg-[#26619c]/5' : 'border-gray-200 hover:border-gray-300'}`}>
+                          <input
+                            type="checkbox"
+                            checked={bulkSelected.has(pkg.id)}
+                            onChange={e => {
+                              const next = new Set(bulkSelected)
+                              e.target.checked ? next.add(pkg.id) : next.delete(pkg.id)
+                              setBulkSelected(next)
+                            }}
+                            className="mt-0.5 w-4 h-4 accent-[#26619c] shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-800 truncate">
+                              {pkg.resident_name ?? '—'}
+                              {pkg.unit ? ` · Unid. ${pkg.unit}${pkg.block ? `/Bl.${pkg.block}` : ''}` : ''}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {pkg.carrier_name ?? '—'}{pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
+                              {pkg.has_delivery_fee && <span className="text-[10px] text-amber-600 font-medium">Taxa R$ {parseFloat(pkg.delivery_fee_amount ?? '2.50').toFixed(2)}</span>}
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </>
+                  )}
+                </div>
+                <div className="flex gap-3 px-5 pb-5 pt-4 border-t border-gray-100">
+                  <button onClick={resetBulk} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
+                  <button
+                    onClick={() => setBulkStep('sign')}
+                    disabled={bulkSelected.size === 0}
+                    className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50"
+                  >
+                    Continuar ({bulkSelected.size}) →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Step: sign */}
+            {bulkStep === 'sign' && !bulkResult && (
+              <>
+                <div className="p-5 flex flex-col gap-4">
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                    <p className="text-xs font-semibold text-blue-800 mb-1">{bulkSelected.size} encomenda(s) selecionada(s)</p>
+                    <p className="text-xs text-blue-600">O recebedor assina uma única vez por todas.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Nome de quem está retirando <span className="text-red-500">*</span></label>
+                    <input value={bulkRecipientName} onChange={e => setBulkRecipientName(e.target.value)}
+                      className={inputCls} placeholder="Nome completo do recebedor" autoFocus />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Funcionário que está entregando</label>
+                    <input value={bulkDeliveryPersonName} onChange={e => setBulkDeliveryPersonName(e.target.value)}
+                      className={inputCls} placeholder="Nome do funcionário da portaria" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Assinatura do recebedor <span className="text-red-500">*</span></label>
+                    <SignaturePad
+                      label="Assinatura do recebedor"
+                      onSave={setBulkSig}
+                      onClear={() => setBulkSig('')}
+                      onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3 px-5 pb-5 pt-4 border-t border-gray-100">
+                  <button onClick={() => setBulkStep('select')} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">← Voltar</button>
+                  <button
+                    onClick={handleBulkDeliver}
+                    disabled={bulkLoading || !bulkSig || !bulkRecipientName}
+                    className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50"
+                  >
+                    {bulkLoading ? 'Registrando…' : 'Confirmar Entrega'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Result */}
+            {bulkResult && (
+              <div className="p-5 flex flex-col gap-4">
+                <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-4 text-center">
+                  <p className="text-2xl font-bold text-green-700">{bulkResult.delivered}</p>
+                  <p className="text-sm text-green-600 mt-1">encomenda(s) entregue(s) com sucesso</p>
+                  {bulkResult.items.filter((i: any) => i.has_delivery_fee).length > 0 && (
+                    <p className="text-xs text-amber-600 mt-2 font-medium">
+                      Taxa cobrada em {bulkResult.items.filter((i: any) => i.has_delivery_fee).length} encomenda(s)
+                    </p>
+                  )}
+                </div>
+                {bulkResult.errors.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                    <p className="text-xs font-semibold text-red-700 mb-1">{bulkResult.errors.length} erro(s):</p>
+                    <ul className="text-xs text-red-600 flex flex-col gap-0.5">
+                      {bulkResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <button onClick={resetBulk} className="w-full bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition">
+                  Fechar
+                </button>
+              </div>
+            )}
+          </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receive Mode Choice */}
+      {showReceiveMode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Tipo de Recebimento</h3>
+              <button onClick={() => setShowReceiveMode(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <button onClick={() => { setShowReceiveMode(false); setShowReceive(true); setStep('recipient') }}
+              className="flex items-center gap-4 p-4 rounded-2xl border-2 border-[#26619c] bg-[#26619c]/5 hover:bg-[#26619c]/10 transition text-left">
+              <PackageIcon className="w-8 h-8 text-[#26619c] shrink-0" />
+              <div>
+                <p className="font-semibold text-[#26619c]">Recebimento Unitário</p>
+                <p className="text-xs text-gray-500 mt-0.5">Uma encomenda com foto da etiqueta</p>
+              </div>
+            </button>
+            <button onClick={() => { setShowReceiveMode(false); setShowBulkReceive(true); setBulkRxStep('add') }}
+              className="flex items-center gap-4 p-4 rounded-2xl border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 transition text-left">
+              <Layers className="w-8 h-8 text-amber-500 shrink-0" />
+              <div>
+                <p className="font-semibold text-amber-700">Recebimento Múltiplo</p>
+                <p className="text-xs text-gray-500 mt-0.5">Várias encomendas, entregador assina uma vez</p>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Receive Modal */}
+      {showBulkReceive && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40">
+          <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Layers className="w-4 h-4 text-amber-500" /> Recebimento Múltiplo</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{bulkRxStep === 'add' ? `${bulkRxQueue.length} na fila` : 'Dados do entregador'}</p>
+              </div>
+              <button onClick={resetBulkRx}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+
+            {bulkRxStep === 'add' && !brxResult && (
+              <>
+                <div className="p-5 flex flex-col gap-3">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input ref={brxBarcodeRef} value={brxTracking} onChange={e => setBrxTracking(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') document.getElementById('brx-search')?.focus() }}
+                        className={`${inputCls} pl-9`} placeholder="Bipe o código de barras…" />
+                    </div>
+                    <input value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
+                      className={`${inputCls} w-28 shrink-0`} placeholder="Transp." />
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input id="brx-search" value={brxSearch}
+                      onChange={e => { setBrxSearch(e.target.value); searchBrxResidents(e.target.value) }}
+                      className={`${inputCls} pl-9`} placeholder="Buscar destinatário…" />
+                  </div>
+                  {brxResults.length > 0 && (
+                    <ul className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
+                      {brxResults.map(r => (
+                        <li key={r.id}>
+                          <button className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 text-sm"
+                            onClick={() => { setBrxSelected(r); setBrxSearch(r.full_name); setBrxResults([]) }}>
+                            <User className={`w-4 h-4 shrink-0 ${r.type === 'guest' ? 'text-orange-500' : 'text-[#26619c]'}`} />
+                            <span className="font-medium text-gray-800 truncate">{r.full_name}</span>
+                            {r.type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-700 px-1 py-0.5 rounded-full shrink-0">R$2,50</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {brxSelected && (
+                    <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                      <User className="w-4 h-4 text-green-600 shrink-0" />
+                      <span className="text-sm font-medium text-green-800 flex-1 truncate">{brxSelected.full_name}</span>
+                      <button onClick={() => { setBrxSelected(null); setBrxSearch('') }} className="text-xs text-gray-400 hover:text-red-500">✕</button>
+                    </div>
+                  )}
+                  <button onClick={addToBulkRxQueue} disabled={!brxSelected}
+                    className="w-full bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                    + Adicionar à fila
+                  </button>
+                  {bulkRxQueue.length > 0 && (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">{bulkRxQueue.length} na fila</div>
+                      <ul className="divide-y divide-gray-100 max-h-44 overflow-y-auto">
+                        {bulkRxQueue.map((item, i) => (
+                          <li key={item.id} className="flex items-center gap-2 px-3 py-2">
+                            <span className="text-xs text-gray-400 shrink-0 w-4">{i + 1}.</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">{item.resident_name}</p>
+                              {item.tracking_code && <p className="text-xs text-gray-400 font-mono">{item.tracking_code}</p>}
+                            </div>
+                            <button onClick={() => setBulkRxQueue(q => q.filter(x => x.id !== item.id))}
+                              className="text-gray-300 hover:text-red-500 shrink-0"><X className="w-4 h-4" /></button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-3 px-5 pb-5 pt-4 border-t border-gray-100">
+                  <button onClick={resetBulkRx} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
+                  <button onClick={() => setBulkRxStep('sign')} disabled={bulkRxQueue.length === 0}
+                    className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                    Continuar ({bulkRxQueue.length}) →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {bulkRxStep === 'sign' && !brxResult && (
+              <>
+                <div className="p-5 flex flex-col gap-4">
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <p className="text-xs font-semibold text-amber-800 mb-1">{bulkRxQueue.length} encomenda(s)</p>
+                    <ul className="flex flex-col gap-0.5">
+                      {bulkRxQueue.map(item => (
+                        <li key={item.id} className="text-xs text-amber-700">· {item.resident_name}{item.tracking_code ? ` — ${item.tracking_code}` : ''}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Nome do entregador</label>
+                    <input value={brxDelivererName} onChange={e => setBrxDelivererName(e.target.value)}
+                      className={inputCls} placeholder="Nome do courier/transportadora" autoFocus />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Assinatura do entregador</label>
+                    <SignaturePad label="Assinatura do entregador" onSave={setBrxDelivererSig}
+                      onClear={() => setBrxDelivererSig('')}
+                      onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')} />
+                  </div>
+                </div>
+                <div className="flex gap-3 px-5 pb-5 pt-4 border-t border-gray-100">
+                  <button onClick={() => setBulkRxStep('add')} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">← Voltar</button>
+                  <button onClick={handleBulkRxSubmit} disabled={brxLoading}
+                    className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                    {brxLoading ? 'Registrando…' : 'Confirmar Recebimento'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {brxResult && (
+              <div className="p-5 flex flex-col gap-4">
+                <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-4 text-center">
+                  <p className="text-2xl font-bold text-green-700">{brxResult.received}</p>
+                  <p className="text-sm text-green-600 mt-1">encomenda(s) registrada(s)</p>
+                </div>
+                {brxResult.errors.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                    <p className="text-xs font-semibold text-red-700 mb-1">{brxResult.errors.length} erro(s):</p>
+                    <ul className="text-xs text-red-600">{brxResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                  </div>
+                )}
+                <button onClick={resetBulkRx} className="w-full bg-[#26619c] text-white py-2.5 rounded-xl text-sm font-semibold">Fechar</button>
+              </div>
+            )}
           </div>
           </div>
         </div>

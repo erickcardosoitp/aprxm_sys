@@ -110,6 +110,58 @@ async def deliver_package(
     }
 
 
+class BulkDeliverRequest(BaseModel):
+    package_ids: list[UUID]
+    delivered_to_name: str
+    signature_url: str
+    delivered_to_cpf: str | None = None
+    proof_of_residence_url: str | None = None
+    delivery_person_name: str | None = None
+    third_party_pickup: bool = False
+    owner_id_photo_url: str | None = None
+    picker_id_photo_url: str | None = None
+    picker_phone: str | None = None
+
+
+@router.post("/bulk-deliver", summary="Entrega múltipla — mesma assinatura para N encomendas")
+async def bulk_deliver_packages(
+    body: BulkDeliverRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if not body.package_ids:
+        from fastapi import HTTPException
+        raise HTTPException(422, "Informe ao menos uma encomenda.")
+    svc = PackageService(session)
+    results = []
+    errors = []
+    for pkg_id in body.package_ids:
+        try:
+            pkg = await svc.deliver_package(
+                package_id=pkg_id,
+                association_id=current.association_id,
+                delivered_by=current.user_id,
+                delivered_to_name=body.delivered_to_name,
+                signature_url=body.signature_url,
+                delivered_to_cpf=body.delivered_to_cpf,
+                proof_of_residence_url=body.proof_of_residence_url,
+                delivery_person_name=body.delivery_person_name,
+                third_party_pickup=body.third_party_pickup,
+                owner_id_photo_url=body.owner_id_photo_url,
+                picker_id_photo_url=body.picker_id_photo_url,
+                picker_phone=body.picker_phone,
+            )
+            results.append({
+                "id": str(pkg.id),
+                "has_delivery_fee": pkg.has_delivery_fee,
+                "delivery_fee_amount": str(pkg.delivery_fee_amount) if pkg.delivery_fee_amount else None,
+            })
+        except Exception as e:
+            errors.append({"id": str(pkg_id), "error": str(e)})
+    await session.commit()
+    return {"delivered": len(results), "errors": errors, "items": results}
+
+
 @router.post("/{package_id}/events", summary="Adicionar evento / comentário na encomenda")
 async def add_package_event(
     package_id: UUID,
