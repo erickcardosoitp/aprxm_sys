@@ -450,6 +450,7 @@ export default function PackagesPage() {
   const [searchResults, setSearchResults] = useState<Resident[]>([])
   const [selectedRecipient, setSelectedRecipient] = useState<Resident | null>(null)
   const [showGuestForm, setShowGuestForm] = useState(false)
+  const [searchEmpty, setSearchEmpty] = useState(false)
   const [guest, setGuest] = useState<GuestForm>(emptyGuest())
   const [cepLoading, setCepLoading] = useState(false)
   const [tracking, setTracking] = useState('')
@@ -487,17 +488,13 @@ export default function PackagesPage() {
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
 
   const searchResidents = async (q: string) => {
-    if (q.length < 2) { setSearchResults([]); setShowGuestForm(false); return }
+    if (q.length < 2) { setSearchResults([]); setSearchEmpty(false); setShowGuestForm(false); return }
     try {
       const res = await api.get<Resident[]>('/residents/search', { params: { q } })
       const results = res.data.slice(0, 8)
       setSearchResults(results)
-      if (results.length === 0) {
-        setGuest(g => ({ ...g, full_name: q }))
-        setShowGuestForm(true)
-      } else {
-        setShowGuestForm(false)
-      }
+      setSearchEmpty(results.length === 0)
+      if (results.length > 0) setShowGuestForm(false)
     } catch { /* silent */ }
   }
 
@@ -559,7 +556,7 @@ export default function PackagesPage() {
 
   const resetReceive = () => {
     setShowReceive(false); setStep('recipient'); setRecipientSearch('')
-    setSearchResults([]); setSelectedRecipient(null); setShowGuestForm(false)
+    setSearchResults([]); setSelectedRecipient(null); setShowGuestForm(false); setSearchEmpty(false)
     setGuest(emptyGuest()); setTracking(''); setCarrier(''); setPhotos([])
     setDelivererName(''); setDelivererSig('')
   }
@@ -918,12 +915,25 @@ export default function PackagesPage() {
                   </div>
                 )}
 
-                <button
-                  onClick={() => setShowGuestForm(!showGuestForm)}
-                  className="w-full flex items-center gap-2 border border-dashed border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-500 hover:border-[#26619c] hover:text-[#26619c] transition mb-4"
-                >
-                  <UserX className="w-4 h-4" /> Não associado / Visitante
-                </button>
+                {/* Sugestão de não associado — só aparece quando busca retornou vazio */}
+                {searchEmpty && !selectedRecipient && (
+                  <button
+                    onClick={() => { setGuest(g => ({ ...g, full_name: recipientSearch })); setShowGuestForm(true) }}
+                    className="w-full flex items-center gap-2 border border-dashed border-orange-300 bg-orange-50 rounded-lg px-3 py-2.5 text-sm text-orange-600 hover:border-orange-400 transition mb-3"
+                  >
+                    <UserX className="w-4 h-4" /> Não encontrado — cadastrar como não associado
+                  </button>
+                )}
+
+                {/* Botão fixo de não associado — sempre visível */}
+                {!searchEmpty && !selectedRecipient && (
+                  <button
+                    onClick={() => { setShowGuestForm(!showGuestForm); setGuest(emptyGuest()) }}
+                    className="w-full flex items-center gap-2 border border-dashed border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-500 hover:border-[#26619c] hover:text-[#26619c] transition mb-3"
+                  >
+                    <UserX className="w-4 h-4" /> Não associado / Visitante
+                  </button>
+                )}
 
                 {showGuestForm && (
                   <div className="border border-orange-200 bg-orange-50 rounded-xl p-4 mb-4 flex flex-col gap-3">
