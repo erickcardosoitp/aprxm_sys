@@ -487,10 +487,17 @@ export default function PackagesPage() {
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
 
   const searchResidents = async (q: string) => {
-    if (q.length < 2) { setSearchResults([]); return }
+    if (q.length < 2) { setSearchResults([]); setShowGuestForm(false); return }
     try {
       const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      setSearchResults(res.data.slice(0, 8))
+      const results = res.data.slice(0, 8)
+      setSearchResults(results)
+      if (results.length === 0) {
+        setGuest(g => ({ ...g, full_name: q }))
+        setShowGuestForm(true)
+      } else {
+        setShowGuestForm(false)
+      }
     } catch { /* silent */ }
   }
 
