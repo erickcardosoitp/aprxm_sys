@@ -14,21 +14,37 @@ export function BarcodeScannerModal({ onScan, onClose }: BarcodeScannerProps) {
   const [scanning, setScanning] = useState(true)
 
   useEffect(() => {
-    const reader = new BrowserMultiFormatReader()
+    const SCAN_ERRORS = new Set(['NotFoundException', 'ChecksumException', 'FormatException', 'ReedSolomonException'])
+    const CAMERA_ERRORS = new Set(['NotAllowedError', 'NotFoundError', 'NotReadableError', 'OverconstrainedError', 'AbortError'])
 
-    reader.decodeFromVideoDevice(undefined, videoRef.current!, (result, err, controls) => {
-      controlsRef.current = controls
-      if (result) {
-        setScanning(false)
-        controls.stop()
-        onScan(result.getText())
-      }
-      if (err && err.name !== 'NotFoundException' && err.name !== 'ChecksumException' && err.name !== 'FormatException') {
-        setError('Não foi possível acessar a câmera.')
-      }
-    }).catch(() => {
-      setError('Permissão de câmera negada ou dispositivo não disponível.')
-    })
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'environment' } })
+      .then((stream) => {
+        stream.getTracks().forEach((t) => t.stop())
+        const reader = new BrowserMultiFormatReader()
+        reader.decodeFromVideoDevice(undefined, videoRef.current!, (result, err, controls) => {
+          controlsRef.current = controls
+          if (result) {
+            setScanning(false)
+            controls.stop()
+            onScan(result.getText())
+            return
+          }
+          if (err && !SCAN_ERRORS.has(err.name) && CAMERA_ERRORS.has(err.name)) {
+            setError('Não foi possível acessar a câmera.')
+          }
+        }).catch(() => {
+          setError('Não foi possível acessar a câmera.')
+        })
+      })
+      .catch((err: DOMException) => {
+        if (err.name === 'NotAllowedError') {
+          setError('Permissão de câmera negada. Permita o acesso nas configurações do navegador.')
+        } else if (err.name === 'NotFoundError') {
+          setError('Nenhuma câmera encontrada neste dispositivo.')
+        } else {
+          setError('Não foi possível acessar a câmera.')
+        }
+      })
 
     return () => {
       controlsRef.current?.stop()
