@@ -7,7 +7,7 @@ from sqlmodel import select
 
 from app.config import get_settings
 from app.core.exceptions import NotFoundError, UnprocessableError
-from app.models.finance import TransactionType
+from app.models.finance import IncomeSubtype, TransactionCategory, TransactionType
 from app.models.package import Package, PackageStatus
 from app.models.resident import Resident, ResidentStatus, ResidentType
 from app.services.finance_service import FinanceService
@@ -114,14 +114,33 @@ class PackageService:
         if (not is_active_member or is_delinquent) and not same_deliverer:
             # Charge fee — open session required
             cash_session = await self._finance.get_open_session(association_id)
+
+            # Try to find "Taxa de Entrega" category for this association
+            cat_result = await self._session.execute(
+                select(TransactionCategory).where(
+                    TransactionCategory.association_id == association_id,
+                    TransactionCategory.type == TransactionType.income,
+                    TransactionCategory.is_active == True,
+                    TransactionCategory.name.ilike("%taxa%entrega%"),
+                )
+            )
+            fee_category = cat_result.scalar_one_or_none()
+
+            effective_resident_id = (
+                delivered_to_resident_id or package.resident_id
+            )
+            unit_label = f" (Unid. {package.unit})" if package.unit else ""
             tx = await self._finance.register_transaction(
                 association_id=association_id,
                 cash_session_id=cash_session.id,
                 tx_type=TransactionType.income,
+                income_subtype=IncomeSubtype.delivery_fee,
                 amount=DELIVERY_FEE,
-                description=f"Taxa de entrega — {delivered_to_name} (Unid. {package.unit})",
+                description=f"Taxa de entrega — {delivered_to_name}{unit_label}",
                 created_by=delivered_by,
                 package_id=package_id,
+                resident_id=effective_resident_id,
+                category_id=fee_category.id if fee_category else None,
             )
             package.has_delivery_fee = True
             package.delivery_fee_amount = DELIVERY_FEE
