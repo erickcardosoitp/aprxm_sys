@@ -26,4 +26,11 @@
   button, a[role="button"] {
     touch-action: manipulation;
   }
+
+  /* Prevent iOS Safari auto-zoom on input focus (triggered when font-size < 16px) */
+  @media screen and (-webkit-min-device-pixel-ratio: 0) {
+    input, select, textarea {
+      font-size: 16px;
+    }
+  }
 }

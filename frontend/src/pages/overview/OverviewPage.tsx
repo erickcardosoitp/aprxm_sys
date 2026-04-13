@@ -11,7 +11,9 @@ import type { Resident, Package as Pkg, ServiceOrder, CashSession } from '../../
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface KpiData {
-  activeMembers: number
+  activeAssociados: number
+  dependentes: number
+  visitantes: number
   pendingPackages: number
   openOrders: number
   sessionOpen: boolean | null
@@ -431,7 +433,9 @@ function OverviewTab() {
             : sessionRes.status === 'rejected' && (sessionRes.reason as any)?.response?.status === 404
             ? false : null
         setKpi({
-          activeMembers: residents.filter((r) => r.status === 'active').length,
+          activeAssociados: residents.filter((r) => r.type === 'member' && !r.responsible_id && r.status === 'active').length,
+          dependentes: residents.filter((r) => r.type === 'member' && !!r.responsible_id && r.status === 'active').length,
+          visitantes: residents.filter((r) => r.type === 'guest' && r.status === 'active').length,
           pendingPackages: packages.filter((p) => p.status === 'received' || p.status === 'notified').length,
           openOrders: orders.filter((o) => o.status === 'open' || o.status === 'in_progress').length,
           sessionOpen,
@@ -461,7 +465,16 @@ function OverviewTab() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2"><Users className="w-4 h-4 text-[#26619c] shrink-0" /><p className="text-xs font-medium text-[#26619c] leading-tight">Associados ativos</p></div>
-            {isViewer ? <p className="text-sm text-blue-300 font-medium">—</p> : <p className="text-2xl font-bold text-[#26619c]">{kpi.activeMembers}</p>}
+            {isViewer ? <p className="text-sm text-blue-300 font-medium">—</p> : (
+              <>
+                <p className="text-2xl font-bold text-[#26619c]">{kpi.activeAssociados}</p>
+                <p className="text-[11px] text-blue-400 leading-tight">
+                  {kpi.dependentes > 0 && <span>{kpi.dependentes} dep.</span>}
+                  {kpi.dependentes > 0 && kpi.visitantes > 0 && <span> · </span>}
+                  {kpi.visitantes > 0 && <span>{kpi.visitantes} não-assoc.</span>}
+                </p>
+              </>
+            )}
           </div>
           <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2"><Package className="w-4 h-4 text-amber-600 shrink-0" /><p className="text-xs font-medium text-amber-700 leading-tight">Encomendas pendentes</p></div>
