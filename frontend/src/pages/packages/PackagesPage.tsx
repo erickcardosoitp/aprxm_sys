@@ -489,8 +489,8 @@ export default function PackagesPage() {
   const searchResidents = async (q: string) => {
     if (q.length < 2) { setSearchResults([]); return }
     try {
-      const res = await api.get<Resident[]>('/residents', { params: { q } })
-      setSearchResults(res.data.slice(0, 6))
+      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
+      setSearchResults(res.data.slice(0, 8))
     } catch { /* silent */ }
   }
 
@@ -506,8 +506,8 @@ export default function PackagesPage() {
   }
 
   const createGuest = async () => {
-    if (!guest.full_name || !guest.phone_primary || !guest.address_cep) {
-      toast.error('Preencha nome, telefone e CEP.')
+    if (!guest.full_name.trim()) {
+      toast.error('Nome é obrigatório.')
       return
     }
     setLoading(true)
@@ -864,31 +864,39 @@ export default function PackagesPage() {
                 </div>
 
                 {searchResults.length > 0 && (
-                  <ul className="border border-gray-200 rounded-lg mb-3 divide-y divide-gray-100 max-h-48 overflow-y-auto">
-                    {searchResults.map(r => (
-                      <li key={r.id}>
-                        <button
-                          className="w-full text-left px-3 py-2.5 hover:bg-blue-50 flex items-center gap-2"
-                          onClick={() => {
-                            setSelectedRecipient(r)
-                            setSearchResults([])
-                            setRecipientSearch(r.full_name)
-                            setStep('details')
-                          }}
-                        >
-                          <User className="w-4 h-4 text-[#26619c] shrink-0" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-800">{r.full_name}</p>
-                            <p className="text-xs text-gray-400">
-                              {r.cpf ? `CPF: ${maskCpf(r.cpf)}` : ''}
-                              {r.address_cep ? ` · CEP: ${r.address_cep}` : ''}
-                              {(r as any).unit ? ` · Unid. ${(r as any).unit}` : ''}
-                              {r.phone_primary ? ` · ${r.phone_primary}` : ''}
-                            </p>
-                          </div>
-                        </button>
-                      </li>
-                    ))}
+                  <ul className="border border-gray-200 rounded-lg mb-3 divide-y divide-gray-100 max-h-52 overflow-y-auto">
+                    {searchResults.map(r => {
+                      const isGuest = r.type === 'guest'
+                      return (
+                        <li key={r.id}>
+                          <button
+                            className="w-full text-left px-3 py-2.5 hover:bg-blue-50 flex items-center gap-2"
+                            onClick={() => {
+                              setSelectedRecipient(r)
+                              setSearchResults([])
+                              setRecipientSearch(r.full_name)
+                              setStep('details')
+                            }}
+                          >
+                            <User className={`w-4 h-4 shrink-0 ${isGuest ? 'text-orange-500' : 'text-[#26619c]'}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
+                                {isGuest && (
+                                  <span className="shrink-0 text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-medium">Não assoc. · R$2,50</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-400 truncate">
+                                {r.cpf ? `CPF: ${maskCpf(r.cpf)}` : ''}
+                                {r.address_cep ? ` · CEP: ${r.address_cep}` : ''}
+                                {(r as any).unit ? ` · Unid. ${(r as any).unit}` : ''}
+                                {r.phone_primary ? ` · ${r.phone_primary}` : ''}
+                              </p>
+                            </div>
+                          </button>
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
 
@@ -913,17 +921,17 @@ export default function PackagesPage() {
                 {showGuestForm && (
                   <div className="border border-orange-200 bg-orange-50 rounded-xl p-4 mb-4 flex flex-col gap-3">
                     <p className="text-xs font-semibold text-orange-700 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Cadastro rápido de não associado
+                      <AlertTriangle className="w-3 h-3" /> Não associado — taxa de R$ 2,50 aplicada automaticamente na entrega
                     </p>
                     <input value={guest.full_name} onChange={e => setGuest(g => ({ ...g, full_name: e.target.value }))}
-                      className={inputCls} placeholder="Nome completo *" />
+                      className={inputCls} placeholder="Nome completo *" autoFocus />
                     <input value={guest.phone_primary} onChange={e => setGuest(g => ({ ...g, phone_primary: e.target.value }))}
-                      className={inputCls} placeholder="Telefone *" type="tel" />
+                      className={inputCls} placeholder="Telefone (opcional)" type="tel" />
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <input value={guest.address_cep}
                           onChange={e => { setGuest(g => ({ ...g, address_cep: e.target.value })); lookupCep(e.target.value) }}
-                          className={inputCls} placeholder="CEP *" maxLength={9} />
+                          className={inputCls} placeholder="CEP (opcional)" maxLength={9} />
                         {cepLoading && <p className="text-xs text-gray-400 mt-0.5">Buscando…</p>}
                       </div>
                       <input value={guest.address_number} onChange={e => setGuest(g => ({ ...g, address_number: e.target.value }))}
@@ -932,7 +940,7 @@ export default function PackagesPage() {
                         className={inputCls} placeholder="Compl." />
                     </div>
                     <input value={guest.address_street} onChange={e => setGuest(g => ({ ...g, address_street: e.target.value }))}
-                      className={inputCls} placeholder="Rua" />
+                      className={inputCls} placeholder="Rua (opcional)" />
                     <div className="grid grid-cols-2 gap-2">
                       <input value={guest.address_district} onChange={e => setGuest(g => ({ ...g, address_district: e.target.value }))}
                         className={inputCls} placeholder="Bairro" />
