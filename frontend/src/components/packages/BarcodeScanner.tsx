@@ -7,6 +7,8 @@ interface BarcodeScannerProps {
   onClose: () => void
 }
 
+const SCAN_ERRORS = new Set(['NotFoundException', 'ChecksumException', 'FormatException', 'ReedSolomonException'])
+
 export function BarcodeScannerModal({ onScan, onClose }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const controlsRef = useRef<IScannerControls | null>(null)
@@ -14,41 +16,44 @@ export function BarcodeScannerModal({ onScan, onClose }: BarcodeScannerProps) {
   const [scanning, setScanning] = useState(true)
 
   useEffect(() => {
-    const SCAN_ERRORS = new Set(['NotFoundException', 'ChecksumException', 'FormatException', 'ReedSolomonException'])
-    const CAMERA_ERRORS = new Set(['NotAllowedError', 'NotFoundError', 'NotReadableError', 'OverconstrainedError', 'AbortError'])
+    const reader = new BrowserMultiFormatReader()
 
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'environment' } })
-      .then((stream) => {
-        stream.getTracks().forEach((t) => t.stop())
-        const reader = new BrowserMultiFormatReader()
-        reader.decodeFromVideoDevice(undefined, videoRef.current!, (result, err, controls) => {
-          controlsRef.current = controls
-          if (result) {
-            setScanning(false)
-            controls.stop()
-            onScan(result.getText())
-            return
-          }
-          if (err && !SCAN_ERRORS.has(err.name) && CAMERA_ERRORS.has(err.name)) {
-            setError('Não foi possível acessar a câmera.')
-          }
-        }).catch(() => {
-          setError('Não foi possível acessar a câmera.')
-        })
-      })
-      .catch((err: DOMException) => {
-        if (err.name === 'NotAllowedError') {
-          setError('Permissão de câmera negada. Permita o acesso nas configurações do navegador.')
-        } else if (err.name === 'NotFoundError') {
-          setError('Nenhuma câmera encontrada neste dispositivo.')
-        } else {
-          setError('Não foi possível acessar a câmera.')
+    reader.decodeFromConstraints(
+      { video: { facingMode: { ideal: 'environment' } } },
+      videoRef.current!,
+      (result, err, controls) => {
+        controlsRef.current = controls
+        if (result) {
+          setScanning(false)
+          controls.stop()
+          onScan(result.getText())
+          return
         }
-      })
+        if (err && !SCAN_ERRORS.has(err.name)) {
+          // only surface genuine camera errors, not decode misses
+          if (err.name === 'NotAllowedError') {
+            setError('Permissão de câmera negada. Permita o acesso nas configurações do navegador.')
+            controls.stop()
+          } else if (err.name === 'NotFoundError') {
+            setError('Nenhuma câmera encontrada neste dispositivo.')
+            controls.stop()
+          } else if (err.name === 'NotReadableError' || err.name === 'AbortError') {
+            setError('Câmera em uso por outro aplicativo.')
+            controls.stop()
+          }
+        }
+      }
+    ).catch((err: DOMException) => {
+      if (err?.name === 'NotAllowedError') {
+        setError('Permissão de câmera negada. Permita o acesso nas configurações do navegador.')
+      } else if (err?.name === 'NotFoundError') {
+        setError('Nenhuma câmera encontrada neste dispositivo.')
+      } else {
+        setError('Não foi possível acessar a câmera.')
+      }
+    })
 
-    return () => {
-      controlsRef.current?.stop()
-    }
+    return () => { controlsRef.current?.stop() }
   }, [])
 
   return (
@@ -63,16 +68,21 @@ export function BarcodeScannerModal({ onScan, onClose }: BarcodeScannerProps) {
 
         <div className="bg-black rounded-2xl overflow-hidden shadow-2xl">
           <div className="relative">
-            <video ref={videoRef} className="w-full" style={{ aspectRatio: '1/1', objectFit: 'cover' }} />
-            {/* Scan overlay */}
-            {scanning && (
+            <video
+              ref={videoRef}
+              className="w-full"
+              style={{ aspectRatio: '1/1', objectFit: 'cover' }}
+              autoPlay
+              muted
+              playsInline
+            />
+            {scanning && !error && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-52 h-32 border-2 border-white/80 rounded-lg relative">
                   <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-[#26619c] rounded-tl-lg" />
                   <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-[#26619c] rounded-tr-lg" />
                   <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-[#26619c] rounded-bl-lg" />
                   <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-[#26619c] rounded-br-lg" />
-                  {/* Scan line animation */}
                   <div className="absolute inset-x-0 top-1/2 h-0.5 bg-[#26619c]/70 animate-pulse" />
                 </div>
               </div>
