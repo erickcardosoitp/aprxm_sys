@@ -21,6 +21,7 @@ class PackageStatus(str, Enum):
     notified = "notified"
     delivered = "delivered"
     returned = "returned"
+    reversed = "reversed"
 
 
 class Package(SQLModel, table=True):

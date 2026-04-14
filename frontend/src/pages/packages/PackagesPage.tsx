@@ -17,14 +17,16 @@ import type { Package, Resident } from '../../types'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, string> = {
-  received: 'Aguardando', notified: 'Notificado', delivered: 'Entregue', returned: 'Devolvido',
+  received: 'Aguardando', notified: 'Notificado', delivered: 'Entregue',
+  returned: 'Devolvido', reversed: 'Estornado',
 }
 const STATUS_COLORS: Record<string, string> = {
   received: 'bg-blue-100 text-blue-700', notified: 'bg-yellow-100 text-yellow-700',
   delivered: 'bg-green-100 text-green-700', returned: 'bg-gray-100 text-gray-600',
+  reversed: 'bg-red-100 text-red-700',
 }
 
-const KANBAN_STATUSES = ['received', 'notified', 'delivered', 'returned'] as const
+const KANBAN_STATUSES = ['received', 'notified', 'delivered', 'returned', 'reversed'] as const
 
 type ReceiveStep = 'recipient' | 'details'
 
@@ -321,7 +323,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
             </button>
           )}
 
-          {(pkg.status === 'received' || pkg.status === 'notified') && (
+          {(pkg.status === 'received' || pkg.status === 'notified' || pkg.status === 'reversed') && (
             <button
               onClick={() => { onDeliverClick() }}
               className="w-full bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-medium transition"
@@ -330,7 +332,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
             </button>
           )}
 
-          {(pkg.status === 'received' || pkg.status === 'notified') && !showReturnForm && (
+          {(pkg.status === 'received' || pkg.status === 'notified' || pkg.status === 'reversed') && !showReturnForm && (
             <button onClick={() => setShowReturnForm(true)}
               className="w-full border border-red-300 text-red-600 py-2.5 rounded-xl text-sm font-medium hover:bg-red-50 transition">
               Devolver Encomenda
@@ -558,7 +560,7 @@ export default function PackagesPage() {
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkResult, setBulkResult] = useState<{ delivered: number; errors: string[]; items: any[] } | null>(null)
 
-  const pendingPackages = packages.filter(p => p.status === 'received' || p.status === 'notified')
+  const pendingPackages = packages.filter(p => p.status === 'received' || p.status === 'notified' || p.status === 'reversed')
 
   const resetBulk = () => {
     setShowBulkDeliver(false); setBulkStep('select'); setBulkSelected(new Set())
@@ -825,7 +827,7 @@ export default function PackagesPage() {
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
-          {(pkg.status === 'received' || pkg.status === 'notified') && (
+          {(pkg.status === 'received' || pkg.status === 'notified' || pkg.status === 'reversed') && (
             <button
               onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? ''); setDeliveryPersonName(fullName ?? '') }}
               className="text-xs text-[#26619c] hover:underline"

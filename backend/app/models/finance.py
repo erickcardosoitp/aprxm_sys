@@ -31,6 +31,8 @@ class IncomeSubtype(str, Enum):
 class CashSessionStatus(str, Enum):
     open = "open"
     closed = "closed"
+    conferido = "conferido"
+    cancelled = "cancelled"
 
 
 class TransactionCategory(SQLModel, table=True):

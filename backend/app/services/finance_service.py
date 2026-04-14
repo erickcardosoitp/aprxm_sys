@@ -243,6 +243,7 @@ class FinanceService:
         association_id: UUID,
         reversed_by: UUID,
         reason: str,
+        cash_session_id: UUID | None = None,
     ) -> Transaction:
         stmt = select(Transaction).where(
             Transaction.id == transaction_id,
@@ -257,7 +258,13 @@ class FinanceService:
         if original.reversed_at is not None:
             raise CashSessionError("Transação já foi estornada.")
 
-        cash_session = await self.get_open_session(association_id)
+        if cash_session_id:
+            cs_result = await self._session.execute(select(CashSession).where(CashSession.id == cash_session_id))
+            cash_session = cs_result.scalar_one_or_none()
+            if not cash_session:
+                raise CashSessionError("Sessão de caixa não encontrada.")
+        else:
+            cash_session = await self.get_open_session(association_id)
 
         # Inverse type: income → expense, expense/sangria → income
         inverse_type = (

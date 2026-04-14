@@ -458,6 +458,9 @@ async def conferencia_caixa(
     exits = sum(float(t.amount) for t in txs if t.type != "income")
     expected = float(cash.opening_balance) + income - exits
     counted = float(body.counted_amount)
+    cash.status = "conferido"
+    session.add(cash)
+    await session.commit()
     return {
         "session_id": str(cash.id),
         "opening_balance": str(cash.opening_balance),

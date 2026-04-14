@@ -140,7 +140,7 @@ export interface Resident {
 
 // --- Packages ---
 
-export type PackageStatus = 'received' | 'notified' | 'delivered' | 'returned'
+export type PackageStatus = 'received' | 'notified' | 'delivered' | 'returned' | 'reversed'
 
 export interface Package {
   id: string

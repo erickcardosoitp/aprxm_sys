@@ -384,21 +384,27 @@ async def reverse_delivery(
     if pkg.status != PackageStatus.delivered:
         raise HTTPException(422, "Apenas encomendas entregues podem ser estornadas.")
 
-    # Reverse fee transaction if exists
+    # Reverse fee transaction if exists — use original session, no need for open session
     if pkg.delivery_fee_tx_id:
+        from sqlmodel import select as sq_select2
+        from app.models.finance import Transaction as Tx
         svc = FinanceService(session)
-        try:
-            await svc.reverse_transaction(
-                transaction_id=pkg.delivery_fee_tx_id,
-                association_id=current.association_id,
-                reversed_by=current.user_id,
-                reason=f"Estorno de entrega: {body.reason}",
-            )
-        except Exception:
-            pass  # Fee already reversed or not found — continue
+        tx_row = await session.execute(sq_select2(Tx).where(Tx.id == pkg.delivery_fee_tx_id))
+        fee_tx = tx_row.scalar_one_or_none()
+        if fee_tx and not fee_tx.reversed_at:
+            try:
+                await svc.reverse_transaction(
+                    transaction_id=pkg.delivery_fee_tx_id,
+                    association_id=current.association_id,
+                    reversed_by=current.user_id,
+                    reason=f"Estorno de entrega: {body.reason}",
+                    cash_session_id=fee_tx.cash_session_id,
+                )
+            except Exception:
+                pass
 
-    # Revert package to notified
-    pkg.status = PackageStatus.notified
+    # Revert package to reversed status
+    pkg.status = PackageStatus.reversed
     pkg.delivered_to_name = None
     pkg.delivered_to_cpf = None
     pkg.delivered_to_resident_id = None

@@ -248,9 +248,15 @@ function SessionDetailModal({
           </div>
           <div className="mt-2">
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-              session.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+              session.status === 'open' ? 'bg-green-100 text-green-700'
+              : session.status === 'conferido' ? 'bg-blue-100 text-blue-700'
+              : session.status === 'cancelled' ? 'bg-red-100 text-red-700'
+              : 'bg-gray-100 text-gray-600'
             }`}>
-              {session.status === 'open' ? 'Aberta' : 'Fechada'}
+              {session.status === 'open' ? 'Aberta'
+               : session.status === 'conferido' ? 'Conferido'
+               : session.status === 'cancelled' ? 'Cancelado'
+               : 'Fechado'}
             </span>
           </div>
         </div>
@@ -801,9 +807,10 @@ export default function FinancePage() {
                         onClick={() => setSelectedSession(s)}>
                         <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
                           <div>{new Date(s.opened_at).toLocaleDateString('pt-BR')}</div>
-                          {s.status === 'open' && (
-                            <span className="inline-block mt-0.5 text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Aberta</span>
-                          )}
+                          {s.status === 'open' && <span className="inline-block mt-0.5 text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Aberta</span>}
+                          {s.status === 'closed' && <span className="inline-block mt-0.5 text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">Fechado</span>}
+                          {s.status === 'conferido' && <span className="inline-block mt-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">Conferido</span>}
+                          {s.status === 'cancelled' && <span className="inline-block mt-0.5 text-[10px] font-semibold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">Cancelado</span>}
                         </td>
                         <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{s.operador_name ?? '—'}</td>
                         <td className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap">{fmtV(parseFloat(s.opening_balance ?? '0'))}</td>
