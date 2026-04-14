@@ -595,8 +595,10 @@ export default function PackagesPage() {
   // Bulk receive flow
   const [showBulkReceive, setShowBulkReceive] = useState(false)
   const [bulkRxStep, setBulkRxStep] = useState<'add' | 'sign'>('add')
-  type BulkRxItem = { id: string; tracking_code: string; carrier_name: string; resident_id?: string; resident_name: string; resident_type?: string; unit?: string; block?: string }
+  type BulkRxItem = { id: string; tracking_code: string; carrier_name: string; resident_id?: string; resident_name: string; resident_type?: string; unit?: string; block?: string; photo_urls: { url: string; label: string; taken_at: string }[] }
+  type BrxPending = { resident: Resident; tracking: string }
   const [bulkRxQueue, setBulkRxQueue] = useState<BulkRxItem[]>([])
+  const [brxPending, setBrxPending] = useState<BrxPending | null>(null)
   const [brxDelivererName, setBrxDelivererName] = useState('')
   const [brxDelivererSig, setBrxDelivererSig] = useState('')
   const [brxLoading, setBrxLoading] = useState(false)
@@ -619,7 +621,7 @@ export default function PackagesPage() {
     } catch { /* silent */ }
   }
 
-  const doAddToBulkRxQueue = (resident: Resident, tracking: string) => {
+  const doAddToBulkRxQueue = (resident: Resident, tracking: string, photoUrls: { url: string; label: string; taken_at: string }[]) => {
     const entry: BulkRxItem = {
       id: crypto.randomUUID(),
       tracking_code: tracking,
@@ -629,8 +631,10 @@ export default function PackagesPage() {
       resident_type: resident.type,
       unit: (resident as any).unit,
       block: (resident as any).block,
+      photo_urls: photoUrls,
     }
     setBulkRxQueue(q => [...q, entry])
+    setBrxPending(null)
     setBrxLastAdded(resident.full_name + (tracking ? ` · ${tracking}` : ''))
     setBrxTracking('')
     setBrxSearch('')
@@ -639,14 +643,17 @@ export default function PackagesPage() {
     setTimeout(() => { brxBarcodeRef.current?.focus(); setBrxLastAdded(null) }, 1200)
   }
 
-  const addToBulkRxQueue = () => {
-    if (!brxSelected) { toast.error('Selecione o destinatário.'); return }
-    doAddToBulkRxQueue(brxSelected, brxTracking)
+  const requestBrxPhoto = (resident: Resident, tracking: string) => {
+    setBrxPending({ resident, tracking })
+    setBrxTracking('')
+    setBrxSearch('')
+    setBrxResults([])
+    setBrxSelected(null)
   }
 
   const handleBarcodeEnter = () => {
     if (brxSelected) {
-      doAddToBulkRxQueue(brxSelected, brxTracking)
+      requestBrxPhoto(brxSelected, brxTracking)
     } else {
       setTimeout(() => brxSearchRef.current?.focus(), 30)
     }
@@ -654,7 +661,7 @@ export default function PackagesPage() {
 
   const selectBrxResident = (r: Resident) => {
     if (brxTracking.trim()) {
-      doAddToBulkRxQueue(r, brxTracking)
+      requestBrxPhoto(r, brxTracking)
     } else {
       setBrxSelected(r)
       setBrxSearch(r.full_name)
@@ -675,7 +682,7 @@ export default function PackagesPage() {
           unit: item.unit, block: item.block,
           carrier_name: item.carrier_name || undefined,
           tracking_code: item.tracking_code || undefined,
-          photo_urls: [],
+          photo_urls: item.photo_urls,
           deliverer_name: brxDelivererName || undefined,
           deliverer_signature_url: brxDelivererSig || undefined,
         })
@@ -693,7 +700,7 @@ export default function PackagesPage() {
     setShowBulkReceive(false); setBulkRxStep('add'); setBulkRxQueue([])
     setBrxDelivererName(''); setBrxDelivererSig(''); setBrxLoading(false); setBrxResult(null)
     setBrxTracking(''); setBrxCarrier(''); setBrxSearch(''); setBrxResults([])
-    setBrxSelected(null); setBrxLastAdded(null); setShowBrxScanner(false)
+    setBrxSelected(null); setBrxLastAdded(null); setShowBrxScanner(false); setBrxPending(null)
   }
 
   // Receive flow — deliverer
@@ -1772,6 +1779,25 @@ export default function PackagesPage() {
               <>
                 <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-3">
 
+                  {/* Photo capture step */}
+                  {brxPending && (
+                    <div className="flex flex-col gap-3 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-blue-900">{brxPending.resident.full_name}</p>
+                          {brxPending.tracking && <p className="text-xs font-mono text-blue-600 mt-0.5">{brxPending.tracking}</p>}
+                        </div>
+                        <button onClick={() => { setBrxPending(null); setTimeout(() => brxBarcodeRef.current?.focus(), 50) }}
+                          className="text-xs text-blue-400 hover:text-blue-600">Cancelar</button>
+                      </div>
+                      <PhotoCapture
+                        label="Foto da Etiqueta *"
+                        onCapture={entry => doAddToBulkRxQueue(brxPending.resident, brxPending.tracking, [entry])}
+                        onUpload={file => uploadService.uploadFile(file, 'packages/labels')}
+                      />
+                    </div>
+                  )}
+
                   {/* Carrier — persists across items */}
                   <div className="flex gap-2 items-center">
                     <label className="text-xs text-gray-500 shrink-0 w-20">Transportadora</label>
@@ -1998,7 +2024,7 @@ export default function PackagesPage() {
             setShowBrxScanner(false)
             setBrxTracking(code)
             if (brxSelected) {
-              doAddToBulkRxQueue(brxSelected, code)
+              requestBrxPhoto(brxSelected, code)
             } else {
               setTimeout(() => brxSearchRef.current?.focus(), 50)
             }
