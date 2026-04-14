@@ -1,12 +1,13 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, CheckCircle, ClipboardCheck, DollarSign, Lock, MinusCircle,
   PlusCircle, TrendingUp, Unlock, User, X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { financeService } from '../../services/finance'
+import { settingsService } from '../../services/settings'
 import { useAuthStore } from '../../store/authStore'
-import type { CashSession, Transaction } from '../../types'
+import type { AssociationSettings, CashSession, Transaction } from '../../types'
 
 interface Props {
   session: CashSession | null
@@ -42,6 +43,11 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
   const role = useAuthStore((s) => s.role)
   const isOperator = role === 'operator'
   const [step, setStep] = useState<CloseStep>('blind')
+  const [settings, setSettings] = useState<AssociationSettings | null>(null)
+
+  useEffect(() => {
+    settingsService.get().then(r => setSettings(r.data)).catch(() => {})
+  }, [])
   const [blindPix, setBlindPix] = useState('')
   const [blindDinheiro, setBlindDinheiro] = useState('')
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -281,6 +287,25 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
                 </div>
               </div>
 
+              {/* Deposit guidance */}
+              {settings && (() => {
+                const minBalance = parseFloat(settings.default_cash_balance ?? '20')
+                const toDeposit = Math.max(0, result.counted - minBalance)
+                return toDeposit > 0 ? (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs">
+                    <p className="font-semibold text-blue-800 mb-1">Orientação de depósito</p>
+                    <div className="flex justify-between text-blue-700">
+                      <span>Manter no caixa</span>
+                      <span className="font-semibold">R$ {fmt(minBalance)}</span>
+                    </div>
+                    <div className="flex justify-between text-blue-700 mt-0.5">
+                      <span>Depositar no banco</span>
+                      <span className="font-semibold text-green-700">R$ {fmt(toDeposit)}</span>
+                    </div>
+                  </div>
+                ) : null
+              })()}
+
               <div className="flex gap-3">
                 <button onClick={() => setStep('blind')}
                   className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
@@ -309,6 +334,16 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
                    `Falta de R$ ${fmt(Math.abs(result.diff))} registrada.`}
                 </p>
               </div>
+              {settings && (() => {
+                const minBalance = parseFloat(settings.default_cash_balance ?? '20')
+                const toDeposit = Math.max(0, result.counted - minBalance)
+                return toDeposit > 0 ? (
+                  <div className="w-full bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs">
+                    <p className="font-semibold text-blue-800 mb-1">Depositar no banco</p>
+                    <p className="text-blue-700">Mantenha <strong>R$ {fmt(minBalance)}</strong> no caixa e deposite <strong className="text-green-700">R$ {fmt(toDeposit)}</strong> na conta da associação.</p>
+                  </div>
+                ) : null
+              })()}
             </div>
           )}
         </div>

@@ -3,8 +3,9 @@ import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2, Downlo
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { financeService } from '../../services/finance'
+import { settingsService } from '../../services/settings'
 import { PhotoCapture } from '../packages/PhotoCapture'
-import type { TransactionCategory, PaymentMethod, Resident } from '../../types'
+import type { AssociationSettings, TransactionCategory, PaymentMethod, Resident } from '../../types'
 
 interface Props {
   onClose: () => void
@@ -102,6 +103,9 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [txType, setTxType] = useState<'income' | 'expense'>('income')
   const [incomeSubtype, setIncomeSubtype] = useState<IncomeSubtype>('other')
 
+  // Settings
+  const [settings, setSettings] = useState<AssociationSettings | null>(null)
+
   // Step 2 — shared
   const [categories, setCategories] = useState<TransactionCategory[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
@@ -146,6 +150,10 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState('')
 
   useEffect(() => {
+    settingsService.get().then(r => setSettings(r.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     const load = async () => {
       try {
         const [cats, methods] = await Promise.all([
@@ -161,6 +169,13 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     }
     load()
   }, [txType])
+
+  // Auto-fill amount from settings when mensalidade is selected
+  useEffect(() => {
+    if (txType === 'income' && incomeSubtype === 'mensalidade' && settings?.default_mensalidade_amount) {
+      setAmount(parseFloat(settings.default_mensalidade_amount).toFixed(2))
+    }
+  }, [incomeSubtype, txType, settings])
 
   // Auto-fill from resident lookup into proof fields
   useEffect(() => {
@@ -285,8 +300,9 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         return !!(proofName.trim() && proofCpf.trim() && proofNeighborhood.trim() && proofCep.trim() && amount && parseFloat(amount) > 0)
       }
       if (!amount || parseFloat(amount) <= 0) return false
-      if (!description.trim()) return false
-      if (txType === 'income' && incomeSubtype === 'mensalidade' && !resident) return false
+      const isMensalidade = txType === 'income' && incomeSubtype === 'mensalidade'
+      if (!isMensalidade && !description.trim()) return false
+      if (isMensalidade && !resident) return false
       if (txType === 'income' && incomeSubtype === 'delivery_fee' && !resident) return false
       return true
     }
@@ -679,17 +695,24 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                     </div>
                   )}
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$) <span className="text-red-500">*</span></label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Valor (R$) <span className="text-red-500">*</span>
+                      {txType === 'income' && incomeSubtype === 'mensalidade' && settings?.default_mensalidade_amount && (
+                        <span className="ml-1 text-[#26619c] font-normal">(padrão: R$ {parseFloat(settings.default_mensalidade_amount).toFixed(2)})</span>
+                      )}
+                    </label>
                     <input type="number" min="0.01" step="0.01" value={amount}
                       onChange={(e) => setAmount(e.target.value)} placeholder="0,00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Descrição <span className="text-red-500">*</span></label>
-                    <input value={description} onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Descreva a transação…"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
-                  </div>
+                  {!(txType === 'income' && incomeSubtype === 'mensalidade') && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Descrição <span className="text-red-500">*</span></label>
+                      <input value={description} onChange={(e) => setDescription(e.target.value)}
+                        placeholder="Descreva a transação…"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                    </div>
+                  )}
                   {paymentMethods.length > 0 && (
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Forma de pagamento</label>

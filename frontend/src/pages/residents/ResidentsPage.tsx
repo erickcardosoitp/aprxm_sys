@@ -1000,8 +1000,8 @@ export default function ResidentsPage() {
   const loadCounts = async () => {
     try {
       const [members, guests] = await Promise.all([
-        api.get<Resident[]>('/residents', { params: { type: 'member' } }),
-        api.get<Resident[]>('/residents', { params: { type: 'guest' } }),
+        api.get<Resident[]>('/residents', { params: { type: 'member', status: 'active' } }),
+        api.get<Resident[]>('/residents', { params: { type: 'guest', status: 'active' } }),
       ])
       const assoc = members.data.filter((r: Resident) => !r.responsible_id).length
       const dep = members.data.filter((r: Resident) => !!r.responsible_id).length

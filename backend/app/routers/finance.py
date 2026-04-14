@@ -182,8 +182,8 @@ async def create_manual_session(
         created_by=current.user_id,
         opening_balance=body.opening_balance,
         closing_balance=body.closing_balance,
-        opened_at=body.opened_at,
-        closed_at=body.closed_at,
+        opened_at=body.opened_at.replace(tzinfo=None),
+        closed_at=body.closed_at.replace(tzinfo=None),
         notes=body.notes,
         manual_pix=body.manual_pix,
         manual_dinheiro=body.manual_dinheiro,
@@ -325,6 +325,16 @@ async def list_transactions(
 ) -> list[dict]:
     svc = FinanceService(session)
     txs = await svc.list_transactions(current.association_id, session_id)
+    # Fetch payment method names in one query
+    pm_ids = {t.payment_method_id for t in txs if t.payment_method_id}
+    pm_map: dict = {}
+    if pm_ids:
+        from sqlmodel import select as sqlmodel_select
+        pm_result = await session.execute(
+            sqlmodel_select(PaymentMethod).where(PaymentMethod.id.in_(pm_ids))
+        )
+        pm_map = {pm.id: pm.name for pm in pm_result.scalars().all()}
+
     return [
         {
             "id": str(t.id),
@@ -335,6 +345,8 @@ async def list_transactions(
             "is_sangria": t.is_sangria,
             "approval_status": t.approval_status,
             "is_reversal": t.is_reversal,
+            "payment_method_id": str(t.payment_method_id) if t.payment_method_id else None,
+            "payment_method_name": pm_map.get(t.payment_method_id) if t.payment_method_id else None,
         }
         for t in txs
     ]
@@ -378,8 +390,9 @@ async def list_sessions(
                 cs.closing_balance,
                 cs.expected_balance,
                 cs.difference,
-                u_open.full_name  AS operador_name,
-                u_close.full_name AS conferido_por,
+                u_open.full_name   AS operador_name,
+                u_close.full_name  AS fechado_por,
+                u_review.full_name AS conferido_por,
                 cs.origin,
                 a.name            AS association_name,
                 cs.quebra_caixa,
@@ -400,8 +413,9 @@ async def list_sessions(
                      ELSE COALESCE(SUM(CASE WHEN t.type = 'sangria' THEN t.amount ELSE 0 END), 0)
                 END AS total_baixas
             FROM cash_sessions cs
-            LEFT JOIN users u_open  ON u_open.id  = cs.opened_by
-            LEFT JOIN users u_close ON u_close.id = cs.closed_by
+            LEFT JOIN users u_open   ON u_open.id   = cs.opened_by
+            LEFT JOIN users u_close  ON u_close.id  = cs.closed_by
+            LEFT JOIN users u_review ON u_review.id = cs.reviewed_by
             LEFT JOIN associations a ON a.id = cs.association_id
             LEFT JOIN transactions t
                 ON t.cash_session_id = cs.id AND t.association_id = cs.association_id
@@ -409,8 +423,8 @@ async def list_sessions(
             WHERE cs.association_id = :aid
             GROUP BY cs.id, cs.status, cs.opened_at, cs.closed_at,
                      cs.opening_balance, cs.closing_balance, cs.expected_balance,
-                     cs.difference, u_open.full_name, u_close.full_name, cs.origin,
-                     a.name, cs.quebra_caixa, cs.manual_pix, cs.manual_dinheiro,
+                     cs.difference, u_open.full_name, u_close.full_name, u_review.full_name,
+                     cs.origin, a.name, cs.quebra_caixa, cs.manual_pix, cs.manual_dinheiro,
                      cs.manual_total_bruto, cs.manual_total_baixas
             ORDER BY cs.opened_at DESC
         """),
@@ -428,17 +442,59 @@ async def list_sessions(
             "expected_balance": str(r[6]) if r[6] is not None else None,
             "difference": str(r[7]) if r[7] is not None else None,
             "operador_name": r[8],
-            "conferido_por": r[9],
-            "origin": r[10] or "Sessão de Caixa",
-            "association_name": r[11],
-            "quebra_caixa": str(round(float(r[12]), 2)) if r[12] is not None else None,
-            "total_pix": str(round(float(r[13]), 2)),
-            "total_dinheiro": str(round(float(r[14]), 2)),
-            "total_bruto": str(round(float(r[15]), 2)),
-            "total_baixas": str(round(float(r[16]), 2)),
+            "fechado_por": r[9],
+            "conferido_por": r[10],
+            "origin": r[11] or "Sessão de Caixa",
+            "association_name": r[12],
+            "quebra_caixa": str(round(float(r[13]), 2)) if r[13] is not None else None,
+            "total_pix": str(round(float(r[14]), 2)),
+            "total_dinheiro": str(round(float(r[15]), 2)),
+            "total_bruto": str(round(float(r[16]), 2)),
+            "total_baixas": str(round(float(r[17]), 2)),
         }
         for r in rows
     ]
+
+
+class PatchSessionRequest(BaseModel):
+    closing_balance: Decimal | None = Field(default=None, ge=0)
+    manual_pix: Decimal | None = Field(default=None, ge=0)
+    manual_dinheiro: Decimal | None = Field(default=None, ge=0)
+    manual_total_baixas: Decimal | None = Field(default=None, ge=0)
+    notes: str | None = None
+
+
+@router.patch("/sessions/{session_id}", summary="Corrigir valores de uma sessão fechada")
+async def patch_session(
+    session_id: UUID,
+    body: PatchSessionRequest,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlmodel import select as sql_select
+    result = await session.execute(
+        sql_select(CashSession).where(
+            CashSession.id == session_id,
+            CashSession.association_id == current.association_id,
+        )
+    )
+    cash = result.scalar_one_or_none()
+    if not cash:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada.")
+    if cash.status == "open":
+        raise HTTPException(status_code=400, detail="Não é possível editar sessão aberta.")
+    if body.closing_balance is not None:
+        cash.closing_balance = body.closing_balance
+    if body.manual_pix is not None:
+        cash.manual_pix = body.manual_pix
+    if body.manual_dinheiro is not None:
+        cash.manual_dinheiro = body.manual_dinheiro
+    if body.manual_total_baixas is not None:
+        cash.manual_total_baixas = body.manual_total_baixas
+    cash.reviewed_by = current.user_id
+    session.add(cash)
+    await session.commit()
+    return {"ok": True}
 
 
 @router.post("/sessions/conferencia", summary="Conferência de caixa (sem fechar)")

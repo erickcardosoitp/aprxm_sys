@@ -63,6 +63,8 @@ export interface Transaction {
   category_id?: string
   resident_id?: string
   created_by?: string
+  payment_method_id?: string
+  payment_method_name?: string
 }
 
 export interface TransactionCategory {
@@ -263,6 +265,7 @@ export interface CashSessionSummary {
   opened_at: string
   closed_at?: string
   operador_name?: string
+  fechado_por?: string
   conferido_por?: string
   total_pix?: string
   total_dinheiro?: string

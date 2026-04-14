@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, cash_boxes, finance, financeiro, geral, mensalidades, packages, public, residents, senso, service_orders, superadmin, uploads, transfers
+from app.routers import admin, agent, auth, cash_boxes, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, residents, senso, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -176,6 +176,55 @@ async def _run_migrations() -> None:
         ]:
             await session.execute(text(ddl))
 
+        # porta_a_porta tables
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS porta_a_porta_leads (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                operator_id UUID NOT NULL REFERENCES users(id),
+                full_name TEXT NOT NULL,
+                phone TEXT,
+                cpf TEXT,
+                address_street TEXT NOT NULL,
+                address_number TEXT NOT NULL,
+                address_complement TEXT,
+                dependents TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'pending',
+                payment_type TEXT NOT NULL DEFAULT 'avista',
+                total_installments INT NOT NULL DEFAULT 1,
+                monthly_fee NUMERIC(10,2) NOT NULL DEFAULT 20.00,
+                notes TEXT,
+                resident_id UUID REFERENCES residents(id),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pap_leads_assoc ON porta_a_porta_leads(association_id)"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pap_leads_operator ON porta_a_porta_leads(operator_id)"
+        ))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS porta_a_porta_payments (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                lead_id UUID NOT NULL REFERENCES porta_a_porta_leads(id) ON DELETE CASCADE,
+                installment_number INT NOT NULL DEFAULT 1,
+                total_installments INT NOT NULL DEFAULT 1,
+                amount NUMERIC(10,2) NOT NULL,
+                due_date DATE NOT NULL,
+                paid_at TIMESTAMPTZ,
+                status TEXT NOT NULL DEFAULT 'pending',
+                payment_method TEXT,
+                notes TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pap_payments_lead ON porta_a_porta_payments(lead_id)"
+        ))
+
         await session.commit()
 
 
@@ -220,6 +269,7 @@ app.include_router(public.router, prefix=PREFIX)
 app.include_router(senso.router, prefix=PREFIX)
 app.include_router(agent.router, prefix=PREFIX)
 app.include_router(cash_boxes.router, prefix=PREFIX)
+app.include_router(porta_a_porta.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

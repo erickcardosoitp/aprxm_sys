@@ -413,6 +413,11 @@ function OverviewTab() {
   const [kpi, setKpi] = useState<KpiData | null>(null)
   const [activity, setActivity] = useState<{ packages: Pkg[]; orders: ServiceOrder[] }>({ packages: [], orders: [] })
   const [loading, setLoading] = useState(true)
+  const [papSummary, setPapSummary] = useState<any>(null)
+
+  useEffect(() => {
+    api.get('/porta-a-porta/summary').then(r => setPapSummary(r.data)).catch(() => {})
+  }, [])
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -490,6 +495,30 @@ function OverviewTab() {
           </div>
         </div>
       ) : null}
+
+      {/* Porta a Porta summary card */}
+      {papSummary && (papSummary.total_leads > 0) && (
+        <div className="bg-gradient-to-br from-[#26619c]/10 to-blue-50 border border-[#26619c]/20 rounded-xl p-4 flex flex-col gap-3">
+          <p className="text-xs font-semibold text-[#26619c] uppercase tracking-wide">Porta a Porta</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <p className="text-2xl font-bold text-[#26619c]">{papSummary.paid_leads}</p>
+              <p className="text-[11px] text-gray-500">Associados</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-green-700">R$ {parseFloat(papSummary.total_received).toFixed(0)}</p>
+              <p className="text-[11px] text-gray-500">Recebido</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-amber-600">R$ {parseFloat(papSummary.total_commission).toFixed(0)}</p>
+              <p className="text-[11px] text-gray-500">Comissões</p>
+            </div>
+          </div>
+          {papSummary.pending_leads > 0 && (
+            <p className="text-xs text-amber-600">{papSummary.pending_leads} pendente(s) aguardando confirmação</p>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
