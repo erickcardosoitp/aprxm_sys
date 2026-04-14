@@ -543,6 +543,72 @@ export default function FinanceiroPage() {
     } finally { setDeletingMonth(false) }
   }
 
+  const printCarneFinanceiro = async (residentId: string, residentName: string, residentCpf?: string, residentUnit?: string) => {
+    try {
+      const res = await api.get<any[]>(`/mensalidades/residents/${residentId}`)
+      const mensalidades = res.data
+      const MONTH_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+      const safeDate = (s: string | null | undefined) => {
+        if (!s) return ''
+        const d = new Date(s); return isNaN(d.getTime()) ? s : d.toLocaleDateString('pt-BR')
+      }
+      const fmtR = (v: string | number) => `R$ ${parseFloat(String(v)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      const existing = [...mensalidades].sort((a: any, b: any) => a.reference_month.localeCompare(b.reference_month))
+      const existingRefs = new Set(existing.map((m: any) => m.reference_month))
+      const months: { ref: string; label: string; amount: string; due: string; status: string; paid_at?: string }[] = []
+      existing.forEach((m: any) => {
+        const [y, mo] = m.reference_month.split('-')
+        months.push({ ref: m.reference_month, label: `${MONTH_PT[parseInt(mo)-1]} ${y}`, amount: parseFloat(m.amount).toFixed(2), due: m.due_date ? safeDate(m.due_date) : '—', status: m.status, paid_at: m.paid_at ?? undefined })
+      })
+      const now = new Date()
+      let cur = new Date(now.getFullYear(), now.getMonth(), 1)
+      while (months.length < 12) {
+        const ref = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`
+        if (!existingRefs.has(ref)) months.push({ ref, label: `${MONTH_PT[cur.getMonth()]} ${cur.getFullYear()}`, amount: existing[0] ? parseFloat(existing[0].amount).toFixed(2) : '—', due: '—', status: 'pending' })
+        cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1)
+        if (months.length >= 12) break
+      }
+      months.splice(12)
+      const STATUS_COLOR: Record<string, string> = { paid: '#16a34a', pending: '#d97706', overdue: '#dc2626' }
+      const STATUS_LABEL: Record<string, string> = { paid: 'PAGO', pending: 'PENDENTE', overdue: 'EM ATRASO' }
+      const stubs = months.map(m => {
+        const isPaid = m.status === 'paid'
+        return `<div class="stub">
+          <div class="stub-header"><span class="assoc">${assocName}</span><span class="month">${m.label}</span></div>
+          <div class="stub-body">
+            <div class="row"><span class="lbl">Associado</span><span class="val">${residentName}</span></div>
+            ${residentUnit ? `<div class="row"><span class="lbl">Unidade</span><span class="val">${residentUnit}</span></div>` : ''}
+            ${residentCpf ? `<div class="row"><span class="lbl">CPF</span><span class="val">${residentCpf}</span></div>` : ''}
+            <div class="row"><span class="lbl">Vencimento</span><span class="val">${m.due}</span></div>
+            <div class="row"><span class="lbl">Valor</span><span class="val">R$ ${m.amount}</span></div>
+            ${isPaid ? `<div class="row"><span class="lbl">Pago em</span><span class="val">${safeDate(m.paid_at)}</span></div>` : '<div class="row"><span class="lbl">Pago em</span><span class="val" style="border-bottom:1px solid #999;width:28mm;display:inline-block">&nbsp;</span></div>'}
+          </div>
+          <div class="stub-footer">
+            <span class="status" style="color:${STATUS_COLOR[m.status] ?? '#888'}">${STATUS_LABEL[m.status] ?? m.status.toUpperCase()}</span>
+            <div class="sig-area"><div class="sig-line"></div><span style="font-size:5pt;color:#999">Ass./Carimbo</span></div>
+          </div>
+        </div>`
+      }).join('')
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Carnê</title>
+        <style>@page{size:80mm auto;margin:0}*{box-sizing:border-box;margin:0;padding:0;font-family:'Courier New',monospace}body{width:80mm;background:#fff}
+        .stub{width:80mm;padding:4mm 4mm 3mm;border-bottom:1px dashed #999;page-break-inside:avoid}
+        .stub-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2mm;border-bottom:1px solid #000;padding-bottom:1.5mm}
+        .assoc{font-size:6.5pt;font-weight:bold;text-transform:uppercase;max-width:50mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .month{font-size:8pt;font-weight:bold;white-space:nowrap}
+        .stub-body{display:flex;flex-direction:column;gap:0.8mm;margin-bottom:2mm}
+        .row{display:flex;justify-content:space-between;gap:2mm}
+        .lbl{font-size:6.5pt;color:#555;white-space:nowrap}.val{font-size:6.5pt;font-weight:bold;text-align:right}
+        .stub-footer{display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid #ccc;padding-top:1.5mm}
+        .status{font-size:7pt;font-weight:bold}.sig-area{display:flex;flex-direction:column;align-items:center}
+        .sig-line{width:22mm;border-bottom:1px solid #999;margin-bottom:0.5mm}</style>
+      </head><body>${stubs}</body></html>`
+      const w = window.open('', '_blank', 'width=400,height=700')
+      if (!w) return
+      w.document.write(html); w.document.close(); w.focus()
+      setTimeout(() => w.print(), 400)
+    } catch { toast.error('Erro ao gerar carnê.') }
+  }
+
   const printRecibo = (
     residentName: string,
     residentCpf: string | undefined,
@@ -631,7 +697,7 @@ export default function FinanceiroPage() {
       loadCobrancas()
       if (historyResidentId) loadResidentHistory(historyResidentId)
 
-      // Print receipt
+      // Print receipt + carnê
       if (residentMeta) {
         try {
           const allRes = await api.get<Mensalidade[]>(`/mensalidades/residents/${paidNow.resident_id}`)
@@ -644,6 +710,7 @@ export default function FinanceiroPage() {
             'Dinheiro/PIX',
             carneOperator,
           )
+          setTimeout(() => printCarneFinanceiro(paidNow.resident_id, residentMeta.name, residentMeta.cpf, residentMeta.unit), 1200)
         } catch { /* silently skip print */ }
       }
     } catch (e: any) {
@@ -1292,7 +1359,12 @@ export default function FinanceiroPage() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-sm font-bold text-green-700">{fmt(p.amount)}</span>
-                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Pago</span>
+                          <button
+                            onClick={() => printCarneFinanceiro(p.resident_id, p.resident_name)}
+                            className="text-xs border border-blue-200 text-blue-600 px-2 py-0.5 rounded-lg hover:bg-blue-50 transition"
+                            title="Imprimir Carnê">
+                            Carnê
+                          </button>
                         </div>
                       </li>
                     ))}

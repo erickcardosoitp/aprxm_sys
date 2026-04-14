@@ -370,7 +370,12 @@ class MensalidadeService:
             .order_by(Mensalidade.paid_at.desc())
         )
         if month:
-            stmt = stmt.where(Mensalidade.reference_month == month)
+            from sqlalchemy import func
+            year, mo = month.split("-")
+            stmt = stmt.where(
+                func.extract("year", Mensalidade.paid_at) == int(year),
+                func.extract("month", Mensalidade.paid_at) == int(mo),
+            )
 
         result = await self._session.execute(stmt)
         return [
