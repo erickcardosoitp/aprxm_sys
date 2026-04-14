@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   TrendingUp, TrendingDown, DollarSign, BarChart2, Upload,
   CheckCircle, AlertCircle, Clock, Plus, Search, X, RotateCcw,
@@ -105,6 +106,7 @@ const SUBTYPE_LABELS: Record<string, string> = {
 }
 
 export default function FinanceiroPage() {
+  const location = useLocation()
   const [tab, setTab] = useState<Tab>('dashboard')
   const [period, setPeriod] = useState('month')
 
@@ -274,6 +276,22 @@ export default function FinanceiroPage() {
     if (tab === 'transferencias') loadBoxSummary()
     if (tab === 'porta_a_porta') { loadPap(); loadPapToken(); loadConferentes() }
   }, [tab, period])
+
+  // Navigate from PackagesPage after guest upgrade
+  useEffect(() => {
+    const s = location.state as any
+    if (s?.tab === 'cobrancas' && s?.residentId) {
+      setTab('cobrancas')
+      setCobrancasView('historico')
+      loadOpenSession()
+      loadCobrancas()
+      // loadResidentHistory is defined later, use setTimeout to ensure state is ready
+      setTimeout(() => loadResidentHistory(s.residentId, s.residentName ?? ''), 100)
+      // Clear state so back-navigation doesn't re-trigger
+      window.history.replaceState({}, '')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const loadOpenSession = async () => {
     try {

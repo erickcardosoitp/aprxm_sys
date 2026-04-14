@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, Barcode, Camera, FileText, MessageCircle, Package as PackageIcon, Plus,
   Search, Shield, User, UserX, List, Columns, Workflow, X, ChevronDown, Layers,
@@ -474,6 +475,8 @@ function EsteiraStepper({ status }: { status: string }) {
 
 export default function PackagesPage() {
   const { fullName } = useAuthStore()
+  const navigate = useNavigate()
+  const [upgradedResidentInfo, setUpgradedResidentInfo] = useState<{ id: string; name: string } | null>(null)
   const [packages, setPackages] = useState<Package[]>([])
   const [showReceive, setShowReceive] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
@@ -596,6 +599,7 @@ export default function PackagesPage() {
         is_member_confirmed: true, terms_accepted: true, lgpd_accepted: true,
       })
       toast.success('Morador cadastrado como associado!')
+      setUpgradedResidentInfo({ id: deliveryTarget.resident_id!, name: deliveryTarget.resident_name ?? '' })
       setShowUpgrade(false); setUpgradeCpf('')
       loadPackages()
     } catch (e: any) {
@@ -978,8 +982,14 @@ export default function PackagesPage() {
       toast.success(pkg.has_delivery_fee
         ? `Entregue! Taxa R$ ${parseFloat(pkg.delivery_fee_amount).toFixed(2)} cobrada.`
         : 'Encomenda entregue!')
+      const upgraded = upgradedResidentInfo
       setDeliveryTarget(null)
       resetDelivery()
+      setUpgradedResidentInfo(null)
+      if (upgraded) {
+        navigate('/financeiro', { state: { tab: 'cobrancas', cobrancasView: 'historico', residentId: upgraded.id, residentName: upgraded.name } })
+        return
+      }
       loadPackages()
     } catch (e: any) {
       toast.error(apiErr(e, 'Erro na entrega.'))
@@ -992,7 +1002,7 @@ export default function PackagesPage() {
     setRecipientName(''); setRecipientSig('')
     setProofResidenceUrl(''); setRecipientIdPhoto(''); setDeliveryPersonName('')
     setIsThirdParty(false); setOwnerIdPhoto(''); setPickerIdPhoto(''); setPickerPhone('')
-    setDeliveryPaymentMethodId(''); setShowUpgrade(false); setUpgradeCpf('')
+    setDeliveryPaymentMethodId(''); setShowUpgrade(false); setUpgradeCpf(''); setUpgradedResidentInfo(null)
   }
 
   const pendingCount = packages.filter(p => p.status === 'received' || p.status === 'notified').length
