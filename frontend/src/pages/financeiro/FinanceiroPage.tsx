@@ -117,6 +117,7 @@ export default function FinanceiroPage() {
   const [loadingTx, setLoadingTx] = useState(false)
   const [reversing, setReversing] = useState<string | null>(null)
   const [reversalReason, setReversalReason] = useState('')
+  const [reversalPassword, setReversalPassword] = useState('')
   const [reversalTarget, setReversalTarget] = useState<Tx | null>(null)
 
   // Sessions
@@ -663,15 +664,21 @@ export default function FinanceiroPage() {
 
   const handleReversal = async () => {
     if (!reversalTarget || !reversalReason.trim()) return
+    if (!reversalPassword.trim()) { toast.error('Senha de administrador obrigatória.'); return }
     setReversing(reversalTarget.id)
     try {
-      await api.post(`/finance/transactions/${reversalTarget.id}/reverse`, { reason: reversalReason.trim() })
+      await api.post(`/finance/transactions/${reversalTarget.id}/reverse`, {
+        reason: reversalReason.trim(),
+        admin_password: reversalPassword.trim(),
+      })
       toast.success('Estorno realizado!')
       setReversalTarget(null)
       setReversalReason('')
+      setReversalPassword('')
       loadTransactions()
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao estornar.')
+      const d = e.response?.data?.detail
+      toast.error(typeof d === 'string' ? d : 'Erro ao estornar.')
     } finally { setReversing(null) }
   }
 
@@ -1869,7 +1876,7 @@ export default function FinanceiroPage() {
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">Estornar Transação</h3>
-              <button onClick={() => setReversalTarget(null)}><X className="w-5 h-5 text-gray-400" /></button>
+              <button onClick={() => { setReversalTarget(null); setReversalReason(''); setReversalPassword('') }}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
             <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
               <p className="text-sm font-medium text-gray-800">{reversalTarget.description}</p>
@@ -1885,14 +1892,24 @@ export default function FinanceiroPage() {
                 autoFocus
               />
             </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Senha de administrador *</label>
+              <input
+                type="password"
+                value={reversalPassword}
+                onChange={e => setReversalPassword(e.target.value)}
+                className={inputCls}
+                placeholder="Senha de admin"
+              />
+            </div>
             <div className="flex gap-2">
-              <button onClick={() => setReversalTarget(null)}
+              <button onClick={() => { setReversalTarget(null); setReversalReason(''); setReversalPassword('') }}
                 className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
                 Cancelar
               </button>
               <button
                 onClick={handleReversal}
-                disabled={!reversalReason.trim() || reversing === reversalTarget.id}
+                disabled={!reversalReason.trim() || !reversalPassword.trim() || reversing === reversalTarget.id}
                 className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
                 {reversing === reversalTarget.id ? 'Estornando…' : 'Confirmar Estorno'}
               </button>

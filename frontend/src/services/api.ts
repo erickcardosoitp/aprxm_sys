@@ -16,6 +16,14 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
+    // Normalize Pydantic v2 validation error arrays so components can safely do
+    // toast.error(e.response?.data?.detail ?? 'fallback') without React error #31
+    if (err.response?.data?.detail && Array.isArray(err.response.data.detail)) {
+      err.response.data.detail = err.response.data.detail
+        .map((d: any) => d?.msg ?? String(d))
+        .join('; ')
+    }
+
     if (err.response?.status === 401) {
       localStorage.removeItem('aprxm-auth')
       sessionStorage.removeItem('aprxm-auth')
