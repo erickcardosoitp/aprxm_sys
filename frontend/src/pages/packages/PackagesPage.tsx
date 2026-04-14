@@ -601,15 +601,23 @@ export default function PackagesPage() {
 
   const pendingPackages = packages.filter(p => p.status === 'received' || p.status === 'notified' || p.status === 'reversed')
 
+  const [bulkPaymentMethodId, setBulkPaymentMethodId] = useState('')
+
   const resetBulk = () => {
     setShowBulkDeliver(false); setBulkStep('select'); setBulkSelected(new Set())
     setBulkRecipientName(''); setBulkSig(''); setBulkDeliveryPersonName('')
-    setBulkLoading(false); setBulkResult(null)
+    setBulkLoading(false); setBulkResult(null); setBulkPaymentMethodId('')
   }
+
+  const bulkHasGuest = Array.from(bulkSelected).some(id => {
+    const p = packages.find(x => x.id === id)
+    return p && (p.resident_type === 'guest' || !p.resident_id)
+  })
 
   const handleBulkDeliver = async () => {
     if (!bulkRecipientName || !bulkSig) { toast.error('Nome e assinatura obrigatórios.'); return }
     if (bulkSelected.size === 0) { toast.error('Selecione ao menos uma encomenda.'); return }
+    if (bulkHasGuest && !bulkPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
     setBulkLoading(true)
     try {
       const res = await api.post<{ delivered: number; errors: string[]; items: any[] }>('/packages/bulk-deliver', {
@@ -617,6 +625,7 @@ export default function PackagesPage() {
         delivered_to_name: bulkRecipientName,
         signature_url: bulkSig,
         delivery_person_name: bulkDeliveryPersonName || fullName || undefined,
+        payment_method_id: bulkPaymentMethodId || undefined,
       })
       setBulkResult(res.data)
       loadPackages()
@@ -922,6 +931,7 @@ export default function PackagesPage() {
     if (!deliveryTarget) return
     const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
     if (!recipientName || !recipientSig) { toast.error('Nome e assinatura do recebedor obrigatórios.'); return }
+    if (isGuest && !deliveryPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
     if (isThirdParty && !ownerIdPhoto) { toast.error('Identidade do dono da encomenda obrigatória.'); return }
     if (isThirdParty && !pickerIdPhoto) { toast.error('Identidade de quem está retirando obrigatória.'); return }
     if (isThirdParty && !pickerPhone.trim()) { toast.error('Telefone de contato obrigatório.'); return }
@@ -1688,12 +1698,12 @@ export default function PackagesPage() {
               )}
 
               {/* Payment method for fee */}
-              {(deliveryTarget?.resident_type === 'guest') && paymentMethods.length > 0 && (
+              {(!deliveryTarget?.resident_id || deliveryTarget?.resident_type === 'guest') && paymentMethods.length > 0 && (
                 <div>
-                  <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa</label>
+                  <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa <span className="text-red-500">*</span></label>
                   <select value={deliveryPaymentMethodId} onChange={e => setDeliveryPaymentMethodId(e.target.value)}
                     className={inputCls}>
-                    <option value="">Selecione (opcional)</option>
+                    <option value="">Selecione...</option>
                     {paymentMethods.map(pm => (
                       <option key={pm.id} value={pm.id}>{pm.name}</option>
                     ))}
@@ -1854,12 +1864,21 @@ export default function PackagesPage() {
                       onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')}
                     />
                   </div>
+                  {bulkHasGuest && paymentMethods.length > 0 && (
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa <span className="text-red-500">*</span></label>
+                      <select value={bulkPaymentMethodId} onChange={e => setBulkPaymentMethodId(e.target.value)} className={inputCls}>
+                        <option value="">Selecione...</option>
+                        {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-3 px-5 pb-5 pt-4 border-t border-gray-100">
                   <button onClick={() => setBulkStep('select')} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">← Voltar</button>
                   <button
                     onClick={handleBulkDeliver}
-                    disabled={bulkLoading || !bulkSig || !bulkRecipientName}
+                    disabled={bulkLoading || !bulkSig || !bulkRecipientName || (bulkHasGuest && !bulkPaymentMethodId)}
                     className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50"
                   >
                     {bulkLoading ? 'Registrando…' : 'Confirmar Entrega'}
