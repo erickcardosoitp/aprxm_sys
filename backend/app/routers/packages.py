@@ -353,6 +353,45 @@ async def return_package(
     return {"id": str(pkg.id), "status": pkg.status, "return_reason": pkg.return_reason}
 
 
+class ReassignPackageRequest(BaseModel):
+    resident_id: UUID
+
+
+@router.patch("/{package_id}/reassign", summary="Alterar morador da encomenda")
+async def reassign_package(
+    package_id: UUID,
+    body: ReassignPackageRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from datetime import datetime
+    from fastapi import HTTPException
+
+    pkg = await session.get(Package, package_id)
+    if not pkg or str(pkg.association_id) != str(current.association_id):
+        raise HTTPException(404, "Encomenda não encontrada.")
+    if pkg.status == PackageStatus.delivered:
+        raise HTTPException(422, "Encomenda já entregue não pode ser reatribuída.")
+
+    resident = await session.get(Resident, body.resident_id)
+    if not resident or str(resident.association_id) != str(current.association_id):
+        raise HTTPException(404, "Morador não encontrado.")
+
+    pkg.resident_id = body.resident_id
+    pkg.unit = resident.unit or pkg.unit
+    pkg.block = resident.block or pkg.block
+    pkg.updated_at = datetime.utcnow()
+    session.add(pkg)
+    await session.execute(
+        text("""INSERT INTO package_events (association_id, package_id, created_by, event_type, comment)
+                VALUES (:a, :p, :u, 'comment', :msg)"""),
+        {"a": str(current.association_id), "p": str(package_id), "u": str(current.user_id),
+         "msg": f"Encomenda reatribuída para {resident.full_name}"},
+    )
+    await session.commit()
+    return {"id": str(pkg.id), "resident_id": str(pkg.resident_id), "resident_name": resident.full_name}
+
+
 class ReverseDeliveryRequest(BaseModel):
     reason: str
     admin_password: str

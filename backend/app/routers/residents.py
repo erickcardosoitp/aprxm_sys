@@ -216,23 +216,24 @@ async def search_residents_global(
     phone_clause = "AND (REGEXP_REPLACE(phone_primary, '\\D', '', 'g') ILIKE :qdigits OR REGEXP_REPLACE(phone_secondary, '\\D', '', 'g') ILIKE :qdigits)" if q_digits else ""
     result = await session.execute(
         sa_text(f"""
-            SELECT id, full_name, cpf, phone_primary, phone_secondary,
-                   address_street, address_number, address_city, unit, block, type, status,
-                   address_cep
-            FROM residents
-            WHERE association_id = :aid
+            SELECT r.id, r.full_name, r.cpf, r.phone_primary, r.phone_secondary,
+                   r.address_street, r.address_number, r.address_city, r.unit, r.block, r.type, r.status,
+                   r.address_cep, r.responsible_id, resp.full_name AS responsible_name
+            FROM residents r
+            LEFT JOIN residents resp ON resp.id = r.responsible_id
+            WHERE r.association_id = :aid
               AND (
-                full_name ILIKE :q
-                OR cpf ILIKE :qraw
-                OR phone_primary ILIKE :q
-                OR phone_secondary ILIKE :q
-                OR address_street ILIKE :q
-                OR address_city ILIKE :q
-                OR address_cep ILIKE :q
-                OR (unit || ' ' || COALESCE(block,'')) ILIKE :q
-                {f"OR (REGEXP_REPLACE(phone_primary, '\\D', '', 'g') ILIKE :qdigits OR REGEXP_REPLACE(phone_secondary, '\\D', '', 'g') ILIKE :qdigits)" if q_digits else ""}
+                r.full_name ILIKE :q
+                OR r.cpf ILIKE :qraw
+                OR r.phone_primary ILIKE :q
+                OR r.phone_secondary ILIKE :q
+                OR r.address_street ILIKE :q
+                OR r.address_city ILIKE :q
+                OR r.address_cep ILIKE :q
+                OR (r.unit || ' ' || COALESCE(r.block,'')) ILIKE :q
+                {f"OR (REGEXP_REPLACE(r.phone_primary, '\\D', '', 'g') ILIKE :qdigits OR REGEXP_REPLACE(r.phone_secondary, '\\D', '', 'g') ILIKE :qdigits)" if q_digits else ""}
               )
-            ORDER BY full_name
+            ORDER BY r.full_name
             LIMIT 20
         """),
         {
@@ -250,6 +251,8 @@ async def search_residents_global(
             "address_street": r[5], "address_number": r[6], "address_city": r[7],
             "unit": r[8], "block": r[9], "type": r[10], "status": r[11],
             "address_cep": r[12],
+            "responsible_id": str(r[13]) if r[13] else None,
+            "responsible_name": r[14],
         }
         for r in rows
     ]

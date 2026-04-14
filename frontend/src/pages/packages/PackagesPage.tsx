@@ -532,6 +532,32 @@ export default function PackagesPage() {
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [upgradeCpf, setUpgradeCpf] = useState('')
   const [upgradeLoading, setUpgradeLoading] = useState(false)
+  // Reassign package to existing resident
+  const [reassignSearch, setReassignSearch] = useState('')
+  const [reassignResults, setReassignResults] = useState<{ id: string; full_name: string; type: string; unit?: string; responsible_id?: string; responsible_name?: string }[]>([])
+  const [reassignLoading, setReassignLoading] = useState(false)
+
+  const searchReassign = async (q: string) => {
+    setReassignSearch(q)
+    if (q.length < 2) { setReassignResults([]); return }
+    try {
+      const res = await api.get<any[]>(`/residents/search?q=${encodeURIComponent(q)}`)
+      setReassignResults(res.data.slice(0, 6))
+    } catch { setReassignResults([]) }
+  }
+
+  const handleReassign = async (residentId: string, residentName: string) => {
+    if (!deliveryTarget) return
+    setReassignLoading(true)
+    try {
+      await api.patch(`/packages/${deliveryTarget.id}/reassign`, { resident_id: residentId })
+      toast.success(`Encomenda reatribuída para ${residentName}`)
+      setReassignSearch(''); setReassignResults([])
+      loadPackages()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao reatribuir.')
+    } finally { setReassignLoading(false) }
+  }
 
   const handleUpgradeToMember = async () => {
     if (!deliveryTarget?.resident_id) return
@@ -1603,15 +1629,41 @@ export default function PackagesPage() {
 
               {/* Guest upgrade banner */}
               {deliveryTarget?.resident_type === 'guest' && deliveryTarget?.resident_id && (
-                <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
-                  <p className="text-xs font-semibold text-orange-800 mb-1">Visitante — taxa R$ 2,50 será cobrada</p>
+                <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-orange-800">Visitante — taxa R$ 2,50 será cobrada</p>
+
+                  {/* Reassign to existing resident/dependent */}
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Atribuir encomenda a outro morador/dependente:</p>
+                    <div className="relative">
+                      <input value={reassignSearch} onChange={e => searchReassign(e.target.value)}
+                        className={inputCls} placeholder="Buscar por nome ou CPF…" />
+                      {reassignResults.length > 0 && (
+                        <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                          {reassignResults.map(r => (
+                            <button key={r.id} type="button" disabled={reassignLoading}
+                              onClick={() => handleReassign(r.id, r.full_name)}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 flex flex-col border-b last:border-0 border-gray-100">
+                              <span className="text-xs font-semibold text-gray-800">{r.full_name}</span>
+                              <span className="text-[10px] text-gray-500">
+                                {r.responsible_name ? `Dependente de ${r.responsible_name}` : r.type === 'guest' ? 'Visitante' : 'Associado'}
+                                {r.unit ? ` · Unid. ${r.unit}` : ''}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Upgrade current guest to member */}
                   {!showUpgrade ? (
                     <button onClick={() => setShowUpgrade(true)}
-                      className="text-xs text-[#26619c] underline">
-                      Cadastrar como associado agora
+                      className="text-xs text-[#26619c] underline self-start">
+                      Ou cadastrar este visitante como associado
                     </button>
                   ) : (
-                    <div className="flex flex-col gap-2 mt-2">
+                    <div className="flex flex-col gap-2">
                       <input value={upgradeCpf} onChange={e => setUpgradeCpf(e.target.value)}
                         className={inputCls} placeholder="CPF do morador *" />
                       <div className="flex gap-2">
