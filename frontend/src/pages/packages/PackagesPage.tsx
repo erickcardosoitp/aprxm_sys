@@ -701,6 +701,53 @@ export default function PackagesPage() {
     setBrxDelivererName(''); setBrxDelivererSig(''); setBrxLoading(false); setBrxResult(null)
     setBrxTracking(''); setBrxCarrier(''); setBrxSearch(''); setBrxResults([])
     setBrxSelected(null); setBrxLastAdded(null); setShowBrxScanner(false); setBrxPending(null)
+    setBrxGuestName(''); setBrxShowGuest(false)
+  }
+
+  // Bulk receive — guest creation
+  const [brxShowGuest, setBrxShowGuest] = useState(false)
+  const [brxGuestName, setBrxGuestName] = useState('')
+  const [brxGuestLoading, setBrxGuestLoading] = useState(false)
+
+  const createBrxGuest = async () => {
+    if (!brxGuestName.trim()) return
+    setBrxGuestLoading(true)
+    try {
+      const res = await api.post<Resident>('/residents', {
+        type: 'guest', status: 'active', full_name: brxGuestName.trim(),
+        is_member_confirmed: false, terms_accepted: false, lgpd_accepted: false,
+      })
+      setBrxShowGuest(false); setBrxGuestName('')
+      requestBrxPhoto(res.data, brxTracking)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao criar visitante.')
+    } finally { setBrxGuestLoading(false) }
+  }
+
+  // Upgrade guest → member (receive flow)
+  const [rxUpgradeTarget, setRxUpgradeTarget] = useState<Resident | null>(null)
+  const [rxUpgradeCpf, setRxUpgradeCpf] = useState('')
+  const [rxUpgradeLoading, setRxUpgradeLoading] = useState(false)
+
+  const handleRxUpgrade = async () => {
+    if (!rxUpgradeTarget) return
+    if (!rxUpgradeCpf.trim()) { toast.error('CPF obrigatório.'); return }
+    setRxUpgradeLoading(true)
+    try {
+      const res = await api.put<Resident>(`/residents/${rxUpgradeTarget.id}`, {
+        type: 'member', cpf: rxUpgradeCpf.trim(), status: 'active',
+        is_member_confirmed: true, terms_accepted: true, lgpd_accepted: true,
+      })
+      toast.success('Cadastro atualizado para Associado!')
+      const updated = res.data
+      setRxUpgradeTarget(null); setRxUpgradeCpf('')
+      // if in single receive, update selectedRecipient
+      if (selectedRecipient?.id === updated.id) setSelectedRecipient(updated)
+      // if in bulk receive, set pending with updated resident
+      if (rxUpgradeTarget) requestBrxPhoto(updated, brxTracking)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao atualizar.')
+    } finally { setRxUpgradeLoading(false) }
   }
 
   // Receive flow — deliverer
@@ -1271,9 +1318,15 @@ export default function PackagesPage() {
                 {selectedRecipient?.type === 'guest' && (
                   <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2.5 mb-4">
                     <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-800 font-medium">
-                      Não associado — <strong>taxa de R$ 2,50</strong> será cobrada automaticamente na entrega e lançada no caixa.
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-amber-800 font-medium">
+                        Não associado — <strong>taxa de R$ 2,50</strong> será cobrada automaticamente na entrega.
+                      </p>
+                      <button onClick={() => { setRxUpgradeTarget(selectedRecipient); setRxUpgradeCpf('') }}
+                        className="text-xs text-[#26619c] underline mt-0.5">
+                        É associado? Atualizar cadastro agora
+                      </button>
+                    </div>
                   </div>
                 )}
                 <div className="flex flex-col gap-3">
@@ -1875,12 +1928,48 @@ export default function PackagesPage() {
                               <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
                               {(r as any).unit && <p className="text-xs text-gray-400">Unidade {(r as any).unit}{(r as any).block ? ` · Bl. ${(r as any).block}` : ''}</p>}
                             </div>
-                            {r.type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full shrink-0">R$2,50</span>}
-                            {idx === 0 && brxTracking && <span className="text-[10px] bg-[#26619c]/10 text-[#26619c] px-1.5 py-0.5 rounded-full shrink-0">Enter ↵</span>}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {r.type === 'guest' && (
+                                <>
+                                  <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">R$2,50</span>
+                                  <button
+                                    type="button"
+                                    onClick={e => { e.stopPropagation(); setRxUpgradeTarget(r); setRxUpgradeCpf('') }}
+                                    className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full hover:bg-blue-200"
+                                  >→ Assoc.</button>
+                                </>
+                              )}
+                              {idx === 0 && brxTracking && <span className="text-[10px] bg-[#26619c]/10 text-[#26619c] px-1.5 py-0.5 rounded-full">Enter ↵</span>}
+                            </div>
                           </button>
                         </li>
                       ))}
                     </ul>
+                  )}
+
+                  {/* No results — suggest guest */}
+                  {brxSearch.length >= 2 && brxResults.length === 0 && !brxPending && (
+                    brxShowGuest ? (
+                      <div className="border border-orange-200 bg-orange-50 rounded-xl p-3 flex flex-col gap-2">
+                        <p className="text-xs font-semibold text-orange-700">Cadastrar como Visitante</p>
+                        <input value={brxGuestName} onChange={e => setBrxGuestName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') createBrxGuest() }}
+                          className={inputCls} placeholder="Nome completo *" autoFocus />
+                        <div className="flex gap-2">
+                          <button onClick={() => { setBrxShowGuest(false); setBrxGuestName('') }}
+                            className="flex-1 border border-gray-300 text-gray-600 py-1.5 rounded-lg text-xs">Cancelar</button>
+                          <button onClick={createBrxGuest} disabled={brxGuestLoading || !brxGuestName.trim()}
+                            className="flex-1 bg-orange-500 text-white py-1.5 rounded-lg text-xs font-medium disabled:opacity-50">
+                            {brxGuestLoading ? 'Salvando…' : 'Salvar e continuar'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setBrxShowGuest(true); setBrxGuestName(brxSearch) }}
+                        className="w-full flex items-center gap-2 border border-dashed border-orange-300 bg-orange-50 rounded-lg px-3 py-2.5 text-sm text-orange-600 hover:border-orange-400 transition">
+                        <UserX className="w-4 h-4" /> Não encontrado — cadastrar como visitante
+                      </button>
+                    )
                   )}
 
                   {/* Pending item (tracking set, no resident yet) */}
@@ -2005,6 +2094,32 @@ export default function PackagesPage() {
                 <button onClick={resetBulkRx} className="w-full bg-[#26619c] text-white py-2.5 rounded-xl text-sm font-semibold">Fechar</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Upgrade guest → member (receive flow) */}
+      {rxUpgradeTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
+            <div>
+              <h3 className="font-semibold text-gray-900">Atualizar para Associado</h3>
+              <p className="text-sm text-gray-500 mt-1">{rxUpgradeTarget.full_name}</p>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">CPF <span className="text-red-500">*</span></label>
+              <input value={rxUpgradeCpf} onChange={e => setRxUpgradeCpf(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleRxUpgrade() }}
+                className={inputCls} placeholder="000.000.000-00" autoFocus />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setRxUpgradeTarget(null); setRxUpgradeCpf('') }}
+                className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+              <button onClick={handleRxUpgrade} disabled={rxUpgradeLoading || !rxUpgradeCpf.trim()}
+                className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                {rxUpgradeLoading ? 'Salvando…' : 'Confirmar'}
+              </button>
+            </div>
           </div>
         </div>
       )}
