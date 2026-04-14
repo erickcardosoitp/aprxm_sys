@@ -20,6 +20,14 @@ const STATUS_LABELS: Record<ResidentStatus, string> = {
   active: 'Ativo', inactive: 'Inativo', suspended: 'Suspenso',
 }
 
+function safeDate(s: string | null | undefined): string {
+  if (!s) return '—'
+  const str = /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T12:00:00` : s
+  const d = new Date(str)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('pt-BR')
+}
+
 function calcCompletion(r: Resident): number {
   const checks = [
     !!r.cpf, !!r.phone_primary, !!r.phone_secondary, !!r.email, !!r.date_of_birth,
@@ -675,7 +683,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [migracoes, setMigracoes] = useState<MigrationEntry[]>([])
   const [tab, setTab] = useState<ProfileTab>('mensalidades')
   const [loading, setLoading] = useState(true)
-  const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_ate: '', mode: 'single' as 'single' | 'bulk', valor_pago: '', data_pagamento: '' })
+  const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_de: '', quitado_ate: '', mode: 'single' as 'single' | 'bulk' | 'range', valor_pago: '', data_pagamento: '' })
   const [migSaving, setMigSaving] = useState(false)
 
   const loadMigracoes = async () => {
@@ -707,10 +715,12 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const handleMigSave = async () => {
     setMigSaving(true)
     try {
-      if (migForm.mode === 'bulk') {
-        if (!migForm.quitado_ate) { toast.error('Informe o mês quitado até.'); return }
+      if (migForm.mode === 'bulk' || migForm.mode === 'range') {
+        if (!migForm.quitado_ate) { toast.error('Informe o mês final.'); return }
+        if (migForm.mode === 'range' && !migForm.quitado_de) { toast.error('Informe o mês inicial.'); return }
         await api.post('/mensalidades/migration/bulk', {
           resident_id: resident.id,
+          ...(migForm.mode === 'range' && { quitado_de: migForm.quitado_de }),
           quitado_ate: migForm.quitado_ate,
           tipo: migForm.tipo,
           valor_pago: migForm.valor_pago ? parseFloat(migForm.valor_pago) : null,
@@ -760,9 +770,9 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           ${d.unit ? `<p class="label">Unidade</p><p class="val">${d.unit}${d.block ? ' / Bl. ' + d.block : ''}</p>` : ''}
           <hr/>
           <p class="label">Referência</p><p class="val">${d.reference_month}</p>
-          <p class="label">Vencimento</p><p class="val">${new Date(d.due_date).toLocaleDateString('pt-BR')}</p>
+          <p class="label">Vencimento</p><p class="val">${safeDate(d.due_date)}</p>
           <p class="label">Valor</p><p class="val">R$ ${parseFloat(d.amount).toFixed(2)}</p>
-          <p class="label">Pago em</p><p class="val">${d.paid_at ? new Date(d.paid_at).toLocaleDateString('pt-BR') : '—'}</p>
+          <p class="label">Pago em</p><p class="val">${safeDate(d.paid_at)}</p>
           <p class="label">Forma de pagamento</p><p class="val">${d.payment_method}</p>
           <hr/>
           <p class="label">Associação</p><p class="val">${d.association_name}</p>
@@ -807,7 +817,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                   <li key={m.id} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-3">
                     <div>
                       <p className="text-sm font-medium text-gray-800">{m.reference_month}</p>
-                      <p className="text-xs text-gray-500">Venc: {new Date(m.due_date).toLocaleDateString('pt-BR')} · R$ {parseFloat(m.amount).toFixed(2)}</p>
+                      <p className="text-xs text-gray-500">{m.due_date ? `Venc: ${safeDate(m.due_date)} · ` : ''}R$ {parseFloat(m.amount).toFixed(2)}</p>
                       <span className={`text-xs font-medium ${m.status === 'paid' ? 'text-green-600' : m.status === 'overdue' ? 'text-red-600' : 'text-amber-600'}`}>
                         {STATUS_MAP[m.status] ?? m.status}
                       </span>
@@ -835,9 +845,9 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="text-sm font-medium text-gray-800">{i.reference_month}</p>
-                        <p className="text-xs text-gray-500">Venc: {new Date(i.due_date).toLocaleDateString('pt-BR')} · R$ {parseFloat(i.amount).toFixed(2)}</p>
+                        <p className="text-xs text-gray-500">Venc: {safeDate(i.due_date)} · R$ {parseFloat(i.amount).toFixed(2)}</p>
                         {i.pago_em_atraso && i.paid_at && (
-                          <p className="text-xs text-amber-600">Pago em atraso: {new Date(i.paid_at).toLocaleDateString('pt-BR')}</p>
+                          <p className="text-xs text-amber-600">Pago em atraso: {safeDate(i.paid_at)}</p>
                         )}
                       </div>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${i.status === 'paid' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
@@ -859,7 +869,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-800">{p.object_type ?? 'Encomenda'}</p>
                         <p className="text-xs text-gray-500">
-                          {new Date(p.received_at).toLocaleDateString('pt-BR')}
+                          {safeDate(p.received_at)}
                           {p.carrier_name ? ` · ${p.carrier_name}` : ''}
                           {p.tracking_code ? ` · ${p.tracking_code}` : ''}
                         </p>
@@ -883,10 +893,10 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
                 <p className="text-xs font-semibold text-amber-800 mb-3">Histórico de Pagamentos (Migração)</p>
                 <div className="flex gap-2 mb-3">
-                  {(['single', 'bulk'] as const).map(m => (
+                  {(['single', 'bulk', 'range'] as const).map(m => (
                     <button key={m} onClick={() => setMigForm(f => ({ ...f, mode: m }))}
                       className={`flex-1 py-1.5 text-xs rounded-lg border font-medium transition ${migForm.mode === m ? 'bg-amber-600 text-white border-amber-600' : 'border-amber-300 text-amber-700'}`}>
-                      {m === 'single' ? '1 Mês' : 'Quitado até…'}
+                      {m === 'single' ? '1 Mês' : m === 'bulk' ? 'Até…' : 'De → Até'}
                     </button>
                   ))}
                 </div>
@@ -900,12 +910,27 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                     <input type="month" value={migForm.competencia}
                       onChange={e => setMigForm(f => ({ ...f, competencia: e.target.value }))}
                       className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
-                  ) : (
+                  ) : migForm.mode === 'bulk' ? (
                     <div>
-                      <label className="text-xs text-amber-700 mb-1 block">Quitado até (gera todos os meses anteriores)</label>
+                      <label className="text-xs text-amber-700 mb-1 block">Quitado até (gera de 2000/01 até este mês)</label>
                       <input type="month" value={migForm.quitado_ate}
                         onChange={e => setMigForm(f => ({ ...f, quitado_ate: e.target.value }))}
                         className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      <div>
+                        <label className="text-xs text-amber-700 mb-1 block">De (mês inicial)</label>
+                        <input type="month" value={migForm.quitado_de}
+                          onChange={e => setMigForm(f => ({ ...f, quitado_de: e.target.value }))}
+                          className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-amber-700 mb-1 block">Até (mês final)</label>
+                        <input type="month" value={migForm.quitado_ate}
+                          onChange={e => setMigForm(f => ({ ...f, quitado_ate: e.target.value }))}
+                          className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
+                      </div>
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-2">

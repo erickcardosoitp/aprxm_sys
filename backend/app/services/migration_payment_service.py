@@ -45,19 +45,24 @@ class MigrationPaymentService:
         self,
         association_id: UUID,
         resident_id: UUID,
-        quitado_ate: str,  # "YYYY-MM" — gerar de 2000-01 até este mês
+        quitado_ate: str,
         tipo: MigrationPaymentTipo,
         created_by: UUID,
+        quitado_de: str | None = None,
         valor_pago: Decimal | None = None,
         data_pagamento: date | None = None,
     ) -> list[MigrationPayment]:
         year_end, month_end = map(int, quitado_ate.split("-"))
+        if quitado_de:
+            year_start, month_start = map(int, quitado_de.split("-"))
+        else:
+            year_start, month_start = 2000, 1
 
         existing = await self.list_by_resident(association_id, resident_id)
         existing_competencias = {mp.competencia for mp in existing}
 
         created: list[MigrationPayment] = []
-        year, month = 2000, 1
+        year, month = year_start, month_start
         while (year, month) <= (year_end, month_end):
             comp = f"{year:04d}-{month:02d}"
             if comp not in existing_competencias:

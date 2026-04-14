@@ -351,7 +351,7 @@ function SessionDetailModal({
         <div className="flex-1 overflow-y-auto">
           <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
             <h3 className="font-semibold text-gray-800 text-sm">Movimentações</h3>
-            {isConferenteOrAbove && session.status !== 'open' && !editing && (
+            {isConferenteOrAbove && !editing && (
               editingTx ? (
                 <div className="flex gap-2">
                   <button onClick={() => setEditingTx(false)}

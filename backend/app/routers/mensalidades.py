@@ -314,6 +314,7 @@ class CreateMigrationPaymentRequest(BaseModel):
 
 class BulkMigrationRequest(BaseModel):
     resident_id: UUID
+    quitado_de: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$", description="Mês inicial YYYY-MM (padrão: 2000-01)")
     quitado_ate: str = Field(pattern=r"^\d{4}-\d{2}$", description="Gera todos os meses até YYYY-MM")
     tipo: MigrationPaymentTipo = MigrationPaymentTipo.mensalidade
     valor_pago: Decimal | None = None
@@ -351,6 +352,7 @@ async def bulk_migration_payment(
         association_id=current.association_id,
         resident_id=body.resident_id,
         quitado_ate=body.quitado_ate,
+        quitado_de=body.quitado_de,
         tipo=body.tipo,
         created_by=current.user_id,
         valor_pago=body.valor_pago,
