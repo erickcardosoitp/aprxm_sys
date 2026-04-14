@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { printCarne as printCarneUtil } from '../../utils/printCarne'
 import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2, Download, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
@@ -95,60 +96,6 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
   )
 }
 
-function _printCarneInline(resident: Resident, mensalidades: any[], logoUrl: string | null, assocName: string) {
-  const MONTH_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
-  const sd = (s: string | null | undefined) => { if (!s) return ''; const d = new Date(s); return isNaN(d.getTime()) ? s : d.toLocaleDateString('pt-BR') }
-  const existing = [...mensalidades].sort((a: any, b: any) => a.reference_month.localeCompare(b.reference_month))
-  const refs = new Set(existing.map((m: any) => m.reference_month))
-  const months: { label: string; amount: string; due: string; status: string; paid_at?: string }[] = []
-  existing.forEach((m: any) => { const [y, mo] = m.reference_month.split('-'); months.push({ label: `${MONTH_PT[parseInt(mo)-1]}/${y}`, amount: parseFloat(m.amount).toFixed(2), due: sd(m.due_date), status: m.status, paid_at: m.paid_at ?? undefined }) })
-  let cur = new Date(); cur = new Date(cur.getFullYear(), cur.getMonth(), 1)
-  while (months.length < 12) {
-    const ref = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`
-    if (!refs.has(ref)) months.push({ label: `${MONTH_PT[cur.getMonth()]}/${cur.getFullYear()}`, amount: existing[0] ? parseFloat(existing[0].amount).toFixed(2) : '—', due: '—', status: 'pending' })
-    cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1)
-    if (months.length >= 12) break
-  }
-  months.splice(12)
-  const SC: Record<string, string> = { paid: '#16a34a', pending: '#d97706', overdue: '#dc2626' }
-  const SL: Record<string, string> = { paid: 'PAGO', pending: 'PENDENTE', overdue: 'EM ATRASO' }
-  const logoHtml = logoUrl ? `<img src="${logoUrl}" style="height:10mm;max-width:30mm;object-fit:contain;display:block;margin:0 auto 1mm" />` : ''
-  const stubs = months.map(m => {
-    const isPaid = m.status === 'paid'
-    return `<div class="stub">
-      <div class="stub-header">
-        ${logoHtml}
-        <div style="text-align:center;font-size:7pt;font-weight:bold;text-transform:uppercase">${assocName}</div>
-        <div style="display:flex;justify-content:space-between;margin-top:1mm"><span style="font-size:6pt;color:#555">Carnê de Mensalidade</span><span style="font-size:8pt;font-weight:bold">${m.label}</span></div>
-      </div>
-      <div class="stub-body">
-        <div class="row"><span class="lbl">Associado</span><span class="val">${resident.full_name}</span></div>
-        ${resident.unit ? `<div class="row"><span class="lbl">Unidade</span><span class="val">${resident.unit}</span></div>` : ''}
-        ${resident.cpf ? `<div class="row"><span class="lbl">CPF</span><span class="val">${resident.cpf}</span></div>` : ''}
-        <div class="row"><span class="lbl">Vencimento</span><span class="val">${m.due}</span></div>
-        <div class="row"><span class="lbl">Valor</span><span class="val">R$ ${m.amount}</span></div>
-        ${isPaid ? `<div class="row"><span class="lbl">Pago em</span><span class="val">${sd(m.paid_at)}</span></div>` : '<div class="row"><span class="lbl">Pago em</span><span class="val" style="border-bottom:1px solid #999;width:28mm;display:inline-block">&nbsp;</span></div>'}
-      </div>
-      <div class="stub-footer">
-        <span style="font-size:7pt;font-weight:bold;color:${SC[m.status]??'#888'}">${SL[m.status]??m.status.toUpperCase()}</span>
-        <div style="display:flex;flex-direction:column;align-items:center"><div style="width:22mm;border-bottom:1px solid #999;margin-bottom:0.5mm"></div><span style="font-size:5pt;color:#999">Ass./Carimbo</span></div>
-      </div>
-    </div>`
-  }).join('')
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Carnê</title>
-    <style>@page{size:80mm auto;margin:0}*{box-sizing:border-box;margin:0;padding:0;font-family:'Courier New',monospace}body{width:80mm}
-    .stub{width:80mm;padding:4mm 4mm 3mm;border-bottom:1px dashed #999;page-break-inside:avoid}
-    .stub-header{border-bottom:1px solid #000;padding-bottom:1.5mm;margin-bottom:2mm}
-    .stub-body{display:flex;flex-direction:column;gap:0.8mm;margin-bottom:2mm}
-    .row{display:flex;justify-content:space-between;gap:2mm}
-    .lbl{font-size:6.5pt;color:#555;white-space:nowrap}.val{font-size:6.5pt;font-weight:bold;text-align:right}
-    .stub-footer{display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid #ccc;padding-top:1.5mm}</style>
-  </head><body>${stubs}</body></html>`
-  const w = window.open('', '_blank', 'width=400,height=700')
-  if (!w) return
-  w.document.write(html); w.document.close(); w.focus()
-  setTimeout(() => w.print(), 400)
-}
 
 export function TransactionModal({ onClose, onSuccess }: Props) {
   const [step, setStep] = useState(0)
@@ -425,7 +372,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       if (txType === 'income' && incomeSubtype === 'mensalidade' && resident) {
         try {
           const allRes = await api.get<any[]>(`/mensalidades/residents/${resident.id}`)
-          _printCarneInline(resident, allRes.data, assocInfo?.assoc_logo_url ?? null, assocInfo?.association_name ?? '')
+          printCarneUtil(resident, allRes.data, assocInfo?.association_name ?? '', { logoUrl: assocInfo?.assoc_logo_url ?? undefined })
         } catch { /* skip */ }
       }
     } catch (e: any) {
