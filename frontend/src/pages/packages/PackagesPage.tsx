@@ -607,6 +607,7 @@ export default function PackagesPage() {
   const [brxResults, setBrxResults] = useState<Resident[]>([])
   const [brxSelected, setBrxSelected] = useState<Resident | null>(null)
   const [brxLastAdded, setBrxLastAdded] = useState<string | null>(null)
+  const [showBrxScanner, setShowBrxScanner] = useState(false)
   const brxBarcodeRef = useRef<HTMLInputElement>(null)
   const brxSearchRef = useRef<HTMLInputElement>(null)
 
@@ -692,7 +693,7 @@ export default function PackagesPage() {
     setShowBulkReceive(false); setBulkRxStep('add'); setBulkRxQueue([])
     setBrxDelivererName(''); setBrxDelivererSig(''); setBrxLoading(false); setBrxResult(null)
     setBrxTracking(''); setBrxCarrier(''); setBrxSearch(''); setBrxResults([])
-    setBrxSelected(null); setBrxLastAdded(null)
+    setBrxSelected(null); setBrxLastAdded(null); setShowBrxScanner(false)
   }
 
   // Receive flow — deliverer
@@ -1787,17 +1788,28 @@ export default function PackagesPage() {
                   </div>
 
                   {/* Barcode — primary focus target */}
-                  <div className="relative">
-                    <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#26619c]" />
-                    <input
-                      ref={brxBarcodeRef}
-                      value={brxTracking}
-                      onChange={e => setBrxTracking(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleBarcodeEnter() } }}
-                      className={`${inputCls} pl-10 py-3 text-base font-mono`}
-                      placeholder="Bipe o código de barras e pressione Enter…"
-                      autoComplete="off"
-                    />
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#26619c]" />
+                      <input
+                        ref={brxBarcodeRef}
+                        value={brxTracking}
+                        onChange={e => setBrxTracking(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleBarcodeEnter() } }}
+                        className={`${inputCls} pl-10 py-3 text-base font-mono`}
+                        placeholder="Bipe ou escaneie o código…"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowBrxScanner(true)}
+                      title="Escanear com câmera"
+                      className="flex items-center justify-center gap-1.5 bg-[#26619c] hover:bg-[#1a4f87] text-white px-3 rounded-lg text-sm font-medium transition shrink-0"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span className="text-xs">Câmera</span>
+                    </button>
                   </div>
 
                   {/* Flash: last added */}
@@ -1971,11 +1983,27 @@ export default function PackagesPage() {
         </div>
       )}
 
-      {/* Barcode Scanner */}
+      {/* Barcode Scanner — single receive */}
       {showScanner && (
         <BarcodeScannerModal
           onScan={(code) => { setTracking(code); setShowScanner(false); document.getElementById('recipient-search')?.focus() }}
           onClose={() => setShowScanner(false)}
+        />
+      )}
+
+      {/* Barcode Scanner — bulk receive */}
+      {showBrxScanner && (
+        <BarcodeScannerModal
+          onScan={(code) => {
+            setShowBrxScanner(false)
+            setBrxTracking(code)
+            if (brxSelected) {
+              doAddToBulkRxQueue(brxSelected, code)
+            } else {
+              setTimeout(() => brxSearchRef.current?.focus(), 50)
+            }
+          }}
+          onClose={() => setShowBrxScanner(false)}
         />
       )}
 
