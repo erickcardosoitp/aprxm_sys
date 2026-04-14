@@ -678,7 +678,7 @@ function fmtComp(comp: string) {
 
 function printCarne(resident: Resident, mensalidades: MensalidadeEntry[], assocName: string, operatorName?: string) {
   const MONTH_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
-  const months: { ref: string; label: string; amount: string; due: string; status: string }[] = []
+  const months: { ref: string; label: string; amount: string; due: string; status: string; paid_at?: string }[] = []
 
   // Use existing mensalidades, then pad with future months up to 12
   const now = new Date()
@@ -687,7 +687,7 @@ function printCarne(resident: Resident, mensalidades: MensalidadeEntry[], assocN
 
   existing.forEach(m => {
     const [y, mo] = m.reference_month.split('-')
-    months.push({ ref: m.reference_month, label: `${MONTH_PT[parseInt(mo)-1]} ${y}`, amount: parseFloat(m.amount).toFixed(2), due: m.due_date ? safeDate(m.due_date) : '—', status: m.status })
+    months.push({ ref: m.reference_month, label: `${MONTH_PT[parseInt(mo)-1]} ${y}`, amount: parseFloat(m.amount).toFixed(2), due: m.due_date ? safeDate(m.due_date) : '—', status: m.status, paid_at: m.paid_at ?? undefined })
   })
 
   // Fill remaining with upcoming months

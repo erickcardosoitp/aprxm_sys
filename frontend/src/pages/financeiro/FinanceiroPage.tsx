@@ -215,6 +215,10 @@ export default function FinanceiroPage() {
   const [commPayForm, setCommPayForm] = useState({ amount: '', payment_method: '', paid_at: '', notes: '' })
   const [savingCommPay, setSavingCommPay] = useState(false)
 
+  // Comprovante
+  const [assocName, setAssocName] = useState('')
+  const [carneOperator, setCarneOperator] = useState('')
+
   // DRE
   const [dreYear, setDreYear] = useState(new Date().getFullYear())
   const [dreMonth, setDreMonth] = useState<number | ''>(new Date().getMonth() + 1)
@@ -225,6 +229,12 @@ export default function FinanceiroPage() {
   const dreRef = useRef<HTMLDivElement>(null)
 
   const [movSubTab, setMovSubTab] = useState<'entradas' | 'saidas'>('entradas')
+
+  useEffect(() => {
+    api.get<{ association_name?: string }>('/settings/association').then(r => {
+      setAssocName(r.data.association_name ?? '')
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (tab === 'dashboard') loadSummary()
@@ -533,7 +543,75 @@ export default function FinanceiroPage() {
     } finally { setDeletingMonth(false) }
   }
 
-  const handlePayMensalidade = async (id: string) => {
+  const printRecibo = (
+    residentName: string,
+    residentCpf: string | undefined,
+    residentUnit: string | undefined,
+    allMensalidades: Mensalidade[],
+    paidNow: Mensalidade,
+    paymentMethodLabel: string,
+    operator: string,
+  ) => {
+    const safeDate = (s: string | null | undefined) => {
+      if (!s) return ''
+      const d = new Date(s)
+      return isNaN(d.getTime()) ? s : d.toLocaleDateString('pt-BR')
+    }
+    const fmtR = (v: string | number) =>
+      `R$ ${parseFloat(String(v)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+    const paid = allMensalidades.filter(m => m.status === 'paid').sort((a, b) => a.reference_month.localeCompare(b.reference_month))
+
+    const stub = (via: 'interno' | 'morador') => `
+      <div style="width:72mm;font-family:'Courier New',monospace;font-size:7.5pt;page-break-inside:avoid;border:1px dashed #ccc;padding:3mm;margin-bottom:3mm">
+        <div style="text-align:center;font-size:8.5pt;font-weight:bold;border-bottom:1px solid #000;padding-bottom:1.5mm;margin-bottom:2mm">
+          ${assocName || 'Associação'}<br/>
+          <span style="font-size:6.5pt;font-weight:normal">COMPROVANTE DE MENSALIDADE — ${via === 'interno' ? '1ª VIA (CONTROLE)' : '2ª VIA (MORADOR)'}</span>
+        </div>
+        <div style="margin-bottom:2mm">
+          <div><b>Morador:</b> ${residentName}</div>
+          ${residentCpf ? `<div><b>CPF:</b> ${residentCpf}</div>` : ''}
+          ${residentUnit ? `<div><b>Unidade:</b> ${residentUnit}</div>` : ''}
+        </div>
+        <div style="border-top:1px solid #ccc;padding-top:2mm;margin-bottom:2mm">
+          <div><b>Competência paga:</b> ${paidNow.reference_month}</div>
+          <div><b>Valor:</b> ${fmtR(paidNow.amount)}</div>
+          <div><b>Data pagto:</b> ${safeDate(paidNow.paid_at)}</div>
+          ${via === 'interno' ? `<div><b>Forma pagto:</b> ${paymentMethodLabel}</div>` : ''}
+        </div>
+        <div style="border-top:1px solid #ccc;padding-top:2mm;margin-bottom:2mm;font-size:6.5pt">
+          <div style="font-weight:bold;margin-bottom:1mm">Histórico de pagamentos:</div>
+          ${paid.length === 0 ? '<div>Nenhum pagamento registrado.</div>' : paid.map(m =>
+            `<div>${m.reference_month} — ${fmtR(m.amount)} — ${safeDate(m.paid_at)}</div>`
+          ).join('')}
+        </div>
+        <div style="border-top:1px solid #ccc;padding-top:2mm;font-size:6.5pt">
+          <div><b>Operador:</b> ${operator || '________________________'}</div>
+          <div style="margin-top:3mm">Assinatura/Carimbo:</div>
+          <div style="border-bottom:1px solid #999;height:6mm;margin-top:1mm"></div>
+          <div style="margin-top:1mm;font-size:5.5pt;color:#666">Emitido em ${new Date().toLocaleString('pt-BR')}</div>
+        </div>
+      </div>`
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Comprovante</title>
+      <style>@media print{@page{size:80mm auto;margin:3mm}body{margin:0}}body{width:80mm}</style>
+    </head><body>
+      ${stub('interno')}
+      ${stub('morador')}
+    </body></html>`
+
+    const w = window.open('', '_blank', 'width=400,height=700')
+    if (!w) return
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => { w.print() }, 400)
+  }
+
+  const handlePayMensalidade = async (
+    id: string,
+    residentMeta?: { name: string; cpf?: string; unit?: string; resident_id?: string },
+  ) => {
     if (!openSession) {
       toast.error('Abra o caixa antes de registrar pagamentos.')
       return
@@ -543,6 +621,7 @@ export default function FinanceiroPage() {
       const res = await api.post<{ mensalidade: Mensalidade; transaction: any; next_month: Mensalidade | null }>(
         `/mensalidades/${id}/pay`, {}
       )
+      const paidNow = res.data.mensalidade
       const next = res.data.next_month
       toast.success(
         next
@@ -551,6 +630,22 @@ export default function FinanceiroPage() {
       )
       loadCobrancas()
       if (historyResidentId) loadResidentHistory(historyResidentId)
+
+      // Print receipt
+      if (residentMeta) {
+        try {
+          const allRes = await api.get<Mensalidade[]>(`/mensalidades/residents/${paidNow.resident_id}`)
+          printRecibo(
+            residentMeta.name,
+            residentMeta.cpf,
+            residentMeta.unit,
+            allRes.data,
+            paidNow,
+            'Dinheiro/PIX',
+            carneOperator,
+          )
+        } catch { /* silently skip print */ }
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao pagar mensalidade.')
     } finally { setPayingId(null) }
@@ -885,6 +980,17 @@ export default function FinanceiroPage() {
       {/* ── COBRANÇAS ── */}
       {tab === 'cobrancas' && (
         <div className="flex flex-col gap-4">
+          {/* Operator name for receipt */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={carneOperator}
+              onChange={e => setCarneOperator(e.target.value)}
+              placeholder="Nome do operador (comprovante)"
+              className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
+
           {/* Open session warning */}
           {openSession === null && (
             <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -1084,7 +1190,7 @@ export default function FinanceiroPage() {
                         <span className="text-sm font-bold text-blue-700">{fmt(m.amount)}</span>
                         <button
                           disabled={!openSession || payingId === m.id}
-                          onClick={() => m.id && handlePayMensalidade(m.id)}
+                          onClick={() => m.id && handlePayMensalidade(m.id, { name: pendingNames[m.resident_id] ?? '' })}
                           className="text-xs bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg transition">
                           {payingId === m.id ? '…' : 'Pagar'}
                         </button>
@@ -1137,7 +1243,7 @@ export default function FinanceiroPage() {
                               <Users className="w-3 h-3" /> Histórico
                             </button>
                             <button
-                              onClick={() => handlePayMensalidade(d.id)}
+                              onClick={() => handlePayMensalidade(d.id, { name: delinquentNames[d.resident_id] ?? '' })}
                               disabled={!openSession || payingId === d.id}
                               className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-2 py-1 rounded-lg transition">
                               {payingId === d.id ? '…' : 'Pagar'}
@@ -1300,7 +1406,7 @@ export default function FinanceiroPage() {
                             <span className="text-sm font-bold text-gray-800">{fmt(m.amount)}</span>
                             {!isPaid && !isMig && (
                               <button
-                                onClick={() => handlePayMensalidade(m.id!)}
+                                onClick={() => handlePayMensalidade(m.id!, { name: historyResidentName ?? '' })}
                                 disabled={!openSession || payingId === m.id}
                                 className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-3 py-1 rounded-lg transition">
                                 {payingId === m.id ? '…' : 'Pagar'}
