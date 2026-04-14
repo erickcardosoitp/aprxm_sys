@@ -111,11 +111,79 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
     }
   }
 
+  const printClosingReceipt = (txs: Transaction[], res: typeof result, assocName: string) => {
+    if (!res) return
+    const fmtR = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    const active = txs.filter(t => !(t as any).reversed_at && !(t as any).is_reversal)
+    const reversed = txs.filter(t => (t as any).reversed_at)
+    const totalEstornos = reversed.reduce((s, t) => s + parseFloat(t.amount), 0)
+
+    // Group by payment method
+    const byPm: Record<string, number> = {}
+    for (const t of active.filter(t => t.type === 'income')) {
+      const key = (t as any).payment_method_name ?? 'Não informado'
+      byPm[key] = (byPm[key] ?? 0) + parseFloat(t.amount)
+    }
+    const income = active.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+    const exits = active.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+
+    const now = new Date().toLocaleString('pt-BR')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Fechamento de Caixa</title>
+<style>@page{size:80mm auto;margin:2mm}*{box-sizing:border-box;margin:0;padding:0;font-family:'Courier New',monospace;font-size:7.5pt}body{width:80mm}</style>
+</head><body>
+<div style="text-align:center;padding:2mm 0 1.5mm;border-bottom:2px solid #111">
+  <div style="font-size:9.5pt;font-weight:bold;text-transform:uppercase">${assocName || 'Associação'}</div>
+  <div style="font-size:6.5pt;margin-top:.5mm">FECHAMENTO DE CAIXA</div>
+  <div style="font-size:6pt;color:#555;margin-top:.5mm">${now}</div>
+</div>
+
+<div style="padding:2mm;border-bottom:1px dashed #999">
+  <div style="font-size:6pt;font-weight:bold;color:#555;margin-bottom:1mm">RESUMO</div>
+  <div style="display:flex;justify-content:space-between"><span>Saldo abertura</span><span>${fmtR(parseFloat(session.opening_balance))}</span></div>
+  <div style="display:flex;justify-content:space-between"><span>Total entradas</span><span style="color:#166534">${fmtR(income)}</span></div>
+  <div style="display:flex;justify-content:space-between"><span>Total saídas</span><span style="color:#991b1b">${fmtR(exits)}</span></div>
+  <div style="display:flex;justify-content:space-between"><span>Total estornos</span><span style="color:#92400e">${fmtR(totalEstornos)}</span></div>
+  <div style="display:flex;justify-content:space-between;font-weight:bold;margin-top:1.5mm;border-top:1px solid #ccc;padding-top:1mm"><span>Saldo esperado</span><span>${fmtR(res.expected)}</span></div>
+  <div style="display:flex;justify-content:space-between;font-weight:bold"><span>Total contado</span><span>${fmtR(res.counted)}</span></div>
+  <div style="display:flex;justify-content:space-between"><span style="color:#555">PIX contado</span><span>${fmtR(res.blindPix)}</span></div>
+  <div style="display:flex;justify-content:space-between"><span style="color:#555">Dinheiro contado</span><span>${fmtR(res.blindDinheiro)}</span></div>
+  <div style="display:flex;justify-content:space-between;font-weight:bold;color:${res.diff === 0 ? '#166534' : res.diff > 0 ? '#1d4ed8' : '#991b1b'}"><span>Diferença</span><span>${res.diff >= 0 ? '+' : ''}${fmtR(res.diff)}</span></div>
+</div>
+
+<div style="padding:2mm;border-bottom:1px dashed #999">
+  <div style="font-size:6pt;font-weight:bold;color:#555;margin-bottom:1mm">POR FORMA DE PAGAMENTO</div>
+  ${Object.entries(byPm).map(([k, v]) => `<div style="display:flex;justify-content:space-between"><span>${k}</span><span>${fmtR(v)}</span></div>`).join('')}
+  ${Object.keys(byPm).length === 0 ? '<div style="color:#aaa">Nenhuma entrada.</div>' : ''}
+</div>
+
+<div style="padding:2mm;border-bottom:1px dashed #999">
+  <div style="font-size:6pt;font-weight:bold;color:#555;margin-bottom:1mm">MOVIMENTAÇÕES (${active.length} lançamentos)</div>
+  ${active.slice(0, 30).map(t => `<div style="display:flex;justify-content:space-between;margin-bottom:.5mm">
+    <span style="max-width:48mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:${t.type === 'income' ? '#166534' : '#991b1b'}">${t.description}</span>
+    <span style="white-space:nowrap">${fmtR(parseFloat(t.amount))}</span>
+  </div>`).join('')}
+  ${active.length > 30 ? `<div style="color:#aaa;font-size:6pt">... e mais ${active.length - 30} lançamentos</div>` : ''}
+</div>
+
+<div style="padding:2mm">
+  <div style="margin-top:3mm">Conferido por:</div>
+  <div style="border-bottom:1px solid #999;height:6mm;margin-top:1mm"></div>
+  <div style="margin-top:1mm;font-size:5.5pt;color:#aaa">Emitido em ${now}</div>
+</div>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=400,height=800')
+    if (!w) return
+    w.document.write(html); w.document.close(); w.focus()
+    setTimeout(() => w.print(), 400)
+  }
+
   const handleConfirm = async () => {
     if (!result) return
     setLoading(true)
     try {
       await financeService.closeSession(result.counted)
+      printClosingReceipt(transactions, result, (settings as any)?.association_name ?? '')
       onRefresh()
       setStep('done')
       setTimeout(() => { onDone() }, 1800)

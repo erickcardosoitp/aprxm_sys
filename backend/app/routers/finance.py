@@ -588,6 +588,49 @@ async def reject_transaction_approval(
     return {"id": str(tx.id), "approval_status": tx.approval_status}
 
 
+class CorrectTransactionRequest(BaseModel):
+    admin_password: str = Field(min_length=1)
+    amount: str | None = None
+    payment_method_id: UUID | None = None
+    resident_id: UUID | None = None
+    description: str | None = None
+
+
+@router.patch("/transactions/{transaction_id}/correct", summary="Corrigir lançamento com senha admin")
+async def correct_transaction(
+    transaction_id: UUID,
+    body: CorrectTransactionRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlmodel import select as sq_select
+    from app.models.user import User
+    user_row = await session.execute(sq_select(User).where(User.id == current.user_id))
+    user = user_row.scalar_one_or_none()
+    if not user or not verify_password(body.admin_password, user.hashed_password):
+        raise HTTPException(status_code=403, detail="Senha de administrador incorreta.")
+
+    sets, params = [], {"tid": str(transaction_id), "aid": str(current.association_id)}
+    if body.amount is not None:
+        sets.append("amount = :amount"); params["amount"] = body.amount
+    if body.payment_method_id is not None:
+        sets.append("payment_method_id = :pm"); params["pm"] = str(body.payment_method_id)
+    if body.resident_id is not None:
+        sets.append("resident_id = :rid"); params["rid"] = str(body.resident_id)
+    if body.description is not None:
+        sets.append("description = :desc"); params["desc"] = body.description
+    if not sets:
+        raise HTTPException(422, "Nenhum campo para atualizar.")
+
+    from sqlalchemy import text as sa_text
+    await session.execute(
+        sa_text(f"UPDATE transactions SET {', '.join(sets)} WHERE id = :tid AND association_id = :aid"),
+        params,
+    )
+    await session.commit()
+    return {"ok": True}
+
+
 class ReversalRequest(BaseModel):
     reason: str = Field(min_length=5, description="Motivo do estorno")
     admin_password: str = Field(min_length=1, description="Senha do administrador")

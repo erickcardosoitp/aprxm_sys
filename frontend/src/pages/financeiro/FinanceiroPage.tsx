@@ -119,6 +119,32 @@ export default function FinanceiroPage() {
   const [reversalReason, setReversalReason] = useState('')
   const [reversalPassword, setReversalPassword] = useState('')
   const [reversalTarget, setReversalTarget] = useState<Tx | null>(null)
+  // Edit transaction
+  const [editTarget, setEditTarget] = useState<Tx | null>(null)
+  const [editAmount, setEditAmount] = useState('')
+  const [editPmId, setEditPmId] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+  const [editPassword, setEditPassword] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editPayMethods, setEditPayMethods] = useState<{ id: string; name: string }[]>([])
+
+  const handleEditTx = async () => {
+    if (!editTarget || !editPassword.trim()) { toast.error('Senha obrigatória.'); return }
+    setEditing(true)
+    try {
+      const body: Record<string, any> = { admin_password: editPassword }
+      if (editAmount) body.amount = editAmount
+      if (editPmId) body.payment_method_id = editPmId
+      if (editDesc) body.description = editDesc
+      await api.patch(`/finance/transactions/${editTarget.id}/correct`, body)
+      toast.success('Lançamento corrigido.')
+      setEditTarget(null); setEditAmount(''); setEditPmId(''); setEditDesc(''); setEditPassword('')
+      loadTransactions()
+    } catch (e: any) {
+      const d = e.response?.data?.detail
+      toast.error(typeof d === 'string' ? d : 'Erro ao corrigir.')
+    } finally { setEditing(false) }
+  }
 
   // Sessions
   const [sessions, setSessions] = useState<Session[]>([])
@@ -237,6 +263,7 @@ export default function FinanceiroPage() {
     api.get<{ association_name?: string }>('/settings/association').then(r => {
       setAssocName(r.data.association_name ?? '')
     }).catch(() => {})
+    api.get<{ id: string; name: string }[]>('/finance/payment-methods').then(r => setEditPayMethods(r.data)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -1012,9 +1039,9 @@ export default function FinanceiroPage() {
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {rows.map(t => (
-                    <li key={t.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                    <li key={t.id} className={`px-4 py-3 flex items-center justify-between gap-3 ${t.reversed_at || t.is_reversal ? 'opacity-50' : ''}`}>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-800 truncate">{t.is_sangria ? '🔒 ' : ''}{t.description}</p>
+                        <p className={`text-sm font-medium truncate ${t.reversed_at ? 'line-through text-gray-400' : 'text-gray-800'}`}>{t.is_sangria ? '🔒 ' : ''}{t.description}</p>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <p className="text-xs text-gray-400">{fmtDate(t.transaction_at)}</p>
                           {t.income_subtype && (
@@ -1028,7 +1055,13 @@ export default function FinanceiroPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={`text-sm font-bold ${movSubTab === 'entradas' ? 'text-green-600' : 'text-red-600'}`}>{fmt(t.amount)}</span>
+                        <span className={`text-sm font-bold ${t.reversed_at ? 'line-through text-gray-400' : movSubTab === 'entradas' ? 'text-green-600' : 'text-red-600'}`}>{fmt(t.amount)}</span>
+                        {!t.reversed_at && !t.is_reversal && (
+                          <button onClick={() => { setEditTarget(t); setEditAmount(t.amount); setEditDesc(t.description); setEditPmId(''); setEditPassword('') }} title="Corrigir"
+                            className="p-1.5 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {movSubTab === 'entradas' && !t.reversed_at && !t.is_reversal && (
                           <button onClick={() => { setReversalTarget(t); setReversalReason('') }} title="Estornar"
                             className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition">
@@ -1915,6 +1948,49 @@ export default function FinanceiroPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── MODAL EDIÇÃO DE LANÇAMENTO ── */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Corrigir Lançamento</h3>
+              <button onClick={() => setEditTarget(null)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <p className="text-xs text-gray-500 truncate">{editTarget.description}</p>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Descrição</label>
+              <input value={editDesc} onChange={e => setEditDesc(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Valor (R$)</label>
+              <input type="number" step="0.01" value={editAmount} onChange={e => setEditAmount(e.target.value)} className={inputCls} />
+            </div>
+            {editPayMethods.length > 0 && (
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Forma de pagamento</label>
+                <select value={editPmId} onChange={e => setEditPmId(e.target.value)} className={inputCls}>
+                  <option value="">Manter atual</option>
+                  {editPayMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Senha de administrador *</label>
+              <input type="password" value={editPassword} onChange={e => setEditPassword(e.target.value)} className={inputCls} placeholder="Senha de admin" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setEditTarget(null)} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
+              <button onClick={handleEditTx} disabled={!editPassword.trim() || editing}
+                className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                {editing ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

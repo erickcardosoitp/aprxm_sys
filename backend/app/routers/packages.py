@@ -476,6 +476,41 @@ async def reverse_delivery(
     return {"id": str(pkg.id), "status": pkg.status}
 
 
+@router.get("/counts", summary="Contagem de encomendas por status")
+async def count_packages(
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    filters = ["association_id = :aid"]
+    params: dict = {"aid": str(current.association_id)}
+    if q:
+        filters.append("(tracking_code ILIKE :q OR unit ILIKE :q)")
+        params["q"] = f"%{q}%"
+    if date_from:
+        filters.append("received_at >= :df")
+        params["df"] = date_from
+    if date_to:
+        filters.append("received_at <= :dt")
+        params["dt"] = date_to
+    where = " AND ".join(filters)
+    result = await session.execute(sa_text(f"""
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'received')  AS received,
+          COUNT(*) FILTER (WHERE status = 'notified')  AS notified,
+          COUNT(*) FILTER (WHERE status = 'delivered') AS delivered,
+          COUNT(*) FILTER (WHERE status = 'returned')  AS returned,
+          COUNT(*) FILTER (WHERE status = 'reversed')  AS reversed,
+          COUNT(*)                                      AS total
+        FROM packages WHERE {where}
+    """), params)
+    r = result.fetchone()
+    return {"received": r[0], "notified": r[1], "delivered": r[2], "returned": r[3], "reversed": r[4], "total": r[5]}
+
+
 @router.get("/report", summary="Relatório de encomendas por período")
 async def packages_report(
     date_from: str,

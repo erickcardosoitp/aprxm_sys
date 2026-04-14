@@ -481,11 +481,30 @@ export default function PackagesPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'esteira'>('list')
   const [detailPkg, setDetailPkg] = useState<Package | null>(null)
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({})
 
   // Filters
   const [filterQ, setFilterQ] = useState('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
+
+  // Reassign resident for "received" packages
+  const [cardReassignPkgId, setCardReassignPkgId] = useState<string | null>(null)
+  const [cardReassignSearch, setCardReassignSearch] = useState('')
+  const [cardReassignResults, setCardReassignResults] = useState<{ id: string; full_name: string; type: string; unit?: string; responsible_name?: string }[]>([])
+  const searchCardReassign = async (q: string) => {
+    setCardReassignSearch(q)
+    if (q.length < 2) { setCardReassignResults([]); return }
+    try { const r = await api.get<any[]>(`/residents/search?q=${encodeURIComponent(q)}`); setCardReassignResults(r.data.slice(0, 5)) } catch { setCardReassignResults([]) }
+  }
+  const doCardReassign = async (pkgId: string, residentId: string, residentName: string) => {
+    try {
+      await api.patch(`/packages/${pkgId}/reassign`, { resident_id: residentId })
+      toast.success(`Reatribuído para ${residentName}`)
+      setCardReassignPkgId(null); setCardReassignSearch(''); setCardReassignResults([])
+      loadPackages()
+    } catch (e: any) { toast.error(apiErr(e, 'Erro ao reatribuir.')) }
+  }
 
   // Report state
   const [showReport, setShowReport] = useState(false)
@@ -825,8 +844,14 @@ export default function PackagesPage() {
       if (filterQ.trim()) params.q = filterQ.trim()
       if (filterDateFrom) params.date_from = filterDateFrom
       if (filterDateTo) params.date_to = filterDateTo
-      const res = await api.get<Package[]>('/packages', { params })
+      const [res, cntRes] = await Promise.all([
+        api.get<Package[]>('/packages', { params }),
+        api.get<Record<string, number>>('/packages/counts', {
+          params: { q: filterQ.trim() || undefined, date_from: filterDateFrom || undefined, date_to: filterDateTo || undefined },
+        }),
+      ])
       setPackages(res.data)
+      setStatusCounts(cntRes.data)
     } catch {
       toast.error('Erro ao carregar encomendas.')
     }
@@ -974,10 +999,7 @@ export default function PackagesPage() {
   const clearFilters = () => { setFilterQ(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterStatus('') }
 
   const PackageCard = ({ pkg }: { pkg: Package }) => (
-    <div
-      className="px-4 py-3 hover:bg-gray-50 cursor-pointer transition"
-      onClick={() => setDetailPkg(pkg)}
-    >
+    <div className="px-4 py-3 hover:bg-gray-50 cursor-pointer transition" onClick={() => setDetailPkg(pkg)}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5 flex-wrap">
@@ -995,14 +1017,36 @@ export default function PackagesPage() {
           <p className="text-xs text-gray-400">
             {new Date(pkg.received_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
           </p>
+          {/* Reassign resident — only for "received" */}
+          {pkg.status === 'received' && (
+            <div onClick={e => e.stopPropagation()} className="mt-1.5">
+              {cardReassignPkgId === pkg.id ? (
+                <div className="relative">
+                  <input autoFocus value={cardReassignSearch} onChange={e => searchCardReassign(e.target.value)}
+                    placeholder="Buscar morador…" className="w-full text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#26619c]" />
+                  <button onClick={() => { setCardReassignPkgId(null); setCardReassignSearch(''); setCardReassignResults([]) }} className="absolute right-1 top-1 text-gray-400 text-xs">✕</button>
+                  {cardReassignResults.length > 0 && (
+                    <div className="absolute z-20 left-0 right-0 mt-0.5 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                      {cardReassignResults.map(r => (
+                        <button key={r.id} type="button" onClick={() => doCardReassign(pkg.id, r.id, r.full_name)}
+                          className="w-full text-left px-2 py-1.5 hover:bg-blue-50 flex flex-col border-b last:border-0 border-gray-100">
+                          <span className="text-xs font-semibold">{r.full_name}</span>
+                          <span className="text-[10px] text-gray-400">{r.responsible_name ? `Dep. de ${r.responsible_name}` : r.type === 'guest' ? 'Visitante' : 'Associado'}{r.unit ? ` · Unid. ${r.unit}` : ''}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button onClick={() => { setCardReassignPkgId(pkg.id); setCardReassignSearch('') }} className="text-[10px] text-gray-400 hover:text-[#26619c] underline">Trocar morador</button>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
           {(pkg.status === 'received' || pkg.status === 'notified' || pkg.status === 'reversed') && (
-            <button
-              onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? ''); setDeliveryPersonName(fullName ?? '') }}
-              className="text-xs text-[#26619c] hover:underline"
-            >
+            <button onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? ''); setDeliveryPersonName(fullName ?? '') }} className="text-xs text-[#26619c] hover:underline">
               Entregar
             </button>
           )}
@@ -1096,12 +1140,16 @@ export default function PackagesPage() {
         {/* Status pills — only in list view */}
         {viewMode === 'list' && (
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {(['', 'received', 'notified', 'delivered', 'returned'] as const).map((s) => (
-              <button key={s} onClick={() => setFilterStatus(s)}
-                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition ${filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {s === '' ? 'Todos' : STATUS_LABELS[s]}
-              </button>
-            ))}
+            {(['', 'received', 'notified', 'delivered', 'returned'] as const).map((s) => {
+              const cnt = s === '' ? (statusCounts.total ?? 0) : (statusCounts[s] ?? 0)
+              return (
+                <button key={s} onClick={() => setFilterStatus(s)}
+                  className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition flex items-center gap-1 ${filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  {s === '' ? 'Todos' : STATUS_LABELS[s]}
+                  {cnt > 0 && <span className={`text-[10px] font-bold px-1 py-0.5 rounded-full ${filterStatus === s ? 'bg-white/20' : 'bg-gray-200 text-gray-500'}`}>{cnt}</span>}
+                </button>
+              )
+            })}
           </div>
         )}
       </div>
