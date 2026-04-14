@@ -93,6 +93,7 @@ class PackageService:
         picker_id_photo_url: str | None = None,
         picker_phone: str | None = None,
         payment_method_id: UUID | None = None,
+        skip_fee: bool = False,
     ) -> Package:
         package = await self._get_package(package_id, association_id)
 
@@ -116,7 +117,7 @@ class PackageService:
             package.deliverer_name and delivery_person_name and
             package.deliverer_name.strip().lower() == delivery_person_name.strip().lower()
         )
-        if (not is_active_member or is_delinquent) and not same_deliverer:
+        if (not is_active_member or is_delinquent) and not same_deliverer and not skip_fee:
             # Charge fee — open session required
             cash_session = await self._finance.get_open_session(association_id)
 

@@ -136,8 +136,15 @@ async def bulk_deliver_packages(
     svc = PackageService(session)
     results = []
     errors = []
+    fee_charged_residents: set[str] = set()
     for pkg_id in body.package_ids:
         try:
+            # Peek resident to decide if fee was already charged this batch
+            from app.models.package import Package as Pkg
+            pkg_peek = await session.get(Pkg, pkg_id)
+            resident_key = str(pkg_peek.resident_id) if pkg_peek and pkg_peek.resident_id else str(pkg_id)
+            skip_fee = resident_key in fee_charged_residents
+
             pkg = await svc.deliver_package(
                 package_id=pkg_id,
                 association_id=current.association_id,
@@ -152,7 +159,10 @@ async def bulk_deliver_packages(
                 picker_id_photo_url=body.picker_id_photo_url,
                 picker_phone=body.picker_phone,
                 payment_method_id=body.payment_method_id,
+                skip_fee=skip_fee,
             )
+            if pkg.has_delivery_fee:
+                fee_charged_residents.add(resident_key)
             results.append({
                 "id": str(pkg.id),
                 "has_delivery_fee": pkg.has_delivery_fee,
