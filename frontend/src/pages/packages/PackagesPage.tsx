@@ -101,7 +101,8 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
       toast.success('Entrega estornada. Encomenda voltou para Notificado.')
       onRefresh?.(); onClose()
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao estornar.')
+      const detail = e.response?.data?.detail
+      toast.error(Array.isArray(detail) ? (detail[0]?.msg ?? 'Erro ao estornar.') : (detail ?? 'Erro ao estornar.'))
     } finally { setReversing(false) }
   }
 
