@@ -95,6 +95,61 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
   )
 }
 
+function _printCarneInline(resident: Resident, mensalidades: any[], logoUrl: string | null, assocName: string) {
+  const MONTH_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+  const sd = (s: string | null | undefined) => { if (!s) return ''; const d = new Date(s); return isNaN(d.getTime()) ? s : d.toLocaleDateString('pt-BR') }
+  const existing = [...mensalidades].sort((a: any, b: any) => a.reference_month.localeCompare(b.reference_month))
+  const refs = new Set(existing.map((m: any) => m.reference_month))
+  const months: { label: string; amount: string; due: string; status: string; paid_at?: string }[] = []
+  existing.forEach((m: any) => { const [y, mo] = m.reference_month.split('-'); months.push({ label: `${MONTH_PT[parseInt(mo)-1]}/${y}`, amount: parseFloat(m.amount).toFixed(2), due: sd(m.due_date), status: m.status, paid_at: m.paid_at ?? undefined }) })
+  let cur = new Date(); cur = new Date(cur.getFullYear(), cur.getMonth(), 1)
+  while (months.length < 12) {
+    const ref = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`
+    if (!refs.has(ref)) months.push({ label: `${MONTH_PT[cur.getMonth()]}/${cur.getFullYear()}`, amount: existing[0] ? parseFloat(existing[0].amount).toFixed(2) : '—', due: '—', status: 'pending' })
+    cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1)
+    if (months.length >= 12) break
+  }
+  months.splice(12)
+  const SC: Record<string, string> = { paid: '#16a34a', pending: '#d97706', overdue: '#dc2626' }
+  const SL: Record<string, string> = { paid: 'PAGO', pending: 'PENDENTE', overdue: 'EM ATRASO' }
+  const logoHtml = logoUrl ? `<img src="${logoUrl}" style="height:10mm;max-width:30mm;object-fit:contain;display:block;margin:0 auto 1mm" />` : ''
+  const stubs = months.map(m => {
+    const isPaid = m.status === 'paid'
+    return `<div class="stub">
+      <div class="stub-header">
+        ${logoHtml}
+        <div style="text-align:center;font-size:7pt;font-weight:bold;text-transform:uppercase">${assocName}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:1mm"><span style="font-size:6pt;color:#555">Carnê de Mensalidade</span><span style="font-size:8pt;font-weight:bold">${m.label}</span></div>
+      </div>
+      <div class="stub-body">
+        <div class="row"><span class="lbl">Associado</span><span class="val">${resident.full_name}</span></div>
+        ${resident.unit ? `<div class="row"><span class="lbl">Unidade</span><span class="val">${resident.unit}</span></div>` : ''}
+        ${resident.cpf ? `<div class="row"><span class="lbl">CPF</span><span class="val">${resident.cpf}</span></div>` : ''}
+        <div class="row"><span class="lbl">Vencimento</span><span class="val">${m.due}</span></div>
+        <div class="row"><span class="lbl">Valor</span><span class="val">R$ ${m.amount}</span></div>
+        ${isPaid ? `<div class="row"><span class="lbl">Pago em</span><span class="val">${sd(m.paid_at)}</span></div>` : '<div class="row"><span class="lbl">Pago em</span><span class="val" style="border-bottom:1px solid #999;width:28mm;display:inline-block">&nbsp;</span></div>'}
+      </div>
+      <div class="stub-footer">
+        <span style="font-size:7pt;font-weight:bold;color:${SC[m.status]??'#888'}">${SL[m.status]??m.status.toUpperCase()}</span>
+        <div style="display:flex;flex-direction:column;align-items:center"><div style="width:22mm;border-bottom:1px solid #999;margin-bottom:0.5mm"></div><span style="font-size:5pt;color:#999">Ass./Carimbo</span></div>
+      </div>
+    </div>`
+  }).join('')
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Carnê</title>
+    <style>@page{size:80mm auto;margin:0}*{box-sizing:border-box;margin:0;padding:0;font-family:'Courier New',monospace}body{width:80mm}
+    .stub{width:80mm;padding:4mm 4mm 3mm;border-bottom:1px dashed #999;page-break-inside:avoid}
+    .stub-header{border-bottom:1px solid #000;padding-bottom:1.5mm;margin-bottom:2mm}
+    .stub-body{display:flex;flex-direction:column;gap:0.8mm;margin-bottom:2mm}
+    .row{display:flex;justify-content:space-between;gap:2mm}
+    .lbl{font-size:6.5pt;color:#555;white-space:nowrap}.val{font-size:6.5pt;font-weight:bold;text-align:right}
+    .stub-footer{display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid #ccc;padding-top:1.5mm}</style>
+  </head><body>${stubs}</body></html>`
+  const w = window.open('', '_blank', 'width=400,height=700')
+  if (!w) return
+  w.document.write(html); w.document.close(); w.focus()
+  setTimeout(() => w.print(), 400)
+}
+
 export function TransactionModal({ onClose, onSuccess }: Props) {
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -105,6 +160,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
   // Settings
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
+  const [assocInfo, setAssocInfo] = useState<{ association_name?: string; assoc_logo_url?: string } | null>(null)
 
   // Step 2 — shared
   const [categories, setCategories] = useState<TransactionCategory[]>([])
@@ -151,6 +207,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
   useEffect(() => {
     settingsService.get().then(r => setSettings(r.data)).catch(() => {})
+    api.get<{ association_name?: string; assoc_logo_url?: string }>('/settings/association').then(r => setAssocInfo(r.data)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -363,6 +420,14 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       toast.success('Transação registrada!')
       onSuccess()
       onClose()
+
+      // Print carnê after mensalidade
+      if (txType === 'income' && incomeSubtype === 'mensalidade' && resident) {
+        try {
+          const allRes = await api.get<any[]>(`/mensalidades/residents/${resident.id}`)
+          _printCarneInline(resident, allRes.data, assocInfo?.assoc_logo_url ?? null, assocInfo?.association_name ?? '')
+        } catch { /* skip */ }
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao registrar transação.')
     } finally {
@@ -599,29 +664,46 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                   ) : (
                   <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
-                    CPF do morador {incomeSubtype === 'mensalidade' ? <span className="text-red-500">*</span> : '(opcional)'}
+                    Morador {incomeSubtype === 'mensalidade' ? <span className="text-red-500">*</span> : '(opcional)'}
+                    <span className="text-gray-400 font-normal ml-1">(nome ou CPF)</span>
                   </label>
-                  <div className="flex gap-2">
-                    <input value={cpfQuery} onChange={(e) => setCpfQuery(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && lookupCpf()}
-                      placeholder="000.000.000-00"
-                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
-                    <button type="button" onClick={lookupCpf} disabled={cpfLoading}
-                      className="px-3 py-2 bg-[#26619c] text-white rounded-lg hover:bg-[#1a4f87] disabled:opacity-50">
-                      {cpfLoading ? '…' : <Search className="w-4 h-4" />}
-                    </button>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      value={feeQuery}
+                      onChange={e => { searchFeeResident(e.target.value); if (!e.target.value) { setResident(null); setPaymentHistory(null) } }}
+                      placeholder="Buscar por nome ou CPF…"
+                      className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                    />
+                    {feeSearching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">…</span>}
                   </div>
+                  {feeResults.length > 0 && !resident && (
+                    <ul className="mt-1 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-44 overflow-y-auto">
+                      {feeResults.map(r => (
+                        <li key={r.id}>
+                          <button type="button" onClick={() => selectFeeResident(r)}
+                            className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 text-sm">
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${r.type === 'guest' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {r.type === 'guest' ? 'Visitante' : 'Associado'}
+                            </span>
+                            <span className="font-medium text-gray-800 truncate">{r.full_name}</span>
+                            {r.cpf && <span className="text-xs text-gray-400 shrink-0">{r.cpf}</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {resident && (
-                    <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800">
-                      <p className="font-medium">{resident.full_name}</p>
-                      <p className="text-xs text-blue-600">
-                        {resident.type === 'member' ? 'Associado' : 'Dependente'}
-                        {resident.unit ? ` · Unid. ${resident.unit}` : ''}
-                        {' · '}
-                        <span className={resident.status === 'active' ? 'text-green-600' : 'text-red-600'}>
-                          {resident.status === 'active' ? 'Ativo' : resident.status === 'suspended' ? 'Suspenso' : 'Inativo'}
-                        </span>
-                      </p>
+                    <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                      <div className="flex-1 text-sm text-blue-800">
+                        <p className="font-medium">{resident.full_name}</p>
+                        <p className="text-xs text-blue-600">
+                          {resident.type === 'member' ? 'Associado' : resident.type === 'guest' ? 'Visitante' : 'Dependente'}
+                          {resident.unit ? ` · Unid. ${resident.unit}` : ''}
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => { setResident(null); setFeeQuery(''); setPaymentHistory(null) }}
+                        className="text-gray-400 hover:text-red-500 shrink-0"><X className="w-4 h-4" /></button>
                     </div>
                   )}
                   </div>
