@@ -206,6 +206,7 @@ export default function FinanceiroPage() {
   const [papSummary, setPapSummary] = useState<any>(null)
   const [papLoading, setPapLoading] = useState(false)
   const [papToken, setPapToken] = useState('')
+  const [papLinkCommissionedTo, setPapLinkCommissionedTo] = useState('')
   const [showPapForm, setShowPapForm] = useState(false)
   const [papForm, setPapForm] = useState({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '', commissioned_to: '' })
   const [papDeps, setPapDeps] = useState<{ name: string; phone: string; cpf: string }[]>([])
@@ -780,8 +781,11 @@ export default function FinanceiroPage() {
     } catch { toast.error('Erro ao carregar Porta a Porta.') } finally { setPapLoading(false) }
   }
 
-  const loadPapToken = async () => {
-    try { const res = await api.get<{ token: string }>('/porta-a-porta/public-token'); setPapToken(res.data.token) } catch { }
+  const loadPapToken = async (commissionedTo?: string) => {
+    try {
+      const res = await api.get<{ token: string }>('/porta-a-porta/public-token', { params: commissionedTo ? { commissioned_to: commissionedTo } : {} })
+      setPapToken(res.data.token)
+    } catch { }
   }
 
   const handlePapSubmit = async () => {
@@ -2311,16 +2315,30 @@ export default function FinanceiroPage() {
                 </div>
               )}
 
-              {papToken && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-2">
-                  <p className="text-xs font-semibold text-blue-700">Link de cadastro público</p>
-                  <p className="text-xs text-blue-500 break-all">{window.location.origin}/associar?token={papToken}</p>
-                  <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/associar?token=${papToken}`); toast.success('Link copiado!') }}
-                    className="self-start text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">
-                    Copiar link
-                  </button>
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-3">
+                <p className="text-xs font-semibold text-blue-700">Link de cadastro público</p>
+                <div>
+                  <label className="text-xs text-blue-600 mb-1 block">Responsável pelo link</label>
+                  <select
+                    value={papLinkCommissionedTo}
+                    onChange={e => { setPapLinkCommissionedTo(e.target.value); loadPapToken(e.target.value || undefined) }}
+                    className="w-full text-xs border border-blue-200 rounded-lg px-3 py-2 bg-white focus:outline-none">
+                    <option value="">— Sem responsável específico —</option>
+                    {[...conferentes, ...operadores].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i).map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name}</option>
+                    ))}
+                  </select>
                 </div>
-              )}
+                {papToken && (
+                  <>
+                    <p className="text-xs text-blue-500 break-all">{window.location.origin}/associar?token={papToken}</p>
+                    <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/associar?token=${papToken}`); toast.success('Link copiado!') }}
+                      className="self-start text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">
+                      Copiar link
+                    </button>
+                  </>
+                )}
+              </div>
 
               <div className="flex gap-2">
                 <button onClick={() => setShowPapForm(v => !v)}

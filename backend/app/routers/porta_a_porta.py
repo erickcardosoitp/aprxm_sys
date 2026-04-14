@@ -21,12 +21,14 @@ _ALGO = "HS256"
 _TOKEN_EXP_DAYS = 365
 
 
-def _make_public_token(association_id: str, operator_id: str, secret: str) -> str:
+def _make_public_token(association_id: str, operator_id: str, secret: str, commissioned_to: str | None = None) -> str:
     payload = {
         "assoc": association_id,
         "op": operator_id,
         "exp": datetime.utcnow() + timedelta(days=_TOKEN_EXP_DAYS),
     }
+    if commissioned_to:
+        payload["com"] = commissioned_to
     return jwt.encode(payload, secret, algorithm=_ALGO)
 
 
@@ -127,10 +129,11 @@ def _commission(paid_count: int, monthly_fee: float = 20.0) -> float:
 
 @router.get("/public-token", summary="Gerar token para link público")
 async def get_public_token(
+    commissioned_to: str | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
 ) -> dict:
     settings = get_settings()
-    token = _make_public_token(str(current.association_id), str(current.user_id), settings.secret_key)
+    token = _make_public_token(str(current.association_id), str(current.user_id), settings.secret_key, commissioned_to)
     return {"token": token}
 
 
@@ -531,10 +534,12 @@ async def public_register(
 
     assoc_id = UUID(payload["assoc"])
     operator_id = UUID(payload["op"])
+    commissioned_to_id = UUID(payload["com"]) if payload.get("com") else None
 
     lead = PortaAPortaLead(
         association_id=assoc_id,
         operator_id=operator_id,
+        commissioned_to=commissioned_to_id,
         full_name=body.full_name,
         phone=body.phone,
         cpf=body.cpf,
