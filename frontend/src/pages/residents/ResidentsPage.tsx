@@ -773,6 +773,43 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
     api.get<{ name?: string }>('/settings/association').then(r => setAssocName(r.data.name ?? 'Associação')).catch(() => {})
   }, [])
 
+  // ── Convert guest → member/dependent ──
+  const [showConvert, setShowConvert] = useState(false)
+  const [convertType, setConvertType] = useState<'member' | 'dependent'>('member')
+  const [convertCpf, setConvertCpf] = useState('')
+  const [convertResponsibleSearch, setConvertResponsibleSearch] = useState('')
+  const [convertResponsible, setConvertResponsible] = useState<Resident | null>(null)
+  const [convertResponsibleResults, setConvertResponsibleResults] = useState<Resident[]>([])
+  const [convertLoading, setConvertLoading] = useState(false)
+  const [currentResident, setCurrentResident] = useState(resident)
+
+  const searchConvertResponsible = async (q: string) => {
+    if (q.length < 2) { setConvertResponsibleResults([]); return }
+    try {
+      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
+      setConvertResponsibleResults(res.data.filter((r: Resident) => r.type === 'member' && !(r as any).responsible_id && r.id !== resident.id).slice(0, 6))
+    } catch { }
+  }
+
+  const handleConvert = async () => {
+    if (convertType === 'dependent' && !convertResponsible) { toast.error('Selecione o responsável.'); return }
+    setConvertLoading(true)
+    try {
+      const payload: Record<string, any> = {
+        type: 'member', status: 'active',
+        is_member_confirmed: true, terms_accepted: true, lgpd_accepted: true,
+      }
+      if (convertCpf.trim()) payload.cpf = convertCpf.trim()
+      if (convertType === 'dependent' && convertResponsible) payload.responsible_id = convertResponsible.id
+      const res = await api.put<Resident>(`/residents/${resident.id}`, payload)
+      setCurrentResident(res.data)
+      setShowConvert(false)
+      toast.success(convertType === 'dependent' ? 'Convertido para Dependente!' : 'Convertido para Associado!')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao converter.')
+    } finally { setConvertLoading(false) }
+  }
+
   const loadMigracoes = async () => {
     try {
       const res = await api.get<MigrationEntry[]>(`/mensalidades/migration/residents/${resident.id}`)
@@ -877,11 +914,70 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl mx-4 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div>
-            <h3 className="font-semibold text-gray-900">{resident.full_name}</h3>
-            <p className="text-xs text-gray-400">{resident.unit ? `Unid. ${resident.unit}` : ''}{resident.block ? ` / Bl. ${resident.block}` : ''}</p>
+            <h3 className="font-semibold text-gray-900">{currentResident.full_name}</h3>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-gray-400">{currentResident.unit ? `Unid. ${currentResident.unit}` : ''}{currentResident.block ? ` / Bl. ${currentResident.block}` : ''}</p>
+              {currentResident.type === 'guest'
+                ? <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-medium">Visitante</span>
+                : <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{(currentResident as any).responsible_id ? 'Dependente' : 'Associado'}</span>
+              }
+            </div>
           </div>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+          <div className="flex items-center gap-2">
+            {currentResident.type === 'guest' && (
+              <button onClick={() => setShowConvert(v => !v)}
+                className="text-xs bg-[#26619c] text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-[#1a4f87] transition">
+                Converter
+              </button>
+            )}
+            <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+          </div>
         </div>
+
+        {/* Convert form */}
+        {showConvert && currentResident.type === 'guest' && (
+          <div className="mx-4 mt-3 mb-1 border border-blue-200 bg-blue-50 rounded-xl p-4 flex flex-col gap-3 shrink-0">
+            <p className="text-xs font-semibold text-blue-800">Converter para Associado ou Dependente</p>
+            <p className="text-xs text-blue-600">Após a conversão, taxa de entrega não será mais cobrada.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(['member', 'dependent'] as const).map((t) => (
+                <button key={t} type="button" onClick={() => setConvertType(t)}
+                  className={`py-1.5 rounded-lg text-xs font-semibold border transition ${convertType === t ? 'bg-[#26619c] border-[#26619c] text-white' : 'border-gray-200 bg-white text-gray-600'}`}>
+                  {t === 'member' ? 'Associado' : 'Dependente'}
+                </button>
+              ))}
+            </div>
+            <input value={convertCpf} onChange={e => setConvertCpf(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+              placeholder="CPF (opcional)" />
+            {convertType === 'dependent' && (
+              <div className="flex flex-col gap-1">
+                <input value={convertResponsibleSearch}
+                  onChange={e => { setConvertResponsibleSearch(e.target.value); setConvertResponsible(null); searchConvertResponsible(e.target.value) }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+                  placeholder="Buscar associado responsável *" />
+                {convertResponsibleResults.length > 0 && (
+                  <ul className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-32 overflow-y-auto">
+                    {convertResponsibleResults.map(r => (
+                      <li key={r.id}>
+                        <button type="button" onClick={() => { setConvertResponsible(r); setConvertResponsibleSearch(r.full_name); setConvertResponsibleResults([]) }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{r.full_name}</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {convertResponsible && <p className="text-xs text-green-700 font-medium">✓ {convertResponsible.full_name}</p>}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setShowConvert(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+              <button onClick={handleConvert} disabled={convertLoading}
+                className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                {convertLoading ? 'Convertendo…' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-1 bg-gray-100 p-1 m-4 rounded-xl shrink-0">
           {(['mensalidades', 'inadimplencia', 'encomendas', 'migracao'] as ProfileTab[]).map(t => (
@@ -899,7 +995,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
             <>
               <div className="flex justify-end mb-3">
                 <button
-                  onClick={() => printCarne(resident, mensalidades, assocName)}
+                  onClick={() => printCarne(currentResident, mensalidades, assocName)}
                   className="flex items-center gap-1.5 text-xs text-[#26619c] border border-[#26619c]/30 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition"
                 >
                   <Printer className="w-3.5 h-3.5" /> Imprimir Carnê
