@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus, FileText, AlertCircle } from 'lucide-react'
+import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus, FileText, AlertCircle, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import type { Resident, ResidentStatus, ResidentType } from '../../types'
@@ -676,6 +676,88 @@ function fmtComp(comp: string) {
   return `${MONTH_NAMES[parseInt(m) - 1]}/${y}`
 }
 
+function printCarne(resident: Resident, mensalidades: MensalidadeEntry[], assocName: string) {
+  const MONTH_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+  const months: { ref: string; label: string; amount: string; due: string; status: string }[] = []
+
+  // Use existing mensalidades, then pad with future months up to 12
+  const now = new Date()
+  const existing = [...mensalidades].sort((a, b) => a.reference_month.localeCompare(b.reference_month))
+  const existingRefs = new Set(existing.map(m => m.reference_month))
+
+  existing.forEach(m => {
+    const [y, mo] = m.reference_month.split('-')
+    months.push({ ref: m.reference_month, label: `${MONTH_PT[parseInt(mo)-1]} ${y}`, amount: parseFloat(m.amount).toFixed(2), due: m.due_date ? safeDate(m.due_date) : '—', status: m.status })
+  })
+
+  // Fill remaining with upcoming months
+  let cur = new Date(now.getFullYear(), now.getMonth(), 1)
+  while (months.length < 12) {
+    const ref = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`
+    if (!existingRefs.has(ref)) {
+      months.push({ ref, label: `${MONTH_PT[cur.getMonth()]} ${cur.getFullYear()}`, amount: existing[0] ? existing[0].amount : '—', due: '—', status: 'pending' })
+    }
+    cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1)
+    if (months.length >= 12) break
+  }
+  months.splice(12)
+
+  const STATUS_COLOR: Record<string, string> = { paid: '#16a34a', pending: '#d97706', overdue: '#dc2626' }
+  const STATUS_LABEL: Record<string, string> = { paid: 'PAGO', pending: 'PENDENTE', overdue: 'EM ATRASO' }
+
+  const stubs = months.map(m => `
+    <div class="stub">
+      <div class="stub-header">
+        <span class="assoc">${assocName}</span>
+        <span class="month">${m.label}</span>
+      </div>
+      <div class="stub-body">
+        <div class="row"><span class="lbl">Associado</span><span class="val">${resident.full_name}</span></div>
+        ${(resident as any).unit ? `<div class="row"><span class="lbl">Unidade</span><span class="val">${(resident as any).unit}${(resident as any).block ? `/Bl.${(resident as any).block}` : ''}</span></div>` : ''}
+        ${resident.cpf ? `<div class="row"><span class="lbl">CPF</span><span class="val">${resident.cpf}</span></div>` : ''}
+        <div class="row"><span class="lbl">Vencimento</span><span class="val">${m.due}</span></div>
+        <div class="row amount-row"><span class="lbl">Valor</span><span class="val amount">R$ ${m.amount}</span></div>
+      </div>
+      <div class="stub-footer">
+        <span class="status" style="color:${STATUS_COLOR[m.status] ?? '#888'}">${STATUS_LABEL[m.status] ?? m.status.toUpperCase()}</span>
+        <div class="sig-area">
+          <div class="sig-line"></div>
+          <span class="sig-label">Ass./Carimbo</span>
+        </div>
+      </div>
+    </div>
+  `).join('')
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Carnê — ${resident.full_name}</title>
+  <style>
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
+    body { width: 80mm; background: #fff; }
+    .stub { width: 80mm; padding: 4mm 4mm 3mm; border-bottom: 1px dashed #999; page-break-inside: avoid; }
+    .stub-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2mm; border-bottom: 1px solid #000; padding-bottom: 1.5mm; }
+    .assoc { font-size: 7pt; font-weight: bold; text-transform: uppercase; max-width: 52mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .month { font-size: 8pt; font-weight: bold; white-space: nowrap; }
+    .stub-body { display: flex; flex-direction: column; gap: 0.8mm; margin-bottom: 2mm; }
+    .row { display: flex; justify-content: space-between; gap: 2mm; }
+    .lbl { font-size: 6.5pt; color: #555; white-space: nowrap; }
+    .val { font-size: 6.5pt; font-weight: bold; text-align: right; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 52mm; }
+    .amount-row { margin-top: 1mm; }
+    .amount { font-size: 9pt; font-weight: bold; }
+    .stub-footer { display: flex; justify-content: space-between; align-items: flex-end; }
+    .status { font-size: 7pt; font-weight: bold; }
+    .sig-area { display: flex; flex-direction: column; align-items: center; gap: 0.5mm; }
+    .sig-line { width: 28mm; height: 8mm; border-bottom: 1px solid #000; }
+    .sig-label { font-size: 5.5pt; color: #666; }
+  </style></head><body>${stubs}</body></html>`
+
+  const w = window.open('', '_blank', 'width=320,height=600')
+  if (!w) return
+  w.document.write(html)
+  w.document.close()
+  w.focus()
+  setTimeout(() => { w.print(); }, 400)
+}
+
 function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClose: () => void }) {
   const [mensalidades, setMensalidades] = useState<MensalidadeEntry[]>([])
   const [inadimplencias, setInadimplencias] = useState<InadimplenciaEntry[]>([])
@@ -685,6 +767,11 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [loading, setLoading] = useState(true)
   const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_de: '', quitado_ate: '', mode: 'single' as 'single' | 'bulk' | 'range', valor_pago: '', data_pagamento: '' })
   const [migSaving, setMigSaving] = useState(false)
+  const [assocName, setAssocName] = useState('')
+
+  useEffect(() => {
+    api.get<{ name?: string }>('/settings/association').then(r => setAssocName(r.data.name ?? 'Associação')).catch(() => {})
+  }, [])
 
   const loadMigracoes = async () => {
     try {
@@ -809,7 +896,16 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           {loading ? (
             <div className="py-8 text-center text-gray-400 text-sm">Carregando…</div>
           ) : tab === 'mensalidades' ? (
-            mensalidades.length === 0 ? (
+            <>
+              <div className="flex justify-end mb-3">
+                <button
+                  onClick={() => printCarne(resident, mensalidades, assocName)}
+                  className="flex items-center gap-1.5 text-xs text-[#26619c] border border-[#26619c]/30 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Imprimir Carnê
+                </button>
+              </div>
+            {mensalidades.length === 0 ? (
               <div className="py-8 text-center text-gray-400 text-sm">Nenhuma mensalidade registrada.</div>
             ) : (
               <ul className="flex flex-col gap-2">
@@ -831,7 +927,8 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                   </li>
                 ))}
               </ul>
-            )
+            )}
+            </>
           ) : tab === 'inadimplencia' ? (
             inadimplencias.length === 0 ? (
               <div className="py-8 text-center text-gray-400 text-sm flex flex-col items-center gap-2">

@@ -504,6 +504,11 @@ export default function PackagesPage() {
   const [searchEmpty, setSearchEmpty] = useState(false)
   const [guest, setGuest] = useState<GuestForm>(emptyGuest())
   const [cepLoading, setCepLoading] = useState(false)
+  const [newResType, setNewResType] = useState<'guest' | 'member' | 'dependent'>('guest')
+  const [newResCpf, setNewResCpf] = useState('')
+  const [newResResponsibleSearch, setNewResResponsibleSearch] = useState('')
+  const [newResResponsible, setNewResResponsible] = useState<Resident | null>(null)
+  const [newResResponsibleResults, setNewResResponsibleResults] = useState<Resident[]>([])
   const [tracking, setTracking] = useState('')
   const [carrier, setCarrier] = useState('')
   const [photos, setPhotos] = useState<{ url: string; label: string; taken_at: string }[]>([])
@@ -711,16 +716,22 @@ export default function PackagesPage() {
 
   const createBrxGuest = async () => {
     if (!brxGuestName.trim()) return
+    if (newResType === 'dependent' && !newResResponsible) { toast.error('Selecione o responsável.'); return }
     setBrxGuestLoading(true)
     try {
-      const res = await api.post<Resident>('/residents', {
-        type: 'guest', status: 'active', full_name: brxGuestName.trim(),
-        is_member_confirmed: false, terms_accepted: false, lgpd_accepted: false,
-      })
+      const payload: any = {
+        status: 'active', full_name: brxGuestName.trim(),
+        is_member_confirmed: newResType !== 'guest', terms_accepted: newResType !== 'guest', lgpd_accepted: true,
+        type: newResType === 'guest' ? 'guest' : 'member',
+      }
+      if (newResType === 'member' && newResCpf.trim()) payload.cpf = newResCpf.trim()
+      if (newResType === 'dependent' && newResResponsible) payload.responsible_id = newResResponsible.id
+      const res = await api.post<Resident>('/residents', payload)
       setBrxShowGuest(false); setBrxGuestName('')
+      setNewResType('guest'); setNewResCpf(''); setNewResResponsible(null); setNewResResponsibleSearch(''); setNewResResponsibleResults([])
       requestBrxPhoto(res.data, brxTracking)
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao criar visitante.')
+      toast.error(e.response?.data?.detail ?? 'Erro ao criar.')
     } finally { setBrxGuestLoading(false) }
   }
 
@@ -805,25 +816,40 @@ export default function PackagesPage() {
     } catch { /* silent */ } finally { setCepLoading(false) }
   }
 
+  const searchResponsible = async (q: string) => {
+    if (q.length < 2) { setNewResResponsibleResults([]); return }
+    try {
+      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
+      setNewResResponsibleResults(res.data.filter(r => r.type === 'member' && !('responsible_id' in r && (r as any).responsible_id)).slice(0, 6))
+    } catch { }
+  }
+
   const createGuest = async () => {
-    if (!guest.full_name.trim()) {
-      toast.error('Nome é obrigatório.')
-      return
-    }
+    if (!guest.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
+    if (newResType === 'dependent' && !newResResponsible) { toast.error('Selecione o responsável.'); return }
     setLoading(true)
     try {
-      const res = await api.post<Resident>('/residents', {
-        type: 'guest', status: 'active', is_member_confirmed: false,
-        terms_accepted: false, lgpd_accepted: false, ...guest,
-      })
+      const payload: any = {
+        status: 'active',
+        full_name: guest.full_name, phone_primary: guest.phone_primary || undefined,
+        address_cep: guest.address_cep || undefined, address_street: guest.address_street || undefined,
+        address_number: guest.address_number || undefined, address_complement: guest.address_complement || undefined,
+        address_district: guest.address_district || undefined, address_city: guest.address_city || undefined,
+      }
+      if (newResType === 'guest') {
+        payload.type = 'guest'; payload.is_member_confirmed = false; payload.terms_accepted = false; payload.lgpd_accepted = true
+      } else {
+        payload.type = 'member'; payload.is_member_confirmed = true; payload.terms_accepted = true; payload.lgpd_accepted = true
+        if (newResCpf.trim()) payload.cpf = newResCpf.trim()
+        if (newResType === 'dependent' && newResResponsible) payload.responsible_id = newResResponsible.id
+      }
+      const res = await api.post<Resident>('/residents', payload)
       setSelectedRecipient(res.data)
       setShowGuestForm(false)
       setStep('details')
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao criar visitante.')
-    } finally {
-      setLoading(false)
-    }
+      toast.error(e.response?.data?.detail ?? 'Erro ao criar.')
+    } finally { setLoading(false) }
   }
 
   const handleReceive = async () => {
@@ -855,6 +881,7 @@ export default function PackagesPage() {
     setSearchResults([]); setSelectedRecipient(null); setShowGuestForm(false); setSearchEmpty(false)
     setGuest(emptyGuest()); setTracking(''); setCarrier(''); setPhotos([])
     setDelivererName(''); setDelivererSig('')
+    setNewResType('guest'); setNewResCpf(''); setNewResResponsibleSearch(''); setNewResResponsible(null); setNewResResponsibleResults([])
   }
 
   const handleDeliver = async () => {
@@ -1255,37 +1282,70 @@ export default function PackagesPage() {
                 )}
 
                 {showGuestForm && (
-                  <div className="border border-orange-200 bg-orange-50 rounded-xl p-4 mb-4 flex flex-col gap-3">
-                    <p className="text-xs font-semibold text-orange-700 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Não associado — taxa de R$ 2,50 aplicada automaticamente na entrega
-                    </p>
+                  <div className="border border-gray-200 bg-gray-50 rounded-xl p-4 mb-4 flex flex-col gap-3">
+                    {/* Type selector */}
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {([['guest','Visitante','border-orange-300 bg-orange-50 text-orange-700'],['member','Associado','border-green-300 bg-green-50 text-green-700'],['dependent','Dependente','border-blue-300 bg-blue-50 text-blue-700']] as const).map(([t, label, cls]) => (
+                        <button key={t} type="button" onClick={() => setNewResType(t)}
+                          className={`py-1.5 rounded-lg text-xs font-semibold border transition ${newResType === t ? cls : 'border-gray-200 bg-white text-gray-500'}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {newResType === 'guest' && (
+                      <p className="text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-2 py-1.5 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 shrink-0" /> Taxa de R$ 2,50 aplicada na entrega
+                      </p>
+                    )}
                     <input value={guest.full_name} onChange={e => setGuest(g => ({ ...g, full_name: e.target.value }))}
                       className={inputCls} placeholder="Nome completo *" autoFocus />
-                    <input value={guest.phone_primary} onChange={e => setGuest(g => ({ ...g, phone_primary: e.target.value }))}
-                      className={inputCls} placeholder="Telefone (opcional)" type="tel" />
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <input value={guest.address_cep}
-                          onChange={e => { setGuest(g => ({ ...g, address_cep: e.target.value })); lookupCep(e.target.value) }}
-                          className={inputCls} placeholder="CEP (opcional)" maxLength={9} />
-                        {cepLoading && <p className="text-xs text-gray-400 mt-0.5">Buscando…</p>}
+                    {newResType === 'member' && (
+                      <input value={newResCpf} onChange={e => setNewResCpf(e.target.value)}
+                        className={inputCls} placeholder="CPF (opcional)" />
+                    )}
+                    {newResType === 'dependent' && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs text-gray-600">Responsável (associado titular) *</label>
+                        <input value={newResResponsibleSearch}
+                          onChange={e => { setNewResResponsibleSearch(e.target.value); setNewResResponsible(null); searchResponsible(e.target.value) }}
+                          className={inputCls} placeholder="Buscar associado…" />
+                        {newResResponsibleResults.length > 0 && (
+                          <ul className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-32 overflow-y-auto">
+                            {newResResponsibleResults.map(r => (
+                              <li key={r.id}>
+                                <button type="button" onClick={() => { setNewResResponsible(r); setNewResResponsibleSearch(r.full_name); setNewResResponsibleResults([]) }}
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{r.full_name}</button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {newResResponsible && <p className="text-xs text-green-700">✓ {newResResponsible.full_name}</p>}
                       </div>
-                      <input value={guest.address_number} onChange={e => setGuest(g => ({ ...g, address_number: e.target.value }))}
-                        className={inputCls} placeholder="Número" />
-                      <input value={guest.address_complement} onChange={e => setGuest(g => ({ ...g, address_complement: e.target.value }))}
-                        className={inputCls} placeholder="Compl." />
-                    </div>
-                    <input value={guest.address_street} onChange={e => setGuest(g => ({ ...g, address_street: e.target.value }))}
-                      className={inputCls} placeholder="Rua (opcional)" />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input value={guest.address_district} onChange={e => setGuest(g => ({ ...g, address_district: e.target.value }))}
-                        className={inputCls} placeholder="Bairro" />
-                      <input value={guest.address_city} onChange={e => setGuest(g => ({ ...g, address_city: e.target.value }))}
-                        className={inputCls} placeholder="Cidade" />
-                    </div>
+                    )}
+                    {newResType === 'guest' && (
+                      <>
+                        <input value={guest.phone_primary} onChange={e => setGuest(g => ({ ...g, phone_primary: e.target.value }))}
+                          className={inputCls} placeholder="Telefone (opcional)" type="tel" />
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <input value={guest.address_cep}
+                              onChange={e => { setGuest(g => ({ ...g, address_cep: e.target.value })); lookupCep(e.target.value) }}
+                              className={inputCls} placeholder="CEP" maxLength={9} />
+                            {cepLoading && <p className="text-xs text-gray-400 mt-0.5">Buscando…</p>}
+                          </div>
+                          <input value={guest.address_number} onChange={e => setGuest(g => ({ ...g, address_number: e.target.value }))} className={inputCls} placeholder="Número" />
+                          <input value={guest.address_complement} onChange={e => setGuest(g => ({ ...g, address_complement: e.target.value }))} className={inputCls} placeholder="Compl." />
+                        </div>
+                        <input value={guest.address_street} onChange={e => setGuest(g => ({ ...g, address_street: e.target.value }))} className={inputCls} placeholder="Rua (opcional)" />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input value={guest.address_district} onChange={e => setGuest(g => ({ ...g, address_district: e.target.value }))} className={inputCls} placeholder="Bairro" />
+                          <input value={guest.address_city} onChange={e => setGuest(g => ({ ...g, address_city: e.target.value }))} className={inputCls} placeholder="Cidade" />
+                        </div>
+                      </>
+                    )}
                     <button onClick={createGuest} disabled={loading}
-                      className="w-full bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
-                      {loading ? 'Salvando…' : 'Salvar e continuar'}
+                      className={`w-full text-white py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 ${newResType === 'guest' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-[#26619c] hover:bg-[#1a4f87]'}`}>
+                      {loading ? 'Salvando…' : newResType === 'guest' ? 'Salvar Visitante' : newResType === 'member' ? 'Salvar Associado' : 'Salvar Dependente'}
                     </button>
                   </div>
                 )}
@@ -1950,17 +2010,46 @@ export default function PackagesPage() {
                   {/* No results — suggest guest */}
                   {brxSearch.length >= 2 && brxResults.length === 0 && !brxPending && (
                     brxShowGuest ? (
-                      <div className="border border-orange-200 bg-orange-50 rounded-xl p-3 flex flex-col gap-2">
-                        <p className="text-xs font-semibold text-orange-700">Cadastrar como Visitante</p>
+                      <div className="border border-gray-200 bg-gray-50 rounded-xl p-3 flex flex-col gap-2">
+                        <p className="text-xs font-semibold text-gray-700">Cadastrar novo morador</p>
+                        <div className="grid grid-cols-3 gap-1">
+                          {([['guest','Visitante'],['member','Associado'],['dependent','Dependente']] as const).map(([t, label]) => (
+                            <button key={t} type="button" onClick={() => setNewResType(t)}
+                              className={`py-1 rounded-lg text-xs font-medium border transition ${newResType === t ? 'bg-[#26619c] border-[#26619c] text-white' : 'border-gray-200 bg-white text-gray-500'}`}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
                         <input value={brxGuestName} onChange={e => setBrxGuestName(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') createBrxGuest() }}
+                          onKeyDown={e => { if (e.key === 'Enter' && newResType !== 'dependent') createBrxGuest() }}
                           className={inputCls} placeholder="Nome completo *" autoFocus />
+                        {newResType === 'member' && (
+                          <input value={newResCpf} onChange={e => setNewResCpf(e.target.value)} className={inputCls} placeholder="CPF (opcional)" />
+                        )}
+                        {newResType === 'dependent' && (
+                          <div className="flex flex-col gap-1">
+                            <input value={newResResponsibleSearch}
+                              onChange={e => { setNewResResponsibleSearch(e.target.value); setNewResResponsible(null); searchResponsible(e.target.value) }}
+                              className={inputCls} placeholder="Responsável (associado)…" />
+                            {newResResponsibleResults.length > 0 && (
+                              <ul className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-24 overflow-y-auto">
+                                {newResResponsibleResults.map(r => (
+                                  <li key={r.id}>
+                                    <button type="button" onClick={() => { setNewResResponsible(r); setNewResResponsibleSearch(r.full_name); setNewResResponsibleResults([]) }}
+                                      className="w-full text-left px-2 py-1.5 text-xs hover:bg-blue-50">{r.full_name}</button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            {newResResponsible && <p className="text-xs text-green-700">✓ {newResResponsible.full_name}</p>}
+                          </div>
+                        )}
                         <div className="flex gap-2">
-                          <button onClick={() => { setBrxShowGuest(false); setBrxGuestName('') }}
+                          <button onClick={() => { setBrxShowGuest(false); setBrxGuestName(''); setNewResType('guest'); setNewResCpf(''); setNewResResponsible(null); setNewResResponsibleSearch('') }}
                             className="flex-1 border border-gray-300 text-gray-600 py-1.5 rounded-lg text-xs">Cancelar</button>
                           <button onClick={createBrxGuest} disabled={brxGuestLoading || !brxGuestName.trim()}
-                            className="flex-1 bg-orange-500 text-white py-1.5 rounded-lg text-xs font-medium disabled:opacity-50">
-                            {brxGuestLoading ? 'Salvando…' : 'Salvar e continuar'}
+                            className="flex-1 bg-[#26619c] text-white py-1.5 rounded-lg text-xs font-medium disabled:opacity-50">
+                            {brxGuestLoading ? 'Salvando…' : 'Salvar'}
                           </button>
                         </div>
                       </div>
