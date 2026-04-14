@@ -79,6 +79,13 @@ class ConferenciaRequest(BaseModel):
     counted_amount: Decimal = Field(ge=0)
 
 
+class PatchTransactionPaymentMethodRequest(BaseModel):
+    payment_method_id: UUID | None = None
+    cash_session_id: str
+    observacao: str | None = None
+    reviewed_by_id: UUID | None = None
+
+
 class ProofOfResidenceRequest(BaseModel):
     resident_name: str
     resident_cpf: str
@@ -858,9 +865,12 @@ async def get_session_transactions(
                t.transaction_at, t.is_sangria, t.created_by,
                u.full_name AS created_by_name,
                COALESCE(r.conferido, false) AS conferido,
-               r.observacao
+               r.observacao,
+               t.payment_method_id,
+               pm.name AS payment_method_name
           FROM transactions t
           LEFT JOIN users u ON u.id = t.created_by
+          LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
           LEFT JOIN session_transaction_reviews r
                  ON r.transaction_id = t.id AND r.cash_session_id = :sid
          WHERE t.cash_session_id = :sid AND t.association_id = :aid
@@ -871,7 +881,39 @@ async def get_session_transactions(
         "amount": str(r[3]), "description": r[4],
         "transaction_at": str(r[5]), "is_sangria": r[6],
         "created_by_name": r[8], "conferido": r[9], "observacao": r[10],
+        "payment_method_id": str(r[11]) if r[11] else None,
+        "payment_method_name": r[12],
     } for r in rows]
+
+
+@router.patch("/transactions/{tx_id}/payment-method", summary="Conferente corrige forma de pagamento de uma transação")
+async def patch_transaction_payment_method(
+    tx_id: str,
+    body: PatchTransactionPaymentMethodRequest,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as t
+    await session.execute(t("""
+        UPDATE transactions SET payment_method_id = :pm
+         WHERE id = :tid AND association_id = :aid
+    """), {
+        "pm": str(body.payment_method_id) if body.payment_method_id else None,
+        "tid": tx_id, "aid": str(current.association_id),
+    })
+    await session.execute(t("""
+        INSERT INTO session_transaction_reviews
+            (id, association_id, cash_session_id, transaction_id, conferido, observacao, reviewed_by, updated_at)
+        VALUES (gen_random_uuid(), :aid, :sid, :tid, true, :obs, :rev, NOW())
+        ON CONFLICT (cash_session_id, transaction_id)
+        DO UPDATE SET observacao=:obs, reviewed_by=:rev, updated_at=NOW()
+    """), {
+        "aid": str(current.association_id), "sid": body.cash_session_id,
+        "tid": tx_id, "obs": body.observacao,
+        "rev": str(body.reviewed_by_id) if body.reviewed_by_id else None,
+    })
+    await session.commit()
+    return {"ok": True}
 
 
 @router.put("/sessions/{session_id}/reviews", summary="Salvar revisões de transações")

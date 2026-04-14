@@ -146,7 +146,7 @@ interface AuditEntry {
   id: string; acao: string; entidade: string; entidade_id: string; detalhe: string; data: string; autor: string
 }
 
-type AdminTab = 'usuarios' | 'comprovante' | 'logs'
+type AdminTab = 'usuarios' | 'comprovante'
 
 interface AssocConfig {
   assoc_logo_url?: string
@@ -360,7 +360,6 @@ export default function AdminPage() {
   }
 
   useEffect(() => { load() }, [])
-  useEffect(() => { if (tab === 'logs') loadLogs() }, [tab])
 
   const handleSave = async (data: UserFormData) => {
     try {
@@ -416,7 +415,6 @@ export default function AdminPage() {
         {([
           ['usuarios', 'Usuários'],
           ['comprovante', 'Comprovante'],
-          ['logs', 'Auditoria'],
         ] as [AdminTab, string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
@@ -478,30 +476,6 @@ export default function AdminPage() {
 
       {tab === 'comprovante' && <ComprovanteTab />}
 
-      {tab === 'logs' && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          {loadingLogs ? (
-            <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
-          ) : logs.length === 0 ? (
-            <div className="p-8 text-center text-gray-400 text-sm">Nenhum log encontrado.</div>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {logs.map((log) => (
-                <li key={log.id} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{log.acao.replace(/_/g, ' ')}</p>
-                      <p className="text-xs text-gray-500 truncate">{log.detalhe}</p>
-                      <p className="text-xs text-gray-400">por {log.autor}</p>
-                    </div>
-                    <p className="text-xs text-gray-400 shrink-0">{new Date(log.data).toLocaleString('pt-BR')}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
 
       {showForm && (
         <UserFormModal

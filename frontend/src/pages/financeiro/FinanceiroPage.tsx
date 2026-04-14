@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import {
   TrendingUp, TrendingDown, DollarSign, BarChart2, Upload,
   CheckCircle, AlertCircle, Clock, Plus, Search, X, RotateCcw,
-  CreditCard, Users, ArrowLeftRight, Pencil, Trash2,
+  CreditCard, Users, ArrowLeftRight, Pencil, Trash2, MapPin, FileBarChart, RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import type { Resident } from '../../types'
 
-type Tab = 'dashboard' | 'receitas' | 'despesas' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'transferencias'
+type Tab = 'dashboard' | 'receitas' | 'despesas' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'transferencias' | 'porta_a_porta' | 'dre'
 
 interface FinanceSummary {
   total_income: number
@@ -198,12 +198,33 @@ export default function FinanceiroPage() {
     pendente: ReconciliationItem[]
   } | null>(null)
 
+  // Porta a Porta
+  const [papLeads, setPapLeads] = useState<any[]>([])
+  const [papSummary, setPapSummary] = useState<any>(null)
+  const [papLoading, setPapLoading] = useState(false)
+  const [papToken, setPapToken] = useState('')
+  const [showPapForm, setShowPapForm] = useState(false)
+  const [papForm, setPapForm] = useState({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '' })
+  const [papDeps, setPapDeps] = useState<{ name: string; phone: string; cpf: string }[]>([])
+  const [savingPap, setSavingPap] = useState(false)
+  const [showCommPay, setShowCommPay] = useState(false)
+  const [commPayTarget, setCommPayTarget] = useState<any>(null)
+  const [commPayForm, setCommPayForm] = useState({ amount: '', payment_method: '', paid_at: '', notes: '' })
+  const [savingCommPay, setSavingCommPay] = useState(false)
+
+  // DRE
+  const [dreYear, setDreYear] = useState(new Date().getFullYear())
+  const [dreMonth, setDreMonth] = useState<number | ''>(new Date().getMonth() + 1)
+  const [dre, setDre] = useState<any>(null)
+  const [loadingDre, setLoadingDre] = useState(false)
+
   useEffect(() => {
     if (tab === 'dashboard') loadSummary()
     if (tab === 'receitas' || tab === 'despesas') loadTransactions()
     if (tab === 'relatorios') { loadSessions(); loadConferentes() }
     if (tab === 'cobrancas') { loadOpenSession(); loadCobrancas() }
     if (tab === 'transferencias') loadBoxSummary()
+    if (tab === 'porta_a_porta') { loadPap(); loadPapToken() }
   }, [tab, period])
 
   const loadOpenSession = async () => {
@@ -570,14 +591,88 @@ export default function FinanceiroPage() {
   }
 
   const TABS: { key: Tab; label: string; icon: any }[] = [
-    { key: 'dashboard',    label: 'Resumo',    icon: BarChart2 },
-    { key: 'receitas',     label: 'Receitas',  icon: TrendingUp },
-    { key: 'despesas',     label: 'Despesas',  icon: TrendingDown },
-    { key: 'cobrancas',    label: 'Cobranças', icon: CreditCard },
+    { key: 'dashboard',    label: 'Resumo',         icon: BarChart2 },
+    { key: 'receitas',     label: 'Receitas',        icon: TrendingUp },
+    { key: 'despesas',     label: 'Despesas',        icon: TrendingDown },
+    { key: 'cobrancas',    label: 'Cobranças',       icon: CreditCard },
     { key: 'relatorios',     label: 'Sessões',        icon: DollarSign },
+    { key: 'dre',            label: 'Relatórios',     icon: FileBarChart },
     { key: 'transferencias', label: 'Transferências', icon: ArrowLeftRight },
     { key: 'conciliacao',    label: 'PIX',            icon: CheckCircle },
+    { key: 'porta_a_porta',  label: 'Porta a Porta',  icon: MapPin },
   ]
+
+  // ── Porta a Porta handlers ──
+  const loadPap = async () => {
+    setPapLoading(true)
+    try {
+      const [leads, summary] = await Promise.all([api.get('/porta-a-porta/leads'), api.get('/porta-a-porta/summary')])
+      setPapLeads(leads.data); setPapSummary(summary.data)
+    } catch { toast.error('Erro ao carregar Porta a Porta.') } finally { setPapLoading(false) }
+  }
+
+  const loadPapToken = async () => {
+    try { const res = await api.get<{ token: string }>('/porta-a-porta/public-token'); setPapToken(res.data.token) } catch { }
+  }
+
+  const handlePapSubmit = async () => {
+    if (!papForm.full_name.trim() || !papForm.address_street.trim() || !papForm.address_number.trim()) { toast.error('Preencha os campos obrigatórios.'); return }
+    setSavingPap(true)
+    try {
+      await api.post('/porta-a-porta/leads', { ...papForm, total_installments: Number(papForm.total_installments), monthly_fee: parseFloat(papForm.monthly_fee), dependents: papDeps })
+      toast.success('Lead registrado.')
+      setShowPapForm(false)
+      setPapForm({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '' })
+      setPapDeps([]); loadPap()
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao salvar.') } finally { setSavingPap(false) }
+  }
+
+  const handlePapPay = async (leadId: string) => {
+    try { await api.post(`/porta-a-porta/leads/${leadId}/pay`, {}); toast.success('Pagamento registrado.'); loadPap() }
+    catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handlePapCancel = async (leadId: string) => {
+    try { await api.delete(`/porta-a-porta/leads/${leadId}`); toast.success('Lead cancelado.'); loadPap() }
+    catch { toast.error('Erro ao cancelar.') }
+  }
+
+  const handleCommPay = async () => {
+    if (!commPayTarget) return
+    setSavingCommPay(true)
+    try {
+      await api.post('/porta-a-porta/commission-payments', { operator_id: commPayTarget.operator_id, amount: parseFloat(commPayForm.amount), payment_method: commPayForm.payment_method || null, paid_at: commPayForm.paid_at ? new Date(commPayForm.paid_at).toISOString() : undefined, notes: commPayForm.notes || null })
+      toast.success('Pagamento de comissão registrado.')
+      setShowCommPay(false); setCommPayTarget(null)
+      setCommPayForm({ amount: '', payment_method: '', paid_at: '', notes: '' }); loadPap()
+    } catch { toast.error('Erro ao registrar pagamento.') } finally { setSavingCommPay(false) }
+  }
+
+  // ── DRE handlers ──
+  const loadDre = async () => {
+    setLoadingDre(true)
+    try {
+      const params: any = { year: dreYear }
+      if (dreMonth) params.month = dreMonth
+      const res = await api.get('/financeiro/dre', { params })
+      setDre(res.data)
+    } catch { toast.error('Erro ao gerar DRE.') } finally { setLoadingDre(false) }
+  }
+
+  const exportDreCSV = () => {
+    if (!dre) return
+    const lines = [`DRE — ${dre.period_label}`, '', 'RECEITAS', ...dre.receitas.map((r: any) => `${r.descricao},${r.valor}`), `TOTAL RECEITAS,${dre.total_receitas}`, '', 'DESPESAS', ...dre.despesas.map((d: any) => `${d.descricao},${d.valor}`), `TOTAL DESPESAS,${dre.total_despesas}`, '', `RESULTADO,${dre.resultado}`]
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `dre_${dre.period_label}.csv`; a.click(); URL.revokeObjectURL(url)
+  }
+
+  const exportExtratoCSV = (extrato: any[]) => {
+    const header = 'Tipo,Subtipo,Valor,Descrição,Data,Operador,Categoria,Forma de Pagamento'
+    const rows = extrato.map((e: any) => `${e.tipo},${e.subtipo ?? ''},${e.valor},"${e.descricao}",${e.data},${e.operador ?? ''},${e.categoria ?? ''},${e.metodo ?? ''}`)
+    const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'extrato.csv'; a.click(); URL.revokeObjectURL(url)
+  }
 
   const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
 
@@ -1746,6 +1841,306 @@ export default function FinanceiroPage() {
               {savingReviews ? 'Salvando…' : 'Salvar Conferência'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── DRE ── */}
+      {tab === 'dre' && (
+        <div className="flex flex-col gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
+            <p className="text-sm font-semibold text-gray-800">Demonstrativo de Resultado</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Ano</label>
+                <input type="number" min="2020" max="2099" value={dreYear}
+                  onChange={e => setDreYear(parseInt(e.target.value) || new Date().getFullYear())}
+                  className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Mês (vazio = ano inteiro)</label>
+                <select value={dreMonth} onChange={e => setDreMonth(e.target.value ? parseInt(e.target.value) : '')} className={inputCls}>
+                  <option value="">— Ano completo —</option>
+                  {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
+                    <option key={i+1} value={i+1}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button onClick={loadDre} disabled={loadingDre}
+              className="bg-[#26619c] hover:bg-[#1a4f87] text-white py-2 rounded-xl text-sm font-medium transition disabled:opacity-50">
+              {loadingDre ? 'Gerando…' : 'Gerar DRE'}
+            </button>
+          </div>
+
+          {dre && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-800">DRE — {dre.period_label}</h3>
+                <button onClick={exportDreCSV}
+                  className="flex items-center gap-1.5 text-xs border border-[#26619c] text-[#26619c] px-3 py-1.5 rounded-lg hover:bg-blue-50">
+                  <Upload className="w-3.5 h-3.5" /> Exportar CSV
+                </button>
+              </div>
+              <div className="p-4 flex flex-col gap-4">
+                {/* Receitas */}
+                <div>
+                  <p className="text-xs font-semibold text-green-700 mb-2 uppercase tracking-wide">Receitas</p>
+                  <div className="flex flex-col gap-1">
+                    {dre.receitas.map((r: any) => (
+                      <div key={r.descricao} className="flex items-center justify-between py-1.5 border-b border-gray-50">
+                        <p className="text-sm text-gray-700">{r.descricao}</p>
+                        <p className="text-sm font-medium text-green-700">{fmt(r.valor)}</p>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between py-2 mt-1">
+                      <p className="text-sm font-bold text-gray-900">Total Receitas</p>
+                      <p className="text-sm font-bold text-green-700">{fmt(dre.total_receitas)}</p>
+                    </div>
+                  </div>
+                </div>
+                {/* Despesas */}
+                <div>
+                  <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide">Despesas</p>
+                  <div className="flex flex-col gap-1">
+                    {dre.despesas.map((d: any) => (
+                      <div key={d.descricao} className="flex items-center justify-between py-1.5 border-b border-gray-50">
+                        <p className="text-sm text-gray-700">{d.descricao}</p>
+                        <p className="text-sm font-medium text-red-600">{fmt(d.valor)}</p>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between py-2 mt-1">
+                      <p className="text-sm font-bold text-gray-900">Total Despesas</p>
+                      <p className="text-sm font-bold text-red-600">{fmt(dre.total_despesas)}</p>
+                    </div>
+                  </div>
+                </div>
+                {/* Resultado */}
+                <div className={`rounded-xl p-4 text-center ${dre.resultado >= 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                  <p className="text-xs font-semibold text-gray-500 mb-1">Resultado do Período</p>
+                  <p className={`text-2xl font-bold ${dre.resultado >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                    {dre.resultado >= 0 ? '+' : ''}{fmt(dre.resultado)}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">{dre.resultado >= 0 ? 'Superávit' : 'Déficit'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PORTA A PORTA ── */}
+      {tab === 'porta_a_porta' && (
+        <div className="flex flex-col gap-4">
+          {papLoading ? (
+            <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+          ) : (
+            <>
+              {papSummary && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-green-50 rounded-xl p-4 border border-green-100 flex flex-col gap-1 col-span-2">
+                    <p className="text-xs text-green-600 font-medium">Bruto gerado</p>
+                    <p className="text-xl font-bold text-green-700">{fmt(papSummary.gross_revenue)}</p>
+                    <p className="text-xs text-green-500">Recebido: {fmt(papSummary.total_received)}</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 flex flex-col gap-1">
+                    <p className="text-xs text-blue-600 font-medium">Associados</p>
+                    <p className="text-2xl font-bold text-blue-700">{papSummary.paid_leads}</p>
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex flex-col gap-1">
+                    <p className="text-xs text-amber-700 font-medium">Comissões geradas</p>
+                    <p className="text-xl font-bold text-amber-700">{fmt(papSummary.total_commission)}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 flex flex-col gap-1">
+                    <p className="text-xs text-gray-500">Pendentes</p>
+                    <p className="text-lg font-bold text-gray-700">{papSummary.pending_leads}</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 flex flex-col gap-1">
+                    <p className="text-xs text-purple-600">Em acordo</p>
+                    <p className="text-lg font-bold text-purple-700">{papSummary.agreement_leads}</p>
+                  </div>
+                </div>
+              )}
+
+              {papSummary?.commissions?.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">Metas por Operador</p>
+                      <p className="text-xs text-gray-400 mt-0.5">A cada 5 associados → 2 mensalidades de comissão</p>
+                    </div>
+                    <button onClick={() => setShowCommPay(v => !v)}
+                      className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg transition shrink-0">
+                      Conferir Metas
+                    </button>
+                  </div>
+                  <ul className="divide-y divide-gray-100">
+                    {papSummary.commissions.map((c: any) => {
+                      const pct = Math.min(100, ((c.paid_count % 5) / 5) * 100)
+                      const pending = parseFloat(c.commission_pending ?? '0')
+                      return (
+                        <li key={c.operator_id} className="px-4 py-3">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <p className="text-sm font-medium text-gray-800">{c.operator_name ?? 'Operador'}</p>
+                            <div className="text-right">
+                              <span className="text-sm font-semibold text-amber-700">{fmt(c.commission_earned)}</span>
+                              {pending > 0 && <p className="text-[10px] text-red-500">A pagar: {fmt(pending)}</p>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                              <div className="bg-amber-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                            <p className="text-xs text-gray-400 shrink-0">{c.paid_count} assoc. · faltam {c.next_commission_in}</p>
+                          </div>
+                          {pending > 0 && (
+                            <button onClick={() => { setCommPayTarget(c); setCommPayForm({ amount: pending.toFixed(2), payment_method: '', paid_at: '', notes: '' }); setShowCommPay(true) }}
+                              className="mt-1.5 text-[10px] border border-amber-300 text-amber-700 px-2 py-0.5 rounded-lg hover:bg-amber-50">
+                              Registrar pagamento
+                            </button>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  {showCommPay && (
+                    <div className="px-4 py-4 bg-amber-50 border-t border-amber-100">
+                      <p className="text-xs font-semibold text-amber-800 mb-3">Conferir Pagamento de Metas{commPayTarget ? ` — ${commPayTarget.operator_name}` : ''}</p>
+                      {!commPayTarget && (
+                        <select onChange={e => { const op = papSummary.commissions.find((c: any) => c.operator_id === e.target.value); setCommPayTarget(op ?? null); if (op) setCommPayForm(f => ({ ...f, amount: parseFloat(op.commission_pending ?? '0').toFixed(2) })) }}
+                          className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm mb-2">
+                          <option value="">— Selecionar operador —</option>
+                          {papSummary.commissions.filter((c: any) => parseFloat(c.commission_pending ?? '0') > 0).map((c: any) => <option key={c.operator_id} value={c.operator_id}>{c.operator_name}</option>)}
+                        </select>
+                      )}
+                      <div className="grid grid-cols-2 gap-2">
+                        {[['Valor (R$)', 'amount', 'number'], ['Forma de pagamento', 'payment_method', 'text'], ['Data', 'paid_at', 'date'], ['Observação', 'notes', 'text']].map(([label, key, type]) => (
+                          <div key={key}>
+                            <label className="text-xs text-gray-500 mb-0.5 block">{label}</label>
+                            <input type={type} value={(commPayForm as any)[key]} onChange={e => setCommPayForm(f => ({ ...f, [key]: e.target.value }))}
+                              className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => { setShowCommPay(false); setCommPayTarget(null) }} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+                        <button onClick={handleCommPay} disabled={savingCommPay || !commPayTarget || !commPayForm.amount}
+                          className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                          {savingCommPay ? 'Registrando…' : 'Confirmar'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {papToken && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-blue-700">Link de cadastro público</p>
+                  <p className="text-xs text-blue-500 break-all">{window.location.origin}/associar?token={papToken}</p>
+                  <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/associar?token=${papToken}`); toast.success('Link copiado!') }}
+                    className="self-start text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">
+                    Copiar link
+                  </button>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button onClick={() => setShowPapForm(v => !v)}
+                  className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition">
+                  <Plus className="w-4 h-4" /> Registrar Lead
+                </button>
+                <button onClick={loadPap} className="flex items-center gap-2 border border-gray-300 text-gray-600 py-2.5 px-3 rounded-xl text-sm hover:bg-gray-50 transition">
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              </div>
+
+              {showPapForm && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
+                  <p className="text-sm font-semibold text-gray-800">Novo Lead</p>
+                  <input placeholder="Nome completo *" value={papForm.full_name} onChange={e => setPapForm(f => ({ ...f, full_name: e.target.value }))} className={inputCls} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input placeholder="Telefone" value={papForm.phone} onChange={e => setPapForm(f => ({ ...f, phone: e.target.value }))} className={inputCls} />
+                    <input placeholder="CPF (opcional)" value={papForm.cpf} onChange={e => setPapForm(f => ({ ...f, cpf: e.target.value }))} className={inputCls} />
+                  </div>
+                  <input placeholder="Rua *" value={papForm.address_street} onChange={e => setPapForm(f => ({ ...f, address_street: e.target.value }))} className={inputCls} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input placeholder="Número *" value={papForm.address_number} onChange={e => setPapForm(f => ({ ...f, address_number: e.target.value }))} className={inputCls} />
+                    <input placeholder="Complemento" value={papForm.address_complement} onChange={e => setPapForm(f => ({ ...f, address_complement: e.target.value }))} className={inputCls} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-gray-500">Dependentes (máx. 3)</p>
+                      {papDeps.length < 3 && <button onClick={() => setPapDeps(d => [...d, { name: '', phone: '', cpf: '' }])} className="text-xs text-[#26619c] font-medium hover:underline flex items-center gap-1"><Plus className="w-3 h-3" /> Add</button>}
+                    </div>
+                    {papDeps.map((d, i) => (
+                      <div key={i} className="bg-gray-50 rounded-lg p-2 flex flex-col gap-1.5 border border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-gray-500">Dep. {i + 1}</p>
+                          <button onClick={() => setPapDeps(d => d.filter((_, idx) => idx !== i))} className="text-gray-400 hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                        <input placeholder="Nome *" value={d.name} onChange={e => setPapDeps(deps => deps.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x))} className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                        <div className="grid grid-cols-2 gap-1">
+                          <input placeholder="Telefone" value={d.phone} onChange={e => setPapDeps(deps => deps.map((x, idx) => idx === i ? { ...x, phone: e.target.value } : x))} className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                          <input placeholder="CPF" value={d.cpf} onChange={e => setPapDeps(deps => deps.map((x, idx) => idx === i ? { ...x, cpf: e.target.value } : x))} className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-gray-500 mb-0.5 block">Pagamento</label>
+                      <select value={papForm.payment_type} onChange={e => setPapForm(f => ({ ...f, payment_type: e.target.value }))} className={inputCls}>
+                        <option value="avista">À vista</option>
+                        <option value="parcelado">Parcelado</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-0.5 block">Mensalidade (R$)</label>
+                      <input type="number" step="0.01" value={papForm.monthly_fee} onChange={e => setPapForm(f => ({ ...f, monthly_fee: e.target.value }))} className={inputCls} />
+                    </div>
+                  </div>
+                  <input placeholder="Observações" value={papForm.notes} onChange={e => setPapForm(f => ({ ...f, notes: e.target.value }))} className={inputCls} />
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowPapForm(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+                    <button onClick={handlePapSubmit} disabled={savingPap} className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">{savingPap ? 'Salvando…' : 'Salvar'}</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <p className="text-sm font-semibold text-gray-800">Leads ({papLeads.filter((l: any) => l.status !== 'cancelled').length})</p>
+                </div>
+                {papLeads.length === 0 ? (
+                  <p className="p-6 text-center text-xs text-gray-400">Nenhum lead registrado.</p>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {papLeads.filter((l: any) => l.status !== 'cancelled').map((lead: any) => (
+                      <li key={lead.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium text-gray-800">{lead.full_name}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${lead.status === 'paid' ? 'bg-green-100 text-green-700' : lead.status === 'agreement' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {lead.status === 'paid' ? 'Pago' : lead.status === 'agreement' ? 'Acordo' : 'Pendente'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">{lead.address_street}, {lead.address_number}{lead.address_complement ? ` – ${lead.address_complement}` : ''}</p>
+                          {lead.phone && <p className="text-xs text-gray-400">{lead.phone}</p>}
+                          {lead.dependents?.length > 0 && <p className="text-xs text-gray-400">{lead.dependents.length} dependente(s)</p>}
+                          <p className="text-xs text-gray-300 mt-0.5">{lead.operator_name} · {fmt(lead.monthly_fee)}</p>
+                        </div>
+                        <div className="flex flex-col gap-1 shrink-0">
+                          {lead.status === 'pending' && <button onClick={() => handlePapPay(lead.id)} className="text-xs bg-green-600 text-white px-2.5 py-1 rounded-lg hover:bg-green-700">Confirmar</button>}
+                          {lead.status === 'agreement' && <button onClick={() => handlePapPay(lead.id)} className="text-xs bg-purple-600 text-white px-2.5 py-1 rounded-lg hover:bg-purple-700">Pagar parcela</button>}
+                          <button onClick={() => handlePapCancel(lead.id)} className="text-xs border border-red-200 text-red-500 px-2.5 py-1 rounded-lg hover:bg-red-50">Cancelar</button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 

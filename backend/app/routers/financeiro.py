@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -185,11 +185,14 @@ async def import_bank_statement(
 
 @router.get("/extrato", summary="Extrato financeiro por período")
 async def get_extrato(
-    date_from: str,
-    date_to: str,
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    today = datetime.utcnow().date()
+    df = date_from or today.replace(day=1).isoformat()
+    dt = date_to or today.isoformat()
     result = await session.execute(
         text("""
             SELECT t.id, t.type, t.income_subtype, t.amount, t.description,
@@ -204,7 +207,7 @@ async def get_extrato(
               AND t.transaction_at::date BETWEEN :df AND :dt
             ORDER BY t.transaction_at ASC
         """),
-        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+        {"aid": str(current.association_id), "df": df, "dt": dt},
     )
     return [
         {"id": str(r[0]), "tipo": r[1], "subtipo": r[2], "valor": str(r[3]),
@@ -257,6 +260,81 @@ async def get_fluxo_projetado(
          "reference_month": r[3], "due_date": str(r[4]), "amount": str(r[5])}
         for r in result.fetchall()
     ]
+
+
+@router.get("/dre", summary="Demonstrativo de Resultado da Associação")
+async def get_dre(
+    year: int = Query(...),
+    month: int | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if month:
+        date_filter = "EXTRACT(YEAR FROM t.transaction_at) = :yr AND EXTRACT(MONTH FROM t.transaction_at) = :mo"
+        params: dict = {"aid": str(current.association_id), "yr": year, "mo": month}
+        period_label = f"{str(month).zfill(2)}/{year}"
+    else:
+        date_filter = "EXTRACT(YEAR FROM t.transaction_at) = :yr"
+        params = {"aid": str(current.association_id), "yr": year}
+        period_label = str(year)
+
+    result = await session.execute(text(f"""
+        SELECT
+            t.type,
+            t.income_subtype,
+            c.name AS category,
+            COALESCE(SUM(t.amount), 0) AS total
+        FROM transactions t
+        LEFT JOIN transaction_categories c ON c.id = t.category_id
+        WHERE t.association_id = :aid
+          AND {date_filter}
+          AND t.is_reversal = false
+          AND (t.reversed_at IS NULL OR t.reversed_at IS NOT NULL)
+          AND NOT (t.is_reversal = true)
+        GROUP BY t.type, t.income_subtype, c.name
+        ORDER BY t.type, t.income_subtype, c.name
+    """), params)
+    rows = result.fetchall()
+
+    receitas: dict[str, float] = {}
+    despesas: dict[str, float] = {}
+    sangrias_total = 0.0
+
+    SUBTYPE_MAP = {
+        "mensalidade": "Mensalidades",
+        "delivery_fee": "Taxas de Entrega",
+        "proof_of_residence": "Comprovantes de Residência",
+        "other": "Outras Receitas",
+    }
+
+    for r in rows:
+        tipo, subtipo, categoria, total = r[0], r[1], r[2], float(r[3])
+        if tipo == "income":
+            label = SUBTYPE_MAP.get(subtipo or "", "Outras Receitas")
+            receitas[label] = receitas.get(label, 0.0) + total
+        elif tipo == "sangria":
+            sangrias_total += total
+        elif tipo == "expense":
+            label = categoria or "Despesas Gerais"
+            despesas[label] = despesas.get(label, 0.0) + total
+
+    if sangrias_total > 0:
+        despesas["Sangrias"] = despesas.get("Sangrias", 0.0) + sangrias_total
+
+    total_receitas = sum(receitas.values())
+    total_despesas = sum(despesas.values())
+    resultado = total_receitas - total_despesas
+
+    return {
+        "period_label": period_label,
+        "year": year,
+        "month": month,
+        "receitas": [{"descricao": k, "valor": round(v, 2)} for k, v in sorted(receitas.items())],
+        "total_receitas": round(total_receitas, 2),
+        "despesas": [{"descricao": k, "valor": round(v, 2)} for k, v in sorted(despesas.items())],
+        "total_despesas": round(total_despesas, 2),
+        "resultado": round(resultado, 2),
+    }
 
 
 @router.post("/reconcile")

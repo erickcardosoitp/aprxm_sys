@@ -224,6 +224,22 @@ async def _run_migrations() -> None:
         await session.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_pap_payments_lead ON porta_a_porta_payments(lead_id)"
         ))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS porta_a_porta_commission_payments (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                operator_id UUID NOT NULL,
+                paid_by UUID NOT NULL,
+                amount NUMERIC(10,2) NOT NULL,
+                payment_method VARCHAR(50),
+                paid_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                notes TEXT,
+                created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_pap_comm_assoc ON porta_a_porta_commission_payments(association_id, operator_id)"
+        ))
 
         await session.commit()
 

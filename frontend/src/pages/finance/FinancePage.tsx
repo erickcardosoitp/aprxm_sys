@@ -139,7 +139,7 @@ function ApprovalModal({
   )
 }
 
-type Tab = 'caixa' | 'sessoes' | 'extrato' | 'relatorios' | 'porta_a_porta'
+type Tab = 'caixa' | 'sessoes' | 'extrato' | 'relatorios'
 
 interface ExtratoEntry {
   id: string; data: string; tipo: string; descricao: string; valor: string
@@ -151,6 +151,15 @@ interface FluxoEntry { resident_name: string; unit?: string; block?: string; ref
 
 // ── Session detail modal ──────────────────────────────────────────────────────
 
+type SessionTx = {
+  id: string; type: string; income_subtype: string | null; amount: string
+  description: string; transaction_at: string; is_sangria: boolean
+  created_by_name: string; conferido: boolean; observacao: string | null
+  payment_method_id: string | null; payment_method_name: string | null
+}
+
+type PaymentMethodOption = { id: string; name: string }
+
 function SessionDetailModal({
   session,
   onClose,
@@ -159,51 +168,47 @@ function SessionDetailModal({
   onClose: () => void
 }) {
   const role = useAuthStore((s) => s.role)
+  const userId = useAuthStore((s) => s.userId)
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
-  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [transactions, setTransactions] = useState<SessionTx[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([])
   const [loading, setLoading] = useState(false)
-  const [conferencing, setConferencing] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [editingTx, setEditingTx] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [savingTx, setSavingTx] = useState(false)
   const [editForm, setEditForm] = useState({
     closing_balance: session.closing_balance ?? '',
     manual_pix: session.total_pix ?? '',
     manual_dinheiro: session.total_dinheiro ?? '',
     manual_total_baixas: session.total_baixas ?? '',
   })
+  const [txEdits, setTxEdits] = useState<Record<string, { payment_method_id: string; observacao: string }>>({})
 
   const fmtBRL = (v: string | undefined) => (v != null ? `R$ ${parseFloat(v).toFixed(2)}` : '—')
   const fmtDate = (s: string) =>
     new Date(s).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
+      day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
     })
 
-  useEffect(() => {
-    const loadTx = async () => {
-      setLoading(true)
-      try {
-        const res = await financeService.listTransactions(session.id)
-        setTransactions(res.data)
-      } catch {
-        setTransactions([])
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadTx()
-  }, [session.id])
-
-  const handleConferencia = () => {
-    setConferencing(true)
-    setTimeout(() => {
-      toast.success('Conferência registrada')
-      setConferencing(false)
-    }, 600)
+  const loadTx = async () => {
+    setLoading(true)
+    try {
+      const [txRes, pmRes] = await Promise.all([
+        api.get<SessionTx[]>(`/finance/sessions/${session.id}/transactions`),
+        api.get<PaymentMethodOption[]>('/finance/payment-methods'),
+      ])
+      setTransactions(txRes.data)
+      setPaymentMethods(pmRes.data)
+      const initial: Record<string, { payment_method_id: string; observacao: string }> = {}
+      txRes.data.forEach(tx => {
+        initial[tx.id] = { payment_method_id: tx.payment_method_id ?? '', observacao: tx.observacao ?? '' }
+      })
+      setTxEdits(initial)
+    } catch { setTransactions([]) } finally { setLoading(false) }
   }
+
+  useEffect(() => { loadTx() }, [session.id])
 
   const handleSaveEdit = async () => {
     setSaving(true)
@@ -217,6 +222,30 @@ function SessionDetailModal({
       toast.success('Valores atualizados.')
       setEditing(false)
     } catch { toast.error('Erro ao salvar.') } finally { setSaving(false) }
+  }
+
+  const handleSaveTxEdits = async () => {
+    setSavingTx(true)
+    try {
+      const changed = transactions.filter(tx => {
+        const edit = txEdits[tx.id]
+        return edit && (
+          (edit.payment_method_id || '') !== (tx.payment_method_id ?? '') ||
+          (edit.observacao || '') !== (tx.observacao ?? '')
+        )
+      })
+      await Promise.all(changed.map(tx =>
+        api.patch(`/finance/transactions/${tx.id}/payment-method`, {
+          payment_method_id: txEdits[tx.id].payment_method_id || null,
+          cash_session_id: session.id,
+          observacao: txEdits[tx.id].observacao || null,
+          reviewed_by_id: userId || null,
+        })
+      ))
+      toast.success('Movimentações corrigidas.')
+      setEditingTx(false)
+      loadTx()
+    } catch { toast.error('Erro ao salvar correções.') } finally { setSavingTx(false) }
   }
 
   const diff = session.difference ? parseFloat(session.difference) : null
@@ -285,10 +314,10 @@ function SessionDetailModal({
           </div>
         </div>
 
-        {/* Edit form */}
+        {/* Edit session values form */}
         {editing && isConferenteOrAbove && (
           <div className="px-6 py-4 bg-blue-50 border-b border-blue-100 shrink-0">
-            <p className="text-xs font-semibold text-blue-700 mb-3">Corrigir valores</p>
+            <p className="text-xs font-semibold text-blue-700 mb-3">Corrigir valores da sessão</p>
             <div className="grid grid-cols-2 gap-3">
               {[
                 ['Conf. Cega (R$)', 'closing_balance'],
@@ -305,13 +334,42 @@ function SessionDetailModal({
                 </div>
               ))}
             </div>
+            <div className="flex gap-2 mt-3">
+              <button onClick={() => setEditing(false)}
+                className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">
+                Cancelar
+              </button>
+              <button onClick={handleSaveEdit} disabled={saving}
+                className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                {saving ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
           </div>
         )}
 
         {/* Transactions */}
         <div className="flex-1 overflow-y-auto">
-          <div className="px-6 py-3 border-b border-gray-100">
+          <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
             <h3 className="font-semibold text-gray-800 text-sm">Movimentações</h3>
+            {isConferenteOrAbove && session.status !== 'open' && !editing && (
+              editingTx ? (
+                <div className="flex gap-2">
+                  <button onClick={() => setEditingTx(false)}
+                    className="text-xs border border-gray-300 text-gray-600 px-3 py-1 rounded-lg">
+                    Cancelar
+                  </button>
+                  <button onClick={handleSaveTxEdits} disabled={savingTx}
+                    className="text-xs bg-[#26619c] text-white px-3 py-1 rounded-lg disabled:opacity-50">
+                    {savingTx ? 'Salvando…' : 'Salvar'}
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setEditingTx(true)}
+                  className="text-xs border border-[#26619c] text-[#26619c] px-3 py-1 rounded-lg hover:bg-blue-50">
+                  Corrigir Movimentações
+                </button>
+              )
+            )}
           </div>
           {loading ? (
             <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
@@ -320,18 +378,45 @@ function SessionDetailModal({
           ) : (
             <ul className="divide-y divide-gray-100">
               {transactions.map((tx) => (
-                <li key={tx.id} className="flex items-center justify-between px-6 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">{tx.description}</p>
-                    <p className="text-xs text-gray-400">
-                      {new Date(tx.transaction_at).toLocaleString('pt-BR')}
-                      {' · '}
-                      <span className={TYPE_COLORS[tx.type]}>{TYPE_LABELS[tx.type]}</span>
-                    </p>
+                <li key={tx.id} className="px-6 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-800">{tx.description}</p>
+                      <p className="text-xs text-gray-400">
+                        {new Date(tx.transaction_at).toLocaleString('pt-BR')}
+                        {' · '}
+                        <span className={TYPE_COLORS[tx.type]}>{TYPE_LABELS[tx.type]}</span>
+                        {tx.payment_method_name && !editingTx && (
+                          <span className="text-gray-400"> · {tx.payment_method_name}</span>
+                        )}
+                      </p>
+                      {tx.observacao && !editingTx && (
+                        <p className="text-xs text-amber-600 mt-0.5">Obs: {tx.observacao}</p>
+                      )}
+                    </div>
+                    <span className={`text-sm font-semibold shrink-0 ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                      {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
+                    </span>
                   </div>
-                  <span className={`text-sm font-semibold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                    {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
-                  </span>
+                  {editingTx && paymentMethods.length > 0 && (
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      <select
+                        value={txEdits[tx.id]?.payment_method_id ?? ''}
+                        onChange={e => setTxEdits(prev => ({ ...prev, [tx.id]: { ...prev[tx.id], payment_method_id: e.target.value } }))}
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#26619c]/30">
+                        <option value="">— Forma de pagamento —</option>
+                        {paymentMethods.map(pm => (
+                          <option key={pm.id} value={pm.id}>{pm.name}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Observação (opcional)"
+                        value={txEdits[tx.id]?.observacao ?? ''}
+                        onChange={e => setTxEdits(prev => ({ ...prev, [tx.id]: { ...prev[tx.id], observacao: e.target.value } }))}
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#26619c]/30" />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -344,19 +429,8 @@ function SessionDetailModal({
             className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
             Fechar
           </button>
-          {isConferenteOrAbove && session.status !== 'open' && (
-            editing ? (
-              <>
-                <button onClick={() => setEditing(false)}
-                  className="border border-gray-300 text-gray-600 py-2.5 px-4 rounded-xl text-sm hover:bg-gray-50 transition">
-                  Cancelar
-                </button>
-                <button onClick={handleSaveEdit} disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
-                  {saving ? 'Salvando…' : 'Salvar'}
-                </button>
-              </>
-            ) : (
+          {isConferenteOrAbove && session.status !== 'open' && !editingTx && (
+            editing ? null : (
               <button onClick={() => setEditing(true)}
                 className="flex-1 flex items-center justify-center gap-2 border border-[#26619c] text-[#26619c] py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-50 transition">
                 Corrigir Valores
@@ -412,21 +486,6 @@ export default function FinancePage() {
   const [fluxo, setFluxo] = useState<FluxoEntry[]>([])
   const [loadingRel, setLoadingRel] = useState(false)
 
-  // ── Porta a Porta state ──
-  const [papLeads, setPapLeads] = useState<any[]>([])
-  const [papSummary, setPapSummary] = useState<any>(null)
-  const [papLoading, setPapLoading] = useState(false)
-  const [papToken, setPapToken] = useState('')
-  const [showPapForm, setShowPapForm] = useState(false)
-  const [papForm, setPapForm] = useState({
-    full_name: '', phone: '', cpf: '',
-    address_street: '', address_number: '', address_complement: '',
-    payment_type: 'avista', total_installments: 1,
-    monthly_fee: '20.00', notes: '',
-  })
-  const [papDeps, setPapDeps] = useState<{ name: string; phone: string; cpf: string }[]>([])
-  const [savingPap, setSavingPap] = useState(false)
-  const [papPayTarget, setPapPayTarget] = useState<any>(null)
 
   const loadSession = async () => {
     try { const res = await financeService.getCurrentSession(); setSession(res.data) }
@@ -463,65 +522,6 @@ export default function FinancePage() {
     finally { setLoadingExtrato(false) }
   }
 
-  const loadPap = async () => {
-    setPapLoading(true)
-    try {
-      const [leads, summary] = await Promise.all([
-        api.get('/porta-a-porta/leads'),
-        api.get('/porta-a-porta/summary'),
-      ])
-      setPapLeads(leads.data)
-      setPapSummary(summary.data)
-    } catch { toast.error('Erro ao carregar Porta a Porta.') }
-    finally { setPapLoading(false) }
-  }
-
-  const loadPapToken = async () => {
-    try {
-      const res = await api.get<{ token: string }>('/porta-a-porta/public-token')
-      setPapToken(res.data.token)
-    } catch { /* silent */ }
-  }
-
-  const handlePapSubmit = async () => {
-    if (!papForm.full_name.trim()) { toast.error('Informe o nome.'); return }
-    if (!papForm.address_street.trim() || !papForm.address_number.trim()) { toast.error('Informe o endereço.'); return }
-    setSavingPap(true)
-    try {
-      await api.post('/porta-a-porta/leads', {
-        ...papForm,
-        total_installments: Number(papForm.total_installments),
-        monthly_fee: parseFloat(papForm.monthly_fee),
-        dependents: papDeps,
-      })
-      toast.success('Lead registrado.')
-      setShowPapForm(false)
-      setPapForm({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '' })
-      setPapDeps([])
-      loadPap()
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
-    } finally { setSavingPap(false) }
-  }
-
-  const handlePapPay = async (leadId: string) => {
-    try {
-      await api.post(`/porta-a-porta/leads/${leadId}/pay`, {})
-      toast.success('Pagamento registrado.')
-      setPapPayTarget(null)
-      loadPap()
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao registrar pagamento.')
-    }
-  }
-
-  const handlePapCancel = async (leadId: string) => {
-    try {
-      await api.delete(`/porta-a-porta/leads/${leadId}`)
-      toast.success('Lead cancelado.')
-      loadPap()
-    } catch { toast.error('Erro ao cancelar.') }
-  }
 
   const loadRelatorios = async () => {
     setLoadingRel(true)
@@ -545,7 +545,7 @@ export default function FinancePage() {
   useEffect(() => { if (tab === 'sessoes') loadSessions() }, [tab])
   useEffect(() => { if (tab === 'extrato') loadExtrato() }, [tab])
   useEffect(() => { if (tab === 'relatorios') loadRelatorios() }, [tab])
-  useEffect(() => { if (tab === 'porta_a_porta') { loadPap(); loadPapToken() } }, [tab])
+
   useEffect(() => {
     if (canSeeTotals) settingsService.get().then(r => setSettings(r.data)).catch(() => {})
   }, [canSeeTotals])
@@ -719,7 +719,7 @@ export default function FinancePage() {
       {/* Tabs — operators only see Frente de Caixa */}
       {isConferenteOrAbove && (
         <div className="flex border-b border-gray-200">
-          {([['caixa', 'Frente de Caixa'], ['sessoes', 'Sessões'], ['extrato', 'Extrato'], ['relatorios', 'Relatórios'], ['porta_a_porta', 'Porta a Porta']] as [Tab, string][]).map(([t, label]) => (
+          {([['caixa', 'Frente de Caixa'], ['sessoes', 'Sessões'], ['extrato', 'Extrato'], ['relatorios', 'Relatórios']] as [Tab, string][]).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${tab === t ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
               {t === 'sessoes' && <List className="w-4 h-4" />}
@@ -1128,259 +1128,6 @@ export default function FinancePage() {
         </div>
       )}
 
-      {/* ── TAB: PORTA A PORTA ── */}
-      {tab === 'porta_a_porta' && (
-        <div className="flex flex-col gap-4">
-          {papLoading ? (
-            <div className="p-8 text-center text-gray-400 text-sm flex items-center justify-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
-            </div>
-          ) : (
-            <>
-              {/* Summary cards */}
-              {papSummary && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-green-50 rounded-xl p-4 border border-green-100 flex flex-col gap-1 col-span-2">
-                    <p className="text-xs text-green-600 font-medium">Bruto gerado</p>
-                    <p className="text-xl font-bold text-green-700">R$ {parseFloat(papSummary.gross_revenue).toFixed(2)}</p>
-                    <p className="text-xs text-green-500">Recebido: R$ {parseFloat(papSummary.total_received).toFixed(2)}</p>
-                  </div>
-                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 flex flex-col gap-1">
-                    <p className="text-xs text-blue-600 font-medium">Associados</p>
-                    <p className="text-2xl font-bold text-blue-700">{papSummary.paid_leads}</p>
-                  </div>
-                  <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex flex-col gap-1">
-                    <p className="text-xs text-amber-700 font-medium">Comissões</p>
-                    <p className="text-xl font-bold text-amber-700">R$ {parseFloat(papSummary.total_commission).toFixed(2)}</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 flex flex-col gap-1">
-                    <p className="text-xs text-gray-500">Pendentes</p>
-                    <p className="text-lg font-bold text-gray-700">{papSummary.pending_leads}</p>
-                  </div>
-                  <div className="bg-purple-50 rounded-xl p-3 border border-purple-100 flex flex-col gap-1">
-                    <p className="text-xs text-purple-600">Em acordo</p>
-                    <p className="text-lg font-bold text-purple-700">{papSummary.agreement_leads}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Commission per operator */}
-              {papSummary?.commissions?.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-sm font-semibold text-gray-800">Metas por Operador</p>
-                    <p className="text-xs text-gray-400 mt-0.5">A cada 5 associados → 2 mensalidades de comissão</p>
-                  </div>
-                  <ul className="divide-y divide-gray-100">
-                    {papSummary.commissions.map((c: any) => {
-                      const pct = Math.min(100, ((c.paid_count % 5) / 5) * 100)
-                      return (
-                        <li key={c.operator_id} className="px-4 py-3">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <p className="text-sm font-medium text-gray-800">{c.operator_name ?? 'Operador'}</p>
-                            <span className="text-sm font-semibold text-amber-700">R$ {c.commission_earned.toFixed(2)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                              <div className="bg-amber-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                            </div>
-                            <p className="text-xs text-gray-400 shrink-0">{c.paid_count} assoc. · faltam {c.next_commission_in}</p>
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              )}
-
-              {/* Public link */}
-              {papToken && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-2">
-                  <p className="text-xs font-semibold text-blue-700">Link de cadastro público</p>
-                  <p className="text-xs text-blue-500 break-all">{window.location.origin}/associar?token={papToken}</p>
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/associar?token=${papToken}`); toast.success('Link copiado!') }}
-                    className="self-start text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">
-                    Copiar link
-                  </button>
-                </div>
-              )}
-
-              {/* Add lead button */}
-              <div className="flex gap-2">
-                <button onClick={() => setShowPapForm(v => !v)}
-                  className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition">
-                  <Plus className="w-4 h-4" /> Registrar Lead
-                </button>
-                <button onClick={loadPap}
-                  className="flex items-center gap-2 border border-gray-300 text-gray-600 py-2.5 px-3 rounded-xl text-sm hover:bg-gray-50 transition">
-                  <RefreshCw className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* New lead form */}
-              {showPapForm && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
-                  <p className="text-sm font-semibold text-gray-800">Novo Lead</p>
-                  <input placeholder="Nome completo *" value={papForm.full_name}
-                    onChange={e => setPapForm(f => ({ ...f, full_name: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30" />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input placeholder="Telefone" value={papForm.phone}
-                      onChange={e => setPapForm(f => ({ ...f, phone: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
-                    <input placeholder="CPF (opcional)" value={papForm.cpf}
-                      onChange={e => setPapForm(f => ({ ...f, cpf: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
-                  </div>
-                  <input placeholder="Nome da rua *" value={papForm.address_street}
-                    onChange={e => setPapForm(f => ({ ...f, address_street: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input placeholder="Número *" value={papForm.address_number}
-                      onChange={e => setPapForm(f => ({ ...f, address_number: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
-                    <input placeholder="Complemento" value={papForm.address_complement}
-                      onChange={e => setPapForm(f => ({ ...f, address_complement: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
-                  </div>
-
-                  {/* Dependents */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-gray-500">Dependentes (máx. 3)</p>
-                      {papDeps.length < 3 && (
-                        <button onClick={() => setPapDeps(d => [...d, { name: '', phone: '', cpf: '' }])}
-                          className="text-xs text-[#26619c] font-medium hover:underline flex items-center gap-1">
-                          <Plus className="w-3 h-3" /> Add
-                        </button>
-                      )}
-                    </div>
-                    {papDeps.map((d, i) => (
-                      <div key={i} className="bg-gray-50 rounded-lg p-2 flex flex-col gap-1.5 border border-gray-200">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs text-gray-500">Dep. {i + 1}</p>
-                          <button onClick={() => setPapDeps(d => d.filter((_, idx) => idx !== i))} className="text-gray-400 hover:text-red-500">
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <input placeholder="Nome *" value={d.name}
-                          onChange={e => setPapDeps(deps => deps.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x))}
-                          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
-                        <div className="grid grid-cols-2 gap-1">
-                          <input placeholder="Telefone" value={d.phone}
-                            onChange={e => setPapDeps(deps => deps.map((x, idx) => idx === i ? { ...x, phone: e.target.value } : x))}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
-                          <input placeholder="CPF" value={d.cpf}
-                            onChange={e => setPapDeps(deps => deps.map((x, idx) => idx === i ? { ...x, cpf: e.target.value } : x))}
-                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs text-gray-500 mb-0.5 block">Pagamento</label>
-                      <select value={papForm.payment_type}
-                        onChange={e => setPapForm(f => ({ ...f, payment_type: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm">
-                        <option value="avista">À vista</option>
-                        <option value="parcelado">Parcelado</option>
-                      </select>
-                    </div>
-                    {papForm.payment_type === 'parcelado' && (
-                      <div>
-                        <label className="text-xs text-gray-500 mb-0.5 block">Parcelas</label>
-                        <input type="number" min="2" max="12" value={papForm.total_installments}
-                          onChange={e => setPapForm(f => ({ ...f, total_installments: parseInt(e.target.value) || 1 }))}
-                          className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
-                      </div>
-                    )}
-                    <div>
-                      <label className="text-xs text-gray-500 mb-0.5 block">Mensalidade (R$)</label>
-                      <input type="number" step="0.01" min="0" value={papForm.monthly_fee}
-                        onChange={e => setPapForm(f => ({ ...f, monthly_fee: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
-                    </div>
-                  </div>
-                  <input placeholder="Observações" value={papForm.notes}
-                    onChange={e => setPapForm(f => ({ ...f, notes: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={() => setShowPapForm(false)}
-                      className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">
-                      Cancelar
-                    </button>
-                    <button onClick={handlePapSubmit} disabled={savingPap}
-                      className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
-                      {savingPap ? 'Salvando…' : 'Salvar'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Leads list */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100">
-                  <p className="text-sm font-semibold text-gray-800">Leads ({papLeads.filter((l: any) => l.status !== 'cancelled').length})</p>
-                </div>
-                {papLeads.length === 0 ? (
-                  <p className="p-6 text-center text-xs text-gray-400">Nenhum lead registrado.</p>
-                ) : (
-                  <ul className="divide-y divide-gray-100">
-                    {papLeads.filter((l: any) => l.status !== 'cancelled').map((lead: any) => (
-                      <li key={lead.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-medium text-gray-800">{lead.full_name}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
-                              lead.status === 'paid' ? 'bg-green-100 text-green-700'
-                              : lead.status === 'agreement' ? 'bg-purple-100 text-purple-700'
-                              : 'bg-amber-100 text-amber-700'
-                            }`}>
-                              {lead.status === 'paid' ? 'Pago' : lead.status === 'agreement' ? 'Acordo' : 'Pendente'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {lead.address_street}, {lead.address_number}
-                            {lead.address_complement ? ` – ${lead.address_complement}` : ''}
-                          </p>
-                          {lead.phone && <p className="text-xs text-gray-400">{lead.phone}</p>}
-                          {(lead.dependents?.length > 0) && (
-                            <p className="text-xs text-gray-400">{lead.dependents.length} dependente(s)</p>
-                          )}
-                          <p className="text-xs text-gray-300 mt-0.5">{lead.operator_name} · R$ {parseFloat(lead.monthly_fee).toFixed(2)}</p>
-                        </div>
-                        <div className="flex flex-col gap-1 shrink-0">
-                          {lead.status === 'pending' && (
-                            <button onClick={() => handlePapPay(lead.id)}
-                              className="text-xs bg-green-600 text-white px-2.5 py-1 rounded-lg hover:bg-green-700">
-                              Confirmar
-                            </button>
-                          )}
-                          {lead.status === 'agreement' && (
-                            <button onClick={() => handlePapPay(lead.id)}
-                              className="text-xs bg-purple-600 text-white px-2.5 py-1 rounded-lg hover:bg-purple-700">
-                              Pagar parcela
-                            </button>
-                          )}
-                          {isConferenteOrAbove && lead.status !== 'paid' && (
-                            <button onClick={() => handlePapCancel(lead.id)}
-                              className="text-xs border border-red-200 text-red-500 px-2.5 py-1 rounded-lg hover:bg-red-50">
-                              Cancelar
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      )}
 
       {showSangria && <SangriaModal onClose={() => setShowSangria(false)} onSuccess={loadTransactions} />}
       {showTransaction && session && <TransactionModal onClose={() => setShowTransaction(false)} onSuccess={() => { loadTransactions(); loadPendingApprovals() }} />}

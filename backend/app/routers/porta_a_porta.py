@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.config import get_settings
-from app.core.tenant import CurrentUser, get_current_user, require_admin
+from app.core.tenant import CurrentUser, get_current_user, require_admin, require_conferente
 from app.database import get_session
 from app.models.porta_a_porta import PortaAPortaLead, PortaAPortaPayment
 
@@ -67,6 +67,14 @@ class PayInstallmentIn(BaseModel):
 class PayLeadIn(BaseModel):
     payment_method: str | None = None
     paid_at: datetime | None = None
+
+
+class CommissionPaymentIn(BaseModel):
+    operator_id: str
+    amount: Decimal = Field(gt=0)
+    payment_method: str | None = None
+    paid_at: datetime | None = None
+    notes: str | None = None
 
 
 class PublicLeadIn(BaseModel):
@@ -357,16 +365,29 @@ async def get_summary(
         ORDER BY paid_count DESC
     """), {"aid": str(current.association_id)})
 
+    # Commission already paid per operator
+    comm_paid_result = await session.execute(sa_text("""
+        SELECT operator_id, COALESCE(SUM(amount), 0) AS total_paid
+        FROM porta_a_porta_commission_payments
+        WHERE association_id = :aid
+        GROUP BY operator_id
+    """), {"aid": str(current.association_id)})
+    comm_paid_map = {str(r[0]): float(r[1]) for r in comm_paid_result.fetchall()}
+
     commissions = []
     for r in op_result.fetchall():
         paid = int(r[2] or 0)
         avg_fee = float(r[3] or 0) / paid if paid else 20.0
         earned = _commission(paid, avg_fee)
+        op_id = str(r[0])
+        commission_paid = comm_paid_map.get(op_id, 0.0)
         commissions.append({
-            "operator_id": str(r[0]),
+            "operator_id": op_id,
             "operator_name": r[1],
             "paid_count": paid,
             "commission_earned": earned,
+            "commission_paid": round(commission_paid, 2),
+            "commission_pending": round(max(0.0, earned - commission_paid), 2),
             "next_commission_in": 5 - (paid % 5) if paid % 5 != 0 else 5,
         })
 
@@ -385,6 +406,67 @@ async def get_summary(
         "total_commission": str(total_commission),
         "commissions": commissions,
     }
+
+
+# ── Commission payments ───────────────────────────────────────────────────────
+
+@router.post("/commission-payments", summary="Registrar pagamento de comissão")
+async def create_commission_payment(
+    body: CommissionPaymentIn,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    paid_at = (body.paid_at or datetime.utcnow()).replace(tzinfo=None)
+    await session.execute(sa_text("""
+        INSERT INTO porta_a_porta_commission_payments
+            (association_id, operator_id, paid_by, amount, payment_method, paid_at, notes)
+        VALUES (:aid, :op, :pb, :amt, :pm, :pat, :notes)
+    """), {
+        "aid": str(current.association_id),
+        "op": body.operator_id,
+        "pb": str(current.user_id),
+        "amt": float(body.amount),
+        "pm": body.payment_method,
+        "pat": paid_at,
+        "notes": body.notes,
+    })
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/commission-payments", summary="Histórico de pagamentos de comissão")
+async def list_commission_payments(
+    operator_id: str | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as sa_text
+    q = """
+        SELECT cp.id, cp.operator_id, u.full_name AS operator_name,
+               cp.amount, cp.payment_method, cp.paid_at, cp.notes,
+               pb.full_name AS paid_by_name
+        FROM porta_a_porta_commission_payments cp
+        LEFT JOIN users u ON u.id = cp.operator_id
+        LEFT JOIN users pb ON pb.id = cp.paid_by
+        WHERE cp.association_id = :aid
+    """
+    params: dict = {"aid": str(current.association_id)}
+    if operator_id:
+        q += " AND cp.operator_id = :op_id"
+        params["op_id"] = operator_id
+    q += " ORDER BY cp.paid_at DESC"
+    rows = (await session.execute(sa_text(q), params)).fetchall()
+    return [{
+        "id": str(r[0]),
+        "operator_id": str(r[1]),
+        "operator_name": r[2],
+        "amount": str(r[3]),
+        "payment_method": r[4],
+        "paid_at": str(r[5]),
+        "notes": r[6],
+        "paid_by_name": r[7],
+    } for r in rows]
 
 
 # ── Public endpoint (no auth) ─────────────────────────────────────────────────
