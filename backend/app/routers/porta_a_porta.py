@@ -57,6 +57,7 @@ class LeadIn(BaseModel):
     total_installments: int = Field(default=1, ge=1, le=12)
     monthly_fee: Decimal = Field(default=Decimal("20.00"), gt=0)
     notes: str | None = None
+    commissioned_to: UUID | None = None
 
 
 class PayInstallmentIn(BaseModel):
@@ -111,6 +112,7 @@ def _serialize_lead(lead: PortaAPortaLead, operator_name: str | None = None) -> 
         "resident_id": str(lead.resident_id) if lead.resident_id else None,
         "operator_id": str(lead.operator_id),
         "operator_name": operator_name,
+        "commissioned_to": str(lead.commissioned_to) if lead.commissioned_to else None,
         "created_at": str(lead.created_at),
     }
 
@@ -152,6 +154,7 @@ async def create_lead(
         total_installments=body.total_installments,
         monthly_fee=body.monthly_fee,
         notes=body.notes,
+        commissioned_to=body.commissioned_to,
     )
     session.add(lead)
     await session.flush()  # get id
@@ -183,9 +186,10 @@ async def list_leads(
 ) -> list[dict]:
     from sqlalchemy import text as sa_text
     q = """
-        SELECT l.*, u.full_name AS operator_name
+        SELECT l.*, u.full_name AS operator_name, c.full_name AS commissioned_to_name
         FROM porta_a_porta_leads l
         LEFT JOIN users u ON u.id = l.operator_id
+        LEFT JOIN users c ON c.id = l.commissioned_to
         WHERE l.association_id = :aid
     """
     params: dict = {"aid": str(current.association_id)}
@@ -216,6 +220,8 @@ async def list_leads(
             "notes": r["notes"],
             "operator_id": str(r["operator_id"]),
             "operator_name": r["operator_name"],
+            "commissioned_to": str(r["commissioned_to"]) if r["commissioned_to"] else None,
+            "commissioned_to_name": r["commissioned_to_name"],
             "created_at": str(r["created_at"]),
         }
         for r in rows
@@ -393,14 +399,15 @@ async def get_summary(
     # Per-operator commission breakdown
     op_result = await session.execute(sa_text("""
         SELECT
-            l.operator_id,
-            u.full_name AS operator_name,
+            COALESCE(l.commissioned_to, l.operator_id) AS eff_operator_id,
+            COALESCE(c.full_name, u.full_name) AS operator_name,
             COUNT(*) FILTER (WHERE l.status = 'paid') AS paid_count,
             COALESCE(SUM(l.monthly_fee) FILTER (WHERE l.status = 'paid'), 0) AS total_fee
         FROM porta_a_porta_leads l
         LEFT JOIN users u ON u.id = l.operator_id
+        LEFT JOIN users c ON c.id = l.commissioned_to
         WHERE l.association_id = :aid
-        GROUP BY l.operator_id, u.full_name
+        GROUP BY COALESCE(l.commissioned_to, l.operator_id), COALESCE(c.full_name, u.full_name)
         ORDER BY paid_count DESC
     """), {"aid": str(current.association_id)})
 
@@ -412,6 +419,7 @@ async def get_summary(
         GROUP BY operator_id
     """), {"aid": str(current.association_id)})
     comm_paid_map = {str(r[0]): float(r[1]) for r in comm_paid_result.fetchall()}
+
 
     commissions = []
     for r in op_result.fetchall():

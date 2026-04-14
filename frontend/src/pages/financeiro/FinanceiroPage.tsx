@@ -207,7 +207,7 @@ export default function FinanceiroPage() {
   const [papLoading, setPapLoading] = useState(false)
   const [papToken, setPapToken] = useState('')
   const [showPapForm, setShowPapForm] = useState(false)
-  const [papForm, setPapForm] = useState({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '' })
+  const [papForm, setPapForm] = useState({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '', commissioned_to: '' })
   const [papDeps, setPapDeps] = useState<{ name: string; phone: string; cpf: string }[]>([])
   const [savingPap, setSavingPap] = useState(false)
   const [showCommPay, setShowCommPay] = useState(false)
@@ -242,7 +242,7 @@ export default function FinanceiroPage() {
     if (tab === 'relatorios') { loadSessions(); loadConferentes() }
     if (tab === 'cobrancas') { loadOpenSession(); loadCobrancas() }
     if (tab === 'transferencias') loadBoxSummary()
-    if (tab === 'porta_a_porta') { loadPap(); loadPapToken() }
+    if (tab === 'porta_a_porta') { loadPap(); loadPapToken(); loadConferentes() }
   }, [tab, period])
 
   const loadOpenSession = async () => {
@@ -721,10 +721,10 @@ export default function FinanceiroPage() {
     if (!papForm.full_name.trim() || !papForm.address_street.trim() || !papForm.address_number.trim()) { toast.error('Preencha os campos obrigatórios.'); return }
     setSavingPap(true)
     try {
-      await api.post('/porta-a-porta/leads', { ...papForm, total_installments: Number(papForm.total_installments), monthly_fee: parseFloat(papForm.monthly_fee), dependents: papDeps })
+      await api.post('/porta-a-porta/leads', { ...papForm, total_installments: Number(papForm.total_installments), monthly_fee: parseFloat(papForm.monthly_fee), dependents: papDeps, commissioned_to: papForm.commissioned_to || null })
       toast.success('Lead registrado.')
       setShowPapForm(false)
-      setPapForm({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '' })
+      setPapForm({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '', commissioned_to: '' })
       setPapDeps([]); loadPap()
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao salvar.') } finally { setSavingPap(false) }
   }
@@ -2306,6 +2306,15 @@ export default function FinanceiroPage() {
                     </div>
                   </div>
                   <input placeholder="Observações" value={papForm.notes} onChange={e => setPapForm(f => ({ ...f, notes: e.target.value }))} className={inputCls} />
+                  <div>
+                    <label className="text-xs text-gray-500 mb-0.5 block">Responsável pelo lançamento</label>
+                    <select value={papForm.commissioned_to} onChange={e => setPapForm(f => ({ ...f, commissioned_to: e.target.value }))} className={inputCls}>
+                      <option value="">— Selecionar —</option>
+                      {[...conferentes, ...operadores].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i).map(u => (
+                        <option key={u.id} value={u.id}>{u.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="flex gap-2">
                     <button onClick={() => setShowPapForm(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
                     <button onClick={handlePapSubmit} disabled={savingPap} className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">{savingPap ? 'Salvando…' : 'Salvar'}</button>
@@ -2333,7 +2342,9 @@ export default function FinanceiroPage() {
                           <p className="text-xs text-gray-400 mt-0.5">{lead.address_street}, {lead.address_number}{lead.address_complement ? ` – ${lead.address_complement}` : ''}</p>
                           {lead.phone && <p className="text-xs text-gray-400">{lead.phone}</p>}
                           {lead.dependents?.length > 0 && <p className="text-xs text-gray-400">{lead.dependents.length} dependente(s)</p>}
-                          <p className="text-xs text-gray-300 mt-0.5">{lead.operator_name} · {fmt(lead.monthly_fee)}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Resp: <span className="font-medium text-gray-600">{lead.commissioned_to_name ?? lead.operator_name}</span> · {fmt(lead.monthly_fee)}
+                          </p>
                         </div>
                         <div className="flex flex-col gap-1 shrink-0">
                           {lead.status === 'pending' && <button onClick={() => handlePapPay(lead.id)} className="text-xs bg-green-600 text-white px-2.5 py-1 rounded-lg hover:bg-green-700">Confirmar</button>}

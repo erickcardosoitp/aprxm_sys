@@ -241,6 +241,11 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_pap_comm_assoc ON porta_a_porta_commission_payments(association_id, operator_id)"
         ))
 
+        # porta_a_porta_leads: commissioned_to
+        await session.execute(text(
+            "ALTER TABLE porta_a_porta_leads ADD COLUMN IF NOT EXISTS commissioned_to UUID REFERENCES users(id)"
+        ))
+
         # carriers and deliverers tables
         await session.execute(text("""
             CREATE TABLE IF NOT EXISTS carriers (
