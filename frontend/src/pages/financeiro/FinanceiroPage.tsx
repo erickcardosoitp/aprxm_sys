@@ -562,55 +562,103 @@ export default function FinanceiroPage() {
     paymentMethodLabel: string,
     operator: string,
   ) => {
-    const safeDate = (s: string | null | undefined) => {
-      if (!s) return ''
-      const d = new Date(s)
-      return isNaN(d.getTime()) ? s : d.toLocaleDateString('pt-BR')
+    const sd = (s: string | null | undefined) => {
+      if (!s) return '—'
+      const d = new Date(s); return isNaN(d.getTime()) ? s : d.toLocaleDateString('pt-BR')
     }
     const fmtR = (v: string | number) =>
       `R$ ${parseFloat(String(v)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+    const fmtRef = (ref: string) => {
+      const [y, m] = ref.split('-'); return `${MONTHS[parseInt(m) - 1]}/${y}`
+    }
 
-    const paid = allMensalidades.filter(m => m.status === 'paid').sort((a, b) => a.reference_month.localeCompare(b.reference_month))
+    const paid = allMensalidades
+      .filter(m => m.status === 'paid')
+      .sort((a, b) => a.reference_month.localeCompare(b.reference_month))
+
+    const defaultAmount = allMensalidades.length
+      ? parseFloat(allMensalidades[allMensalidades.length - 1].amount)
+      : parseFloat(paidNow.amount)
+
+    const now = new Date()
+    const emitido = now.toLocaleString('pt-BR')
 
     const stub = (via: 'interno' | 'morador') => `
-      <div style="width:72mm;font-family:'Courier New',monospace;font-size:7.5pt;page-break-inside:avoid;border:1px dashed #ccc;padding:3mm;margin-bottom:3mm">
-        <div style="text-align:center;font-size:8.5pt;font-weight:bold;border-bottom:1px solid #000;padding-bottom:1.5mm;margin-bottom:2mm">
-          ${assocName || 'Associação'}<br/>
-          <span style="font-size:6.5pt;font-weight:normal">COMPROVANTE DE MENSALIDADE — ${via === 'interno' ? '1ª VIA (CONTROLE)' : '2ª VIA (MORADOR)'}</span>
-        </div>
-        <div style="margin-bottom:2mm">
-          <div><b>Morador:</b> ${residentName}</div>
-          ${residentCpf ? `<div><b>CPF:</b> ${residentCpf}</div>` : ''}
-          ${residentUnit ? `<div><b>Unidade:</b> ${residentUnit}</div>` : ''}
-        </div>
-        <div style="border-top:1px solid #ccc;padding-top:2mm;margin-bottom:2mm">
-          <div><b>Competência paga:</b> ${paidNow.reference_month}</div>
-          <div><b>Valor:</b> ${fmtR(paidNow.amount)}</div>
-          <div><b>Data pagto:</b> ${safeDate(paidNow.paid_at)}</div>
-          ${via === 'interno' ? `<div><b>Forma pagto:</b> ${paymentMethodLabel}</div>` : ''}
-        </div>
-        <div style="border-top:1px solid #ccc;padding-top:2mm;margin-bottom:2mm;font-size:6.5pt">
-          <div style="font-weight:bold;margin-bottom:1mm">Histórico de pagamentos:</div>
-          ${paid.length === 0 ? '<div>Nenhum pagamento registrado.</div>' : paid.map(m =>
-            `<div>${m.reference_month} — ${fmtR(m.amount)} — ${safeDate(m.paid_at)}</div>`
-          ).join('')}
-        </div>
-        <div style="border-top:1px solid #ccc;padding-top:2mm;font-size:6.5pt">
-          <div><b>Operador:</b> ${operator || '________________________'}</div>
-          <div style="margin-top:3mm">Assinatura/Carimbo:</div>
-          <div style="border-bottom:1px solid #999;height:6mm;margin-top:1mm"></div>
-          <div style="margin-top:1mm;font-size:5.5pt;color:#666">Emitido em ${new Date().toLocaleString('pt-BR')}</div>
-        </div>
-      </div>`
+<div style="width:76mm;font-family:'Courier New',monospace;font-size:7.5pt;page-break-inside:avoid;margin-bottom:4mm">
+  <!-- header -->
+  <div style="text-align:center;padding:2.5mm 2mm 2mm;border-bottom:2px solid #111">
+    <div style="font-size:9.5pt;font-weight:bold;letter-spacing:.5px;text-transform:uppercase">${assocName || 'Associação'}</div>
+    <div style="font-size:6pt;margin-top:.5mm;letter-spacing:.3px">COMPROVANTE DE MENSALIDADE</div>
+    <div style="display:inline-block;margin-top:1mm;font-size:5.5pt;font-weight:bold;border:1px solid #111;padding:0.5mm 2mm">
+      ${via === 'interno' ? '1ª VIA — CONTROLE INTERNO' : '2ª VIA — MORADOR'}
+    </div>
+  </div>
+
+  <!-- morador -->
+  <div style="padding:2mm 2mm 1.5mm;border-bottom:1px dashed #999">
+    <div style="display:flex;justify-content:space-between"><span style="color:#555">Associado</span><span style="font-weight:bold;text-align:right;max-width:46mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${residentName}</span></div>
+    ${residentCpf ? `<div style="display:flex;justify-content:space-between"><span style="color:#555">CPF</span><span style="font-weight:bold">${residentCpf}</span></div>` : ''}
+    ${residentUnit ? `<div style="display:flex;justify-content:space-between"><span style="color:#555">Unidade</span><span style="font-weight:bold">${residentUnit}</span></div>` : ''}
+  </div>
+
+  <!-- pagamento atual -->
+  <div style="padding:2mm;border-bottom:1px dashed #999">
+    <div style="font-size:6pt;font-weight:bold;letter-spacing:.3px;color:#555;margin-bottom:1mm">PAGAMENTO EFETUADO</div>
+    <div style="display:flex;justify-content:space-between"><span style="color:#555">Competência</span><span style="font-weight:bold">${fmtRef(paidNow.reference_month)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:#555">Data</span><span style="font-weight:bold">${sd(paidNow.paid_at)}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-top:1mm"><span style="color:#555">Valor pago</span><span style="font-size:10pt;font-weight:bold">${fmtR(paidNow.amount)}</span></div>
+    ${via === 'interno' ? `<div style="display:flex;justify-content:space-between"><span style="color:#555">Forma pagto</span><span style="font-weight:bold">${paymentMethodLabel}</span></div>` : ''}
+  </div>
+
+  <!-- valor mensal padrão -->
+  <div style="padding:2mm;border-bottom:1px dashed #999;background:#f9f9f9">
+    <div style="display:flex;justify-content:space-between">
+      <span style="color:#555">Mensalidade padrão</span>
+      <span style="font-weight:bold">${fmtR(defaultAmount)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between">
+      <span style="color:#555">Vencimento padrão</span>
+      <span style="font-weight:bold">Todo dia ${paidNow.due_date ? new Date(paidNow.due_date).getDate() : '—'}</span>
+    </div>
+  </div>
+
+  <!-- meses pagos -->
+  <div style="padding:2mm;border-bottom:1px dashed #999">
+    <div style="font-size:6pt;font-weight:bold;letter-spacing:.3px;color:#555;margin-bottom:1.5mm">MESES PAGOS (${paid.length})</div>
+    ${paid.length === 0
+      ? '<div style="color:#999;font-size:6.5pt">Nenhum pagamento registrado.</div>'
+      : `<div style="display:flex;flex-wrap:wrap;gap:1mm">${paid.map(m =>
+          `<span style="font-size:6pt;padding:0.5mm 1.5mm;border:1px solid #26619c;border-radius:2px;color:#26619c;font-weight:bold">${fmtRef(m.reference_month)}</span>`
+        ).join('')}</div>`
+    }
+  </div>
+
+  <!-- rodapé -->
+  <div style="padding:2mm;font-size:6pt">
+    <div style="display:flex;justify-content:space-between">
+      <span style="color:#555">Operador</span>
+      <span style="font-weight:bold">${operator || '______________________'}</span>
+    </div>
+    <div style="margin-top:2.5mm;color:#555">Assinatura / Carimbo:</div>
+    <div style="border-bottom:1px solid #999;height:7mm;margin-top:1mm"></div>
+    <div style="margin-top:1.5mm;color:#aaa;font-size:5pt">Emitido em ${emitido}</div>
+  </div>
+</div>`
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Comprovante</title>
-      <style>@media print{@page{size:80mm auto;margin:3mm}body{margin:0}}body{width:80mm}</style>
-    </head><body>
-      ${stub('interno')}
-      ${stub('morador')}
-    </body></html>`
+<style>
+  @page{size:80mm auto;margin:2mm}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{width:80mm;background:#fff}
+</style>
+</head><body>
+  ${stub('interno')}
+  <div style="border-top:1px dotted #ccc;margin:1mm 0 3mm"></div>
+  ${stub('morador')}
+</body></html>`
 
-    const w = window.open('', '_blank', 'width=400,height=700')
+    const w = window.open('', '_blank', 'width=400,height=800')
     if (!w) return
     w.document.write(html)
     w.document.close()
