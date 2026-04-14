@@ -47,6 +47,14 @@ const emptyGuest = (): GuestForm => ({
 
 const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
 
+const apiErr = (e: any, fallback: string) => {
+  const d = e?.response?.data?.detail
+  if (!d) return fallback
+  if (typeof d === 'string') return d
+  if (Array.isArray(d)) return d[0]?.msg ?? fallback
+  return fallback
+}
+
 // ─── Package Detail Modal ─────────────────────────────────────────────────────
 
 interface PackageDetailModalProps {
@@ -101,8 +109,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
       toast.success('Entrega estornada. Encomenda voltou para Notificado.')
       onRefresh?.(); onClose()
     } catch (e: any) {
-      const detail = e.response?.data?.detail
-      toast.error(Array.isArray(detail) ? (detail[0]?.msg ?? 'Erro ao estornar.') : (detail ?? 'Erro ao estornar.'))
+      toast.error(apiErr(e, 'Erro ao estornar.'))
     } finally { setReversing(false) }
   }
 
@@ -556,7 +563,7 @@ export default function PackagesPage() {
       setReassignSearch(''); setReassignResults([])
       loadPackages()
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao reatribuir.')
+      toast.error(apiErr(e, 'Erro ao reatribuir.'))
     } finally { setReassignLoading(false) }
   }
 
@@ -573,7 +580,7 @@ export default function PackagesPage() {
       setShowUpgrade(false); setUpgradeCpf('')
       loadPackages()
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao atualizar cadastro.')
+      toast.error(apiErr(e, 'Erro ao atualizar cadastro.'))
     } finally { setUpgradeLoading(false) }
   }
 
@@ -615,7 +622,7 @@ export default function PackagesPage() {
       loadPackages()
       toast.success(`${res.data.delivered} encomenda(s) entregue(s)!`)
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro na entrega múltipla.')
+      toast.error(apiErr(e, 'Erro na entrega múltipla.'))
     } finally {
       setBulkLoading(false)
     }
@@ -758,7 +765,7 @@ export default function PackagesPage() {
       setNewResType('guest'); setNewResCpf(''); setNewResResponsible(null); setNewResResponsibleSearch(''); setNewResResponsibleResults([])
       requestBrxPhoto(res.data, brxTracking)
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao criar.')
+      toast.error(apiErr(e, 'Erro ao criar.'))
     } finally { setBrxGuestLoading(false) }
   }
 
@@ -784,7 +791,7 @@ export default function PackagesPage() {
       // if in bulk receive, set pending with updated resident
       if (rxUpgradeTarget) requestBrxPhoto(updated, brxTracking)
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao atualizar.')
+      toast.error(apiErr(e, 'Erro ao atualizar.'))
     } finally { setRxUpgradeLoading(false) }
   }
 
@@ -875,7 +882,7 @@ export default function PackagesPage() {
       setShowGuestForm(false)
       setStep('details')
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao criar.')
+      toast.error(apiErr(e, 'Erro ao criar.'))
     } finally { setLoading(false) }
   }
 
@@ -897,7 +904,7 @@ export default function PackagesPage() {
       resetReceive()
       loadPackages()
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro.')
+      toast.error(apiErr(e, 'Erro.'))
     } finally {
       setLoading(false)
     }
@@ -941,7 +948,7 @@ export default function PackagesPage() {
       resetDelivery()
       loadPackages()
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro na entrega.')
+      toast.error(apiErr(e, 'Erro na entrega.'))
     } finally {
       setLoading(false)
     }
