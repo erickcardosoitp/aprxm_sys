@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.core.tenant import CurrentUser, get_current_user, require_admin, require_conferente
 from app.database import get_session
 from app.models.porta_a_porta import PortaAPortaLead, PortaAPortaPayment
+from app.models.resident import Resident, ResidentStatus, ResidentType
 
 router = APIRouter(prefix="/porta-a-porta", tags=["Porta a Porta"])
 
@@ -298,8 +299,46 @@ async def pay_lead(
 
     lead.updated_at = datetime.utcnow()
     session.add(lead)
+
+    # When fully paid, register as member if not already done
+    if lead.status == "paid" and not lead.resident_id:
+        cpf_clean = lead.cpf.replace(".", "").replace("-", "").strip() if lead.cpf else None
+        resident = Resident(
+            association_id=lead.association_id,
+            type=ResidentType.member,
+            status=ResidentStatus.active,
+            full_name=lead.full_name,
+            cpf=cpf_clean,
+            phone_primary=lead.phone,
+            address_street=lead.address_street,
+            address_number=lead.address_number,
+            address_complement=lead.address_complement,
+        )
+        session.add(resident)
+        await session.flush()
+        lead.resident_id = resident.id
+
+        # Register dependents
+        deps = json.loads(lead.dependents) if isinstance(lead.dependents, str) else (lead.dependents or [])
+        for dep in deps:
+            dep_cpf = dep.get("cpf")
+            if dep_cpf:
+                dep_cpf = dep_cpf.replace(".", "").replace("-", "").strip()
+            dep_resident = Resident(
+                association_id=lead.association_id,
+                type=ResidentType.member,
+                status=ResidentStatus.active,
+                full_name=dep.get("name", ""),
+                cpf=dep_cpf or None,
+                phone_primary=dep.get("phone"),
+                address_street=lead.address_street,
+                address_number=lead.address_number,
+                responsible_id=resident.id,
+            )
+            session.add(dep_resident)
+
     await session.commit()
-    return {"ok": True, "lead_status": lead.status}
+    return {"ok": True, "lead_status": lead.status, "resident_id": str(lead.resident_id) if lead.resident_id else None}
 
 
 @router.delete("/leads/{lead_id}", summary="Cancelar lead")
