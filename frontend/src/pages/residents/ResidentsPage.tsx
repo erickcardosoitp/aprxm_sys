@@ -676,7 +676,7 @@ function fmtComp(comp: string) {
   return `${MONTH_NAMES[parseInt(m) - 1]}/${y}`
 }
 
-function printCarne(resident: Resident, mensalidades: MensalidadeEntry[], assocName: string) {
+function printCarne(resident: Resident, mensalidades: MensalidadeEntry[], assocName: string, operatorName?: string) {
   const MONTH_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
   const months: { ref: string; label: string; amount: string; due: string; status: string }[] = []
 
@@ -705,7 +705,9 @@ function printCarne(resident: Resident, mensalidades: MensalidadeEntry[], assocN
   const STATUS_COLOR: Record<string, string> = { paid: '#16a34a', pending: '#d97706', overdue: '#dc2626' }
   const STATUS_LABEL: Record<string, string> = { paid: 'PAGO', pending: 'PENDENTE', overdue: 'EM ATRASO' }
 
-  const stubs = months.map(m => `
+  const stubs = months.map(m => {
+    const isPaid = m.status === 'paid'
+    return `
     <div class="stub">
       <div class="stub-header">
         <span class="assoc">${assocName}</span>
@@ -716,17 +718,22 @@ function printCarne(resident: Resident, mensalidades: MensalidadeEntry[], assocN
         ${(resident as any).unit ? `<div class="row"><span class="lbl">Unidade</span><span class="val">${(resident as any).unit}${(resident as any).block ? `/Bl.${(resident as any).block}` : ''}</span></div>` : ''}
         ${resident.cpf ? `<div class="row"><span class="lbl">CPF</span><span class="val">${resident.cpf}</span></div>` : ''}
         <div class="row"><span class="lbl">Vencimento</span><span class="val">${m.due}</span></div>
-        <div class="row amount-row"><span class="lbl">Valor</span><span class="val amount">R$ ${m.amount}</span></div>
+        <div class="row amount-row"><span class="lbl">Valor cobrado</span><span class="val amount">R$ ${m.amount}</span></div>
+        ${isPaid ? `<div class="row paid-row"><span class="lbl">Valor pago</span><span class="val amount" style="color:#16a34a">R$ ${m.amount}</span></div>` : '<div class="row paid-row"><span class="lbl">Valor pago</span><span class="val" style="border-bottom:1px solid #999;width:30mm;display:inline-block">&nbsp;</span></div>'}
+        ${isPaid && m.paid_at ? `<div class="row"><span class="lbl">Pago em</span><span class="val">${m.paid_at}</span></div>` : '<div class="row"><span class="lbl">Pago em</span><span class="val" style="border-bottom:1px solid #999;width:30mm;display:inline-block">&nbsp;</span></div>'}
       </div>
       <div class="stub-footer">
-        <span class="status" style="color:${STATUS_COLOR[m.status] ?? '#888'}">${STATUS_LABEL[m.status] ?? m.status.toUpperCase()}</span>
+        <div>
+          <span class="status" style="color:${STATUS_COLOR[m.status] ?? '#888'}">${STATUS_LABEL[m.status] ?? m.status.toUpperCase()}</span>
+          <div style="margin-top:2mm;font-size:5.5pt;color:#555">Operador: ${operatorName ? `<strong>${operatorName}</strong>` : '<span style="border-bottom:1px solid #999;display:inline-block;width:22mm">&nbsp;</span>'}</div>
+        </div>
         <div class="sig-area">
           <div class="sig-line"></div>
           <span class="sig-label">Ass./Carimbo</span>
         </div>
       </div>
     </div>
-  `).join('')
+  `}).join('')
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Carnê — ${resident.full_name}</title>
   <style>
@@ -768,6 +775,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_de: '', quitado_ate: '', mode: 'single' as 'single' | 'bulk' | 'range', valor_pago: '', data_pagamento: '' })
   const [migSaving, setMigSaving] = useState(false)
   const [assocName, setAssocName] = useState('')
+  const [carneOperator, setCarneOperator] = useState('')
 
   useEffect(() => {
     api.get<{ name?: string }>('/settings/association').then(r => setAssocName(r.data.name ?? 'Associação')).catch(() => {})
@@ -993,10 +1001,17 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
             <div className="py-8 text-center text-gray-400 text-sm">Carregando…</div>
           ) : tab === 'mensalidades' ? (
             <>
-              <div className="flex justify-end mb-3">
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="text"
+                  value={carneOperator}
+                  onChange={e => setCarneOperator(e.target.value)}
+                  placeholder="Nome do operador (opcional)"
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
                 <button
-                  onClick={() => printCarne(currentResident, mensalidades, assocName)}
-                  className="flex items-center gap-1.5 text-xs text-[#26619c] border border-[#26619c]/30 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition"
+                  onClick={() => printCarne(currentResident, mensalidades, assocName, carneOperator || undefined)}
+                  className="flex items-center gap-1.5 text-xs text-[#26619c] border border-[#26619c]/30 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap"
                 >
                   <Printer className="w-3.5 h-3.5" /> Imprimir Carnê
                 </button>
@@ -1396,8 +1411,11 @@ export default function ResidentsPage() {
                       {r.block ? ` / Bl. ${r.block}` : ''}
                       {r.cpf ? ` · ${maskCpf(r.cpf)}` : ''}
                     </p>
-                    {r.address_cep && (
-                      <p className="text-xs text-gray-400">CEP {r.address_cep}{r.phone_primary ? ` · ${r.phone_primary}` : ''}</p>
+                    {(r.address_street || r.address_cep) && (
+                      <p className="text-xs text-gray-400 truncate">
+                        {r.address_street ? `${r.address_street}${r.address_number ? `, ${r.address_number}` : ''}` : `CEP ${r.address_cep}`}
+                        {r.phone_primary ? ` · ${r.phone_primary}` : ''}
+                      </p>
                     )}
                   </div>
                 </div>

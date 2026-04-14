@@ -464,8 +464,8 @@ export default function FinanceiroPage() {
   const searchResidents = async (q: string) => {
     if (q.length < 2) { setResidentResults([]); return }
     try {
-      const res = await api.get<Resident[]>('/residents', { params: { q } })
-      setResidentResults(res.data.slice(0, 5))
+      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
+      setResidentResults(res.data.slice(0, 6))
     } catch { }
   }
 

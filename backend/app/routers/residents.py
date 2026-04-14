@@ -354,11 +354,42 @@ async def update_resident(
         else:
             data["cpf"] = None
 
+    old_type = resident.type
     for key, value in data.items():
         setattr(resident, key, value)
     from datetime import datetime
     resident.updated_at = datetime.utcnow()
     session.add(resident)
+
+    # Reverse delivery fees on existing packages when upgrading guest → member
+    if old_type == ResidentType.guest and resident.type == ResidentType.member:
+        from app.models.package import Package
+        from app.services.finance_service import FinanceService
+        pkgs_result = await session.execute(
+            select(Package).where(
+                Package.association_id == current.association_id,
+                Package.resident_id == resident_id,
+                Package.has_delivery_fee == True,
+            )
+        )
+        pkgs = pkgs_result.scalars().all()
+        if pkgs:
+            finance = FinanceService(session)
+            for pkg in pkgs:
+                if pkg.delivery_fee_tx_id:
+                    try:
+                        await finance.reverse_transaction(
+                            transaction_id=pkg.delivery_fee_tx_id,
+                            association_id=current.association_id,
+                            reversed_by=current.id,
+                            reason="Morador convertido para associado",
+                        )
+                    except Exception:
+                        pass
+                pkg.has_delivery_fee = False
+                pkg.delivery_fee_tx_id = None
+                session.add(pkg)
+
     return _serialize(resident)
 
 
