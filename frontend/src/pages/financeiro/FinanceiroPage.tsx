@@ -1,14 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   TrendingUp, TrendingDown, DollarSign, BarChart2, Upload,
   CheckCircle, AlertCircle, Clock, Plus, Search, X, RotateCcw,
   CreditCard, Users, ArrowLeftRight, Pencil, Trash2, MapPin, FileBarChart, RefreshCw,
+  FileSpreadsheet, Image, Filter,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import * as XLSX from 'xlsx'
+import html2canvas from 'html2canvas'
 import api from '../../services/api'
 import type { Resident } from '../../types'
 
-type Tab = 'dashboard' | 'receitas' | 'despesas' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'transferencias' | 'porta_a_porta' | 'dre'
+type Tab = 'dashboard' | 'movimentacoes' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'transferencias' | 'porta_a_porta' | 'dre'
 
 interface FinanceSummary {
   total_income: number
@@ -217,10 +220,15 @@ export default function FinanceiroPage() {
   const [dreMonth, setDreMonth] = useState<number | ''>(new Date().getMonth() + 1)
   const [dre, setDre] = useState<any>(null)
   const [loadingDre, setLoadingDre] = useState(false)
+  const [dreFilter, setDreFilter] = useState<'all' | 'receitas' | 'despesas'>('all')
+  const [dreCatFilter, setDreCatFilter] = useState<string>('')
+  const dreRef = useRef<HTMLDivElement>(null)
+
+  const [movSubTab, setMovSubTab] = useState<'entradas' | 'saidas'>('entradas')
 
   useEffect(() => {
     if (tab === 'dashboard') loadSummary()
-    if (tab === 'receitas' || tab === 'despesas') loadTransactions()
+    if (tab === 'movimentacoes') loadTransactions()
     if (tab === 'relatorios') { loadSessions(); loadConferentes() }
     if (tab === 'cobrancas') { loadOpenSession(); loadCobrancas() }
     if (tab === 'transferencias') loadBoxSummary()
@@ -591,15 +599,14 @@ export default function FinanceiroPage() {
   }
 
   const TABS: { key: Tab; label: string; icon: any }[] = [
-    { key: 'dashboard',    label: 'Resumo',         icon: BarChart2 },
-    { key: 'receitas',     label: 'Receitas',        icon: TrendingUp },
-    { key: 'despesas',     label: 'Despesas',        icon: TrendingDown },
-    { key: 'cobrancas',    label: 'Cobranças',       icon: CreditCard },
-    { key: 'relatorios',     label: 'Sessões',        icon: DollarSign },
-    { key: 'dre',            label: 'Relatórios',     icon: FileBarChart },
-    { key: 'transferencias', label: 'Transferências', icon: ArrowLeftRight },
-    { key: 'conciliacao',    label: 'PIX',            icon: CheckCircle },
-    { key: 'porta_a_porta',  label: 'Porta a Porta',  icon: MapPin },
+    { key: 'dashboard',      label: 'Resumo',        icon: BarChart2 },
+    { key: 'movimentacoes',  label: 'Movimentações', icon: ArrowLeftRight },
+    { key: 'cobrancas',      label: 'Cobranças',     icon: CreditCard },
+    { key: 'relatorios',     label: 'Sessões',       icon: DollarSign },
+    { key: 'dre',            label: 'Relatórios',    icon: FileBarChart },
+    { key: 'transferencias', label: 'Caixinhas',     icon: Users },
+    { key: 'conciliacao',    label: 'PIX',           icon: CheckCircle },
+    { key: 'porta_a_porta',  label: 'Porta a Porta', icon: MapPin },
   ]
 
   // ── Porta a Porta handlers ──
@@ -659,12 +666,32 @@ export default function FinanceiroPage() {
     } catch { toast.error('Erro ao gerar DRE.') } finally { setLoadingDre(false) }
   }
 
-  const exportDreCSV = () => {
+  const exportDreXLSX = () => {
     if (!dre) return
-    const lines = [`DRE — ${dre.period_label}`, '', 'RECEITAS', ...dre.receitas.map((r: any) => `${r.descricao},${r.valor}`), `TOTAL RECEITAS,${dre.total_receitas}`, '', 'DESPESAS', ...dre.despesas.map((d: any) => `${d.descricao},${d.valor}`), `TOTAL DESPESAS,${dre.total_despesas}`, '', `RESULTADO,${dre.resultado}`]
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = `dre_${dre.period_label}.csv`; a.click(); URL.revokeObjectURL(url)
+    const wb = XLSX.utils.book_new()
+    const rows: any[][] = [
+      [`DRE — ${dre.period_label}`], [],
+      ['RECEITAS', ''],
+      ...dre.receitas.map((r: any) => [r.descricao, r.valor]),
+      ['Total Receitas', dre.total_receitas], [],
+      ['DESPESAS', ''],
+      ...dre.despesas.map((d: any) => [d.descricao, d.valor]),
+      ['Total Despesas', dre.total_despesas], [],
+      [dre.resultado >= 0 ? 'SUPERÁVIT' : 'DÉFICIT', Math.abs(dre.resultado)],
+    ]
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    ws['!cols'] = [{ wch: 35 }, { wch: 18 }]
+    XLSX.utils.book_append_sheet(wb, ws, 'DRE')
+    XLSX.writeFile(wb, `dre_${dre.period_label}.xlsx`)
+  }
+
+  const exportDrePNG = async () => {
+    if (!dreRef.current) return
+    try {
+      const canvas = await html2canvas(dreRef.current, { scale: 2, backgroundColor: '#ffffff' })
+      const url = canvas.toDataURL('image/png')
+      const a = document.createElement('a'); a.href = url; a.download = `dre_${dre.period_label}.png`; a.click()
+    } catch { toast.error('Erro ao exportar imagem.') }
   }
 
   const exportExtratoCSV = (extrato: any[]) => {
@@ -683,14 +710,16 @@ export default function FinanceiroPage() {
         Financeiro
       </h1>
 
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto scrollbar-none">
+      <div className="grid grid-cols-4 gap-1.5">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition whitespace-nowrap ${
-              tab === key ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            className={`flex flex-col items-center gap-1 px-2 py-3 rounded-xl text-[11px] font-semibold transition border ${
+              tab === key
+                ? 'bg-[#26619c] text-white border-[#26619c] shadow-md'
+                : 'bg-white text-gray-500 border-gray-200 hover:border-[#26619c]/40 hover:text-[#26619c]'
             }`}>
-            <Icon className="w-3.5 h-3.5" />
-            {label}
+            <Icon className={`w-5 h-5 ${tab === key ? 'text-white' : 'text-gray-400'}`} />
+            <span className="text-center leading-tight">{label}</span>
           </button>
         ))}
       </div>
@@ -769,12 +798,16 @@ export default function FinanceiroPage() {
         </div>
       )}
 
-      {/* ── RECEITAS ── */}
-      {tab === 'receitas' && (() => {
-        const rows = filterByPeriod(transactions.filter(t => t.type === 'income' && !t.is_reversal))
-        const total = rows.reduce((s, t) => s + parseFloat(t.amount), 0)
+      {/* ── MOVIMENTAÇÕES ── */}
+      {tab === 'movimentacoes' && (() => {
+        const entradas = filterByPeriod(transactions.filter(t => t.type === 'income' && !t.is_reversal))
+        const saidas = filterByPeriod(transactions.filter(t => t.type !== 'income'))
+        const rows = movSubTab === 'entradas' ? entradas : saidas
+        const totalEntradas = entradas.reduce((s, t) => s + parseFloat(t.amount), 0)
+        const totalSaidas = saidas.reduce((s, t) => s + parseFloat(t.amount), 0)
         return (
           <div className="flex flex-col gap-3">
+            {/* Period filter */}
             <div className="flex gap-2">
               {(['week', 'month', 'year'] as const).map(p => (
                 <button key={p} onClick={() => setPeriod(p)}
@@ -783,25 +816,43 @@ export default function FinanceiroPage() {
                 </button>
               ))}
             </div>
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex justify-between items-center">
-              <div>
-                <p className="text-xs text-gray-500">{PERIOD_LABEL[period]}</p>
-                <p className="text-sm font-medium text-green-700">Total entradas</p>
-              </div>
-              <p className="text-xl font-bold text-green-700">{fmt(total)}</p>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setMovSubTab('entradas')}
+                className={`rounded-xl p-4 text-left border-2 transition ${movSubTab === 'entradas' ? 'bg-green-50 border-green-400' : 'bg-white border-gray-200'}`}>
+                <p className="text-xs text-gray-500 mb-1">Entradas</p>
+                <p className={`text-lg font-bold ${movSubTab === 'entradas' ? 'text-green-700' : 'text-green-600'}`}>{fmt(totalEntradas)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{entradas.length} transações</p>
+              </button>
+              <button onClick={() => setMovSubTab('saidas')}
+                className={`rounded-xl p-4 text-left border-2 transition ${movSubTab === 'saidas' ? 'bg-red-50 border-red-400' : 'bg-white border-gray-200'}`}>
+                <p className="text-xs text-gray-500 mb-1">Saídas</p>
+                <p className={`text-lg font-bold ${movSubTab === 'saidas' ? 'text-red-700' : 'text-red-600'}`}>{fmt(totalSaidas)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{saidas.length} transações</p>
+              </button>
             </div>
+
+            {/* Sub-tab label */}
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-semibold px-2 py-1 rounded-lg ${movSubTab === 'entradas' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                {movSubTab === 'entradas' ? '↑ Entradas' : '↓ Saídas'} — {PERIOD_LABEL[period]}
+              </span>
+            </div>
+
+            {/* List */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               {loadingTx ? (
                 <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
               ) : rows.length === 0 ? (
-                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma receita no período.</div>
+                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma transação no período.</div>
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {rows.map(t => (
                     <li key={t.id} className="px-4 py-3 flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-800 truncate">{t.description}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-sm font-medium text-gray-800 truncate">{t.is_sangria ? '🔒 ' : ''}{t.description}</p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <p className="text-xs text-gray-400">{fmtDate(t.transaction_at)}</p>
                           {t.income_subtype && (
                             <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
@@ -814,63 +865,14 @@ export default function FinanceiroPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-sm font-bold text-green-600">{fmt(t.amount)}</span>
-                        {!t.reversed_at && !t.is_reversal && (
-                          <button
-                            onClick={() => { setReversalTarget(t); setReversalReason('') }}
-                            title="Estornar"
-                            className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition"
-                          >
+                        <span className={`text-sm font-bold ${movSubTab === 'entradas' ? 'text-green-600' : 'text-red-600'}`}>{fmt(t.amount)}</span>
+                        {movSubTab === 'entradas' && !t.reversed_at && !t.is_reversal && (
+                          <button onClick={() => { setReversalTarget(t); setReversalReason('') }} title="Estornar"
+                            className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition">
                             <RotateCcw className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )
-      })()}
-
-      {/* ── DESPESAS ── */}
-      {tab === 'despesas' && (() => {
-        const rows = filterByPeriod(transactions.filter(t => t.type !== 'income'))
-        const total = rows.reduce((s, t) => s + parseFloat(t.amount), 0)
-        return (
-          <div className="flex flex-col gap-3">
-            <div className="flex gap-2">
-              {(['week', 'month', 'year'] as const).map(p => (
-                <button key={p} onClick={() => setPeriod(p)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${period === p ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600'}`}>
-                  {p === 'week' ? 'Semana' : p === 'month' ? 'Mês' : 'Ano'}
-                </button>
-              ))}
-            </div>
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex justify-between items-center">
-              <div>
-                <p className="text-xs text-gray-500">{PERIOD_LABEL[period]}</p>
-                <p className="text-sm font-medium text-red-700">Total saídas</p>
-              </div>
-              <p className="text-xl font-bold text-red-700">{fmt(total)}</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              {loadingTx ? (
-                <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
-              ) : rows.length === 0 ? (
-                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma despesa no período.</div>
-              ) : (
-                <ul className="divide-y divide-gray-100">
-                  {rows.map(t => (
-                    <li key={t.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">
-                          {t.is_sangria ? '🔒 ' : ''}{t.description}
-                        </p>
-                        <p className="text-xs text-gray-400">{fmtDate(t.transaction_at)}</p>
-                      </div>
-                      <span className="text-sm font-bold text-red-600 shrink-0">{fmt(t.amount)}</span>
                     </li>
                   ))}
                 </ul>
@@ -1847,8 +1849,12 @@ export default function FinanceiroPage() {
       {/* ── DRE ── */}
       {tab === 'dre' && (
         <div className="flex flex-col gap-4">
+          {/* Controls */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
-            <p className="text-sm font-semibold text-gray-800">Demonstrativo de Resultado</p>
+            <p className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <FileBarChart className="w-4 h-4 text-[#26619c]" />
+              Demonstrativo de Resultado
+            </p>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Ano</label>
@@ -1857,74 +1863,168 @@ export default function FinanceiroPage() {
                   className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Mês (vazio = ano inteiro)</label>
+                <label className="block text-xs text-gray-500 mb-1">Mês</label>
                 <select value={dreMonth} onChange={e => setDreMonth(e.target.value ? parseInt(e.target.value) : '')} className={inputCls}>
-                  <option value="">— Ano completo —</option>
+                  <option value="">Ano completo</option>
                   {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
                     <option key={i+1} value={i+1}>{m}</option>
                   ))}
                 </select>
               </div>
             </div>
+            {/* Filters */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Visualizar</label>
+                <select value={dreFilter} onChange={e => { setDreFilter(e.target.value as any); setDreCatFilter('') }} className={inputCls}>
+                  <option value="all">Receitas e Despesas</option>
+                  <option value="receitas">Somente Receitas</option>
+                  <option value="despesas">Somente Despesas</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Categoria</label>
+                <select value={dreCatFilter} onChange={e => setDreCatFilter(e.target.value)} className={inputCls}>
+                  <option value="">Todas</option>
+                  {dre && [
+                    ...(dreFilter !== 'despesas' ? dre.receitas.map((r: any) => r.descricao) : []),
+                    ...(dreFilter !== 'receitas' ? dre.despesas.map((d: any) => d.descricao) : []),
+                  ].map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
+            </div>
             <button onClick={loadDre} disabled={loadingDre}
-              className="bg-[#26619c] hover:bg-[#1a4f87] text-white py-2 rounded-xl text-sm font-medium transition disabled:opacity-50">
+              className="bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
               {loadingDre ? 'Gerando…' : 'Gerar DRE'}
             </button>
           </div>
 
-          {dre && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-800">DRE — {dre.period_label}</h3>
-                <button onClick={exportDreCSV}
-                  className="flex items-center gap-1.5 text-xs border border-[#26619c] text-[#26619c] px-3 py-1.5 rounded-lg hover:bg-blue-50">
-                  <Upload className="w-3.5 h-3.5" /> Exportar CSV
-                </button>
-              </div>
-              <div className="p-4 flex flex-col gap-4">
-                {/* Receitas */}
-                <div>
-                  <p className="text-xs font-semibold text-green-700 mb-2 uppercase tracking-wide">Receitas</p>
-                  <div className="flex flex-col gap-1">
-                    {dre.receitas.map((r: any) => (
-                      <div key={r.descricao} className="flex items-center justify-between py-1.5 border-b border-gray-50">
-                        <p className="text-sm text-gray-700">{r.descricao}</p>
-                        <p className="text-sm font-medium text-green-700">{fmt(r.valor)}</p>
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between py-2 mt-1">
-                      <p className="text-sm font-bold text-gray-900">Total Receitas</p>
-                      <p className="text-sm font-bold text-green-700">{fmt(dre.total_receitas)}</p>
+          {dre && (() => {
+            const receitasFilt = dreCatFilter ? dre.receitas.filter((r: any) => r.descricao === dreCatFilter) : dre.receitas
+            const despesasFilt = dreCatFilter ? dre.despesas.filter((d: any) => d.descricao === dreCatFilter) : dre.despesas
+            const totalRec = receitasFilt.reduce((s: number, r: any) => s + r.valor, 0)
+            const totalDesp = despesasFilt.reduce((s: number, d: any) => s + d.valor, 0)
+            const resultado = totalRec - totalDesp
+            return (
+              <div ref={dreRef} className="flex flex-col gap-3 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                {/* Header */}
+                <div className="px-4 pt-4 pb-3 border-b border-gray-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900">DRE</h3>
+                      <p className="text-xs text-gray-400">{dre.period_label}{dreCatFilter ? ` · ${dreCatFilter}` : ''}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={exportDreXLSX}
+                        className="flex items-center gap-1.5 text-xs bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition font-medium">
+                        <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+                      </button>
+                      <button onClick={exportDrePNG}
+                        className="flex items-center gap-1.5 text-xs bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700 transition font-medium">
+                        <Image className="w-3.5 h-3.5" /> PNG
+                      </button>
                     </div>
                   </div>
-                </div>
-                {/* Despesas */}
-                <div>
-                  <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide">Despesas</p>
-                  <div className="flex flex-col gap-1">
-                    {dre.despesas.map((d: any) => (
-                      <div key={d.descricao} className="flex items-center justify-between py-1.5 border-b border-gray-50">
-                        <p className="text-sm text-gray-700">{d.descricao}</p>
-                        <p className="text-sm font-medium text-red-600">{fmt(d.valor)}</p>
+                  {/* Summary row */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {dreFilter !== 'despesas' && (
+                      <div className="bg-green-50 rounded-lg p-3 text-center">
+                        <p className="text-[10px] text-green-600 font-medium mb-1">RECEITAS</p>
+                        <p className="text-sm font-bold text-green-700">{fmt(totalRec)}</p>
                       </div>
-                    ))}
-                    <div className="flex items-center justify-between py-2 mt-1">
-                      <p className="text-sm font-bold text-gray-900">Total Despesas</p>
-                      <p className="text-sm font-bold text-red-600">{fmt(dre.total_despesas)}</p>
-                    </div>
+                    )}
+                    {dreFilter !== 'receitas' && (
+                      <div className="bg-red-50 rounded-lg p-3 text-center">
+                        <p className="text-[10px] text-red-600 font-medium mb-1">DESPESAS</p>
+                        <p className="text-sm font-bold text-red-700">{fmt(totalDesp)}</p>
+                      </div>
+                    )}
+                    {dreFilter === 'all' && (
+                      <div className={`rounded-lg p-3 text-center ${resultado >= 0 ? 'bg-blue-50' : 'bg-orange-50'}`}>
+                        <p className={`text-[10px] font-medium mb-1 ${resultado >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                          {resultado >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'}
+                        </p>
+                        <p className={`text-sm font-bold ${resultado >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>{fmt(Math.abs(resultado))}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
-                {/* Resultado */}
-                <div className={`rounded-xl p-4 text-center ${dre.resultado >= 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                  <p className="text-xs font-semibold text-gray-500 mb-1">Resultado do Período</p>
-                  <p className={`text-2xl font-bold ${dre.resultado >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                    {dre.resultado >= 0 ? '+' : ''}{fmt(dre.resultado)}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">{dre.resultado >= 0 ? 'Superávit' : 'Déficit'}</p>
+
+                <div className="px-4 pb-4 flex flex-col gap-4">
+                  {/* Receitas section */}
+                  {dreFilter !== 'despesas' && receitasFilt.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-green-700 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5" /> Receitas
+                      </p>
+                      <div className="flex flex-col gap-0.5">
+                        {receitasFilt.map((r: any) => {
+                          const pct = totalRec > 0 ? (r.valor / totalRec) * 100 : 0
+                          return (
+                            <div key={r.descricao} className="flex flex-col gap-0.5 py-2 border-b border-gray-50 last:border-0">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm text-gray-700">{r.descricao}</p>
+                                <p className="text-sm font-semibold text-green-700">{fmt(r.valor)}</p>
+                              </div>
+                              <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-green-400 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          )
+                        })}
+                        <div className="flex items-center justify-between py-2 mt-1">
+                          <p className="text-sm font-bold text-gray-900">Total Receitas</p>
+                          <p className="text-sm font-bold text-green-700">{fmt(totalRec)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Despesas section */}
+                  {dreFilter !== 'receitas' && despesasFilt.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-red-600 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+                        <TrendingDown className="w-3.5 h-3.5" /> Despesas
+                      </p>
+                      <div className="flex flex-col gap-0.5">
+                        {despesasFilt.map((d: any) => {
+                          const pct = totalDesp > 0 ? (d.valor / totalDesp) * 100 : 0
+                          return (
+                            <div key={d.descricao} className="flex flex-col gap-0.5 py-2 border-b border-gray-50 last:border-0">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm text-gray-700">{d.descricao}</p>
+                                <p className="text-sm font-semibold text-red-600">{fmt(d.valor)}</p>
+                              </div>
+                              <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-red-400 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          )
+                        })}
+                        <div className="flex items-center justify-between py-2 mt-1">
+                          <p className="text-sm font-bold text-gray-900">Total Despesas</p>
+                          <p className="text-sm font-bold text-red-600">{fmt(totalDesp)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Resultado */}
+                  {dreFilter === 'all' && (
+                    <div className={`rounded-xl p-4 text-center border-2 ${resultado >= 0 ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}`}>
+                      <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Resultado do Período</p>
+                      <p className={`text-3xl font-bold ${resultado >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        {resultado >= 0 ? '+' : ''}{fmt(resultado)}
+                      </p>
+                      <p className={`text-sm font-medium mt-1 ${resultado >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {resultado >= 0 ? '✓ Superávit' : '✗ Déficit'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </div>
       )}
 
