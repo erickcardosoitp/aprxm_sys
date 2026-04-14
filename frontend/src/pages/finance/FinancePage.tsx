@@ -382,14 +382,13 @@ function SessionDetailModal({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-800">{tx.description}</p>
-                      <p className="text-xs text-gray-400">
-                        {new Date(tx.transaction_at).toLocaleString('pt-BR')}
-                        {' · '}
-                        <span className={TYPE_COLORS[tx.type]}>{TYPE_LABELS[tx.type]}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-xs text-gray-400">{new Date(tx.transaction_at).toLocaleString('pt-BR')}</span>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLORS[tx.type]}`}>{TYPE_LABELS[tx.type]}</span>
                         {tx.payment_method_name && !editingTx && (
-                          <span className="text-gray-400"> · {tx.payment_method_name}</span>
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{tx.payment_method_name}</span>
                         )}
-                      </p>
+                      </div>
                       {tx.observacao && !editingTx && (
                         <p className="text-xs text-amber-600 mt-0.5">Obs: {tx.observacao}</p>
                       )}
@@ -883,15 +882,16 @@ export default function FinancePage() {
                       <li key={tx.id} className={`flex items-center justify-between px-4 py-3 gap-2 ${tx.approval_status === 'pending' ? 'bg-amber-50/50' : tx.approval_status === 'rejected' ? 'bg-red-50/40' : tx.is_reversal ? 'bg-orange-50/40' : ''}`}>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-gray-800 truncate">{tx.description}</p>
-                          <p className="text-xs text-gray-400">
-                            {new Date(tx.transaction_at).toLocaleString('pt-BR')}
-                            {' · '}
-                            <span className={TYPE_COLORS[tx.type]}>{TYPE_LABELS[tx.type]}</span>
-                            {tx.payment_method_name && <span className="ml-1.5 text-gray-500">· {tx.payment_method_name}</span>}
-                            {tx.is_reversal && <span className="ml-1.5 text-orange-600 font-medium">· Estorno</span>}
-                            {tx.approval_status === 'pending' && <span className="ml-1.5 text-amber-600 font-medium">· Aguarda aprovação</span>}
-                            {tx.approval_status === 'rejected' && <span className="ml-1.5 text-red-500 font-medium">· Recusada</span>}
-                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className="text-xs text-gray-400">{new Date(tx.transaction_at).toLocaleString('pt-BR')}</span>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLORS[tx.type]}`}>{TYPE_LABELS[tx.type]}</span>
+                            {tx.payment_method_name && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{tx.payment_method_name}</span>
+                            )}
+                            {tx.is_reversal && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">Estorno</span>}
+                            {tx.approval_status === 'pending' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Aguarda aprovação</span>}
+                            {tx.approval_status === 'rejected' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Recusada</span>}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           {canSeeTotals && (
