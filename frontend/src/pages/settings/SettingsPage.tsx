@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, KeyRound, Loader2, Save, Settings, Shield, Plus, Trash2 } from 'lucide-react'
+import { SignaturePad } from '../../components/packages/SignaturePad'
+import { uploadService } from '../../services/upload'
 import toast from 'react-hot-toast'
 import { settingsService } from '../../services/settings'
 import api from '../../services/api'
@@ -158,6 +160,17 @@ export default function SettingsPage() {
   const [newPMName, setNewPMName] = useState('')
   const [newDestName, setNewDestName] = useState('')
 
+  // ── Carriers & Deliverers state ──
+  type Carrier = { id: string; name: string }
+  type Deliverer = { id: string; name: string; carrier_id: string | null; carrier_name: string | null; signature_url: string | null }
+  const [carriers, setCarriers] = useState<Carrier[]>([])
+  const [deliverers, setDeliverers] = useState<Deliverer[]>([])
+  const [newCarrierName, setNewCarrierName] = useState('')
+  const [newDelivererName, setNewDelivererName] = useState('')
+  const [newDelivererCarrierId, setNewDelivererCarrierId] = useState('')
+  const [newDelivererSig, setNewDelivererSig] = useState('')
+  const [showDelivererForm, setShowDelivererForm] = useState(false)
+
   // ── Access Groups state ──
   const [accessGroups, setAccessGroups] = useState<AccessGroups>({})
   const [loadingAccessGroups, setLoadingAccessGroups] = useState(false)
@@ -180,6 +193,8 @@ export default function SettingsPage() {
     api.get<FinCat[]>('/finance/categories').then(r => setFinCats(r.data)).catch(() => {})
     api.get<FinPM[]>('/finance/payment-methods').then(r => setFinPMs(r.data)).catch(() => {})
     api.get<SangriaDest[]>('/finance/sangria-destinations').then(r => setSangriaDests(r.data)).catch(() => {})
+    api.get('/carriers').then(r => setCarriers(r.data)).catch(() => {})
+    api.get('/carriers/deliverers').then(r => setDeliverers(r.data)).catch(() => {})
   }, [canSeeAssociation])
 
   const handleSaveCadastros = async () => {
@@ -245,6 +260,47 @@ export default function SettingsPage() {
     try {
       await api.delete(`/finance/sangria-destinations/${id}`)
       setSangriaDests(p => p.filter(d => d.id !== id))
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handleAddCarrier = async () => {
+    if (!newCarrierName.trim()) return
+    try {
+      const r = await api.post('/carriers', { name: newCarrierName.trim() })
+      setCarriers(p => [...p, r.data])
+      setNewCarrierName('')
+      toast.success('Transportadora criada.')
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handleDeleteCarrier = async (id: string) => {
+    try {
+      await api.delete(`/carriers/${id}`)
+      setCarriers(p => p.filter(c => c.id !== id))
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handleAddDeliverer = async () => {
+    if (!newDelivererName.trim()) return
+    try {
+      const r = await api.post('/carriers/deliverers', {
+        name: newDelivererName.trim(),
+        carrier_id: newDelivererCarrierId || null,
+        signature_url: newDelivererSig || null,
+      })
+      setDeliverers(p => [...p, r.data])
+      setNewDelivererName('')
+      setNewDelivererCarrierId('')
+      setNewDelivererSig('')
+      setShowDelivererForm(false)
+      toast.success('Entregador cadastrado.')
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+  }
+
+  const handleDeleteDeliverer = async (id: string) => {
+    try {
+      await api.delete(`/carriers/deliverers/${id}`)
+      setDeliverers(p => p.filter(d => d.id !== id))
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
   }
 
@@ -998,6 +1054,90 @@ export default function SettingsPage() {
                       <li key={d.id} className="flex items-center justify-between bg-gray-50 px-3 py-1.5 rounded-lg text-sm">
                         <span>{d.name}</span>
                         <button onClick={() => handleDeleteDest(d.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* 5h. Transportadoras */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Transportadoras</p>
+                <div className="flex gap-2 mb-2">
+                  <input value={newCarrierName} onChange={e => setNewCarrierName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddCarrier() }}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+                    placeholder="Ex: Correios, Mercado Envios…" />
+                  <button onClick={handleAddCarrier} className="px-3 py-2 bg-[#26619c] text-white rounded-lg text-sm font-medium">+</button>
+                </div>
+                {carriers.length > 0 && (
+                  <ul className="flex flex-col gap-1">
+                    {carriers.map(c => (
+                      <li key={c.id} className="flex items-center justify-between bg-gray-50 px-3 py-1.5 rounded-lg text-sm">
+                        <span>{c.name}</span>
+                        <button onClick={() => handleDeleteCarrier(c.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* 5i. Entregadores */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-gray-700">Entregadores</p>
+                  <button onClick={() => setShowDelivererForm(v => !v)}
+                    className="text-xs px-2 py-1 bg-[#26619c] text-white rounded-lg font-medium">
+                    {showDelivererForm ? 'Cancelar' : '+ Novo'}
+                  </button>
+                </div>
+
+                {showDelivererForm && (
+                  <div className="border border-gray-200 rounded-xl p-4 flex flex-col gap-3 mb-3 bg-gray-50">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Nome do entregador <span className="text-red-500">*</span></label>
+                      <input value={newDelivererName} onChange={e => setNewDelivererName(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+                        placeholder="Nome completo" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Transportadora</label>
+                      <select value={newDelivererCarrierId} onChange={e => setNewDelivererCarrierId(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#26619c]/40">
+                        <option value="">— Nenhuma —</option>
+                        {carriers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Assinatura</label>
+                      <SignaturePad
+                        label="Assinatura do entregador"
+                        onSave={setNewDelivererSig}
+                        onClear={() => setNewDelivererSig('')}
+                        onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')}
+                      />
+                    </div>
+                    <button onClick={handleAddDeliverer} disabled={!newDelivererName.trim()}
+                      className="w-full bg-[#26619c] text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                      Salvar Entregador
+                    </button>
+                  </div>
+                )}
+
+                {deliverers.length > 0 && (
+                  <ul className="flex flex-col gap-1">
+                    {deliverers.map(d => (
+                      <li key={d.id} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded-lg text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {d.signature_url && (
+                            <img src={d.signature_url} alt="sig" className="h-6 w-10 object-contain border border-gray-200 rounded bg-white" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-800 truncate">{d.name}</p>
+                            {d.carrier_name && <p className="text-xs text-gray-400 truncate">{d.carrier_name}</p>}
+                          </div>
+                        </div>
+                        <button onClick={() => handleDeleteDeliverer(d.id)} className="text-red-400 hover:text-red-600 text-xs shrink-0 ml-2">✕</button>
                       </li>
                     ))}
                   </ul>

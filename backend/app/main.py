@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, cash_boxes, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, residents, senso, service_orders, superadmin, uploads, transfers
+from app.routers import admin, agent, auth, carriers, cash_boxes, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, residents, senso, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -241,6 +241,34 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_pap_comm_assoc ON porta_a_porta_commission_payments(association_id, operator_id)"
         ))
 
+        # carriers and deliverers tables
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS carriers (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                name VARCHAR(100) NOT NULL,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_carriers_assoc ON carriers(association_id)"
+        ))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS deliverers (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                name VARCHAR(100) NOT NULL,
+                carrier_id UUID REFERENCES carriers(id),
+                signature_url TEXT,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_deliverers_assoc ON deliverers(association_id)"
+        ))
+
         await session.commit()
 
 
@@ -286,6 +314,7 @@ app.include_router(senso.router, prefix=PREFIX)
 app.include_router(agent.router, prefix=PREFIX)
 app.include_router(cash_boxes.router, prefix=PREFIX)
 app.include_router(porta_a_porta.router, prefix=PREFIX)
+app.include_router(carriers.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

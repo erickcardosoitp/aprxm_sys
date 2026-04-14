@@ -699,6 +699,17 @@ export default function PackagesPage() {
   const [delivererName, setDelivererName] = useState('')
   const [delivererSig, setDelivererSig] = useState('')
 
+  // Carriers & Deliverers catalog
+  type CarrierOpt = { id: string; name: string }
+  type DelivererOpt = { id: string; name: string; carrier_id: string | null; signature_url: string | null }
+  const [carrierOpts, setCarrierOpts] = useState<CarrierOpt[]>([])
+  const [delivererOpts, setDelivererOpts] = useState<DelivererOpt[]>([])
+
+  useEffect(() => {
+    api.get<CarrierOpt[]>('/carriers').then(r => setCarrierOpts(r.data)).catch(() => {})
+    api.get<DelivererOpt[]>('/carriers/deliverers').then(r => setDelivererOpts(r.data)).catch(() => {})
+  }, [])
+
   const loadPackages = async () => {
     try {
       const params: Record<string, string> = {}
@@ -1261,7 +1272,14 @@ export default function PackagesPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Transportadora</label>
-                      <input value={carrier} onChange={e => setCarrier(e.target.value)} className={inputCls} placeholder="Correios, iFood… (opcional)" />
+                      {carrierOpts.length > 0 ? (
+                        <select value={carrier} onChange={e => setCarrier(e.target.value)} className={`${inputCls} bg-white`}>
+                          <option value="">— Selecione —</option>
+                          {carrierOpts.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                        </select>
+                      ) : (
+                        <input value={carrier} onChange={e => setCarrier(e.target.value)} className={inputCls} placeholder="Correios, iFood… (opcional)" />
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Rastreio</label>
@@ -1283,9 +1301,25 @@ export default function PackagesPage() {
                     </div>
                     <div className="p-4 flex flex-col gap-3">
                       <div>
-                        <label className="block text-xs text-gray-600 mb-1">Nome do entregador</label>
-                        <input value={delivererName} onChange={e => setDelivererName(e.target.value)} className={inputCls} placeholder="Nome do courier/transportadora" />
+                        <label className="block text-xs text-gray-600 mb-1">Entregador</label>
+                        {delivererOpts.length > 0 ? (
+                          <select
+                            value={delivererOpts.find(d => d.name === delivererName)?.id ?? ''}
+                            onChange={e => {
+                              const d = delivererOpts.find(x => x.id === e.target.value)
+                              if (d) { setDelivererName(d.name); if (d.signature_url) setDelivererSig(d.signature_url) }
+                              else { setDelivererName(''); setDelivererSig('') }
+                            }}
+                            className={`${inputCls} bg-white`}
+                          >
+                            <option value="">— Selecione —</option>
+                            {delivererOpts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                          </select>
+                        ) : (
+                          <input value={delivererName} onChange={e => setDelivererName(e.target.value)} className={inputCls} placeholder="Nome do courier/transportadora" />
+                        )}
                       </div>
+                      {delivererOpts.length === 0 && (
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">Assinatura do entregador</label>
                         <SignaturePad
@@ -1295,6 +1329,13 @@ export default function PackagesPage() {
                           onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')}
                         />
                       </div>
+                      )}
+                      {delivererOpts.length > 0 && delivererSig && (
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Assinatura</label>
+                          <img src={delivererSig} alt="assinatura" className="h-16 border border-gray-200 rounded-lg bg-white object-contain" />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1733,8 +1774,16 @@ export default function PackagesPage() {
                   {/* Carrier — persists across items */}
                   <div className="flex gap-2 items-center">
                     <label className="text-xs text-gray-500 shrink-0 w-20">Transportadora</label>
-                    <input value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
-                      className={`${inputCls} flex-1`} placeholder="Correios, Mercado Envios…" />
+                    {carrierOpts.length > 0 ? (
+                      <select value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
+                        className={`${inputCls} flex-1 bg-white`}>
+                        <option value="">— Selecione —</option>
+                        {carrierOpts.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      </select>
+                    ) : (
+                      <input value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
+                        className={`${inputCls} flex-1`} placeholder="Correios, Mercado Envios…" />
+                    )}
                   </div>
 
                   {/* Barcode — primary focus target */}
@@ -1859,16 +1908,38 @@ export default function PackagesPage() {
                     </ul>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Nome do entregador (opcional)</label>
-                    <input value={brxDelivererName} onChange={e => setBrxDelivererName(e.target.value)}
-                      className={inputCls} placeholder="Nome do courier / transportadora" autoFocus />
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Entregador (opcional)</label>
+                    {delivererOpts.length > 0 ? (
+                      <select
+                        value={delivererOpts.find(d => d.name === brxDelivererName)?.id ?? ''}
+                        onChange={e => {
+                          const d = delivererOpts.find(x => x.id === e.target.value)
+                          if (d) { setBrxDelivererName(d.name); if (d.signature_url) setBrxDelivererSig(d.signature_url) }
+                          else { setBrxDelivererName(''); setBrxDelivererSig('') }
+                        }}
+                        className={`${inputCls} bg-white`}
+                      >
+                        <option value="">— Selecione —</option>
+                        {delivererOpts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    ) : (
+                      <input value={brxDelivererName} onChange={e => setBrxDelivererName(e.target.value)}
+                        className={inputCls} placeholder="Nome do courier / transportadora" autoFocus />
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Assinatura do entregador (opcional)</label>
-                    <SignaturePad label="Assinatura do entregador" onSave={setBrxDelivererSig}
-                      onClear={() => setBrxDelivererSig('')}
-                      onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')} />
-                  </div>
+                  {delivererOpts.length > 0 && brxDelivererSig ? (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Assinatura</label>
+                      <img src={brxDelivererSig} alt="assinatura" className="h-16 border border-gray-200 rounded-lg bg-white object-contain" />
+                    </div>
+                  ) : delivererOpts.length === 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Assinatura do entregador (opcional)</label>
+                      <SignaturePad label="Assinatura do entregador" onSave={setBrxDelivererSig}
+                        onClear={() => setBrxDelivererSig('')}
+                        onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')} />
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-3 px-4 py-3 border-t border-gray-100 shrink-0">
                   <button onClick={() => setBulkRxStep('add')} className="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">← Voltar</button>
