@@ -585,9 +585,8 @@ export default function PackagesPage() {
   }
 
   useEffect(() => {
-    if (!deliveryTarget) return
     api.get<{ id: string; name: string }[]>('/finance/payment-methods').then(r => setPaymentMethods(r.data)).catch(() => {})
-  }, [deliveryTarget])
+  }, [])
 
   // Bulk delivery flow
   const [showBulkDeliver, setShowBulkDeliver] = useState(false)
