@@ -536,6 +536,13 @@ export default function FinancePage() {
   const [offlineCategories, setOfflineCategories] = useState<{ id: string; name: string }[]>([])
   const [savingOffline, setSavingOffline] = useState(false)
 
+  // ── Transfer conferido → caixinha state ──
+  const [transferSession, setTransferSession] = useState<CashSessionSummary | null>(null)
+  const [transferBoxId, setTransferBoxId] = useState('')
+  const [transferAmount, setTransferAmount] = useState('')
+  const [transferLoading, setTransferLoading] = useState(false)
+  const [cashBoxes, setCashBoxes] = useState<{ id: string; name: string; balance: string }[]>([])
+
   // ── Estorno state ──
   const [estornoTarget, setEstornoTarget] = useState<Transaction | null>(null)
   const [estornoReason, setEstornoReason] = useState('')
@@ -577,9 +584,35 @@ export default function FinancePage() {
 
   const loadSessions = async () => {
     setLoadingSessions(true)
-    try { const res = await financeService.listSessions(); setSessions(res.data) }
-    catch { toast.error('Erro ao carregar sessões.') }
+    try {
+      const [sessRes, boxRes] = await Promise.all([
+        financeService.listSessions(),
+        api.get<{ id: string; name: string; balance: string }[]>('/cash-boxes'),
+      ])
+      setSessions(sessRes.data)
+      setCashBoxes(boxRes.data)
+    } catch { toast.error('Erro ao carregar sessões.') }
     finally { setLoadingSessions(false) }
+  }
+
+  const handleTransfer = async () => {
+    if (!transferSession || !transferBoxId || !transferAmount) return
+    setTransferLoading(true)
+    try {
+      await api.post(`/cash-boxes/${transferBoxId}/movements`, {
+        amount: parseFloat(transferAmount),
+        movement_type: 'credit',
+        description: `Repasse sessão de caixa ${new Date(transferSession.opened_at).toLocaleDateString('pt-BR')} — ${transferSession.operador_name ?? ''}`.trim(),
+      })
+      toast.success('Valor transferido para a caixinha!')
+      setTransferSession(null)
+      setTransferBoxId('')
+      setTransferAmount('')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao transferir.')
+    } finally {
+      setTransferLoading(false)
+    }
   }
 
   const loadExtrato = async () => {
@@ -1039,6 +1072,7 @@ export default function FinancePage() {
                     <th className="px-5 py-3 text-right whitespace-nowrap">Conf. Cega</th>
                     <th className="px-5 py-3 text-right whitespace-nowrap">Sobra / Falta</th>
                     <th className="px-5 py-3 text-left whitespace-nowrap">Conferido por</th>
+                    <th className="px-5 py-3 text-left whitespace-nowrap">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1088,6 +1122,21 @@ export default function FinancePage() {
                           )}
                         </td>
                         <td className="px-5 py-4 text-gray-600 whitespace-nowrap">{s.conferido_por ?? '—'}</td>
+                        <td className="px-5 py-4 whitespace-nowrap">
+                          {s.status === 'conferido' && cashBoxes.length > 0 && (
+                            <button
+                              onClick={e => {
+                                e.stopPropagation()
+                                setTransferSession(s)
+                                setTransferAmount(s.closing_balance ?? s.expected_balance ?? '0')
+                                setTransferBoxId('')
+                              }}
+                              className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg transition"
+                            >
+                              Transferir
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     )
                   })}
@@ -1095,6 +1144,55 @@ export default function FinancePage() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── MODAL: Transferir sessão conferida → caixinha ── */}
+      {transferSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-gray-800">Transferir para caixinha</h3>
+              <button onClick={() => setTransferSession(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              Sessão de {new Date(transferSession.opened_at).toLocaleDateString('pt-BR')} — {transferSession.operador_name ?? ''}
+            </p>
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Valor (R$)</label>
+                <input
+                  type="number" min="0.01" step="0.01"
+                  value={transferAmount}
+                  onChange={e => setTransferAmount(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Caixinha destino</label>
+                <select
+                  value={transferBoxId}
+                  onChange={e => setTransferBoxId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="">Selecione…</option>
+                  {cashBoxes.map(b => (
+                    <option key={b.id} value={b.id}>{b.name} — saldo R$ {parseFloat(b.balance).toFixed(2)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setTransferSession(null)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm font-medium">Cancelar</button>
+              <button
+                onClick={handleTransfer}
+                disabled={!transferBoxId || !transferAmount || transferLoading}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50"
+              >
+                {transferLoading ? 'Transferindo…' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
