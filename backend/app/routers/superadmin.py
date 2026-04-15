@@ -234,3 +234,123 @@ async def health_summary(
         "pending_packages": r[3], "tx_last_24h": r[4],
         "open_sessions": r[5], "pending_mensalidades": r[6],
     }
+
+
+@router.get("/it-metrics", summary="Métricas técnicas de TI")
+async def it_metrics(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    _require_superadmin(current)
+
+    # ── Database size ───────────────────────────────────────────────────────
+    db_size_row = (await session.execute(text(
+        "SELECT pg_database_size(current_database()) AS db_bytes"
+    ))).fetchone()
+
+    table_sizes = (await session.execute(text("""
+        SELECT relname AS tbl,
+               pg_total_relation_size(relid) AS bytes,
+               n_live_tup AS rows
+          FROM pg_stat_user_tables
+         ORDER BY bytes DESC
+         LIMIT 12
+    """))).fetchall()
+
+    # ── Package SLA ─────────────────────────────────────────────────────────
+    sla_row = (await session.execute(text("""
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'delivered') AS total_delivered,
+            ROUND(AVG(
+                EXTRACT(EPOCH FROM (delivered_at - received_at)) / 3600
+            ) FILTER (WHERE status = 'delivered' AND delivered_at IS NOT NULL AND received_at IS NOT NULL), 1)
+                AS avg_hours_to_deliver,
+            COUNT(*) FILTER (
+                WHERE status = 'delivered'
+                  AND delivered_at IS NOT NULL
+                  AND received_at IS NOT NULL
+                  AND EXTRACT(EPOCH FROM (delivered_at - received_at)) / 3600 <= 48
+            ) AS delivered_within_48h,
+            COUNT(*) FILTER (
+                WHERE status NOT IN ('delivered','returned')
+                  AND received_at < NOW() - INTERVAL '48 hours'
+            ) AS overdue_packages,
+            COUNT(*) FILTER (WHERE status NOT IN ('delivered','returned')) AS pending_packages,
+            COUNT(*) FILTER (WHERE status = 'notified'
+                  AND notified_at < NOW() - INTERVAL '72 hours') AS overdue_notified
+        FROM packages
+    """))).fetchone()
+
+    # ── Activity last 7 days (transactions per day) ─────────────────────────
+    activity = (await session.execute(text("""
+        SELECT DATE(created_at) AS day, COUNT(*) AS cnt
+          FROM transactions
+         WHERE created_at > NOW() - INTERVAL '7 days'
+         GROUP BY 1 ORDER BY 1
+    """))).fetchall()
+
+    # ── Logins last 7 days ──────────────────────────────────────────────────
+    logins = (await session.execute(text("""
+        SELECT DATE(last_login_at) AS day, COUNT(*) AS cnt
+          FROM users
+         WHERE last_login_at > NOW() - INTERVAL '7 days'
+         GROUP BY 1 ORDER BY 1
+    """))).fetchall()
+
+    # ── Errors / audit last 24h ─────────────────────────────────────────────
+    audit_row = (await session.execute(text("""
+        SELECT COUNT(*) AS total_actions,
+               COUNT(*) FILTER (WHERE acao ILIKE '%estorno%' OR acao ILIKE '%cancel%') AS reversals
+          FROM audit_logs
+         WHERE created_at > NOW() - INTERVAL '24 hours'
+    """))).fetchone()
+
+    # ── Top orgs by activity (last 30 days) ─────────────────────────────────
+    top_orgs = (await session.execute(text("""
+        SELECT a.name, COUNT(t.id) AS tx_count, COUNT(DISTINCT DATE(t.created_at)) AS active_days
+          FROM transactions t
+          JOIN associations a ON a.id = t.association_id
+         WHERE t.created_at > NOW() - INTERVAL '30 days'
+         GROUP BY a.name ORDER BY tx_count DESC LIMIT 5
+    """))).fetchall()
+
+    # ── Uptime proxy: sessions opened per day last 7 days ───────────────────
+    sessions_daily = (await session.execute(text("""
+        SELECT DATE(opened_at) AS day, COUNT(*) AS cnt
+          FROM cash_sessions
+         WHERE opened_at > NOW() - INTERVAL '7 days'
+         GROUP BY 1 ORDER BY 1
+    """))).fetchall()
+
+    return {
+        "database": {
+            "total_bytes": int(db_size_row[0]) if db_size_row else 0,
+            "total_mb": round(int(db_size_row[0]) / 1024 / 1024, 1) if db_size_row else 0,
+            "tables": [
+                {"name": r[0], "bytes": int(r[1]), "mb": round(int(r[1]) / 1024 / 1024, 2), "rows": int(r[2])}
+                for r in table_sizes
+            ],
+        },
+        "package_sla": {
+            "total_delivered": int(sla_row[0]),
+            "avg_hours_to_deliver": float(sla_row[1]) if sla_row[1] else None,
+            "delivered_within_48h": int(sla_row[2]),
+            "pct_within_48h": round(int(sla_row[2]) / int(sla_row[0]) * 100, 1) if sla_row[0] else 0,
+            "overdue_packages": int(sla_row[3]),
+            "pending_packages": int(sla_row[4]),
+            "overdue_notified": int(sla_row[5]),
+        },
+        "activity": {
+            "transactions_7d": [{"day": str(r[0]), "count": int(r[1])} for r in activity],
+            "logins_7d": [{"day": str(r[0]), "count": int(r[1])} for r in logins],
+            "sessions_7d": [{"day": str(r[0]), "count": int(r[1])} for r in sessions_daily],
+        },
+        "audit": {
+            "total_actions_24h": int(audit_row[0]) if audit_row else 0,
+            "reversals_24h": int(audit_row[1]) if audit_row else 0,
+        },
+        "top_orgs_30d": [
+            {"name": r[0], "tx_count": int(r[1]), "active_days": int(r[2])}
+            for r in top_orgs
+        ],
+    }

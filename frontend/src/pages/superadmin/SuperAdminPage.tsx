@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Activity, Building2, ChevronDown, ChevronRight, Monitor, Package, RefreshCw, Users, Pencil, Trash2, Settings, X, Check } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Activity, AlertTriangle, Building2, CheckCircle2, ChevronDown, ChevronRight, Clock, Database, Monitor, Package, RefreshCw, Server, TrendingUp, Users, Pencil, Trash2, Settings, X, Check, Wifi, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -20,6 +20,323 @@ const ROLE_LABELS: Record<string, string> = {
 }
 const PLANS = ['basic', 'pro', 'aggregator']
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30'
+
+// ── IT Metrics Tab ────────────────────────────────────────────────────────────
+interface ITMetrics {
+  database: { total_mb: number; tables: { name: string; mb: number; rows: number }[] }
+  package_sla: { total_delivered: number; avg_hours_to_deliver: number | null; delivered_within_48h: number; pct_within_48h: number; overdue_packages: number; pending_packages: number; overdue_notified: number }
+  activity: { transactions_7d: { day: string; count: number }[]; logins_7d: { day: string; count: number }[]; sessions_7d: { day: string; count: number }[] }
+  audit: { total_actions_24h: number; reversals_24h: number }
+  top_orgs_30d: { name: string; tx_count: number; active_days: number }[]
+}
+
+function ITMetricsTab() {
+  const [data, setData] = useState<ITMetrics | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [perfMetrics, setPerfMetrics] = useState<{ loadTime: number | null; apiTimes: { name: string; duration: number }[] }>({ loadTime: null, apiTimes: [] })
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const load = async () => {
+    try {
+      const res = await api.get<ITMetrics>('/superadmin/it-metrics')
+      setData(res.data)
+      setLastUpdate(new Date())
+    } catch { toast.error('Erro ao carregar métricas TI') }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    load()
+    intervalRef.current = setInterval(load, 60000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [])
+
+  useEffect(() => {
+    // Frontend performance metrics
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+    const loadTime = nav ? Math.round(nav.loadEventEnd - nav.startTime) : null
+    const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[]
+    const apiTimes = resources
+      .filter(r => r.name.includes('/api/'))
+      .slice(-10)
+      .map(r => ({ name: r.name.split('/api/v1/')[1]?.split('?')[0] ?? r.name, duration: Math.round(r.duration) }))
+      .reverse()
+    setPerfMetrics({ loadTime, apiTimes })
+  }, [])
+
+  if (loading) return <div className="p-12 text-center text-gray-400 text-sm">Carregando métricas…</div>
+  if (!data) return null
+
+  const { database, package_sla, activity, audit, top_orgs_30d } = data
+  const maxTx = Math.max(...activity.transactions_7d.map(d => d.count), 1)
+  const slaColor = package_sla.pct_within_48h >= 90 ? 'text-green-600' : package_sla.pct_within_48h >= 70 ? 'text-amber-600' : 'text-red-600'
+  const slaBar = package_sla.pct_within_48h >= 90 ? 'bg-green-500' : package_sla.pct_within_48h >= 70 ? 'bg-amber-500' : 'bg-red-500'
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Auto-refresh indicator */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-xs text-gray-400">Atualização automática a cada 60s</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {lastUpdate && <span className="text-xs text-gray-400">Atualizado: {lastUpdate.toLocaleTimeString('pt-BR')}</span>}
+          <button onClick={load} className="text-xs border border-gray-200 text-gray-500 px-2.5 py-1 rounded-lg hover:bg-gray-50 flex items-center gap-1">
+            <RefreshCw className="w-3 h-3" /> Atualizar
+          </button>
+        </div>
+      </div>
+
+      {/* Row 1: Package SLA + DB */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Package SLA */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Package className="w-4 h-4 text-[#26619c]" /> SLA de Encomendas
+          </p>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <p className="text-xs text-gray-400">% entregues em ≤48h</p>
+              <p className={`text-3xl font-black ${slaColor}`}>{package_sla.pct_within_48h}%</p>
+              <div className="w-full bg-gray-100 rounded-full h-2 mt-1">
+                <div className={`${slaBar} h-2 rounded-full transition-all`} style={{ width: `${package_sla.pct_within_48h}%` }} />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Tempo médio de entrega</p>
+              <p className="text-2xl font-bold text-gray-800">
+                {package_sla.avg_hours_to_deliver != null ? `${package_sla.avg_hours_to_deliver}h` : '—'}
+              </p>
+              <p className="text-xs text-gray-400">meta: ≤ 48h</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="bg-gray-50 rounded-lg p-2">
+              <p className="text-[10px] text-gray-400">Total entregues</p>
+              <p className="text-base font-bold text-gray-700">{package_sla.total_delivered}</p>
+            </div>
+            <div className={`rounded-lg p-2 ${package_sla.overdue_packages > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+              <p className="text-[10px] text-gray-400">Pendentes +48h</p>
+              <p className={`text-base font-bold ${package_sla.overdue_packages > 0 ? 'text-red-600' : 'text-gray-700'}`}>{package_sla.overdue_packages}</p>
+            </div>
+            <div className={`rounded-lg p-2 ${package_sla.overdue_notified > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+              <p className="text-[10px] text-gray-400">Avisados +72h</p>
+              <p className={`text-base font-bold ${package_sla.overdue_notified > 0 ? 'text-amber-600' : 'text-gray-700'}`}>{package_sla.overdue_notified}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Database */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Database className="w-4 h-4 text-[#26619c]" /> Armazenamento — Banco de Dados
+          </p>
+          <div className="flex items-end gap-2 mb-3">
+            <p className="text-3xl font-black text-gray-800">{database.total_mb}</p>
+            <p className="text-gray-400 text-sm mb-1">MB usados</p>
+          </div>
+          <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+            {database.tables.map(t => {
+              const pct = database.total_mb > 0 ? Math.min(100, (t.mb / database.total_mb) * 100) : 0
+              return (
+                <div key={t.name}>
+                  <div className="flex items-center justify-between text-xs mb-0.5">
+                    <span className="text-gray-600 font-mono truncate max-w-[140px]">{t.name}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-gray-400">{t.rows.toLocaleString('pt-BR')} rows</span>
+                      <span className="text-gray-700 font-medium w-14 text-right">{t.mb} MB</span>
+                    </div>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div className="bg-[#26619c]/60 h-1.5 rounded-full" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: Activity chart */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-[#26619c]" /> Atividade — Últimos 7 dias
+        </p>
+        {activity.transactions_7d.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">Sem dados de atividade.</p>
+        ) : (
+          <div className="flex items-end gap-2 h-32">
+            {(() => {
+              const days: Record<string, number> = {}
+              for (let i = 6; i >= 0; i--) {
+                const d = new Date(); d.setDate(d.getDate() - i)
+                const key = d.toISOString().slice(0, 10)
+                days[key] = 0
+              }
+              activity.transactions_7d.forEach(d => { if (key in days) days[d.day] = d.count; else days[d.day] = d.count })
+              return Object.entries(days).map(([day, count]) => {
+                const pct = maxTx > 0 ? (count / maxTx) * 100 : 0
+                const label = new Date(day + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit' })
+                return (
+                  <div key={day} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+                    <span className="text-[10px] text-gray-500 font-medium">{count || ''}</span>
+                    <div className="w-full rounded-t-md bg-[#26619c]/20 relative" style={{ height: '80%' }}>
+                      <div className="absolute bottom-0 left-0 right-0 rounded-t-md bg-[#26619c] transition-all" style={{ height: `${pct}%` }} />
+                    </div>
+                    <span className="text-[10px] text-gray-400 text-center leading-tight">{label}</span>
+                  </div>
+                )
+              })
+            })()}
+          </div>
+        )}
+      </div>
+
+      {/* Row 3: Frontend perf + Audit + Top orgs */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Frontend performance */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Zap className="w-4 h-4 text-amber-500" /> Performance Frontend
+          </p>
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-500">Tempo de carregamento</span>
+              <span className={`text-sm font-bold ${perfMetrics.loadTime == null ? 'text-gray-400' : perfMetrics.loadTime < 2000 ? 'text-green-600' : perfMetrics.loadTime < 4000 ? 'text-amber-600' : 'text-red-600'}`}>
+                {perfMetrics.loadTime != null ? `${perfMetrics.loadTime}ms` : '—'}
+              </span>
+            </div>
+            <div className="border-t border-gray-100 pt-2">
+              <p className="text-[10px] text-gray-400 mb-1.5 uppercase font-medium">Últimas chamadas de API</p>
+              {perfMetrics.apiTimes.length === 0 ? (
+                <p className="text-xs text-gray-300">Sem dados disponíveis</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {perfMetrics.apiTimes.slice(0, 6).map((a, i) => (
+                    <div key={i} className="flex justify-between items-center">
+                      <span className="text-[10px] text-gray-500 truncate max-w-[120px] font-mono">{a.name}</span>
+                      <span className={`text-[10px] font-bold shrink-0 ml-1 ${a.duration < 300 ? 'text-green-600' : a.duration < 1000 ? 'text-amber-600' : 'text-red-600'}`}>
+                        {a.duration}ms
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Audit 24h */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Server className="w-4 h-4 text-purple-500" /> Auditoria — 24h
+          </p>
+          <div className="flex flex-col gap-3">
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <span className="text-sm text-gray-600">Ações registradas</span>
+              <span className="text-xl font-bold text-gray-800">{audit.total_actions_24h}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Estornos / Cancelamentos</span>
+              <span className={`text-xl font-bold ${audit.reversals_24h > 5 ? 'text-red-600' : 'text-gray-800'}`}>{audit.reversals_24h}</span>
+            </div>
+            <div className="mt-2 pt-2 border-t border-gray-100">
+              <p className="text-xs font-bold text-gray-500 mb-2 uppercase">Alertas</p>
+              {package_sla.overdue_packages === 0 && audit.reversals_24h <= 5 ? (
+                <div className="flex items-center gap-1.5 text-green-600 text-xs">
+                  <CheckCircle2 className="w-4 h-4" /> Sistema operando normalmente
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {package_sla.overdue_packages > 0 && (
+                    <div className="flex items-center gap-1.5 text-red-600 text-xs">
+                      <AlertTriangle className="w-3.5 h-3.5" /> {package_sla.overdue_packages} enc. pendentes há +48h
+                    </div>
+                  )}
+                  {audit.reversals_24h > 5 && (
+                    <div className="flex items-center gap-1.5 text-amber-600 text-xs">
+                      <AlertTriangle className="w-3.5 h-3.5" /> {audit.reversals_24h} estornos nas últimas 24h
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Top orgs */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Wifi className="w-4 h-4 text-green-500" /> Top Orgs — 30 dias
+          </p>
+          {top_orgs_30d.length === 0 ? (
+            <p className="text-xs text-gray-400">Sem dados</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {top_orgs_30d.map((org, i) => {
+                const maxCount = top_orgs_30d[0].tx_count
+                const pct = maxCount > 0 ? (org.tx_count / maxCount) * 100 : 0
+                return (
+                  <div key={org.name}>
+                    <div className="flex justify-between text-xs mb-0.5">
+                      <span className="text-gray-700 font-medium truncate max-w-[120px]">
+                        <span className="text-gray-400 mr-1">#{i+1}</span>{org.name}
+                      </span>
+                      <span className="text-gray-500 shrink-0">{org.tx_count} TX · {org.active_days}d</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-1.5">
+                      <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Network indicator */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Clock className="w-4 h-4 text-blue-500" /> Volume de Atividade — Sessões de Caixa e Logins (7 dias)
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          {[
+            { label: 'Sessões de caixa abertas', data: activity.sessions_7d, color: 'bg-blue-500' },
+            { label: 'Logins de usuários', data: activity.logins_7d, color: 'bg-purple-500' },
+          ].map(({ label, data: chartData, color }) => {
+            const max = Math.max(...chartData.map(d => d.count), 1)
+            return (
+              <div key={label}>
+                <p className="text-xs text-gray-500 mb-2">{label}</p>
+                <div className="flex items-end gap-1.5 h-16">
+                  {(() => {
+                    const days: Record<string, number> = {}
+                    for (let i = 6; i >= 0; i--) {
+                      const d = new Date(); d.setDate(d.getDate() - i)
+                      days[d.toISOString().slice(0, 10)] = 0
+                    }
+                    chartData.forEach(d => { days[d.day] = (days[d.day] ?? 0) + d.count })
+                    return Object.entries(days).map(([day, count]) => (
+                      <div key={day} className="flex-1 flex flex-col items-center gap-0.5 h-full justify-end">
+                        <div className="w-full rounded-t-sm bg-gray-100 relative" style={{ height: '100%' }}>
+                          <div className={`absolute bottom-0 left-0 right-0 rounded-t-sm ${color} transition-all`} style={{ height: `${max > 0 ? (count / max) * 100 : 0}%` }} />
+                        </div>
+                        <span className="text-[9px] text-gray-300">{new Date(day + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit' })}</span>
+                      </div>
+                    ))
+                  })()}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function SuperAdminPage() {
   const [orgs, setOrgs] = useState<OrgSummary[]>([])
@@ -133,8 +450,10 @@ export default function SuperAdminPage() {
     ? new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
     : '—'
 
+  const [tab, setTab] = useState<'orgs' | 'ti'>('orgs')
+
   return (
-    <div className="flex flex-col gap-5 p-4 max-w-3xl mx-auto">
+    <div className="flex flex-col gap-5 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
           <Activity className="w-5 h-5 text-[#26619c]" />
@@ -145,6 +464,19 @@ export default function SuperAdminPage() {
         </button>
       </div>
 
+      {/* Tab switcher */}
+      <div className="flex gap-2 bg-gray-100 rounded-xl p-1 self-start">
+        {([['orgs', 'Organizações'], ['ti', 'Métricas TI']] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === key ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'ti' && <ITMetricsTab />}
+
+      {tab === 'orgs' && <>
       {/* Health KPIs */}
       {health && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -287,6 +619,7 @@ export default function SuperAdminPage() {
       </div>
 
       <p className="text-xs text-gray-400 text-center">Painel de TI — dados em tempo real · APRXM v1.0</p>
+      </>}
 
       {/* Edit org modal */}
       {editOrg && (
