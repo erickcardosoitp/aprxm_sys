@@ -82,10 +82,38 @@ async def saldo_consolidado(
     sessoes_row = (await session.execute(text(f"""
         SELECT
             COUNT(*) AS total_sessoes,
-            COALESCE(SUM(cs.manual_total_bruto), 0) AS bruto,
-            COALESCE(SUM(cs.manual_total_baixas), 0) AS baixas,
-            COALESCE(SUM(cs.total_pix), 0) AS pix,
-            COALESCE(SUM(cs.total_dinheiro), 0) AS dinheiro
+            COALESCE(SUM(
+                CASE WHEN cs.origin = 'Manual' THEN cs.manual_total_bruto
+                     ELSE (SELECT COALESCE(SUM(t.amount),0) FROM transactions t
+                           WHERE t.cash_session_id = cs.id AND t.type = 'income'
+                             AND t.reversed_at IS NULL AND t.is_reversal = false)
+                END
+            ), 0) AS bruto,
+            COALESCE(SUM(
+                CASE WHEN cs.origin = 'Manual' THEN cs.manual_total_baixas
+                     ELSE (SELECT COALESCE(SUM(t.amount),0) FROM transactions t
+                           WHERE t.cash_session_id = cs.id AND t.type = 'sangria'
+                             AND t.reversed_at IS NULL AND t.is_reversal = false)
+                END
+            ), 0) AS baixas,
+            COALESCE(SUM(
+                CASE WHEN cs.origin = 'Manual' THEN cs.manual_pix
+                     ELSE (SELECT COALESCE(SUM(t.amount),0) FROM transactions t
+                           JOIN payment_methods pm ON pm.id = t.payment_method_id
+                           WHERE t.cash_session_id = cs.id AND t.type = 'income'
+                             AND pm.name ILIKE '%pix%'
+                             AND t.reversed_at IS NULL AND t.is_reversal = false)
+                END
+            ), 0) AS pix,
+            COALESCE(SUM(
+                CASE WHEN cs.origin = 'Manual' THEN cs.manual_dinheiro
+                     ELSE (SELECT COALESCE(SUM(t.amount),0) FROM transactions t
+                           WHERE t.cash_session_id = cs.id AND t.type = 'income'
+                             AND (t.payment_method_id IS NULL OR t.payment_method_id NOT IN (
+                                 SELECT id FROM payment_methods WHERE name ILIKE '%pix%'))
+                             AND t.reversed_at IS NULL AND t.is_reversal = false)
+                END
+            ), 0) AS dinheiro
           FROM cash_sessions cs
          WHERE cs.association_id = :aid AND cs.status != 'open' {date_filter}
     """), params)).fetchone()
