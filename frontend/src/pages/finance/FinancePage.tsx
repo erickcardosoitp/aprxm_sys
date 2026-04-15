@@ -571,7 +571,7 @@ export default function FinancePage() {
   const loadTransactions = async () => {
     if (!session) return
     setLoadingTx(true)
-    try { const res = await financeService.listTransactions(); setTransactions(res.data) }
+    try { const res = await financeService.listTransactions(session.id); setTransactions(res.data) }
     catch { toast.error('Erro ao carregar transações.') }
     finally { setLoadingTx(false) }
   }

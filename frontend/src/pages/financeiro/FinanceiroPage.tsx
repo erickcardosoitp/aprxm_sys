@@ -261,6 +261,11 @@ export default function FinanceiroPage() {
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([])
   const [boxSummary, setBoxSummary] = useState<{ open_session_balance: string | null; total_in_boxes: string; sangria_by_destination: { destination: string; total: string }[] } | null>(null)
   const [loadingBoxes, setLoadingBoxes] = useState(false)
+  const [conferidoSessions, setConferidoSessions] = useState<{ id: string; opened_at: string; operador_name?: string; closing_balance?: string }[]>([])
+  const [transferTarget, setTransferTarget] = useState<{ id: string; opened_at: string; operador_name?: string; closing_balance?: string } | null>(null)
+  const [transferBoxId, setTransferBoxId] = useState('')
+  const [transferAmt, setTransferAmt] = useState('')
+  const [transferring, setTransferring] = useState(false)
   const [selectedBox, setSelectedBox] = useState<CashBox | null>(null)
   const [boxMovements, setBoxMovements] = useState<BoxMovement[]>([])
   const [showBoxForm, setShowBoxForm] = useState(false)
@@ -469,13 +474,33 @@ export default function FinanceiroPage() {
   const loadBoxSummary = async () => {
     setLoadingBoxes(true)
     try {
-      const [sumR, boxR] = await Promise.all([
+      const [sumR, boxR, sessR] = await Promise.all([
         api.get('/cash-boxes/summary'),
         api.get<CashBox[]>('/cash-boxes'),
+        api.get<{ id: string; status: string; opened_at: string; operador_name?: string; closing_balance?: string }[]>('/finance/sessions'),
       ])
       setBoxSummary(sumR.data)
       setCashBoxes(boxR.data)
+      setConferidoSessions(sessR.data.filter(s => s.status === 'conferido' && s.closing_balance))
     } catch { /* ignore */ } finally { setLoadingBoxes(false) }
+  }
+
+  const handleTransferConferido = async () => {
+    if (!transferTarget || !transferBoxId || !transferAmt) return
+    setTransferring(true)
+    try {
+      await api.post(`/finance/sessions/${transferTarget.id}/transfer-to-cashbox`, {
+        cash_box_id: transferBoxId,
+        amount: parseFloat(transferAmt),
+      })
+      toast.success('Valor transferido — sangria registrada e caixinha creditada!')
+      setTransferTarget(null)
+      setTransferBoxId('')
+      setTransferAmt('')
+      loadBoxSummary()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao transferir.')
+    } finally { setTransferring(false) }
   }
 
   const loadBoxMovements = async (boxId: string) => {
@@ -1983,6 +2008,35 @@ export default function FinanceiroPage() {
                 </div>
               )}
 
+              {/* Sessões conferidas aguardando repasse */}
+              {conferidoSessions.length > 0 && (
+                <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-amber-100 bg-amber-50">
+                    <h3 className="text-sm font-semibold text-amber-800">Sessões conferidas — aguardando repasse</h3>
+                    <p className="text-xs text-amber-600 mt-0.5">Transfira o valor contado para a caixinha (ex: cofre).</p>
+                  </div>
+                  <ul className="divide-y divide-gray-100">
+                    {conferidoSessions.map(s => (
+                      <li key={s.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</p>
+                          <p className="text-xs text-gray-500">{s.operador_name ?? '—'}</p>
+                          <p className="text-xs font-semibold text-blue-700 mt-0.5">
+                            Contado: R$ {parseFloat(s.closing_balance!).toFixed(2)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => { setTransferTarget(s); setTransferAmt(s.closing_balance ?? ''); setTransferBoxId('') }}
+                          className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg transition whitespace-nowrap"
+                        >
+                          Transferir
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* Caixinhas list */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
@@ -2035,6 +2089,44 @@ export default function FinanceiroPage() {
                 )}
               </div>
             </>
+          )}
+
+          {/* Transfer conferido → caixinha modal */}
+          {transferTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div className="bg-white rounded-2xl w-full max-w-sm p-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-gray-800">Transferir para caixinha</h2>
+                  <button onClick={() => setTransferTarget(null)} className="text-gray-400 text-xl">×</button>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Sessão de {new Date(transferTarget.opened_at).toLocaleDateString('pt-BR')} — {transferTarget.operador_name ?? ''}</p>
+                  <p className="text-xs text-blue-700 font-medium mt-0.5">Contado: R$ {parseFloat(transferTarget.closing_balance!).toFixed(2)}</p>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Valor (R$)</label>
+                  <input type="number" min="0.01" step="0.01" value={transferAmt} onChange={e => setTransferAmt(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Caixinha destino</label>
+                  <select value={transferBoxId} onChange={e => setTransferBoxId(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <option value="">Selecione…</option>
+                    {cashBoxes.map(b => (
+                      <option key={b.id} value={b.id}>{b.name} — R$ {parseFloat(b.balance).toFixed(2)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setTransferTarget(null)} className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+                  <button onClick={handleTransferConferido} disabled={!transferBoxId || !transferAmt || transferring}
+                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                    {transferring ? 'Transferindo…' : 'Confirmar'}
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Box form modal */}
