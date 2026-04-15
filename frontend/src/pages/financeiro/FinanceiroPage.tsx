@@ -65,9 +65,10 @@ interface Mensalidade {
 }
 
 interface TxReview {
-  id: string; type: string; income_subtype?: string; amount: string
+  id: string; type: string; income_subtype?: string | null; amount: string
   description: string; transaction_at: string; is_sangria: boolean
-  created_by_name?: string; conferido: boolean; observacao?: string
+  created_by_name?: string; conferido: boolean; observacao?: string | null
+  payment_method_name?: string | null; reversed_at?: string | null
 }
 
 interface CashBox {
@@ -172,6 +173,11 @@ export default function FinanceiroPage() {
   const [operadores, setOperadores] = useState<Conferente[]>([])
   const [manualOperatedBy, setManualOperatedBy] = useState('')
   const [manualReviewedBy, setManualReviewedBy] = useState('')
+
+  // Session history filters
+  const [sessaoFilterFrom, setSessaoFilterFrom] = useState('')
+  const [sessaoFilterTo, setSessaoFilterTo] = useState('')
+  const [sessaoFilterOp, setSessaoFilterOp] = useState('')
 
   // Session reviews
   const [reviewSession, setReviewSession] = useState<Session | null>(null)
@@ -927,7 +933,7 @@ export default function FinanceiroPage() {
   const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
 
   return (
-    <div className="flex flex-col gap-4 p-4 sm:p-6">
+    <div className="flex flex-col gap-4 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
       <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
         <TrendingUp className="w-5 h-5 text-[#26619c]" />
         Financeiro
@@ -1613,59 +1619,145 @@ export default function FinanceiroPage() {
               </div>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              {/* Header */}
+              <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2 justify-between">
                 <h3 className="text-sm font-semibold text-gray-800">Histórico de Sessões</h3>
-                <button onClick={() => setShowManualSession(true)} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-medium">+ Manual</button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Filters */}
+                  <input type="date" placeholder="De"
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#26619c]/30"
+                    onChange={e => setSessaoFilterFrom(e.target.value)} />
+                  <input type="date" placeholder="Até"
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#26619c]/30"
+                    onChange={e => setSessaoFilterTo(e.target.value)} />
+                  <input type="text" placeholder="Funcionário…"
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-[#26619c]/30"
+                    onChange={e => setSessaoFilterOp(e.target.value)} />
+                  {/* Export */}
+                  <button onClick={() => {
+                    const rows = sessions
+                      .filter(s => {
+                        const d = s.opened_at.substring(0, 10)
+                        if (sessaoFilterFrom && d < sessaoFilterFrom) return false
+                        if (sessaoFilterTo && d > sessaoFilterTo) return false
+                        if (sessaoFilterOp && !(s.operador_name ?? '').toLowerCase().includes(sessaoFilterOp.toLowerCase())) return false
+                        return true
+                      })
+                    const headers = ['Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra Caixa','Origem']
+                    const data = rows.map(s => {
+                      const bruto = parseFloat(s.total_bruto ?? '0')
+                      const baixas = parseFloat(s.total_baixas ?? '0')
+                      const diff = s.difference != null ? parseFloat(s.difference) : null
+                      return [
+                        new Date(s.opened_at).toLocaleString('pt-BR'),
+                        s.operador_name ?? '',
+                        parseFloat(s.total_pix ?? '0').toFixed(2),
+                        parseFloat(s.total_dinheiro ?? '0').toFixed(2),
+                        bruto.toFixed(2),
+                        baixas.toFixed(2),
+                        (bruto - baixas).toFixed(2),
+                        s.closing_balance ? parseFloat(s.closing_balance).toFixed(2) : '',
+                        diff !== null ? diff.toFixed(2) : '',
+                        s.conferido_por ?? '',
+                        s.quebra_caixa ? parseFloat(s.quebra_caixa).toFixed(2) : '',
+                        s.origin ?? 'Sessão de Caixa',
+                      ]
+                    })
+                    const ws = XLSX.utils.aoa_to_sheet([headers, ...data])
+                    const wb = XLSX.utils.book_new()
+                    XLSX.utils.book_append_sheet(wb, ws, 'Sessões')
+                    XLSX.writeFile(wb, `sessoes_${new Date().toISOString().substring(0,10)}.xlsx`)
+                  }} className="flex items-center gap-1 text-xs bg-green-600 text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-green-700">
+                    <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+                  </button>
+                  <button onClick={() => {
+                    const w = window.open('', '_blank')!
+                    const rows = sessions.filter(s => {
+                      const d = s.opened_at.substring(0, 10)
+                      if (sessaoFilterFrom && d < sessaoFilterFrom) return false
+                      if (sessaoFilterTo && d > sessaoFilterTo) return false
+                      if (sessaoFilterOp && !(s.operador_name ?? '').toLowerCase().includes(sessaoFilterOp.toLowerCase())) return false
+                      return true
+                    })
+                    w.document.write(`<html><head><title>Sessões</title><style>body{font-family:sans-serif;font-size:11px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}th{background:#f0f0f0}</style></head><body>`)
+                    w.document.write(`<h2>Histórico de Sessões — ${new Date().toLocaleDateString('pt-BR')}</h2><table><tr>${['Data','Funcionário','PIX','Dinheiro','Bruto','Baixas','Líquido','Conf.Cega','Sobra/Falta','Conferido por','Quebra','Origem'].map(h => `<th>${h}</th>`).join('')}</tr>`)
+                    rows.forEach(s => {
+                      const bruto = parseFloat(s.total_bruto ?? '0')
+                      const baixas = parseFloat(s.total_baixas ?? '0')
+                      const diff = s.difference != null ? parseFloat(s.difference) : null
+                      w.document.write(`<tr><td>${new Date(s.opened_at).toLocaleString('pt-BR')}</td><td>${s.operador_name ?? ''}</td><td>R$${parseFloat(s.total_pix ?? '0').toFixed(2)}</td><td>R$${parseFloat(s.total_dinheiro ?? '0').toFixed(2)}</td><td>R$${bruto.toFixed(2)}</td><td>R$${baixas.toFixed(2)}</td><td>R$${(bruto - baixas).toFixed(2)}</td><td>${s.closing_balance ? 'R$' + parseFloat(s.closing_balance).toFixed(2) : '—'}</td><td>${diff !== null ? (diff >= 0 ? '+' : '') + 'R$' + Math.abs(diff).toFixed(2) : '—'}</td><td>${s.conferido_por ?? ''}</td><td>${s.quebra_caixa ? 'R$' + parseFloat(s.quebra_caixa).toFixed(2) : '—'}</td><td>${s.origin ?? 'Sessão'}</td></tr>`)
+                    })
+                    w.document.write('</table></body></html>')
+                    w.document.close()
+                    w.print()
+                  }} className="flex items-center gap-1 text-xs bg-red-600 text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-red-700">
+                    PDF
+                  </button>
+                  <button onClick={() => setShowManualSession(true)} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-medium">+ Manual</button>
+                </div>
               </div>
               {loadingSessions ? (
                 <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
               ) : sessions.length === 0 ? (
                 <div className="p-6 text-center text-gray-400 text-sm">Nenhuma sessão encontrada.</div>
-              ) : (
+              ) : (() => {
+                const filtered = sessions.filter(s => {
+                  const d = s.opened_at.substring(0, 10)
+                  if (sessaoFilterFrom && d < sessaoFilterFrom) return false
+                  if (sessaoFilterTo && d > sessaoFilterTo) return false
+                  if (sessaoFilterOp && !(s.operador_name ?? '').toLowerCase().includes(sessaoFilterOp.toLowerCase())) return false
+                  return true
+                })
+                return (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs min-w-[1100px]">
-                    <thead className="bg-gray-50 border-b border-gray-100">
+                  <table className="w-full text-sm min-w-[1100px]">
+                    <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        {['Data','Associação','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Origem'].map(h => (
-                          <th key={h} className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">{h}</th>
+                        {['Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Origem'].map(h => (
+                          <th key={h} className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap text-xs">{h}</th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {sessions.map(s => {
+                    <tbody className="divide-y divide-gray-100">
+                      {filtered.map(s => {
                         const bruto = parseFloat(s.total_bruto ?? '0')
                         const baixas = parseFloat(s.total_baixas ?? '0')
                         const liquido = bruto - baixas
                         const diff = s.difference != null ? parseFloat(s.difference) : null
                         const isManual = s.origin === 'Manual'
                         return (
-                          <tr key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openReview(s)}>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-800 font-medium">{fmtDate(s.opened_at)}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-600">{s.association_name ?? '—'}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-600">{s.operador_name ?? '—'}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{fmt(s.total_pix ?? '0')}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{fmt(s.total_dinheiro ?? '0')}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{fmt(bruto)}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{fmt(baixas)}</td>
-                            <td className="px-3 py-2 whitespace-nowrap font-semibold text-gray-800">{fmt(liquido)}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{s.closing_balance ? fmt(s.closing_balance) : '—'}</td>
-                            <td className={`px-3 py-2 whitespace-nowrap font-semibold ${diff === null ? 'text-gray-400' : diff === 0 ? 'text-green-600' : diff > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                          <tr key={s.id} className="hover:bg-blue-50/40 cursor-pointer transition" onClick={() => openReview(s)}>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-800 font-semibold text-sm">{fmtDate(s.opened_at)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-700">{s.operador_name ?? '—'}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-blue-700 font-medium">{fmt(s.total_pix ?? '0')}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-700">{fmt(s.total_dinheiro ?? '0')}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-800 font-semibold">{fmt(bruto)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-red-600">{fmt(baixas)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-green-700 font-bold text-sm">{fmt(liquido)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-600">{s.closing_balance ? fmt(s.closing_balance) : '—'}</td>
+                            <td className={`px-4 py-3 whitespace-nowrap font-bold text-sm ${diff === null ? 'text-gray-400' : diff === 0 ? 'text-green-600' : diff > 0 ? 'text-blue-600' : 'text-red-600'}`}>
                               {diff !== null ? `${diff >= 0 ? '+' : ''}${fmt(diff)}` : '—'}
                             </td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-600">{s.conferido_por ?? '—'}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-700">{s.quebra_caixa ? fmt(s.quebra_caixa) : '—'}</td>
-                            <td className="px-3 py-2 whitespace-nowrap">
-                              <span className={`px-2 py-0.5 rounded-full font-medium ${isManual ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-600'}`}>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-600 text-xs">{s.conferido_por ?? '—'}</td>
+                            <td className={`px-4 py-3 whitespace-nowrap font-medium ${s.quebra_caixa && parseFloat(s.quebra_caixa) !== 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+                              {s.quebra_caixa ? fmt(s.quebra_caixa) : '—'}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isManual ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-600'}`}>
                                 {s.origin ?? 'Sessão de Caixa'}
                               </span>
                             </td>
                           </tr>
                         )
                       })}
+                      {filtered.length === 0 && (
+                        <tr><td colSpan={12} className="px-4 py-6 text-center text-gray-400 text-sm">Nenhuma sessão no filtro selecionado.</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-              )}
+                )
+              })()}
             </div>
 
             {/* Relatório de Mensalidades */}
@@ -2117,42 +2209,64 @@ export default function FinanceiroPage() {
               </select>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[500px]">
+              <table className="w-full text-xs min-w-[700px]">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th className="px-2 py-2 text-left text-gray-600">Data</th>
-                    <th className="px-2 py-2 text-left text-gray-600">Tipo</th>
-                    <th className="px-2 py-2 text-left text-gray-600">Descrição</th>
-                    <th className="px-2 py-2 text-right text-gray-600">Valor</th>
-                    <th className="px-2 py-2 text-center text-gray-600">Conferido</th>
-                    <th className="px-2 py-2 text-left text-gray-600">Observação</th>
+                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Data/Hora</th>
+                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Tipo</th>
+                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Pagamento</th>
+                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Pessoa</th>
+                    <th className="px-2 py-2 text-right text-gray-500 font-medium">Valor</th>
+                    <th className="px-2 py-2 text-center text-gray-500 font-medium">OK</th>
+                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Observação</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {reviewTxs.map((tx, i) => (
-                    <tr key={tx.id} className={tx.conferido ? '' : 'bg-red-50'}>
-                      <td className="px-2 py-1.5 whitespace-nowrap text-gray-500">{fmtDate(tx.transaction_at)}</td>
-                      <td className="px-2 py-1.5 whitespace-nowrap">
-                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${tx.type === 'income' ? 'bg-green-100 text-green-700' : tx.type === 'sangria' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
-                          {tx.type === 'income' ? 'Receita' : tx.type === 'sangria' ? 'Sangria' : 'Despesa'}
-                        </span>
+                  {reviewTxs.map((tx, i) => {
+                    const isReversed = !!tx.reversed_at
+                    return (
+                    <tr key={tx.id} className={`${isReversed ? 'opacity-50 bg-gray-50' : tx.conferido ? '' : 'bg-red-50'}`}>
+                      <td className="px-2 py-2 whitespace-nowrap text-gray-500 text-[10px]">
+                        {new Date(tx.transaction_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       </td>
-                      <td className="px-2 py-1.5 text-gray-700 max-w-[160px] truncate">{tx.description}</td>
-                      <td className="px-2 py-1.5 text-right font-medium text-gray-800">{fmt(tx.amount)}</td>
-                      <td className="px-2 py-1.5 text-center">
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        {tx.income_subtype ? (
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${SUBTYPE_COLORS[tx.income_subtype] ?? 'bg-gray-100 text-gray-600'}`}>
+                            {SUBTYPE_LABELS[tx.income_subtype] ?? tx.income_subtype}
+                          </span>
+                        ) : (
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${tx.type === 'income' ? 'bg-green-100 text-green-700' : tx.type === 'sangria' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
+                            {tx.type === 'income' ? 'Receita' : tx.type === 'sangria' ? 'Sangria' : 'Despesa'}
+                          </span>
+                        )}
+                        {isReversed && <span className="ml-1 text-[9px] text-red-400 font-medium">Estornado</span>}
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        {tx.payment_method_name ? (
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">{tx.payment_method_name}</span>
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-2 py-2 text-gray-800 font-medium max-w-[180px] truncate">
+                        {parseTxName(tx.description, tx.income_subtype)}
+                      </td>
+                      <td className={`px-2 py-2 text-right font-semibold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                        {tx.type === 'income' ? '+' : '-'}{fmt(tx.amount)}
+                      </td>
+                      <td className="px-2 py-2 text-center">
                         <input type="checkbox" checked={tx.conferido}
                           onChange={e => setReviewTxs(prev => prev.map((t, j) => j === i ? { ...t, conferido: e.target.checked } : t))}
                           className="w-4 h-4 accent-indigo-600" />
                       </td>
-                      <td className="px-2 py-1.5">
+                      <td className="px-2 py-2">
                         <input type="text" value={tx.observacao ?? ''} placeholder={tx.conferido ? '' : 'Observação…'}
                           onChange={e => setReviewTxs(prev => prev.map((t, j) => j === i ? { ...t, observacao: e.target.value } : t))}
                           className="w-full border border-gray-200 rounded px-2 py-1 text-xs" />
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                   {reviewTxs.length === 0 && (
-                    <tr><td colSpan={6} className="px-2 py-4 text-center text-gray-400">Nenhuma transação nesta sessão.</td></tr>
+                    <tr><td colSpan={7} className="px-2 py-4 text-center text-gray-400">Nenhuma transação nesta sessão.</td></tr>
                   )}
                 </tbody>
               </table>

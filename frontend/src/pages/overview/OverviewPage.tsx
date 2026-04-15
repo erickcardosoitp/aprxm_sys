@@ -560,7 +560,7 @@ export default function OverviewPage() {
   const [tab, setTab] = useState<Tab>('overview')
 
   return (
-    <div className="flex flex-col gap-4 p-4 sm:p-6">
+    <div className="flex flex-col gap-4 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
       <div className="flex items-center gap-3">
         <h1 className="text-xl font-bold text-gray-900 flex-1">Visão</h1>
         <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
