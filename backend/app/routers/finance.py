@@ -129,6 +129,44 @@ async def issue_proof_of_residence(
     )
 
 
+@router.get("/proof-of-residence/list", summary="Listar todos os comprovantes emitidos")
+async def list_proof_of_residence(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as sa_text
+    result = await session.execute(
+        sa_text("""
+            SELECT t.id, t.amount, t.description, t.created_at, t.reference_number,
+                   t.reversed_at, pm.name as payment_method,
+                   r.full_name as resident_name, r.unit, r.cpf,
+                   u.full_name as issued_by
+            FROM transactions t
+            LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+            LEFT JOIN residents r ON r.id = t.resident_id
+            LEFT JOIN users u ON u.id = t.created_by
+            WHERE t.association_id = :aid
+              AND t.income_subtype = 'proof_of_residence'
+            ORDER BY t.created_at DESC
+            LIMIT :lim OFFSET :off
+        """),
+        {"aid": str(current.association_id), "lim": limit, "off": offset},
+    )
+    rows = result.fetchall()
+    return [
+        {
+            "id": str(r[0]), "amount": str(r[1]), "description": r[2],
+            "created_at": str(r[3]), "reference_number": r[4],
+            "reversed_at": str(r[5]) if r[5] else None,
+            "payment_method": r[6], "resident_name": r[7],
+            "unit": r[8], "cpf": r[9], "issued_by": r[10],
+        }
+        for r in rows
+    ]
+
+
 @router.get("/proof-of-residence/verify/{code}", summary="Verificar código de comprovante")
 async def verify_proof_of_residence(
     code: str,
@@ -346,12 +384,14 @@ async def list_transactions(
         {
             "id": str(t.id),
             "type": t.type,
+            "income_subtype": t.income_subtype,
             "amount": str(t.amount),
             "description": t.description,
             "transaction_at": str(t.transaction_at),
             "is_sangria": t.is_sangria,
             "approval_status": t.approval_status,
             "is_reversal": t.is_reversal,
+            "reversed_at": str(t.reversed_at) if t.reversed_at else None,
             "payment_method_id": str(t.payment_method_id) if t.payment_method_id else None,
             "payment_method_name": pm_map.get(t.payment_method_id) if t.payment_method_id else None,
         }
@@ -502,6 +542,42 @@ async def patch_session(
     session.add(cash)
     await session.commit()
     return {"ok": True}
+
+
+@router.post("/sessions/{session_id}/recalculate", summary="Recalcular quebra de caixa")
+async def recalculate_session(
+    session_id: UUID,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlmodel import select as sql_select
+    result = await session.execute(
+        sql_select(CashSession).where(
+            CashSession.id == session_id,
+            CashSession.association_id == current.association_id,
+        )
+    )
+    cash = result.scalar_one_or_none()
+    if not cash:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada.")
+    svc = FinanceService(session)
+    expected, bruto, baixas = await svc._compute_expected_balance(cash)
+    cash.expected_balance = expected
+    cash.manual_total_bruto = bruto
+    cash.manual_total_baixas = baixas
+    if cash.closing_balance is not None:
+        cash.difference = cash.closing_balance - expected
+        if cash.quebra_caixa is not None:
+            cash.quebra_caixa = cash.closing_balance - expected
+    cash.reviewed_by = current.user_id
+    session.add(cash)
+    await session.commit()
+    return {
+        "expected_balance": str(expected),
+        "total_bruto": str(bruto),
+        "total_baixas": str(baixas),
+        "difference": str(cash.difference) if cash.difference is not None else None,
+    }
 
 
 @router.post("/sessions/conferencia", summary="Conferência de caixa (sem fechar)")
@@ -910,7 +986,8 @@ async def get_session_transactions(
                COALESCE(r.conferido, false) AS conferido,
                r.observacao,
                t.payment_method_id,
-               pm.name AS payment_method_name
+               pm.name AS payment_method_name,
+               t.reversed_at
           FROM transactions t
           LEFT JOIN users u ON u.id = t.created_by
           LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
@@ -926,6 +1003,7 @@ async def get_session_transactions(
         "created_by_name": r[8], "conferido": r[9], "observacao": r[10],
         "payment_method_id": str(r[11]) if r[11] else None,
         "payment_method_name": r[12],
+        "reversed_at": str(r[13]) if r[13] else None,
     } for r in rows]
 
 

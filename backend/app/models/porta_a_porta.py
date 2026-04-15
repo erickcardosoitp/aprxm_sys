@@ -10,7 +10,8 @@ class PortaAPortaLead(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     association_id: UUID = Field(nullable=False)
-    operator_id: UUID = Field(nullable=False, foreign_key="users.id")
+    operator_id: UUID | None = Field(default=None, nullable=True, foreign_key="users.id")
+    lancado_por: str | None = Field(default=None, max_length=200)
 
     full_name: str = Field(max_length=200)
     phone: str | None = Field(default=None, max_length=30)

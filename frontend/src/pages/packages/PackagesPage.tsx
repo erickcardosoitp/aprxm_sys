@@ -77,6 +77,11 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
   const [reversalReason, setReversalReason] = useState('')
   const [reversalPassword, setReversalPassword] = useState('')
   const [reversing, setReversing] = useState(false)
+  const [editingDelivery, setEditingDelivery] = useState(false)
+  const [deliveryEdit, setDeliveryEdit] = useState({ delivered_to_name: '', delivered_to_cpf: '', delivery_person_name: '', notes: '', admin_password: '' })
+  const [savingDelivery, setSavingDelivery] = useState(false)
+  const role = useAuthStore((s) => s.role)
+  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
 
   const handleNotify = async () => {
     setNotifying(true)
@@ -97,6 +102,19 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
       onRefresh?.()
       onClose()
     } catch { toast.error('Erro ao registrar devolução.') } finally { setReturning(false) }
+  }
+
+  const handleSaveDeliveryEdit = async () => {
+    if (!deliveryEdit.admin_password.trim()) { toast.error('Senha de admin obrigatória.'); return }
+    setSavingDelivery(true)
+    try {
+      await api.patch(`/packages/${pkg.id}/delivery-info`, deliveryEdit)
+      toast.success('Informações de entrega atualizadas.')
+      setEditingDelivery(false)
+      onRefresh?.()
+    } catch (e: any) {
+      toast.error(apiErr(e, 'Erro ao salvar.'))
+    } finally { setSavingDelivery(false) }
   }
 
   const handleReversal = async () => {
@@ -236,7 +254,37 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
           {/* Delivery info */}
           {pkg.status === 'delivered' && (
             <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
-              <p className="text-xs font-semibold text-green-700 mb-1.5">Informações de Entrega</p>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-xs font-semibold text-green-700">Informações de Entrega</p>
+                {isConferenteOrAbove && !editingDelivery && (
+                  <button onClick={() => { setDeliveryEdit({ delivered_to_name: pkg.delivered_to_name ?? '', delivered_to_cpf: pkg.delivered_to_cpf ?? '', delivery_person_name: pkg.deliverer_name ?? '', notes: pkg.notes ?? '', admin_password: '' }); setEditingDelivery(true) }}
+                    className="text-xs text-[#26619c] border border-[#26619c] px-2 py-0.5 rounded-lg hover:bg-blue-50">
+                    Editar
+                  </button>
+                )}
+              </div>
+              {editingDelivery ? (
+                <div className="flex flex-col gap-2">
+                  {[['Recebido por', 'delivered_to_name'], ['CPF', 'delivered_to_cpf'], ['Entregador', 'delivery_person_name'], ['Observações', 'notes']].map(([label, key]) => (
+                    <div key={key}>
+                      <label className="text-xs text-gray-500">{label}</label>
+                      <input type="text" value={deliveryEdit[key as keyof typeof deliveryEdit]}
+                        onChange={e => setDeliveryEdit(p => ({ ...p, [key]: e.target.value }))}
+                        className="w-full border border-green-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-300 bg-white" />
+                    </div>
+                  ))}
+                  <div>
+                    <label className="text-xs text-gray-500">Senha de admin *</label>
+                    <input type="password" value={deliveryEdit.admin_password}
+                      onChange={e => setDeliveryEdit(p => ({ ...p, admin_password: e.target.value }))}
+                      className="w-full border border-red-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-white" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setEditingDelivery(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+                    <button onClick={handleSaveDeliveryEdit} disabled={savingDelivery} className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">{savingDelivery ? 'Salvando…' : 'Salvar'}</button>
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 gap-2 text-sm mb-2">
                 {pkg.delivered_to_name && (
                   <div>
@@ -294,6 +342,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
                   </div>
                 )}
               </div>
+              )}
             </div>
           )}
 

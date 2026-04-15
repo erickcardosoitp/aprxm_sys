@@ -83,6 +83,7 @@ class CommissionPaymentIn(BaseModel):
 
 class PublicLeadIn(BaseModel):
     token: str
+    lancado_por: str = Field(min_length=2, max_length=200, description="Nome de quem está lançando o cadastro")
     full_name: str = Field(min_length=2, max_length=200)
     phone: str | None = None
     cpf: str | None = None
@@ -134,6 +135,19 @@ async def get_public_token(
 ) -> dict:
     settings = get_settings()
     token = _make_public_token(str(current.association_id), str(current.user_id), settings.secret_key, commissioned_to)
+    return {"token": token}
+
+
+@router.get("/association-link", summary="Gerar link público da associação (sem operador fixo)")
+async def get_association_link(
+    current: CurrentUser = Depends(require_admin),
+) -> dict:
+    settings = get_settings()
+    payload = {
+        "assoc": str(current.association_id),
+        "exp": datetime.utcnow() + timedelta(days=3650),  # 10 years
+    }
+    token = jwt.encode(payload, settings.secret_key, algorithm=_ALGO)
     return {"token": token}
 
 
@@ -533,13 +547,14 @@ async def public_register(
     payload = _decode_public_token(body.token, settings.secret_key)
 
     assoc_id = UUID(payload["assoc"])
-    operator_id = UUID(payload["op"])
+    operator_id = UUID(payload["op"]) if payload.get("op") else None
     commissioned_to_id = UUID(payload["com"]) if payload.get("com") else None
 
     lead = PortaAPortaLead(
         association_id=assoc_id,
         operator_id=operator_id,
         commissioned_to=commissioned_to_id,
+        lancado_por=body.lancado_por,
         full_name=body.full_name,
         phone=body.phone,
         cpf=body.cpf,

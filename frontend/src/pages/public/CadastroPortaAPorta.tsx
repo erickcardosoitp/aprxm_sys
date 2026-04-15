@@ -17,6 +17,7 @@ export default function CadastroPortaAPorta() {
   const [loading, setLoading] = useState(false)
 
   const [form, setForm] = useState({
+    lancado_por: '',
     full_name: '',
     phone: '',
     cpf: '',
@@ -38,6 +39,7 @@ export default function CadastroPortaAPorta() {
   const removeDep = (i: number) => setDependents(d => d.filter((_, idx) => idx !== i))
 
   const handleSubmit = async () => {
+    if (!form.lancado_por.trim()) { toast.error('Informe quem está lançando o cadastro.'); return }
     if (!form.full_name.trim()) { toast.error('Informe o nome completo.'); return }
     if (!form.address_street.trim() || !form.address_number.trim()) { toast.error('Informe o endereço.'); return }
     if (!token) { toast.error('Link inválido.'); return }
@@ -89,9 +91,16 @@ export default function CadastroPortaAPorta() {
           <p className="text-xs text-gray-500 mt-1">Preencha seus dados para se associar.</p>
         </div>
 
+        {/* Lançado por */}
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Responsável pelo cadastro</p>
+          <input className={`${inp} border-[#26619c]/40 bg-blue-50`} placeholder="Lançado por (seu nome) *" value={form.lancado_por}
+            onChange={e => set('lancado_por', e.target.value)} />
+        </div>
+
         {/* Dados pessoais */}
         <div className="flex flex-col gap-3">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Seus dados</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Dados do novo associado</p>
           <input className={inp} placeholder="Nome completo *" value={form.full_name}
             onChange={e => set('full_name', e.target.value)} />
           <input className={inp} placeholder="Telefone" value={form.phone} inputMode="tel"

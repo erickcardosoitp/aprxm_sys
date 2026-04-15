@@ -146,7 +146,7 @@ interface AuditEntry {
   id: string; acao: string; entidade: string; entidade_id: string; detalhe: string; data: string; autor: string
 }
 
-type AdminTab = 'usuarios' | 'comprovante'
+type AdminTab = 'usuarios' | 'comprovante' | 'tarefas' | 'moradores'
 
 interface AssocConfig {
   assoc_logo_url?: string
@@ -328,6 +328,291 @@ function ComprovanteTab() {
           </div>
         ))}
       </div>
+
+      {/* Relatório de comprovantes emitidos */}
+      <ComprovanteReport />
+    </div>
+  )
+}
+
+type ProofEntry = {
+  id: string; amount: string; description: string; created_at: string
+  reference_number: string | null; reversed_at: string | null
+  payment_method: string | null; resident_name: string | null
+  unit: string | null; cpf: string | null; issued_by: string | null
+}
+
+function ComprovanteReport() {
+  const [entries, setEntries] = useState<ProofEntry[]>([])
+  const [loading, setLoading] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<ProofEntry[]>('/finance/proof-of-residence/list')
+      setEntries(res.data)
+      setLoaded(true)
+    } catch { toast.error('Erro ao carregar relatório.') } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const maskCpf = (cpf: string) => cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h3 className="font-bold text-gray-900 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-[#26619c]" /> Histórico de Comprovantes Emitidos
+        </h3>
+        <button onClick={load} className="text-gray-400 hover:text-gray-600 text-xs border border-gray-200 px-2 py-1 rounded-lg">Atualizar</button>
+      </div>
+      {loading ? (
+        <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+      ) : !loaded || entries.length === 0 ? (
+        <div className="p-8 text-center text-gray-400 text-sm">Nenhum comprovante emitido.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-5 py-3 text-left whitespace-nowrap">Data</th>
+                <th className="px-5 py-3 text-left whitespace-nowrap">Morador</th>
+                <th className="px-5 py-3 text-left whitespace-nowrap">CPF</th>
+                <th className="px-5 py-3 text-left whitespace-nowrap">Unidade</th>
+                <th className="px-5 py-3 text-right whitespace-nowrap">Valor</th>
+                <th className="px-5 py-3 text-left whitespace-nowrap">Pagamento</th>
+                <th className="px-5 py-3 text-left whitespace-nowrap">Código</th>
+                <th className="px-5 py-3 text-left whitespace-nowrap">Emitido por</th>
+                <th className="px-5 py-3 text-left whitespace-nowrap">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {entries.map(e => (
+                <tr key={e.id} className={`hover:bg-blue-50/30 transition ${e.reversed_at ? 'opacity-50' : ''}`}>
+                  <td className="px-5 py-3 whitespace-nowrap text-gray-700">
+                    {new Date(e.created_at).toLocaleDateString('pt-BR')}
+                    <div className="text-xs text-gray-400">{new Date(e.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+                  </td>
+                  <td className="px-5 py-3 font-medium text-gray-900 whitespace-nowrap">
+                    {e.resident_name ?? e.description.replace('Comprovante de Residência — ', '')}
+                  </td>
+                  <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.cpf ? maskCpf(e.cpf) : '—'}</td>
+                  <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.unit ?? '—'}</td>
+                  <td className="px-5 py-3 text-right font-semibold text-green-700 whitespace-nowrap">R$ {parseFloat(e.amount).toFixed(2)}</td>
+                  <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.payment_method ?? '—'}</td>
+                  <td className="px-5 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">{e.reference_number ?? '—'}</td>
+                  <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.issued_by ?? '—'}</td>
+                  <td className="px-5 py-3 whitespace-nowrap">
+                    {e.reversed_at
+                      ? <span className="text-xs bg-red-100 text-red-600 font-semibold px-2 py-0.5 rounded-full">Estornado</span>
+                      : <span className="text-xs bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Válido</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type ScheduledTask = {
+  id: string; name: string; description: string; task_key: string
+  schedule_cron: string; schedule_label: string; enabled: boolean
+  last_run_at: string | null; last_run_status: string | null; last_run_result: string | null
+}
+
+function TarefasAgendadasTab() {
+  const [tasks, setTasks] = useState<ScheduledTask[]>([])
+  const [loading, setLoading] = useState(true)
+  const [running, setRunning] = useState<string | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<ScheduledTask[]>('/admin/scheduled-tasks')
+      setTasks(res.data)
+    } catch { toast.error('Erro ao carregar tarefas.') } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const toggle = async (key: string) => {
+    try {
+      const res = await api.patch<{ enabled: boolean }>(`/admin/scheduled-tasks/${key}/toggle`)
+      setTasks(t => t.map(x => x.task_key === key ? { ...x, enabled: res.data.enabled } : x))
+    } catch { toast.error('Erro ao alterar.') }
+  }
+
+  const run = async (key: string) => {
+    setRunning(key)
+    try {
+      const res = await api.post<{ status: string; result: string }>(`/admin/scheduled-tasks/${key}/run`)
+      toast.success(res.data.result)
+      load()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao executar tarefa.')
+    } finally { setRunning(null) }
+  }
+
+  if (loading) return <div className="p-10 text-center text-gray-400">Carregando…</div>
+
+  return (
+    <div className="flex flex-col gap-4">
+      {tasks.map(task => (
+        <div key={task.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-bold text-gray-900">{task.name}</h3>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${task.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {task.enabled ? 'Ativa' : 'Inativa'}
+                </span>
+              </div>
+              <p className="text-sm text-gray-500 mb-2">{task.description}</p>
+              <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+                <span className="flex items-center gap-1">
+                  <span className="font-medium text-gray-700">Agendamento:</span> {task.schedule_label}
+                </span>
+                {task.last_run_at && (
+                  <span className="flex items-center gap-1">
+                    <span className="font-medium text-gray-700">Última execução:</span>
+                    {new Date(task.last_run_at).toLocaleString('pt-BR')}
+                    <span className={`ml-1 px-1.5 py-0.5 rounded font-semibold ${task.last_run_status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                      {task.last_run_status === 'success' ? 'OK' : 'Erro'}
+                    </span>
+                  </span>
+                )}
+              </div>
+              {task.last_run_result && (
+                <p className="text-xs text-gray-400 mt-1 italic">{task.last_run_result}</p>
+              )}
+            </div>
+            <div className="flex flex-col gap-2 shrink-0">
+              <button onClick={() => run(task.task_key)} disabled={running === task.task_key}
+                className="px-4 py-2 bg-[#26619c] text-white text-xs font-semibold rounded-lg hover:bg-[#1a4f87] transition disabled:opacity-50 whitespace-nowrap">
+                {running === task.task_key ? 'Executando…' : 'Executar agora'}
+              </button>
+              <button onClick={() => toggle(task.task_key)}
+                className={`px-4 py-2 text-xs font-semibold rounded-lg border transition whitespace-nowrap ${task.enabled ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-green-300 text-green-700 hover:bg-green-50'}`}>
+                {task.enabled ? 'Desativar' : 'Ativar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+
+// ── Relatório de Moradores por Rua ────────────────────────────────────────────
+interface StreetRow {
+  street: string
+  total: number
+  members: number
+  guests: number
+  active: number
+  inactive: number
+  with_cpf: number
+  with_phone: number
+  pct_of_total: number
+  pct_cpf: number
+}
+interface MoradoresReport {
+  grand_total: number
+  streets: StreetRow[]
+  summary: {
+    total_members: number
+    total_guests: number
+    total_active: number
+    total_inactive: number
+    total_with_cpf: number
+    pct_cpf_overall: number
+  }
+}
+
+function MoradoresTab() {
+  const [data, setData] = useState<MoradoresReport | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api.get('/residents/reports/by-street')
+      .then(r => setData(r.data))
+      .catch(() => toast.error('Erro ao carregar relatório'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+  if (!data) return null
+
+  const { summary, streets, grand_total } = data
+
+  return (
+    <div className="flex flex-col gap-5 mt-4">
+      {/* Cards de resumo */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {[
+          { label: 'Total de Moradores', value: grand_total, color: 'text-[#26619c]' },
+          { label: 'Associados', value: summary.total_members, color: 'text-blue-600' },
+          { label: 'Visitantes', value: summary.total_guests, color: 'text-orange-500' },
+          { label: 'Ativos', value: summary.total_active, color: 'text-green-600' },
+          { label: 'Inativos', value: summary.total_inactive, color: 'text-red-500' },
+          { label: '% com CPF', value: `${summary.pct_cpf_overall}%`, color: 'text-purple-600' },
+        ].map(c => (
+          <div key={c.label} className="bg-white rounded-xl border border-gray-200 p-3 flex flex-col gap-1">
+            <p className="text-xs text-gray-500">{c.label}</p>
+            <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabela por rua */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <p className="text-sm font-semibold text-gray-700">Cadastros por Rua</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-50 text-gray-500 uppercase text-[10px] tracking-wide">
+                <th className="text-left px-4 py-2">Rua</th>
+                <th className="text-right px-3 py-2">Total</th>
+                <th className="text-right px-3 py-2">% Total</th>
+                <th className="text-right px-3 py-2">Assoc.</th>
+                <th className="text-right px-3 py-2">Visit.</th>
+                <th className="text-right px-3 py-2">Ativos</th>
+                <th className="text-right px-3 py-2">Inat.</th>
+                <th className="text-right px-3 py-2">% CPF</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {streets.map(s => (
+                <tr key={s.street} className="hover:bg-gray-50">
+                  <td className="px-4 py-2.5 font-medium text-gray-800 max-w-[160px] truncate">{s.street}</td>
+                  <td className="px-3 py-2.5 text-right font-bold text-gray-900">{s.total}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <div className="w-16 bg-gray-200 rounded-full h-1.5 hidden sm:block">
+                        <div className="bg-[#26619c] h-1.5 rounded-full" style={{ width: `${s.pct_of_total}%` }} />
+                      </div>
+                      <span className="text-gray-600">{s.pct_of_total}%</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-blue-600">{s.members}</td>
+                  <td className="px-3 py-2.5 text-right text-orange-500">{s.guests}</td>
+                  <td className="px-3 py-2.5 text-right text-green-600">{s.active}</td>
+                  <td className="px-3 py-2.5 text-right text-red-500">{s.inactive}</td>
+                  <td className="px-3 py-2.5 text-right text-purple-600">{s.pct_cpf}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
@@ -415,6 +700,8 @@ export default function AdminPage() {
         {([
           ['usuarios', 'Usuários'],
           ['comprovante', 'Comprovante'],
+          ['tarefas', 'Tarefas Agendadas'],
+          ['moradores', 'Moradores'],
         ] as [AdminTab, string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
@@ -475,7 +762,8 @@ export default function AdminPage() {
       )}
 
       {tab === 'comprovante' && <ComprovanteTab />}
-
+      {tab === 'tarefas' && <TarefasAgendadasTab />}
+      {tab === 'moradores' && <MoradoresTab />}
 
       {showForm && (
         <UserFormModal

@@ -17,6 +17,7 @@ class BankStatement(SQLModel, table=True):
     tipo: str = Field(default="entrada", max_length=10)
     description: str | None = None
     conciliado: bool = Field(default=False)
+    transaction_id: UUID | None = Field(default=None, foreign_key="transactions.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

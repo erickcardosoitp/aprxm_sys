@@ -273,3 +273,151 @@ async def clear_data(
 
     await session.commit()
     return {"ok": True, "deleted": deleted}
+
+
+# ── Tarefas Agendadas ─────────────────────────────────────────────────────────
+
+BUILT_IN_TASKS = [
+    {
+        "task_key": "sync_pix_bank_statements",
+        "name": "Sincronizar PIX Não-Conciliados",
+        "description": "Transpõe todas as transações PIX sem entrada em Extrato para a tela de conciliação como Não-Conciliado.",
+        "schedule_cron": "0 8 * * *",
+        "schedule_label": "Diariamente às 08h",
+    },
+    {
+        "task_key": "generate_monthly_mensalidades",
+        "name": "Gerar Mensalidades do Mês",
+        "description": "Toda segunda-feira às 08h, gera mensalidades pendentes para todos os associados ativos do mês corrente.",
+        "schedule_cron": "0 8 * * 1",
+        "schedule_label": "Toda segunda-feira às 08h",
+    },
+]
+
+
+@router.get("/scheduled-tasks", summary="Listar tarefas agendadas")
+async def list_scheduled_tasks(
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from datetime import datetime as dt
+    aid = str(current.association_id)
+
+    # Ensure built-in tasks exist
+    for task in BUILT_IN_TASKS:
+        await session.execute(text("""
+            INSERT INTO scheduled_tasks (association_id, name, description, task_key, schedule_cron, schedule_label)
+            VALUES (:aid, :name, :desc, :key, :cron, :label)
+            ON CONFLICT (association_id, task_key) DO NOTHING
+        """), {"aid": aid, "name": task["name"], "desc": task["description"],
+               "key": task["task_key"], "cron": task["schedule_cron"], "label": task["schedule_label"]})
+    await session.commit()
+
+    result = await session.execute(text(
+        "SELECT id, name, description, task_key, schedule_cron, schedule_label, enabled, "
+        "last_run_at, last_run_status, last_run_result, created_at "
+        "FROM scheduled_tasks WHERE association_id = :aid ORDER BY created_at"
+    ), {"aid": aid})
+    rows = result.fetchall()
+    return [
+        {
+            "id": str(r[0]), "name": r[1], "description": r[2], "task_key": r[3],
+            "schedule_cron": r[4], "schedule_label": r[5], "enabled": r[6],
+            "last_run_at": str(r[7]) if r[7] else None, "last_run_status": r[8],
+            "last_run_result": r[9], "created_at": str(r[10]),
+        }
+        for r in rows
+    ]
+
+
+@router.patch("/scheduled-tasks/{task_key}/toggle", summary="Ativar/desativar tarefa")
+async def toggle_task(
+    task_key: str,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    result = await session.execute(text(
+        "UPDATE scheduled_tasks SET enabled = NOT enabled WHERE association_id = :aid AND task_key = :key "
+        "RETURNING enabled"
+    ), {"aid": str(current.association_id), "key": task_key})
+    row = result.fetchone()
+    if not row:
+        raise HTTPException(404, "Tarefa não encontrada.")
+    await session.commit()
+    return {"enabled": row[0]}
+
+
+@router.post("/scheduled-tasks/{task_key}/run", summary="Executar tarefa agora")
+async def run_task_now(
+    task_key: str,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from datetime import datetime as dt
+    aid = str(current.association_id)
+    assoc_id = current.association_id
+    status = "success"
+    result_msg = ""
+
+    try:
+        if task_key == "sync_pix_bank_statements":
+            # Find PIX income transactions without bank_statement entry
+            r = await session.execute(text("""
+                INSERT INTO bank_statements (association_id, bank, date, amount, name, description, tipo, conciliado, transaction_id)
+                SELECT t.association_id, 'PIX', t.created_at::date, t.amount, t.description, t.description,
+                       'entrada', false, t.id
+                FROM transactions t
+                JOIN payment_methods pm ON pm.id = t.payment_method_id
+                WHERE t.association_id = :aid
+                  AND t.type = 'income'
+                  AND LOWER(pm.name) LIKE '%pix%'
+                  AND t.reversed_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM bank_statements bs WHERE bs.transaction_id = t.id)
+                RETURNING id
+            """), {"aid": aid})
+            count = len(r.fetchall())
+            result_msg = f"{count} entrada(s) PIX sincronizadas."
+
+        elif task_key == "generate_monthly_mensalidades":
+            # Call the existing cron-generate logic
+            r = await session.execute(text("""
+                SELECT r.id, r.association_id,
+                       COALESCE((SELECT s.default_mensalidade_amount FROM association_settings s WHERE s.association_id = r.association_id LIMIT 1), 20.00) as amount
+                FROM residents r
+                WHERE r.association_id = :aid AND r.status = 'active' AND r.type = 'member'
+            """), {"aid": aid})
+            residents = r.fetchall()
+            from datetime import date
+            ref_month = date.today().strftime("%Y-%m")
+            due = date(date.today().year, date.today().month, 10)
+            created = 0
+            for res in residents:
+                try:
+                    await session.execute(text("""
+                        INSERT INTO mensalidades (association_id, resident_id, reference_month, due_date, amount, status, created_by)
+                        SELECT :aid, :rid, :month, :due, :amount, 'pending',
+                               (SELECT id FROM users WHERE association_id = :aid AND role = 'admin' LIMIT 1)
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM mensalidades m2 WHERE m2.association_id = :aid
+                              AND m2.resident_id = :rid AND m2.reference_month = :month
+                        )
+                    """), {"aid": aid, "rid": str(res[0]), "month": ref_month, "due": due, "amount": str(res[2])})
+                    created += 1
+                except Exception:
+                    pass
+            result_msg = f"{created} mensalidade(s) gerada(s) para {ref_month}."
+        else:
+            raise HTTPException(400, "Tarefa desconhecida.")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        status = "error"
+        result_msg = str(e)
+
+    await session.execute(text("""
+        UPDATE scheduled_tasks SET last_run_at = now(), last_run_status = :status, last_run_result = :result
+        WHERE association_id = :aid AND task_key = :key
+    """), {"aid": aid, "status": status, "result": result_msg, "key": task_key})
+    await session.commit()
+    return {"status": status, "result": result_msg}

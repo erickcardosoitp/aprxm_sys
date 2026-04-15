@@ -13,6 +13,28 @@ import type { AssociationSettings, CashSession, CashSessionSummary, Transaction 
 const TYPE_LABELS: Record<string, string> = { income: 'Entrada', expense: 'Saída', sangria: 'Sangria' }
 const TYPE_COLORS: Record<string, string> = { income: 'text-green-600', expense: 'text-red-600', sangria: 'text-amber-600' }
 
+const SUBTYPE_LABELS: Record<string, string> = {
+  delivery_fee: 'Taxa de Entrega',
+  mensalidade: 'Mensalidade',
+  proof_of_residence: 'Comprovante',
+  other: 'Outros',
+}
+const SUBTYPE_COLORS: Record<string, string> = {
+  delivery_fee: 'bg-amber-100 text-amber-700',
+  mensalidade: 'bg-blue-100 text-blue-700',
+  proof_of_residence: 'bg-purple-100 text-purple-700',
+  other: 'bg-gray-100 text-gray-600',
+}
+
+const parseTxName = (desc: string, subtype: string | null): string => {
+  if (subtype && desc.includes(' — ')) return desc.split(' — ').slice(1).join(' — ')
+  if (desc.startsWith('Estorno: ') && desc.includes(' — ')) {
+    const rest = desc.replace('Estorno: ', '')
+    if (rest.includes(' — ')) return 'Estorno: ' + rest.split(' — ').slice(1).join(' — ')
+  }
+  return desc
+}
+
 // ── Approval modal ─────────────────────────────────────────────────────────────
 
 function ApprovalModal({
@@ -184,6 +206,9 @@ function SessionDetailModal({
     manual_total_baixas: session.total_baixas ?? '',
   })
   const [txEdits, setTxEdits] = useState<Record<string, { payment_method_id: string; observacao: string }>>({})
+  const [recalculating, setRecalculating] = useState(false)
+  const [recalcResult, setRecalcResult] = useState<{ expected_balance: string; difference: string | null } | null>(null)
+  const [subtypeFilter, setSubtypeFilter] = useState<string | null>(null)
 
   const fmtBRL = (v: string | undefined) => (v != null ? `R$ ${parseFloat(v).toFixed(2)}` : '—')
   const fmtDate = (s: string) =>
@@ -248,7 +273,20 @@ function SessionDetailModal({
     } catch { toast.error('Erro ao salvar correções.') } finally { setSavingTx(false) }
   }
 
-  const diff = session.difference ? parseFloat(session.difference) : null
+  const handleRecalculate = async () => {
+    setRecalculating(true)
+    try {
+      const res = await api.post<{ expected_balance: string; difference: string | null }>(
+        `/finance/sessions/${session.id}/recalculate`
+      )
+      setRecalcResult(res.data)
+      toast.success('Quebra de caixa recalculada.')
+    } catch { toast.error('Erro ao recalcular.') } finally { setRecalculating(false) }
+  }
+
+  const diff = recalcResult?.difference != null
+    ? parseFloat(recalcResult.difference)
+    : session.difference ? parseFloat(session.difference) : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -284,10 +322,10 @@ function SessionDetailModal({
                 <p className="font-semibold text-gray-800">{fmtBRL(session.closing_balance)}</p>
               </div>
             )}
-            {session.expected_balance && (
+            {(recalcResult?.expected_balance || session.expected_balance) && (
               <div>
-                <p className="text-xs text-gray-400">Saldo esperado</p>
-                <p className="font-semibold text-gray-800">{fmtBRL(session.expected_balance)}</p>
+                <p className="text-xs text-gray-400">Saldo esperado{recalcResult ? ' (recalculado)' : ''}</p>
+                <p className="font-semibold text-gray-800">{fmtBRL(recalcResult?.expected_balance ?? session.expected_balance)}</p>
               </div>
             )}
             {diff !== null && (
@@ -371,23 +409,51 @@ function SessionDetailModal({
               )
             )}
           </div>
+          {/* Subtype filter pills */}
+          {!loading && transactions.length > 0 && (
+            <div className="px-6 py-2 border-b border-gray-100 flex gap-1.5 flex-wrap">
+              <button onClick={() => setSubtypeFilter(null)}
+                className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${subtypeFilter === null ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                Todos
+              </button>
+              {Object.entries(SUBTYPE_LABELS).map(([key, label]) =>
+                transactions.some(t => t.income_subtype === key) && (
+                  <button key={key} onClick={() => setSubtypeFilter(f => f === key ? null : key)}
+                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${subtypeFilter === key ? SUBTYPE_COLORS[key] + ' ring-2 ring-offset-1 ring-current' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    {label}
+                  </button>
+                )
+              )}
+            </div>
+          )}
           {loading ? (
             <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
           ) : transactions.length === 0 ? (
             <div className="p-6 text-center text-gray-400 text-sm">Nenhuma movimentação registrada.</div>
           ) : (
             <ul className="divide-y divide-gray-100">
-              {transactions.map((tx) => (
+              {transactions
+                .filter(tx => subtypeFilter === null || tx.income_subtype === subtypeFilter)
+                .map(tx => (
                 <li key={tx.id} className="px-6 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-800">{tx.description}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span className="text-xs text-gray-400">{new Date(tx.transaction_at).toLocaleString('pt-BR')}</span>
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLORS[tx.type]}`}>{TYPE_LABELS[tx.type]}</span>
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        {tx.income_subtype && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${SUBTYPE_COLORS[tx.income_subtype] ?? 'bg-gray-100 text-gray-600'}`}>
+                            {SUBTYPE_LABELS[tx.income_subtype] ?? tx.income_subtype}
+                          </span>
+                        )}
+                        {!tx.income_subtype && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLORS[tx.type]} bg-opacity-10`}>{TYPE_LABELS[tx.type]}</span>
+                        )}
                         {tx.payment_method_name && !editingTx && (
                           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{tx.payment_method_name}</span>
                         )}
+                      </div>
+                      <p className="text-sm font-medium text-gray-800">{parseTxName(tx.description, tx.income_subtype ?? null)}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-xs text-gray-400">{new Date(tx.transaction_at).toLocaleString('pt-BR')}</span>
                       </div>
                       {tx.observacao && !editingTx && (
                         <p className="text-xs text-amber-600 mt-0.5">Obs: {tx.observacao}</p>
@@ -428,13 +494,17 @@ function SessionDetailModal({
             className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
             Fechar
           </button>
-          {isConferenteOrAbove && session.status !== 'open' && !editingTx && (
-            editing ? null : (
+          {isConferenteOrAbove && session.status !== 'open' && !editingTx && !editing && (
+            <>
               <button onClick={() => setEditing(true)}
                 className="flex-1 flex items-center justify-center gap-2 border border-[#26619c] text-[#26619c] py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-50 transition">
                 Corrigir Valores
               </button>
-            )
+              <button onClick={handleRecalculate} disabled={recalculating}
+                className="flex-1 flex items-center justify-center gap-2 bg-amber-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-amber-600 transition disabled:opacity-50">
+                {recalculating ? 'Calculando…' : 'Recalcular Quebra'}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -920,33 +990,33 @@ export default function FinancePage() {
       {/* ── TAB: SESSÕES ── */}
       {tab === 'sessoes' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-800 text-sm">Histórico de Sessões</h3>
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-bold text-gray-900 text-base">Histórico de Sessões</h3>
             <button onClick={loadSessions} className="text-gray-400 hover:text-gray-600">
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-5 h-5" />
             </button>
           </div>
           {loadingSessions ? (
-            <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
+            <div className="p-10 text-center text-gray-400">Carregando…</div>
           ) : sessions.length === 0 ? (
-            <div className="p-6 text-center text-gray-400 text-sm">Nenhuma sessão encontrada.</div>
+            <div className="p-10 text-center text-gray-400">Nenhuma sessão encontrada.</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
+              <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-semibold uppercase tracking-wide">
-                    <th className="px-3 py-2.5 text-left whitespace-nowrap">Data</th>
-                    <th className="px-3 py-2.5 text-left whitespace-nowrap">Operador</th>
-                    <th className="px-3 py-2.5 text-left whitespace-nowrap">Fechado por</th>
-                    <th className="px-3 py-2.5 text-right whitespace-nowrap">Saldo Inicial</th>
-                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ PIX</th>
-                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Dinheiro</th>
-                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Total Bruto</th>
-                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Baixas</th>
-                    <th className="px-3 py-2.5 text-right whitespace-nowrap">R$ Total Líquido</th>
-                    <th className="px-3 py-2.5 text-right whitespace-nowrap">Conf. Cega</th>
-                    <th className="px-3 py-2.5 text-right whitespace-nowrap">Sobra/Falta</th>
-                    <th className="px-3 py-2.5 text-left whitespace-nowrap">Conferido por</th>
+                  <tr className="bg-gray-50 border-b-2 border-gray-200 text-gray-500 text-xs font-bold uppercase tracking-wider">
+                    <th className="px-5 py-3 text-left whitespace-nowrap">Data / Status</th>
+                    <th className="px-5 py-3 text-left whitespace-nowrap">Operador</th>
+                    <th className="px-5 py-3 text-left whitespace-nowrap">Fechado por</th>
+                    <th className="px-5 py-3 text-right whitespace-nowrap">Saldo Inicial</th>
+                    <th className="px-5 py-3 text-right whitespace-nowrap">PIX</th>
+                    <th className="px-5 py-3 text-right whitespace-nowrap">Dinheiro</th>
+                    <th className="px-5 py-3 text-right whitespace-nowrap">Total Bruto</th>
+                    <th className="px-5 py-3 text-right whitespace-nowrap">Baixas</th>
+                    <th className="px-5 py-3 text-right whitespace-nowrap">Total Líquido</th>
+                    <th className="px-5 py-3 text-right whitespace-nowrap">Conf. Cega</th>
+                    <th className="px-5 py-3 text-right whitespace-nowrap">Sobra / Falta</th>
+                    <th className="px-5 py-3 text-left whitespace-nowrap">Conferido por</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -954,44 +1024,48 @@ export default function FinancePage() {
                     const bruto = parseFloat(s.total_bruto ?? '0')
                     const baixas = parseFloat(s.total_baixas ?? '0')
                     const liquido = bruto - baixas
-                    // difference stored as (counted - expected); user wants sobra=negative, falta=positive → negate
                     const rawDiff = s.difference != null ? parseFloat(s.difference) : null
                     const displayDiff = rawDiff != null ? -rawDiff : null
                     const isSobra = displayDiff != null && displayDiff < 0
                     const isFalta = displayDiff != null && displayDiff > 0
                     const fmtV = (v: number) => `R$ ${v.toFixed(2)}`
+                    const statusMap: Record<string, { label: string; cls: string }> = {
+                      open: { label: 'Aberta', cls: 'bg-green-100 text-green-700' },
+                      closed: { label: 'Fechado', cls: 'bg-gray-100 text-gray-600' },
+                      conferido: { label: 'Conferido', cls: 'bg-blue-100 text-blue-700' },
+                      cancelled: { label: 'Cancelado', cls: 'bg-red-100 text-red-700' },
+                    }
+                    const st = statusMap[s.status] ?? { label: s.status, cls: 'bg-gray-100 text-gray-500' }
                     return (
                       <tr key={s.id}
-                        className="hover:bg-gray-50 transition cursor-pointer"
+                        className="hover:bg-blue-50/40 transition cursor-pointer"
                         onClick={() => setSelectedSession(s)}>
-                        <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
-                          <div>{new Date(s.opened_at).toLocaleDateString('pt-BR')}</div>
-                          {s.status === 'open' && <span className="inline-block mt-0.5 text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Aberta</span>}
-                          {s.status === 'closed' && <span className="inline-block mt-0.5 text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">Fechado</span>}
-                          {s.status === 'conferido' && <span className="inline-block mt-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">Conferido</span>}
-                          {s.status === 'cancelled' && <span className="inline-block mt-0.5 text-[10px] font-semibold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">Cancelado</span>}
+                        <td className="px-5 py-4 whitespace-nowrap">
+                          <div className="font-semibold text-gray-900">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</div>
+                          <div className="text-xs text-gray-400 mt-0.5">{new Date(s.opened_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{s.closed_at ? ` – ${new Date(s.closed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}</div>
+                          <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
                         </td>
-                        <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{s.operador_name ?? '—'}</td>
-                        <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{s.fechado_por ?? '—'}</td>
-                        <td className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap">{fmtV(parseFloat(s.opening_balance ?? '0'))}</td>
-                        <td className="px-3 py-2.5 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_pix ?? '0'))}</td>
-                        <td className="px-3 py-2.5 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_dinheiro ?? '0'))}</td>
-                        <td className="px-3 py-2.5 text-right font-semibold text-green-700 whitespace-nowrap">{fmtV(bruto)}</td>
-                        <td className="px-3 py-2.5 text-right text-amber-700 whitespace-nowrap">{fmtV(baixas)}</td>
-                        <td className="px-3 py-2.5 text-right font-semibold text-[#26619c] whitespace-nowrap">{fmtV(liquido)}</td>
-                        <td className="px-3 py-2.5 text-right text-gray-700 whitespace-nowrap">
+                        <td className="px-5 py-4 text-gray-800 whitespace-nowrap font-medium">{s.operador_name ?? '—'}</td>
+                        <td className="px-5 py-4 text-gray-600 whitespace-nowrap">{s.fechado_por ?? '—'}</td>
+                        <td className="px-5 py-4 text-right text-gray-500 whitespace-nowrap">{fmtV(parseFloat(s.opening_balance ?? '0'))}</td>
+                        <td className="px-5 py-4 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_pix ?? '0'))}</td>
+                        <td className="px-5 py-4 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_dinheiro ?? '0'))}</td>
+                        <td className="px-5 py-4 text-right font-bold text-green-700 whitespace-nowrap text-base">{fmtV(bruto)}</td>
+                        <td className="px-5 py-4 text-right text-amber-700 whitespace-nowrap">{fmtV(baixas)}</td>
+                        <td className="px-5 py-4 text-right font-bold text-[#26619c] whitespace-nowrap text-base">{fmtV(liquido)}</td>
+                        <td className="px-5 py-4 text-right text-gray-700 whitespace-nowrap font-medium">
                           {s.closing_balance != null ? fmtV(parseFloat(s.closing_balance)) : '—'}
                         </td>
-                        <td className="px-3 py-2.5 text-right whitespace-nowrap font-semibold">
-                          {displayDiff == null ? '—' : (
-                            <span className={isSobra ? 'text-amber-600' : isFalta ? 'text-red-600' : 'text-green-600'}>
-                              {isSobra ? '▼ ' : isFalta ? '▲ ' : ''}
+                        <td className="px-5 py-4 text-right whitespace-nowrap">
+                          {displayDiff == null ? <span className="text-gray-400">—</span> : (
+                            <span className={`inline-flex items-center gap-1 font-bold text-base ${isSobra ? 'text-amber-600' : isFalta ? 'text-red-600' : 'text-green-600'}`}>
+                              {isSobra ? '▼' : isFalta ? '▲' : '✓'}
                               {`R$ ${Math.abs(displayDiff).toFixed(2)}`}
-                              <span className="ml-1 font-normal text-[10px]">{isSobra ? 'Sobra' : isFalta ? 'Falta' : 'OK'}</span>
+                              <span className="font-normal text-xs">{isSobra ? 'Sobra' : isFalta ? 'Falta' : 'OK'}</span>
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{s.conferido_por ?? '—'}</td>
+                        <td className="px-5 py-4 text-gray-600 whitespace-nowrap">{s.conferido_por ?? '—'}</td>
                       </tr>
                     )
                   })}

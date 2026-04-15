@@ -402,6 +402,58 @@ async def reassign_package(
     return {"id": str(pkg.id), "resident_id": str(pkg.resident_id), "resident_name": resident.full_name}
 
 
+class EditDeliveryInfoRequest(BaseModel):
+    delivered_to_name: str | None = None
+    delivered_to_cpf: str | None = None
+    delivery_person_name: str | None = None
+    notes: str | None = None
+    admin_password: str
+
+
+@router.patch("/{package_id}/delivery-info", summary="Editar informações de entrega (conferente+)")
+async def edit_delivery_info(
+    package_id: UUID,
+    body: EditDeliveryInfoRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from datetime import datetime
+    from fastapi import HTTPException
+    from app.core.security import verify_password
+    from sqlmodel import select as sq_select
+    from app.models.user import User
+
+    pkg = await session.get(Package, package_id)
+    if not pkg or str(pkg.association_id) != str(current.association_id):
+        raise HTTPException(404, "Encomenda não encontrada.")
+    if pkg.status != PackageStatus.delivered:
+        raise HTTPException(422, "Só é possível editar encomendas já entregues.")
+
+    # verify admin password
+    result = await session.execute(sq_select(User).where(User.id == current.user_id))
+    user = result.scalar_one_or_none()
+    if not user or not verify_password(body.admin_password, user.hashed_password):
+        raise HTTPException(403, "Senha incorreta.")
+
+    if body.delivered_to_name is not None:
+        pkg.delivered_to_name = body.delivered_to_name
+    if body.delivered_to_cpf is not None:
+        pkg.delivered_to_cpf = body.delivered_to_cpf or None
+    if body.delivery_person_name is not None:
+        pkg.delivery_person_name = body.delivery_person_name or None
+    if body.notes is not None:
+        pkg.notes = body.notes or None
+    pkg.updated_at = datetime.utcnow()
+    session.add(pkg)
+    await session.execute(
+        text("""INSERT INTO package_events (association_id, package_id, created_by, event_type, comment)
+                VALUES (:a, :p, :u, 'comment', 'Informações de entrega editadas pelo conferente')"""),
+        {"a": str(current.association_id), "p": str(package_id), "u": str(current.user_id)},
+    )
+    await session.commit()
+    return {"ok": True}
+
+
 class ReverseDeliveryRequest(BaseModel):
     reason: str
     admin_password: str

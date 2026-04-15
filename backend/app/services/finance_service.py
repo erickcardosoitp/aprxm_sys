@@ -141,11 +141,11 @@ class FinanceService:
         balance = cash_session.opening_balance
         for tx in transactions:
             if tx.type == TransactionType.income:
-                balance += tx.amount
-                bruto += tx.amount
+                if tx.reversed_at is None:
+                    balance += tx.amount
+                    bruto += tx.amount
             elif tx.type == TransactionType.expense:
-                if tx.approval_status == "approved":
-                    balance -= tx.amount
+                balance -= tx.amount
             else:
                 balance -= tx.amount
                 baixas += tx.amount
@@ -199,6 +199,63 @@ class FinanceService:
         )
         self._session.add(tx)
         await self._session.flush()
+
+        # Auto-create/update mensalidade record when subtype is mensalidade
+        if tx_type == TransactionType.income and income_subtype == IncomeSubtype.mensalidade and resident_id is not None:
+            from app.models.mensalidade import Mensalidade, MensalidadeStatus
+            from sqlmodel import select as sq_sel
+            from datetime import date as dt_date, datetime as dt_dt
+            ref_month = datetime.utcnow().strftime("%Y-%m")
+            # Try to find existing pending mensalidade for this resident+month
+            existing = await self._session.execute(
+                sq_sel(Mensalidade).where(
+                    Mensalidade.association_id == association_id,
+                    Mensalidade.resident_id == resident_id,
+                    Mensalidade.reference_month == ref_month,
+                )
+            )
+            mens = existing.scalar_one_or_none()
+            if mens:
+                if mens.status != MensalidadeStatus.paid:
+                    mens.status = MensalidadeStatus.paid
+                    mens.paid_at = datetime.utcnow()
+                    mens.transaction_id = tx.id
+                    self._session.add(mens)
+            else:
+                due = dt_date(datetime.utcnow().year, datetime.utcnow().month, 10)
+                new_mens = Mensalidade(
+                    association_id=association_id,
+                    resident_id=resident_id,
+                    reference_month=ref_month,
+                    due_date=due,
+                    amount=amount,
+                    status=MensalidadeStatus.paid,
+                    paid_at=datetime.utcnow(),
+                    transaction_id=tx.id,
+                    created_by=created_by,
+                )
+                self._session.add(new_mens)
+
+        # Auto-create bank statement entry for PIX income transactions
+        if tx_type == TransactionType.income and payment_method_id is not None:
+            from app.models.bank_statement import BankStatement
+            from app.models.finance import PaymentMethod as PM
+            pm_result = await self._session.get(PM, payment_method_id)
+            if pm_result and "pix" in pm_result.name.lower():
+                from datetime import date as dt_date
+                bs = BankStatement(
+                    association_id=association_id,
+                    bank="PIX",
+                    date=dt_date.today(),
+                    amount=amount,
+                    name=description,
+                    description=description,
+                    tipo="entrada",
+                    conciliado=False,
+                    transaction_id=tx.id,
+                )
+                self._session.add(bs)
+
         return tx
 
     async def perform_sangria(

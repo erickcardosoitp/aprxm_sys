@@ -99,10 +99,24 @@ const fmtDate = (s: string) =>
   new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 
 const SUBTYPE_LABELS: Record<string, string> = {
-  mensalidade: 'Mensalidade',
   delivery_fee: 'Taxa de Entrega',
-  proof_of_residence: 'Comprovante Residência',
+  mensalidade: 'Mensalidade',
+  proof_of_residence: 'Comprovante',
   other: 'Outros',
+}
+const SUBTYPE_COLORS: Record<string, string> = {
+  delivery_fee: 'bg-amber-100 text-amber-700',
+  mensalidade: 'bg-blue-100 text-blue-700',
+  proof_of_residence: 'bg-purple-100 text-purple-700',
+  other: 'bg-gray-100 text-gray-600',
+}
+const parseTxName = (desc: string, subtype: string | null | undefined): string => {
+  if (subtype && desc.includes(' — ')) return desc.split(' — ').slice(1).join(' — ')
+  if (desc.startsWith('Estorno: ') && desc.includes(' — ')) {
+    const rest = desc.replace('Estorno: ', '')
+    if (rest.includes(' — ')) return 'Estorno: ' + rest.split(' — ').slice(1).join(' — ')
+  }
+  return desc
 }
 
 export default function FinanceiroPage() {
@@ -260,6 +274,7 @@ export default function FinanceiroPage() {
   const dreRef = useRef<HTMLDivElement>(null)
 
   const [movSubTab, setMovSubTab] = useState<'entradas' | 'saidas'>('entradas')
+  const [movSubtypeFilter, setMovSubtypeFilter] = useState<string | null>(null)
 
   useEffect(() => {
     api.get<{ association_name?: string }>('/settings/association').then(r => {
@@ -1010,7 +1025,8 @@ export default function FinanceiroPage() {
       {tab === 'movimentacoes' && (() => {
         const entradas = filterByPeriod(transactions.filter(t => t.type === 'income' && !t.is_reversal))
         const saidas = filterByPeriod(transactions.filter(t => t.type !== 'income'))
-        const rows = movSubTab === 'entradas' ? entradas : saidas
+        const baseRows = movSubTab === 'entradas' ? entradas : saidas
+        const rows = movSubtypeFilter ? baseRows.filter(t => t.income_subtype === movSubtypeFilter) : baseRows
         const totalEntradas = entradas.reduce((s, t) => s + parseFloat(t.amount), 0)
         const totalSaidas = saidas.reduce((s, t) => s + parseFloat(t.amount), 0)
         return (
@@ -1041,11 +1057,29 @@ export default function FinanceiroPage() {
               </button>
             </div>
 
-            {/* Sub-tab label */}
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-semibold px-2 py-1 rounded-lg ${movSubTab === 'entradas' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                {movSubTab === 'entradas' ? '↑ Entradas' : '↓ Saídas'} — {PERIOD_LABEL[period]}
-              </span>
+            {/* Sub-tab label + subtype filter */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-semibold px-2 py-1 rounded-lg ${movSubTab === 'entradas' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {movSubTab === 'entradas' ? '↑ Entradas' : '↓ Saídas'} — {PERIOD_LABEL[period]}
+                </span>
+              </div>
+              {movSubTab === 'entradas' && (
+                <div className="flex gap-1.5 flex-wrap">
+                  <button onClick={() => setMovSubtypeFilter(null)}
+                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${movSubtypeFilter === null ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    Todos
+                  </button>
+                  {Object.entries(SUBTYPE_LABELS).map(([key, label]) =>
+                    entradas.some(t => t.income_subtype === key) && (
+                      <button key={key} onClick={() => setMovSubtypeFilter(f => f === key ? null : key)}
+                        className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${movSubtypeFilter === key ? SUBTYPE_COLORS[key] + ' ring-2 ring-offset-1' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                        {label}
+                      </button>
+                    )
+                  )}
+                </div>
+              )}
             </div>
 
             {/* List */}
@@ -1059,18 +1093,25 @@ export default function FinanceiroPage() {
                   {rows.map(t => (
                     <li key={t.id} className={`px-4 py-3 flex items-center justify-between gap-3 ${t.reversed_at || t.is_reversal ? 'opacity-50' : ''}`}>
                       <div className="min-w-0 flex-1">
-                        <p className={`text-sm font-medium truncate ${t.reversed_at ? 'line-through text-gray-400' : 'text-gray-800'}`}>{t.is_sangria ? '🔒 ' : ''}{t.description}</p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          <p className="text-xs text-gray-400">{fmtDate(t.transaction_at)}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
                           {t.income_subtype && (
-                            <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${SUBTYPE_COLORS[t.income_subtype] ?? 'bg-gray-100 text-gray-600'}`}>
                               {SUBTYPE_LABELS[t.income_subtype] ?? t.income_subtype}
                             </span>
                           )}
+                          {(t as any).payment_method_name && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
+                              {(t as any).payment_method_name}
+                            </span>
+                          )}
                           {t.reversed_at && (
-                            <span className="text-xs px-1.5 py-0.5 bg-red-50 text-red-500 rounded">estornado</span>
+                            <span className="text-[10px] px-1.5 py-0.5 bg-red-50 text-red-500 rounded-full font-medium">estornado</span>
                           )}
                         </div>
+                        <p className={`text-sm font-medium truncate ${t.reversed_at ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                          {t.is_sangria ? '🔒 ' : ''}{parseTxName(t.description, t.income_subtype)}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">{fmtDate(t.transaction_at)}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-sm font-bold ${t.reversed_at ? 'line-through text-gray-400' : movSubTab === 'entradas' ? 'text-green-600' : 'text-red-600'}`}>{fmt(t.amount)}</span>

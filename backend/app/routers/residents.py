@@ -414,3 +414,56 @@ async def update_status(
     resident.status = status
     session.add(resident)
     return {"id": str(resident.id), "status": resident.status}
+
+
+
+@router.get("/reports/by-street", summary="Relatório de moradores por rua")
+async def report_by_street(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as t
+    rows = (await session.execute(t("""
+        SELECT
+            COALESCE(NULLIF(TRIM(address_street), ''), 'Sem endereço') AS street,
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE type = 'member') AS members,
+            COUNT(*) FILTER (WHERE type = 'guest') AS guests,
+            COUNT(*) FILTER (WHERE status = 'active') AS active,
+            COUNT(*) FILTER (WHERE status = 'inactive') AS inactive,
+            COUNT(*) FILTER (WHERE cpf IS NOT NULL AND cpf <> '') AS with_cpf,
+            COUNT(*) FILTER (WHERE phone IS NOT NULL AND phone <> '') AS with_phone
+        FROM residents
+        WHERE association_id = :aid
+        GROUP BY 1
+        ORDER BY total DESC
+    """), {"aid": str(current.association_id)})).fetchall()
+
+    grand_total = sum(r[1] for r in rows)
+    streets = [
+        {
+            "street": r[0],
+            "total": r[1],
+            "members": r[2],
+            "guests": r[3],
+            "active": r[4],
+            "inactive": r[5],
+            "with_cpf": r[6],
+            "with_phone": r[7],
+            "pct_of_total": round(r[1] / grand_total * 100, 1) if grand_total else 0,
+            "pct_cpf": round(r[6] / r[1] * 100, 1) if r[1] else 0,
+        }
+        for r in rows
+    ]
+    return {
+        "grand_total": grand_total,
+        "streets": streets,
+        "summary": {
+            "total_members": sum(s["members"] for s in streets),
+            "total_guests": sum(s["guests"] for s in streets),
+            "total_active": sum(s["active"] for s in streets),
+            "total_inactive": sum(s["inactive"] for s in streets),
+            "total_with_cpf": sum(s["with_cpf"] for s in streets),
+            "pct_cpf_overall": round(sum(s["with_cpf"] for s in streets) / grand_total * 100, 1) if grand_total else 0,
+        },
+    }
