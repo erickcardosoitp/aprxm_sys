@@ -300,6 +300,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
                   placeholder="Nome completo" />
               </div>
               <Input label="Telefone (opcional)" value={form.phone_primary} onChange={(v) => set('phone_primary', v)} placeholder="(21) 99999-9999" />
+              <Input label="CPF (opcional)" value={form.cpf} onChange={(v) => set('cpf', formatCpf(v))} placeholder="000.000.000-00" />
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">CEP</label>
                 <div className="flex gap-2">

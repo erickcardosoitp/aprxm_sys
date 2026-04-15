@@ -342,10 +342,15 @@ type ProofEntry = {
   unit: string | null; cpf: string | null; issued_by: string | null
 }
 
+type EditProofForm = { resident_name: string; resident_cpf: string; resident_neighborhood: string; resident_cep: string; amount: string }
+
 function ComprovanteReport() {
   const [entries, setEntries] = useState<ProofEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [editing, setEditing] = useState<ProofEntry | null>(null)
+  const [editForm, setEditForm] = useState<EditProofForm>({ resident_name: '', resident_cpf: '', resident_neighborhood: '', resident_cep: '', amount: '' })
+  const [saving, setSaving] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -360,62 +365,123 @@ function ComprovanteReport() {
 
   const maskCpf = (cpf: string) => cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
 
+  const startEdit = (e: ProofEntry) => {
+    const name = e.resident_name ?? e.description.replace('Comprovante de Residência — ', '')
+    setEditForm({ resident_name: name, resident_cpf: e.cpf ? maskCpf(e.cpf) : '', resident_neighborhood: '', resident_cep: '', amount: parseFloat(e.amount).toFixed(2) })
+    setEditing(e)
+  }
+
+  const handleReissue = async () => {
+    if (!editing) return
+    setSaving(true)
+    try {
+      const res = await api.post(`/finance/proof-of-residence/${editing.id}/reissue`, {
+        resident_name: editForm.resident_name,
+        resident_cpf: editForm.resident_cpf.replace(/\D/g, ''),
+        resident_neighborhood: editForm.resident_neighborhood,
+        resident_cep: editForm.resident_cep,
+        amount: parseFloat(editForm.amount),
+      }, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const a = document.createElement('a'); a.href = url; a.download = 'comprovante.pdf'; a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Comprovante re-emitido!')
+      setEditing(null)
+      load()
+    } catch { toast.error('Erro ao re-emitir comprovante.') } finally { setSaving(false) }
+  }
+
+  const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]'
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <h3 className="font-bold text-gray-900 flex items-center gap-2">
-          <FileText className="w-4 h-4 text-[#26619c]" /> Histórico de Comprovantes Emitidos
-        </h3>
-        <button onClick={load} className="text-gray-400 hover:text-gray-600 text-xs border border-gray-200 px-2 py-1 rounded-lg">Atualizar</button>
-      </div>
-      {loading ? (
-        <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
-      ) : !loaded || entries.length === 0 ? (
-        <div className="p-8 text-center text-gray-400 text-sm">Nenhum comprovante emitido.</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                <th className="px-5 py-3 text-left whitespace-nowrap">Data</th>
-                <th className="px-5 py-3 text-left whitespace-nowrap">Morador</th>
-                <th className="px-5 py-3 text-left whitespace-nowrap">CPF</th>
-                <th className="px-5 py-3 text-left whitespace-nowrap">Unidade</th>
-                <th className="px-5 py-3 text-right whitespace-nowrap">Valor</th>
-                <th className="px-5 py-3 text-left whitespace-nowrap">Pagamento</th>
-                <th className="px-5 py-3 text-left whitespace-nowrap">Código</th>
-                <th className="px-5 py-3 text-left whitespace-nowrap">Emitido por</th>
-                <th className="px-5 py-3 text-left whitespace-nowrap">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {entries.map(e => (
-                <tr key={e.id} className={`hover:bg-blue-50/30 transition ${e.reversed_at ? 'opacity-50' : ''}`}>
-                  <td className="px-5 py-3 whitespace-nowrap text-gray-700">
-                    {new Date(e.created_at).toLocaleDateString('pt-BR')}
-                    <div className="text-xs text-gray-400">{new Date(e.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
-                  </td>
-                  <td className="px-5 py-3 font-medium text-gray-900 whitespace-nowrap">
-                    {e.resident_name ?? e.description.replace('Comprovante de Residência — ', '')}
-                  </td>
-                  <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.cpf ? maskCpf(e.cpf) : '—'}</td>
-                  <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.unit ?? '—'}</td>
-                  <td className="px-5 py-3 text-right font-semibold text-green-700 whitespace-nowrap">R$ {parseFloat(e.amount).toFixed(2)}</td>
-                  <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.payment_method ?? '—'}</td>
-                  <td className="px-5 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">{e.reference_number ?? '—'}</td>
-                  <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.issued_by ?? '—'}</td>
-                  <td className="px-5 py-3 whitespace-nowrap">
-                    {e.reversed_at
-                      ? <span className="text-xs bg-red-100 text-red-600 font-semibold px-2 py-0.5 rounded-full">Estornado</span>
-                      : <span className="text-xs bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Válido</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <>
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-900">Re-emitir Comprovante</h3>
+              <button onClick={() => setEditing(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">O comprovante anterior será estornado e um novo será gerado.</p>
+            <div className="flex flex-col gap-3">
+              <div><label className="text-xs font-medium text-gray-600 mb-1 block">Nome do morador</label><input value={editForm.resident_name} onChange={e => setEditForm(f => ({...f, resident_name: e.target.value}))} className={inputCls} /></div>
+              <div><label className="text-xs font-medium text-gray-600 mb-1 block">CPF</label><input value={editForm.resident_cpf} onChange={e => setEditForm(f => ({...f, resident_cpf: e.target.value}))} className={inputCls} placeholder="000.000.000-00" /></div>
+              <div><label className="text-xs font-medium text-gray-600 mb-1 block">Bairro</label><input value={editForm.resident_neighborhood} onChange={e => setEditForm(f => ({...f, resident_neighborhood: e.target.value}))} className={inputCls} /></div>
+              <div><label className="text-xs font-medium text-gray-600 mb-1 block">CEP</label><input value={editForm.resident_cep} onChange={e => setEditForm(f => ({...f, resident_cep: e.target.value}))} className={inputCls} placeholder="00000-000" /></div>
+              <div><label className="text-xs font-medium text-gray-600 mb-1 block">Valor (R$)</label><input type="number" step="0.01" value={editForm.amount} onChange={e => setEditForm(f => ({...f, amount: e.target.value}))} className={inputCls} /></div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setEditing(null)} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
+              <button onClick={handleReissue} disabled={saving} className="flex-1 bg-[#26619c] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">{saving ? 'Re-emitindo…' : 'Re-emitir PDF'}</button>
+            </div>
+          </div>
         </div>
       )}
-    </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2">
+            <FileText className="w-4 h-4 text-[#26619c]" /> Histórico de Comprovantes Emitidos
+          </h3>
+          <button onClick={load} className="text-gray-400 hover:text-gray-600 text-xs border border-gray-200 px-2 py-1 rounded-lg">Atualizar</button>
+        </div>
+        {loading ? (
+          <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+        ) : !loaded || entries.length === 0 ? (
+          <div className="p-8 text-center text-gray-400 text-sm">Nenhum comprovante emitido.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <th className="px-5 py-3 text-left whitespace-nowrap">Data</th>
+                  <th className="px-5 py-3 text-left whitespace-nowrap">Morador</th>
+                  <th className="px-5 py-3 text-left whitespace-nowrap">CPF</th>
+                  <th className="px-5 py-3 text-left whitespace-nowrap">Unidade</th>
+                  <th className="px-5 py-3 text-right whitespace-nowrap">Valor</th>
+                  <th className="px-5 py-3 text-left whitespace-nowrap">Pagamento</th>
+                  <th className="px-5 py-3 text-left whitespace-nowrap">Código</th>
+                  <th className="px-5 py-3 text-left whitespace-nowrap">Emitido por</th>
+                  <th className="px-5 py-3 text-left whitespace-nowrap">Status</th>
+                  <th className="px-5 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {entries.map(e => (
+                  <tr key={e.id} className={`hover:bg-blue-50/30 transition ${e.reversed_at ? 'opacity-50' : ''}`}>
+                    <td className="px-5 py-3 whitespace-nowrap text-gray-700">
+                      {new Date(e.created_at).toLocaleDateString('pt-BR')}
+                      <div className="text-xs text-gray-400">{new Date(e.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+                    </td>
+                    <td className="px-5 py-3 font-medium text-gray-900 whitespace-nowrap">
+                      {e.resident_name ?? e.description.replace('Comprovante de Residência — ', '')}
+                    </td>
+                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.cpf ? maskCpf(e.cpf) : '—'}</td>
+                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.unit ?? '—'}</td>
+                    <td className="px-5 py-3 text-right font-semibold text-green-700 whitespace-nowrap">R$ {parseFloat(e.amount).toFixed(2)}</td>
+                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.payment_method ?? '—'}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">{e.reference_number ?? '—'}</td>
+                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.issued_by ?? '—'}</td>
+                    <td className="px-5 py-3 whitespace-nowrap">
+                      {e.reversed_at
+                        ? <span className="text-xs bg-red-100 text-red-600 font-semibold px-2 py-0.5 rounded-full">Estornado</span>
+                        : <span className="text-xs bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Válido</span>}
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      {!e.reversed_at && (
+                        <button onClick={() => startEdit(e)} className="text-xs border border-gray-300 text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-50 flex items-center gap-1">
+                          <Pencil className="w-3 h-3" /> Editar
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 

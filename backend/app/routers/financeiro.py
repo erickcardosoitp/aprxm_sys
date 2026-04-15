@@ -39,6 +39,8 @@ async def get_summary(
             FROM transactions
             WHERE association_id = :aid
               AND transaction_at >= :date_from
+              AND reversed_at IS NULL
+              AND is_reversal = false
         """),
         {"aid": str(current.association_id), "date_from": date_from},
     )
@@ -54,6 +56,8 @@ async def get_summary(
             WHERE association_id = :aid
               AND type = 'income'
               AND transaction_at >= :date_from
+              AND reversed_at IS NULL
+              AND is_reversal = false
             GROUP BY income_subtype
         """),
         {"aid": str(current.association_id), "date_from": date_from},

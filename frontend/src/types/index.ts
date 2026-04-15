@@ -59,6 +59,7 @@ export interface Transaction {
   transaction_at: string
   is_sangria: boolean
   is_reversal?: boolean
+  reversed_at?: string | null
   approval_status?: string | null
   category_id?: string
   resident_id?: string

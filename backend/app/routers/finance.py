@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
@@ -62,6 +63,7 @@ class SangriaRequest(BaseModel):
     destination: str = Field(min_length=3, description="Destino do valor (ex: banco, cofre)")
     receipt_photo_url: str = Field(description="URL da foto do recibo")
     category_id: UUID | None = None
+    cash_box_id: UUID | None = None
 
 
 class TransactionRequest(BaseModel):
@@ -165,6 +167,47 @@ async def list_proof_of_residence(
         }
         for r in rows
     ]
+
+
+@router.post("/proof-of-residence/{tx_id}/reissue", summary="Re-emitir comprovante corrigido (estorna o anterior)")
+async def reissue_proof_of_residence(
+    tx_id: UUID,
+    body: ProofOfResidenceRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    svc = FinanceService(session)
+    # Reverse the old transaction
+    await svc.reverse_transaction(
+        transaction_id=tx_id,
+        association_id=current.association_id,
+        reversed_by=current.user_id,
+        reason="Re-emissão com dados corrigidos",
+    )
+    await session.flush()
+    # Issue a new one
+    tx, pdf_bytes = await svc.issue_proof_of_residence(
+        association_id=current.association_id,
+        issued_by=current.user_id,
+        resident_name=body.resident_name,
+        resident_cpf=body.resident_cpf,
+        resident_neighborhood=body.resident_neighborhood,
+        resident_cep=body.resident_cep,
+        amount=body.amount,
+        payment_method_id=body.payment_method_id,
+        category_id=body.category_id,
+        resident_id=body.resident_id,
+    )
+    await session.commit()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="comprovante.pdf"',
+            "X-Barcode-Code": tx.reference_number or "",
+            "Access-Control-Expose-Headers": "X-Barcode-Code",
+        },
+    )
 
 
 @router.get("/proof-of-residence/verify/{code}", summary="Verificar código de comprovante")
@@ -300,6 +343,22 @@ async def perform_sangria(
         receipt_photo_url=body.receipt_photo_url,
         category_id=body.category_id,
     )
+    # Credit the cash box if specified
+    if body.cash_box_id:
+        box = (await session.execute(text(
+            "SELECT id, balance FROM cash_boxes WHERE id=:id AND association_id=:aid AND is_active=true"
+        ), {"id": str(body.cash_box_id), "aid": str(current.association_id)})).fetchone()
+        if box:
+            await session.execute(text(
+                "UPDATE cash_boxes SET balance=balance+:amt, updated_at=NOW() WHERE id=:id"
+            ), {"amt": float(body.amount), "id": str(body.cash_box_id)})
+            await session.execute(text("""
+                INSERT INTO cash_box_movements (id, association_id, cash_box_id, amount, movement_type, description, created_by)
+                VALUES (gen_random_uuid(), :aid, :bid, :amt, 'credit', :desc, :usr)
+            """), {"aid": str(current.association_id), "bid": str(body.cash_box_id),
+                   "amt": float(body.amount), "desc": f"Transferência do caixa: {body.reason}",
+                   "usr": str(current.user_id)})
+    await session.commit()
     return {"id": str(tx.id), "amount": str(tx.amount), "type": tx.type}
 
 
@@ -593,8 +652,8 @@ async def conferencia_caixa(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Nenhuma sessão aberta.")
     txs = await svc.list_transactions(current.association_id, cash.id)
-    income = sum(float(t.amount) for t in txs if t.type == "income")
-    exits = sum(float(t.amount) for t in txs if t.type != "income")
+    income = sum(float(t.amount) for t in txs if t.type == "income" and not t.is_reversal and t.reversed_at is None)
+    exits = sum(float(t.amount) for t in txs if t.type != "income" and not t.is_reversal and t.reversed_at is None)
     expected = float(cash.opening_balance) + income - exits
     counted = float(body.counted_amount)
     cash.status = "conferido"

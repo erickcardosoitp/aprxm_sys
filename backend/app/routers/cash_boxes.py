@@ -30,15 +30,14 @@ async def summary(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     open_row = (await session.execute(text("""
-        SELECT cs.opening_balance +
-               COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount
-                                 WHEN t.type IN ('expense','sangria') THEN -t.amount
+        SELECT COALESCE(SUM(cs.opening_balance), 0) +
+               COALESCE(SUM(CASE WHEN t.type='income' AND t.reversed_at IS NULL AND t.is_reversal=false THEN t.amount
+                                 WHEN t.type IN ('expense','sangria') AND t.reversed_at IS NULL AND t.is_reversal=false THEN -t.amount
                                  ELSE 0 END), 0) AS bal
           FROM cash_sessions cs
           LEFT JOIN transactions t ON t.cash_session_id = cs.id
                                    AND t.association_id  = cs.association_id
          WHERE cs.association_id = :aid AND cs.status = 'open'
-         GROUP BY cs.opening_balance
     """), {"aid": str(current.association_id)})).fetchone()
 
     boxes_rows = (await session.execute(text("""

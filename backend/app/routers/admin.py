@@ -393,15 +393,16 @@ async def run_task_now(
             created = 0
             for res in residents:
                 try:
-                    await session.execute(text("""
-                        INSERT INTO mensalidades (association_id, resident_id, reference_month, due_date, amount, status, created_by)
-                        SELECT :aid, :rid, :month, :due, :amount, 'pending',
-                               (SELECT id FROM users WHERE association_id = :aid AND role = 'admin' LIMIT 1)
-                        WHERE NOT EXISTS (
-                            SELECT 1 FROM mensalidades m2 WHERE m2.association_id = :aid
-                              AND m2.resident_id = :rid AND m2.reference_month = :month
-                        )
-                    """), {"aid": aid, "rid": str(res[0]), "month": ref_month, "due": due, "amount": str(res[2])})
+                    async with session.begin_nested():
+                        await session.execute(text("""
+                            INSERT INTO mensalidades (association_id, resident_id, reference_month, due_date, amount, status, created_by)
+                            SELECT :aid, :rid, :month, :due, :amount, 'pending',
+                                   (SELECT id FROM users WHERE association_id = :aid AND role = 'admin' LIMIT 1)
+                            WHERE NOT EXISTS (
+                                SELECT 1 FROM mensalidades m2 WHERE m2.association_id = :aid
+                                  AND m2.resident_id = :rid AND m2.reference_month = :month
+                            )
+                        """), {"aid": aid, "rid": str(res[0]), "month": ref_month, "due": due, "amount": str(res[2])})
                     created += 1
                 except Exception:
                     pass

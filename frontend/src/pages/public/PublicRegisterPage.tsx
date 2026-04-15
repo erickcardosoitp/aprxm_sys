@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import axios from 'axios'
-import { CheckCircle2, Upload, X } from 'lucide-react'
+import { Camera, CheckCircle2, Upload, X } from 'lucide-react'
 import { formatCpf, formatPhone, formatCep } from '../../utils'
 
 // Always use relative URL — Vercel rewrite proxies /api/* to backend
@@ -28,13 +28,14 @@ export default function PublicRegisterPage() {
   const [proofUrl, setProofUrl] = useState('')
   const [uploadingProof, setUploadingProof] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState({
     full_name: '', cpf: '', phone_primary: '', phone_secondary: '',
     email: '', date_of_birth: '', unit: '', block: '',
     address_cep: '', address_street: '', address_number: '',
     address_complement: '', address_district: '', address_city: '',
-    address_state: '', notes: '',
+    address_state: '', notes: '', registered_by: '',
   })
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -64,9 +65,8 @@ export default function PublicRegisterPage() {
     } catch { /* silent */ } finally { setCepLoading(false) }
   }
 
-  const handleProofSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !slug) return
+  const uploadProof = async (file: File) => {
+    if (!slug) return
     setProofFile(file)
     setUploadingProof(true)
     try {
@@ -84,6 +84,11 @@ export default function PublicRegisterPage() {
     } finally {
       setUploadingProof(false)
     }
+  }
+
+  const handleProofSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) uploadProof(file)
   }
 
   const handleSubmit = async () => {
@@ -106,6 +111,7 @@ export default function PublicRegisterPage() {
         address_city: form.address_city || null,
         address_state: form.address_state || null,
         notes: form.notes || null,
+        registered_by: form.registered_by || null,
         proof_of_payment_url: proofUrl,
       })
       setSubmitted(true)
@@ -239,6 +245,12 @@ export default function PublicRegisterPage() {
             </div>
           </div>
 
+          {/* Lançado por */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Lançado por</label>
+            <input value={form.registered_by} onChange={e => set('registered_by', e.target.value)} className={inputCls} placeholder="Nome de quem está lançando o cadastro" />
+          </div>
+
           {/* Comprovante de pagamento — obrigatório */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p className="text-xs font-semibold text-blue-900 mb-1">
@@ -256,14 +268,23 @@ export default function PublicRegisterPage() {
                 </button>
               </div>
             ) : (
-              <button type="button" onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingProof}
-                className="w-full border-2 border-dashed border-blue-300 rounded-xl py-4 flex flex-col items-center gap-1.5 text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-50">
-                <Upload className="w-5 h-5" />
-                <span className="text-xs font-medium">{uploadingProof ? 'Enviando…' : 'Selecionar arquivo (foto ou PDF)'}</span>
-              </button>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingProof}
+                  className="flex-1 border-2 border-dashed border-blue-300 rounded-xl py-4 flex flex-col items-center gap-1.5 text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-50">
+                  <Upload className="w-5 h-5" />
+                  <span className="text-xs font-medium">{uploadingProof ? 'Enviando…' : 'Arquivo / PDF'}</span>
+                </button>
+                <button type="button" onClick={() => cameraInputRef.current?.click()}
+                  disabled={uploadingProof}
+                  className="flex-1 border-2 border-dashed border-blue-300 rounded-xl py-4 flex flex-col items-center gap-1.5 text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-50">
+                  <Camera className="w-5 h-5" />
+                  <span className="text-xs font-medium">Tirar foto</span>
+                </button>
+              </div>
             )}
             <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleProofSelect} />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleProofSelect} />
           </div>
 
           <div>

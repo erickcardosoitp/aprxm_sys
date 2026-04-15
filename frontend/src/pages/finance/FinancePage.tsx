@@ -620,12 +620,13 @@ export default function FinancePage() {
   }, [canSeeTotals])
   useEffect(() => { if (session) loadPendingApprovals() }, [session?.id])
 
-  const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
-  const expenses = transactions.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+  const activeTxs = transactions.filter(t => !t.reversed_at && !t.is_reversal)
+  const income = activeTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+  const expenses = activeTxs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
   const currentBalance = session ? parseFloat(session.opening_balance) + income - expenses : 0
 
   // Payment method breakdown (income only)
-  const pmBreakdown = transactions
+  const pmBreakdown = activeTxs
     .filter(t => t.type === 'income')
     .reduce<Record<string, number>>((acc, t) => {
       const key = t.payment_method_name ?? 'Sem forma'
@@ -948,37 +949,47 @@ export default function FinancePage() {
                   <div className="p-6 text-center text-gray-400 text-sm">Nenhuma movimentação ainda.</div>
                 ) : (
                   <ul className="divide-y divide-gray-100">
-                    {transactions.map(tx => (
-                      <li key={tx.id} className={`flex items-center justify-between px-4 py-3 gap-2 ${tx.approval_status === 'pending' ? 'bg-amber-50/50' : tx.approval_status === 'rejected' ? 'bg-red-50/40' : tx.is_reversal ? 'bg-orange-50/40' : ''}`}>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-gray-800 truncate">{tx.description}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                            <span className="text-xs text-gray-400">{new Date(tx.transaction_at).toLocaleString('pt-BR')}</span>
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLORS[tx.type]}`}>{TYPE_LABELS[tx.type]}</span>
-                            {tx.payment_method_name && (
-                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{tx.payment_method_name}</span>
-                            )}
-                            {tx.is_reversal && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">Estorno</span>}
-                            {tx.approval_status === 'pending' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Aguarda aprovação</span>}
-                            {tx.approval_status === 'rejected' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Recusada</span>}
+                    {transactions.map(tx => {
+                      const isVoided = !!(tx as any).reversed_at
+                      const isEstorno = !!tx.is_reversal
+                      const isCanceled = isVoided || isEstorno
+                      return (
+                        <li key={tx.id} className={`flex items-center justify-between px-4 py-3 gap-2 ${
+                          isCanceled ? 'bg-gray-50/70 opacity-60' :
+                          tx.approval_status === 'pending' ? 'bg-amber-50/50' :
+                          tx.approval_status === 'rejected' ? 'bg-red-50/40' : ''
+                        }`}>
+                          <div className="min-w-0 flex-1">
+                            <p className={`text-sm font-medium truncate ${isCanceled ? 'line-through text-gray-400' : 'text-gray-800'}`}>{tx.description}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span className="text-xs text-gray-400">{new Date(tx.transaction_at).toLocaleString('pt-BR')}</span>
+                              {!isCanceled && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLORS[tx.type]}`}>{TYPE_LABELS[tx.type]}</span>}
+                              {tx.payment_method_name && !isCanceled && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{tx.payment_method_name}</span>
+                              )}
+                              {isEstorno && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500">Estorno</span>}
+                              {isVoided && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500">Estornado</span>}
+                              {tx.approval_status === 'pending' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Aguarda aprovação</span>}
+                              {tx.approval_status === 'rejected' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Recusada</span>}
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {canSeeTotals && (
-                            <span className={`text-sm font-semibold ${tx.type === 'income' ? 'text-green-600' : tx.approval_status === 'pending' ? 'text-amber-500' : 'text-red-600'}`}>
-                              {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
-                            </span>
-                          )}
-                          {isConferenteOrAbove && !tx.is_reversal && !(tx as any).reversed_at && (
-                            <button onClick={() => setEstornoTarget(tx)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition"
-                              title="Estornar">
-                              <RotateCcw className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    ))}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {canSeeTotals && (
+                              <span className={`text-sm font-semibold ${isCanceled ? 'line-through text-gray-400' : tx.type === 'income' ? 'text-green-600' : tx.approval_status === 'pending' ? 'text-amber-500' : 'text-red-600'}`}>
+                                {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
+                              </span>
+                            )}
+                            {isConferenteOrAbove && !tx.is_reversal && !(tx as any).reversed_at && (
+                              <button onClick={() => setEstornoTarget(tx)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition"
+                                title="Estornar">
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
               </div>

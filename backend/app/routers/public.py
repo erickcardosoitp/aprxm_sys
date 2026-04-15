@@ -31,6 +31,7 @@ class PublicRegisterRequest(BaseModel):
     address_city: str | None = None
     address_state: str | None = None
     notes: str | None = None
+    registered_by: str | None = None
     proof_of_payment_url: str | None = None
 
 
@@ -105,7 +106,7 @@ async def public_register_resident(
         address_complement=body.address_complement,
         address_city=body.address_city,
         address_state=body.address_state,
-        notes=body.notes,
+        notes=f"Lançado por: {body.registered_by}\n{body.notes or ''}".strip() if body.registered_by else body.notes,
         wants_to_join=True,
         proof_of_payment_url=body.proof_of_payment_url,
     )

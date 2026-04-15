@@ -31,7 +31,6 @@ class FinanceService:
         opening_balance: Decimal = Decimal("0.00"),
         notes: str | None = None,
     ) -> CashSession:
-        await self._assert_no_open_session(association_id)
 
         session = CashSession(
             association_id=association_id,
@@ -92,13 +91,16 @@ class FinanceService:
         await self._session.flush()
         return session
 
-    async def get_open_session(self, association_id: UUID) -> CashSession:
+    async def get_open_session(self, association_id: UUID, session_id: UUID | None = None) -> CashSession:
         stmt = select(CashSession).where(
             CashSession.association_id == association_id,
             CashSession.status == CashSessionStatus.open,
         )
+        if session_id:
+            stmt = stmt.where(CashSession.id == session_id)
+        stmt = stmt.order_by(CashSession.opened_at.desc())
         result = await self._session.execute(stmt)
-        session = result.scalar_one_or_none()
+        session = result.scalars().first()
         if not session:
             raise CashSessionError("Nenhuma sessão de caixa aberta.")
         return session
@@ -140,10 +142,11 @@ class FinanceService:
         baixas = Decimal("0")
         balance = cash_session.opening_balance
         for tx in transactions:
+            if tx.reversed_at is not None or tx.is_reversal:
+                continue
             if tx.type == TransactionType.income:
-                if tx.reversed_at is None:
-                    balance += tx.amount
-                    bruto += tx.amount
+                balance += tx.amount
+                bruto += tx.amount
             elif tx.type == TransactionType.expense:
                 balance -= tx.amount
             else:
