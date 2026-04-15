@@ -620,13 +620,18 @@ export default function FinancePage() {
   }, [canSeeTotals])
   useEffect(() => { if (session) loadPendingApprovals() }, [session?.id])
 
+  const today = new Date().toLocaleDateString('pt-BR')
   const activeTxs = transactions.filter(t => !t.reversed_at && !t.is_reversal)
-  const income = activeTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
-  const expenses = activeTxs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
-  const currentBalance = session ? parseFloat(session.opening_balance) + income - expenses : 0
+  const todayTxs = activeTxs.filter(t => new Date(t.transaction_at).toLocaleDateString('pt-BR') === today)
+  // Saldo usa TODA a sessão; KPIs de entrada/saída só hoje
+  const income = todayTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+  const expenses = todayTxs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+  const sessionIncome = activeTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+  const sessionExpenses = activeTxs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+  const currentBalance = session ? parseFloat(session.opening_balance) + sessionIncome - sessionExpenses : 0
 
-  // Payment method breakdown (income only)
-  const pmBreakdown = activeTxs
+  // Payment method breakdown (income only, today)
+  const pmBreakdown = todayTxs
     .filter(t => t.type === 'income')
     .reduce<Record<string, number>>((acc, t) => {
       const key = t.payment_method_name ?? 'Sem forma'
