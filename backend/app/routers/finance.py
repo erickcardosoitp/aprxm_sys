@@ -93,6 +93,8 @@ class ProofOfResidenceRequest(BaseModel):
     resident_cpf: str
     resident_neighborhood: str
     resident_cep: str
+    resident_address_street: str = ""
+    resident_address_number: str = ""
     amount: Decimal = Field(gt=0)
     payment_method_id: UUID | None = None
     category_id: UUID | None = None
@@ -115,6 +117,8 @@ async def issue_proof_of_residence(
         resident_cpf=body.resident_cpf,
         resident_neighborhood=body.resident_neighborhood,
         resident_cep=body.resident_cep,
+        resident_address_street=body.resident_address_street,
+        resident_address_number=body.resident_address_number,
         amount=body.amount,
         payment_method_id=body.payment_method_id,
         category_id=body.category_id,
@@ -193,6 +197,8 @@ async def reissue_proof_of_residence(
         resident_cpf=body.resident_cpf,
         resident_neighborhood=body.resident_neighborhood,
         resident_cep=body.resident_cep,
+        resident_address_street=body.resident_address_street,
+        resident_address_number=body.resident_address_number,
         amount=body.amount,
         payment_method_id=body.payment_method_id,
         category_id=body.category_id,
@@ -450,6 +456,8 @@ async def registrar_quebra(
 class TransferToCashboxRequest(BaseModel):
     cash_box_id: UUID
     amount: Decimal = Field(gt=0)
+    troco: Decimal = Field(default=Decimal("0"), ge=0)
+    close_session: bool = False
 
 
 @router.post("/sessions/{session_id}/transfer-to-cashbox", summary="Transferir valor conferido para caixinha (sangria + crédito)")
@@ -493,8 +501,21 @@ async def transfer_to_cashbox(
         VALUES (gen_random_uuid(), :aid, :bid, :amt, 'credit', :desc, :usr)
     """), {"aid": str(current.association_id), "bid": str(body.cash_box_id),
            "amt": float(body.amount), "desc": desc, "usr": str(current.user_id)})
+
+    if body.close_session:
+        from datetime import datetime as _dt
+        await session.execute(sa_text(
+            "UPDATE cash_sessions SET status='closed', closed_at=NOW(), closed_by=:uid WHERE id=:id AND association_id=:aid"
+        ), {"uid": str(current.user_id), "id": str(session_id), "aid": str(current.association_id)})
+
     await session.commit()
-    return {"ok": True, "transaction_id": str(tx.id), "new_cashbox_balance": str(round(new_bal, 2))}
+    return {
+        "ok": True,
+        "transaction_id": str(tx.id),
+        "new_cashbox_balance": str(round(new_bal, 2)),
+        "troco": str(body.troco),
+        "closed": body.close_session,
+    }
 
 
 @router.post("/transactions/offline", summary="Registrar saída externa (sem sessão ativa)")
@@ -588,6 +609,72 @@ async def list_categories(
         {"id": str(c.id), "name": c.name, "type": c.type, "color": c.color}
         for c in result.scalars().all()
     ]
+
+
+@router.get("/tesouraria", summary="Visão unificada da tesouraria")
+async def tesouraria_summary(
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    aid = str(current.association_id)
+
+    open_rows = (await session.execute(sa_text("""
+        SELECT cs.id, cs.opened_at, cs.opening_balance,
+               u.full_name AS operador,
+               COALESCE(cs.opening_balance, 0)
+               + COALESCE((SELECT SUM(t.amount) FROM transactions t
+                           WHERE t.cash_session_id=cs.id AND t.type='income'
+                             AND t.reversed_at IS NULL AND t.is_reversal=false), 0)
+               - COALESCE((SELECT SUM(t.amount) FROM transactions t
+                           WHERE t.cash_session_id=cs.id AND t.type IN ('expense','sangria')
+                             AND t.reversed_at IS NULL AND t.is_reversal=false), 0) AS expected
+          FROM cash_sessions cs
+          LEFT JOIN users u ON u.id = cs.opened_by
+         WHERE cs.association_id=:aid AND cs.status='open'
+         ORDER BY cs.opened_at DESC
+    """), {"aid": aid})).fetchall()
+
+    conf_rows = (await session.execute(sa_text("""
+        SELECT cs.id, cs.opened_at, cs.closing_balance, cs.expected_balance,
+               cs.difference, u.full_name AS operador
+          FROM cash_sessions cs
+          LEFT JOIN users u ON u.id = cs.opened_by
+         WHERE cs.association_id=:aid AND cs.status='conferido'
+         ORDER BY cs.opened_at DESC
+    """), {"aid": aid})).fetchall()
+
+    pap_row = (await session.execute(sa_text("""
+        SELECT COALESCE(SUM(p.amount),0), COUNT(*)
+          FROM porta_a_porta_payments p
+          JOIN porta_a_porta_leads l ON l.id = p.lead_id
+         WHERE l.association_id=:aid AND p.status='paid'
+           AND DATE(p.paid_at) = CURRENT_DATE
+           AND NOT EXISTS (
+               SELECT 1 FROM transactions t
+               WHERE t.description LIKE '%Porta a Porta%'
+                 AND t.association_id=:aid
+                 AND DATE(t.transaction_at) = CURRENT_DATE
+                 AND t.amount = p.amount
+           )
+    """), {"aid": aid})).fetchone()
+
+    boxes = (await session.execute(sa_text(
+        "SELECT id, name, balance FROM cash_boxes WHERE association_id=:aid AND is_active=true ORDER BY name"
+    ), {"aid": aid})).fetchall()
+
+    return {
+        "open_sessions": [{"id": str(r[0]), "opened_at": str(r[1]), "opening_balance": str(r[2]),
+                            "operador": r[3], "expected_balance": str(round(float(r[4]),2))} for r in open_rows],
+        "conferido_sessions": [{"id": str(r[0]), "opened_at": str(r[1]),
+                                  "closing_balance": str(r[2]) if r[2] else None,
+                                  "expected_balance": str(r[3]) if r[3] else None,
+                                  "difference": str(r[4]) if r[4] else None,
+                                  "operador": r[5]} for r in conf_rows],
+        "pap_today": {"total": str(round(float(pap_row[0]),2)), "count": pap_row[1]},
+        "caixinhas": [{"id": str(r[0]), "name": r[1], "balance": str(round(float(r[2]),2))} for r in boxes],
+        "total_limbo": str(round(sum(float(r[2] or 0) for r in conf_rows), 2)),
+    }
 
 
 @router.get("/sessions", summary="Listar todas as sessões de caixa")

@@ -517,6 +517,8 @@ class FinanceService:
         resident_cpf: str,
         resident_neighborhood: str,
         resident_cep: str,
+        resident_address_street: str = "",
+        resident_address_number: str = "",
         amount: Decimal,
         payment_method_id: UUID | None = None,
         category_id: UUID | None = None,
@@ -590,6 +592,8 @@ class FinanceService:
             resident_cpf=resident_cpf,
             resident_neighborhood=resident_neighborhood,
             resident_cep=resident_cep,
+            resident_address_street=resident_address_street,
+            resident_address_number=resident_address_number,
             community_name=community_name or "",
             assoc_address=assoc_address or "",
             assoc_cep=assoc_cep or "",
@@ -623,6 +627,8 @@ class FinanceService:
         resident_cpf: str,
         resident_neighborhood: str,
         resident_cep: str,
+        resident_address_street: str = "",
+        resident_address_number: str = "",
         community_name: str,
         assoc_address: str,
         assoc_cep: str,
@@ -678,10 +684,18 @@ class FinanceService:
         # Corpo
         pdf.set_font("Helvetica", size=12)
         pdf.set_text_color(30, 30, 30)
+        addr_parts = []
+        if resident_address_street:
+            addr_parts.append(resident_address_street)
+        if resident_address_number:
+            addr_parts.append(f"nº {resident_address_number}")
+        if resident_cep:
+            addr_parts.append(f"CEP {resident_cep}")
+        addr_str = ", ".join(addr_parts) if addr_parts else f"CEP {resident_cep}"
         body = (
             f"O Sr(a) {resident_name}, portador(a) do CPF {resident_cpf}, "
-            f"residente na comunidade {community_name}, CEP {resident_cep}, "
-            f"localizado nesta comunidade no bairro de {resident_neighborhood}."
+            f"residente na comunidade Vaz Lobo, em {addr_str}, "
+            f"localizado no bairro de {resident_neighborhood}."
         )
         pdf.multi_cell(0, 8, body, align="J")
         pdf.ln(12)
