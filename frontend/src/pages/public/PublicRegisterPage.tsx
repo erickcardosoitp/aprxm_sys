@@ -94,7 +94,6 @@ export default function PublicRegisterPage() {
   const handleSubmit = async () => {
     if (!form.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
     if (!form.phone_primary.trim()) { toast.error('Telefone é obrigatório.'); return }
-    if (!proofUrl) { toast.error('Comprovante de pagamento é obrigatório.'); return }
     setSaving(true)
     try {
       await axios.post(`${API}/public/associations/${slug}/residents`, {
@@ -253,9 +252,9 @@ export default function PublicRegisterPage() {
           {/* Comprovante de pagamento — obrigatório */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p className="text-xs font-semibold text-blue-900 mb-1">
-              Comprovante de pagamento <span className="text-red-500">*</span>
+              Comprovante de pagamento <span className="text-gray-400 font-normal">(opcional)</span>
             </p>
-            <p className="text-xs text-blue-700 mb-3">Envie uma foto ou PDF do comprovante de pagamento da mensalidade ou taxa de associação.</p>
+            <p className="text-xs text-blue-700 mb-3">Se tiver, envie uma foto ou PDF do comprovante de pagamento da mensalidade ou taxa de associação.</p>
 
             {proofUrl ? (
               <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-green-200">

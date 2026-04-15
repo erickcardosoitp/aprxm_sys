@@ -91,7 +91,7 @@ async def public_register_resident(
         association_id=assoc.id,
         created_by=uid,
         type=ResidentType.member,
-        status=ResidentStatus.pending,
+        status=ResidentStatus.inactive,
         full_name=body.full_name,
         cpf=cpf_clean,
         phone_primary=body.phone_primary,
