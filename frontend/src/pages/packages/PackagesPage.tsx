@@ -1116,7 +1116,7 @@ export default function PackagesPage() {
   )
 
   return (
-    <div className="flex flex-col gap-5 p-4 max-w-3xl mx-auto">
+    <div className="flex flex-col gap-5 p-4 sm:p-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2 min-w-0">

@@ -683,7 +683,7 @@ export default function FinancePage() {
   const fmtDate = (s: string) => new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 
   return (
-    <div className="flex flex-col gap-6 p-4 max-w-2xl mx-auto">
+    <div className="flex flex-col gap-6 p-4 sm:p-6">
       <h1 className="text-2xl font-bold text-gray-900">Operação de Caixa</h1>
 
       {/* ── Modal Estorno ── */}

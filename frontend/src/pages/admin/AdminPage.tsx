@@ -681,7 +681,7 @@ export default function AdminPage() {
     ROLE_COLORS[role as ExtendedRole] ?? 'bg-gray-100 text-gray-600'
 
   return (
-    <div className="flex flex-col gap-5 p-4 max-w-2xl mx-auto">
+    <div className="flex flex-col gap-5 p-4 sm:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <ShieldCheck className="w-6 h-6 text-[#26619c]" />
