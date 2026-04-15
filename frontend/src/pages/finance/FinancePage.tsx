@@ -599,15 +599,15 @@ export default function FinancePage() {
     if (!transferSession || !transferBoxId || !transferAmount) return
     setTransferLoading(true)
     try {
-      await api.post(`/cash-boxes/${transferBoxId}/movements`, {
+      await api.post(`/finance/sessions/${transferSession.id}/transfer-to-cashbox`, {
+        cash_box_id: transferBoxId,
         amount: parseFloat(transferAmount),
-        movement_type: 'credit',
-        description: `Repasse sessão de caixa ${new Date(transferSession.opened_at).toLocaleDateString('pt-BR')} — ${transferSession.operador_name ?? ''}`.trim(),
       })
-      toast.success('Valor transferido para a caixinha!')
+      toast.success('Valor transferido — sangria registrada no caixa e saldo creditado na caixinha!')
       setTransferSession(null)
       setTransferBoxId('')
       setTransferAmount('')
+      loadSessions()
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao transferir.')
     } finally {
@@ -1155,9 +1155,14 @@ export default function FinancePage() {
               <h3 className="text-base font-semibold text-gray-800">Transferir para caixinha</h3>
               <button onClick={() => setTransferSession(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
             </div>
-            <p className="text-xs text-gray-500 mb-4">
+            <p className="text-xs text-gray-500 mb-1">
               Sessão de {new Date(transferSession.opened_at).toLocaleDateString('pt-BR')} — {transferSession.operador_name ?? ''}
             </p>
+            {transferSession.closing_balance && (
+              <p className="text-xs text-blue-700 font-medium mb-3">
+                Contado na conferência: R$ {parseFloat(transferSession.closing_balance).toFixed(2)}
+              </p>
+            )}
             <div className="flex flex-col gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Valor (R$)</label>

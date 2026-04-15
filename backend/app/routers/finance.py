@@ -447,6 +447,56 @@ async def registrar_quebra(
     return {"id": str(tx.id), "description": tx.description, "amount": str(tx.amount), "type": tx.type}
 
 
+class TransferToCashboxRequest(BaseModel):
+    cash_box_id: UUID
+    amount: Decimal = Field(gt=0)
+
+
+@router.post("/sessions/{session_id}/transfer-to-cashbox", summary="Transferir valor conferido para caixinha (sangria + crédito)")
+async def transfer_to_cashbox(
+    session_id: UUID,
+    body: TransferToCashboxRequest,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    row = (await session.execute(sa_text(
+        "SELECT id, status, opened_at FROM cash_sessions WHERE id=:id AND association_id=:aid"
+    ), {"id": str(session_id), "aid": str(current.association_id)})).fetchone()
+    if not row:
+        raise HTTPException(404, "Sessão não encontrada.")
+    if row[1] not in ("open", "conferido"):
+        raise HTTPException(400, "Sessão deve estar aberta ou conferida para transferir.")
+
+    box = (await session.execute(sa_text(
+        "SELECT id, balance FROM cash_boxes WHERE id=:id AND association_id=:aid AND is_active=true"
+    ), {"id": str(body.cash_box_id), "aid": str(current.association_id)})).fetchone()
+    if not box:
+        raise HTTPException(404, "Caixinha não encontrada.")
+
+    svc = FinanceService(session)
+    sess_date = str(row[2])[:10]
+    desc = f"Repasse para caixinha — conferência {sess_date}"
+    tx = await svc.register_transaction(
+        association_id=current.association_id,
+        cash_session_id=session_id,
+        tx_type=TransactionType.sangria,
+        amount=body.amount,
+        description=desc,
+        created_by=current.user_id,
+    )
+    new_bal = float(box[1]) + float(body.amount)
+    await session.execute(sa_text("UPDATE cash_boxes SET balance=:b, updated_at=NOW() WHERE id=:id"),
+                          {"b": new_bal, "id": str(body.cash_box_id)})
+    await session.execute(sa_text("""
+        INSERT INTO cash_box_movements (id, association_id, cash_box_id, amount, movement_type, description, created_by)
+        VALUES (gen_random_uuid(), :aid, :bid, :amt, 'credit', :desc, :usr)
+    """), {"aid": str(current.association_id), "bid": str(body.cash_box_id),
+           "amt": float(body.amount), "desc": desc, "usr": str(current.user_id)})
+    await session.commit()
+    return {"ok": True, "transaction_id": str(tx.id), "new_cashbox_balance": str(round(new_bal, 2))}
+
+
 @router.post("/transactions/offline", summary="Registrar saída externa (sem sessão ativa)")
 async def register_offline_transaction(
     body: TransactionRequest,
@@ -717,7 +767,10 @@ async def conferencia_caixa(
     exits = sum(float(t.amount) for t in txs if t.type != "income" and not t.is_reversal and t.reversed_at is None)
     expected = float(cash.opening_balance) + income - exits
     counted = float(body.counted_amount)
+    diff = round(counted - expected, 2)
     cash.status = "conferido"
+    cash.closing_balance = Decimal(str(round(counted, 2)))
+    cash.difference = Decimal(str(diff))
     session.add(cash)
     await session.commit()
     return {
