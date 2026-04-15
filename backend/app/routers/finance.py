@@ -507,9 +507,9 @@ async def register_offline_transaction(
     from datetime import datetime
     from app.models.finance import Transaction
 
-    if body.type != TransactionType.expense:
+    if body.type not in (TransactionType.expense, TransactionType.income):
         from fastapi import HTTPException
-        raise HTTPException(400, "Saída externa só é permitida para despesas (expense).")
+        raise HTTPException(400, "Tipo deve ser income ou expense.")
 
     tx = Transaction(
         association_id=current.association_id,
@@ -517,7 +517,7 @@ async def register_offline_transaction(
         category_id=body.category_id,
         payment_method_id=body.payment_method_id,
         resident_id=body.resident_id,
-        type=TransactionType.expense,
+        type=body.type,
         amount=body.amount,
         description=body.description,
         reference_number=body.reference_number,

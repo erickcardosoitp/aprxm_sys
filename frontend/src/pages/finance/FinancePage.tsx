@@ -532,8 +532,13 @@ export default function FinancePage() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
   const [approvalItem, setApprovalItem] = useState<PendingApproval | null>(null)
   const [showOfflineExpense, setShowOfflineExpense] = useState(false)
+  const [offlineType, setOfflineType] = useState<'expense' | 'income'>('expense')
   const [offlineForm, setOfflineForm] = useState({ description: '', amount: '', category_id: '' })
   const [offlineCategories, setOfflineCategories] = useState<{ id: string; name: string }[]>([])
+  const [offlineResidentQuery, setOfflineResidentQuery] = useState('')
+  const [offlineResidentResults, setOfflineResidentResults] = useState<{ id: string; full_name: string; cpf?: string; phone_primary?: string }[]>([])
+  const [offlineResident, setOfflineResident] = useState<{ id: string; full_name: string } | null>(null)
+  const [offlineSubtype, setOfflineSubtype] = useState('mensalidade')
   const [savingOffline, setSavingOffline] = useState(false)
 
   // ── Transfer conferido → caixinha state ──
@@ -674,21 +679,39 @@ export default function FinancePage() {
   const maxCash = settings ? parseFloat(settings.max_cash_before_sangria) : null
   const sangriaAlert = canSeeTotals && maxCash !== null && currentBalance > maxCash
 
+  const searchOfflineResident = async (q: string) => {
+    setOfflineResidentQuery(q)
+    setOfflineResident(null)
+    if (q.length < 2) { setOfflineResidentResults([]); return }
+    try {
+      const r = await api.get<{ id: string; full_name: string; cpf?: string; phone_primary?: string }[]>('/residents/search', { params: { q } })
+      setOfflineResidentResults(r.data.slice(0, 6))
+    } catch { setOfflineResidentResults([]) }
+  }
+
   const handleOfflineExpense = async () => {
-    if (!offlineForm.description.trim()) { toast.error('Informe a descrição.'); return }
     const amt = parseFloat(offlineForm.amount)
     if (!amt || amt <= 0) { toast.error('Valor inválido.'); return }
+    if (offlineType === 'expense' && !offlineForm.description.trim()) { toast.error('Informe a descrição.'); return }
     setSavingOffline(true)
     try {
+      const desc = offlineType === 'income'
+        ? `${offlineSubtype === 'mensalidade' ? 'Mensalidade' : offlineSubtype}${offlineResident ? ` — ${offlineResident.full_name}` : ''}`
+        : offlineForm.description
       await api.post('/finance/transactions/offline', {
-        type: 'expense',
+        type: offlineType,
         amount: amt,
-        description: offlineForm.description,
+        description: desc,
         category_id: offlineForm.category_id || null,
+        resident_id: offlineResident?.id || null,
+        income_subtype: offlineType === 'income' ? offlineSubtype : undefined,
       })
-      toast.success('Saída externa registrada!')
+      toast.success(offlineType === 'income' ? 'Entrada registrada (sem caixa)!' : 'Saída externa registrada!')
       setShowOfflineExpense(false)
       setOfflineForm({ description: '', amount: '', category_id: '' })
+      setOfflineResident(null)
+      setOfflineResidentQuery('')
+      setOfflineResidentResults([])
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao registrar.')
     } finally {
@@ -781,43 +804,92 @@ export default function FinancePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-bold text-gray-900 text-sm">Adicionar Saída (sem caixa)</h2>
+              <h2 className="font-bold text-gray-900 text-sm">Lançamento sem caixa</h2>
               <button onClick={() => setShowOfflineExpense(false)}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
             <div className="px-5 py-4 flex flex-col gap-3">
-              <p className="text-xs text-gray-400">Registra uma saída que não passa pelo caixa. Não afeta saldo de sessão.</p>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Descrição</label>
-                <input value={offlineForm.description} onChange={e => setOfflineForm(f => ({ ...f, description: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
-                  placeholder="Ex: Conta de luz, aluguel…" autoFocus />
+              <p className="text-xs text-gray-400">Não afeta saldo de sessão de caixa.</p>
+
+              {/* Tipo */}
+              <div className="grid grid-cols-2 gap-2">
+                {(['income', 'expense'] as const).map(t => (
+                  <button key={t} type="button" onClick={() => setOfflineType(t)}
+                    className={`py-2.5 rounded-xl text-sm font-semibold border-2 transition ${
+                      offlineType === t
+                        ? t === 'income' ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700'
+                        : 'border-gray-200 text-gray-400 hover:border-gray-300'
+                    }`}>
+                    {t === 'income' ? '↑ Entrada' : '↓ Saída'}
+                  </button>
+                ))}
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Valor</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">R$</span>
-                  <input type="number" min="0.01" step="0.01" value={offlineForm.amount}
-                    onChange={e => setOfflineForm(f => ({ ...f, amount: e.target.value }))}
-                    className="w-full pl-9 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
-                </div>
-              </div>
-              {offlineCategories.length > 0 && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
-                  <select value={offlineForm.category_id} onChange={e => setOfflineForm(f => ({ ...f, category_id: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#26619c]/40">
-                    <option value="">— Sem categoria —</option>
-                    {offlineCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
+
+              {offlineType === 'income' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de entrada</label>
+                    <select value={offlineSubtype} onChange={e => setOfflineSubtype(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#26619c]/40">
+                      <option value="mensalidade">Mensalidade</option>
+                      <option value="taxa_entrega">Taxa de Entrega</option>
+                      <option value="doacao">Doação</option>
+                      <option value="other">Outro</option>
+                    </select>
+                  </div>
+                  <div className="relative">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Morador (opcional)</label>
+                    <input value={offlineResidentQuery} onChange={e => searchOfflineResident(e.target.value)}
+                      placeholder="Nome, CPF ou telefone…"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+                    {offlineResidentResults.length > 0 && !offlineResident && (
+                      <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                        {offlineResidentResults.map(r => (
+                          <button key={r.id} type="button"
+                            onClick={() => { setOfflineResident(r); setOfflineResidentQuery(r.full_name); setOfflineResidentResults([]) }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b border-gray-50 last:border-0">
+                            <p className="text-sm font-medium text-gray-800">{r.full_name}</p>
+                            <p className="text-xs text-gray-400">{r.cpf ?? r.phone_primary ?? ''}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {offlineResident && <p className="text-xs text-green-600 mt-1">✓ {offlineResident.full_name}</p>}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Descrição</label>
+                    <input value={offlineForm.description} onChange={e => setOfflineForm(f => ({ ...f, description: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+                      placeholder="Ex: Conta de luz, aluguel…" />
+                  </div>
+                  {offlineCategories.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
+                      <select value={offlineForm.category_id} onChange={e => setOfflineForm(f => ({ ...f, category_id: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#26619c]/40">
+                        <option value="">— Sem categoria —</option>
+                        {offlineCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </>
               )}
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$)</label>
+                <input type="number" min="0.01" step="0.01" value={offlineForm.amount}
+                  onChange={e => setOfflineForm(f => ({ ...f, amount: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
+              </div>
             </div>
             <div className="flex gap-3 px-5 pb-5">
               <button onClick={() => setShowOfflineExpense(false)}
                 className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50">Cancelar</button>
               <button onClick={handleOfflineExpense} disabled={savingOffline}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
-                {savingOffline ? 'Salvando…' : 'Registrar Saída'}
+                className={`flex-1 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${offlineType === 'income' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                {savingOffline ? 'Salvando…' : offlineType === 'income' ? 'Registrar Entrada' : 'Registrar Saída'}
               </button>
             </div>
           </div>
@@ -842,11 +914,11 @@ export default function FinancePage() {
         <>
           <CashSessionPanel session={session} onRefresh={loadSession} canConferencia={isConferenteOrAbove} />
 
-          {/* Saída Externa — disponível mesmo sem caixa aberto (admin+) */}
+          {/* Lançamento sem caixa — disponível mesmo sem caixa aberto (admin+) */}
           {isConferenteOrAbove && (
-            <button onClick={() => setShowOfflineExpense(true)}
-              className="flex items-center justify-center gap-2 border border-red-300 text-red-600 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-red-50 transition w-full">
-              <TrendingDown className="w-4 h-4" /> Adicionar Saída (sem caixa)
+            <button onClick={() => { setShowOfflineExpense(true); setOfflineType('expense') }}
+              className="flex items-center justify-center gap-2 border border-gray-300 text-gray-600 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-gray-50 transition w-full">
+              <ArrowDownLeft className="w-4 h-4" /> Lançamento sem caixa
             </button>
           )}
 
