@@ -313,7 +313,7 @@ async def it_metrics(
     # ── Errors / audit last 24h ─────────────────────────────────────────────
     audit_row = (await _exec_ro(session, """
         SELECT COUNT(*) AS total_actions,
-               COUNT(*) FILTER (WHERE acao ILIKE '%estorno%' OR acao ILIKE '%cancel%') AS reversals
+               COUNT(*) FILTER (WHERE action ILIKE '%estorno%' OR action ILIKE '%cancel%' OR action ILIKE '%revers%') AS reversals
           FROM audit_log
          WHERE created_at > NOW() - INTERVAL '24 hours'
     """)).fetchone()
