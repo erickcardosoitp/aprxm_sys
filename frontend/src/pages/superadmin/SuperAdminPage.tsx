@@ -175,7 +175,7 @@ function ITMetricsTab() {
                 const key = d.toISOString().slice(0, 10)
                 days[key] = 0
               }
-              activity.transactions_7d.forEach(d => { if (key in days) days[d.day] = d.count; else days[d.day] = d.count })
+              activity.transactions_7d.forEach(d => { days[d.day] = d.count })
               return Object.entries(days).map(([day, count]) => {
                 const pct = maxTx > 0 ? (count / maxTx) * 100 : 0
                 const label = new Date(day + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit' })
