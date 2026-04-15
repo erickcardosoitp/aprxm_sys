@@ -10,8 +10,8 @@ import { maskCpf, formatCpf, formatPhone, formatCep, formatDateInput, parseDateI
 
 const TYPE_LABELS: Record<ResidentType, string> = { member: 'Associado', guest: 'Visitante' }
 
-type ResidentTab = 'associados' | 'dependentes' | 'visitantes'
-const TAB_LABELS: Record<ResidentTab, string> = { associados: 'Associados', dependentes: 'Dependentes', visitantes: 'Visitantes' }
+type ResidentTab = 'associados' | 'dependentes' | 'visitantes' | 'atualizacoes'
+const TAB_LABELS: Record<ResidentTab, string> = { associados: 'Associados', dependentes: 'Dependentes', visitantes: 'Visitantes', atualizacoes: 'Atualizações' }
 const STATUS_COLORS: Record<ResidentStatus, string> = {
   active: 'bg-green-100 text-green-700',
   inactive: 'bg-gray-100 text-gray-500',
@@ -1122,6 +1122,31 @@ export default function ResidentsPage() {
   const [counts, setCounts] = useState({ associados: 0, dependentes: 0, visitantes: 0 })
   const [promptDep, setPromptDep] = useState(false)
   const [lastSavedId, setLastSavedId] = useState<string | null>(null)
+  const [updateRequests, setUpdateRequests] = useState<any[]>([])
+  const [loadingRequests, setLoadingRequests] = useState(false)
+  const [reviewingRequest, setReviewingRequest] = useState(false)
+
+  const loadUpdateRequests = async () => {
+    setLoadingRequests(true)
+    try { const r = await api.get<any[]>('/residents/update-requests'); setUpdateRequests(r.data) }
+    catch { toast.error('Erro ao carregar solicitações.') }
+    finally { setLoadingRequests(false) }
+  }
+
+  const handleApprove = async (id: string) => {
+    setReviewingRequest(true)
+    try { await api.post(`/residents/update-requests/${id}/approve`); toast.success('Aprovado!'); loadUpdateRequests() }
+    catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+    finally { setReviewingRequest(false) }
+  }
+
+  const handleReject = async (id: string) => {
+    setReviewingRequest(true)
+    try { await api.post(`/residents/update-requests/${id}/reject`); toast.success('Rejeitado.'); loadUpdateRequests() }
+    catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+    finally { setReviewingRequest(false) }
+  }
+
   const [mergeMode, setMergeMode] = useState(false)
   const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set())
   const [showMergeModal, setShowMergeModal] = useState(false)
@@ -1164,7 +1189,8 @@ export default function ResidentsPage() {
     } catch { /* silent */ }
   }
 
-  useEffect(() => { load() }, [activeTab, filterStatus, search])
+  useEffect(() => { if (activeTab !== 'atualizacoes') load() }, [activeTab, filterStatus, search])
+  useEffect(() => { if (activeTab === 'atualizacoes') loadUpdateRequests() }, [activeTab])
   useEffect(() => { loadDelinquents(); loadCounts() }, [])
 
   const isSearching = search.trim().length >= 2
@@ -1288,16 +1314,19 @@ export default function ResidentsPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200">
-        {(['associados', 'dependentes', 'visitantes'] as ResidentTab[]).map(t => (
+        {(['associados', 'dependentes', 'visitantes', 'atualizacoes'] as ResidentTab[]).map(t => (
           <button key={t} onClick={() => setActiveTab(t)}
             className={`flex-1 py-2.5 text-xs font-semibold border-b-2 transition -mb-px flex items-center justify-center gap-1 ${
               activeTab === t ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}>
             {TAB_LABELS[t]}
-            {counts[t] > 0 && (
+            {t !== 'atualizacoes' && (counts as any)[t] > 0 && (
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                 activeTab === t ? 'bg-[#26619c]/10 text-[#26619c]' : 'bg-gray-100 text-gray-500'
-              }`}>{counts[t]}</span>
+              }`}>{(counts as any)[t]}</span>
+            )}
+            {t === 'atualizacoes' && updateRequests.length > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{updateRequests.length}</span>
             )}
           </button>
         ))}
@@ -1329,7 +1358,57 @@ export default function ResidentsPage() {
         </div>
       </div>
 
+      {/* Update requests tab */}
+      {activeTab === 'atualizacoes' && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-800">Solicitações de atualização</h3>
+            <button onClick={loadUpdateRequests} className="text-gray-400 hover:text-gray-600">
+              <Search className="w-4 h-4" />
+            </button>
+          </div>
+          {loadingRequests ? (
+            <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+          ) : updateRequests.length === 0 ? (
+            <div className="p-8 text-center text-gray-400 text-sm">Nenhuma solicitação pendente.</div>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {updateRequests.map(req => (
+                <li key={req.id} className="px-5 py-4 flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">{req.resident_name}</p>
+                      <p className="text-xs text-gray-400">{req.cpf ? maskCpf(req.cpf) : ''}{req.unit ? ` · Unid. ${req.unit}` : ''}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{new Date(req.submitted_at).toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => handleApprove(req.id)} disabled={reviewingRequest}
+                        className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50">
+                        Aprovar
+                      </button>
+                      <button onClick={() => handleReject(req.id)} disabled={reviewingRequest}
+                        className="text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg font-medium disabled:opacity-50">
+                        Rejeitar
+                      </button>
+                    </div>
+                  </div>
+                  {req.notes && <p className="text-xs text-gray-500 italic">"{req.notes}"</p>}
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(req.changes as Record<string, string>).map(([k, v]) => (
+                      <span key={k} className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+                        <span className="font-medium">{k}:</span> {String(v)}
+                      </span>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* List */}
+      {activeTab !== 'atualizacoes' && (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {displayedResidents.length === 0 ? (
           <div className="p-8 text-center text-gray-400 text-sm">Nenhum {TAB_LABELS[activeTab].toLowerCase().replace('s','')} encontrado.</div>
@@ -1389,6 +1468,7 @@ export default function ResidentsPage() {
           </ul>
         )}
       </div>
+      )}
 
       {profileResident && (
         <ResidentProfileModal

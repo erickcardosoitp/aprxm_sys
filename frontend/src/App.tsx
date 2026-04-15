@@ -15,6 +15,7 @@ import SuperAdminPage from './pages/superadmin/SuperAdminPage'
 import LogsPage from './pages/logs/LogsPage'
 import { useAuthStore } from './store/authStore'
 import PublicRegisterPage from './pages/public/PublicRegisterPage'
+import PublicUpdatePage from './pages/public/PublicUpdatePage'
 import CadastroPortaAPorta from './pages/public/CadastroPortaAPorta'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -62,6 +63,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/cadastro/:slug" element={<PublicRegisterPage />} />
+        <Route path="/atualizar/:slug" element={<PublicUpdatePage />} />
         <Route path="/associar" element={<CadastroPortaAPorta />} />
         <Route
           path="/"

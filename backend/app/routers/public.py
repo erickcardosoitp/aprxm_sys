@@ -144,3 +144,62 @@ async def public_upload(
     svc = StorageService(str(assoc.id))
     url = svc.upload(file_bytes, file.filename or "comprovante.jpg", folder)
     return JSONResponse({"url": url})
+
+
+class UpdateRequestBody(BaseModel):
+    changes: dict
+    notes: str | None = None
+
+
+@router.get("/associations/{slug}/residents/search", summary="Buscar morador para atualização pública")
+async def public_search_resident(
+    slug: str,
+    q: str,
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as sa_text
+    assoc_result = await session.execute(
+        select(Association).where(Association.slug == slug, Association.is_active == True)
+    )
+    assoc = assoc_result.scalar_one_or_none()
+    if not assoc:
+        raise HTTPException(404, "Associação não encontrada.")
+    rows = (await session.execute(sa_text("""
+        SELECT id, full_name, cpf, phone_primary, unit, block
+          FROM residents
+         WHERE association_id = :aid
+           AND (full_name ILIKE :q OR cpf ILIKE :q OR phone_primary ILIKE :q)
+         ORDER BY full_name LIMIT 10
+    """), {"aid": str(assoc.id), "q": f"%{q}%"})).fetchall()
+    return [{"id": str(r[0]), "full_name": r[1], "cpf": r[2], "phone_primary": r[3],
+             "unit": r[4], "block": r[5]} for r in rows]
+
+
+@router.post("/associations/{slug}/residents/{resident_id}/update-request",
+             summary="Submeter solicitação de atualização de cadastro")
+async def public_submit_update_request(
+    slug: str,
+    resident_id: str,
+    body: UpdateRequestBody,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    assoc_result = await session.execute(
+        select(Association).where(Association.slug == slug, Association.is_active == True)
+    )
+    assoc = assoc_result.scalar_one_or_none()
+    if not assoc:
+        raise HTTPException(404, "Associação não encontrada.")
+    resident = (await session.execute(sa_text(
+        "SELECT id, full_name FROM residents WHERE id=:rid AND association_id=:aid"
+    ), {"rid": resident_id, "aid": str(assoc.id)})).fetchone()
+    if not resident:
+        raise HTTPException(404, "Morador não encontrado.")
+    await session.execute(sa_text("""
+        INSERT INTO resident_update_requests (association_id, resident_id, changes, notes)
+        VALUES (:aid, :rid, :changes::jsonb, :notes)
+    """), {"aid": str(assoc.id), "rid": resident_id,
+           "changes": __import__('json').dumps(body.changes, ensure_ascii=False),
+           "notes": body.notes})
+    await session.commit()
+    return {"ok": True, "resident_name": resident[1]}

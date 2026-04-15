@@ -274,6 +274,23 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_deliverers_assoc ON deliverers(association_id)"
         ))
 
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS resident_update_requests (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                changes JSONB NOT NULL DEFAULT '{}',
+                notes TEXT,
+                submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                reviewed_at TIMESTAMPTZ,
+                reviewed_by UUID REFERENCES users(id)
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_res_upd_req_assoc ON resident_update_requests(association_id, status)"
+        ))
+
         await session.commit()
 
 

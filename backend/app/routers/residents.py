@@ -549,3 +549,77 @@ async def merge_residents(
         "removed": sec_id_list,
         "fields_filled": list(updates.keys()),
     }
+
+
+@router.get("/update-requests", summary="Listar solicitações de atualização pendentes")
+async def list_update_requests(
+    status: str = "pending",
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as sa_text
+    rows = (await session.execute(sa_text("""
+        SELECT r.id, r.full_name, r.cpf, r.unit, r.block,
+               req.id AS req_id, req.changes, req.notes, req.submitted_at, req.status
+          FROM resident_update_requests req
+          JOIN residents r ON r.id = req.resident_id
+         WHERE req.association_id = :aid AND req.status = :status
+         ORDER BY req.submitted_at DESC
+    """), {"aid": str(current.association_id), "status": status})).fetchall()
+    import json as _json
+    return [{
+        "id": str(r[5]), "resident_id": str(r[0]), "resident_name": r[1],
+        "cpf": r[2], "unit": r[3], "block": r[4],
+        "changes": r[6] if isinstance(r[6], dict) else _json.loads(r[6]),
+        "notes": r[7], "submitted_at": str(r[8]), "status": r[9],
+    } for r in rows]
+
+
+@router.post("/update-requests/{req_id}/approve", summary="Aprovar atualização de cadastro")
+async def approve_update_request(
+    req_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    import json as _json
+    row = (await session.execute(sa_text(
+        "SELECT resident_id, changes FROM resident_update_requests WHERE id=:id AND association_id=:aid AND status='pending'"
+    ), {"id": req_id, "aid": str(current.association_id)})).fetchone()
+    if not row:
+        raise HTTPException(404, "Solicitação não encontrada.")
+    changes = row[1] if isinstance(row[1], dict) else _json.loads(row[1])
+    allowed = {"full_name", "phone_primary", "phone_secondary", "email", "date_of_birth",
+                "unit", "block", "address_cep", "address_street", "address_number",
+                "address_complement", "address_district", "address_city", "address_state", "cpf"}
+    safe = {k: v for k, v in changes.items() if k in allowed and v is not None and v != ""}
+    if safe:
+        set_clause = ", ".join(f"{k} = :{k}" for k in safe)
+        safe["rid"] = str(row[0]); safe["aid"] = str(current.association_id)
+        await session.execute(sa_text(
+            f"UPDATE residents SET {set_clause}, updated_at=NOW() WHERE id=:rid AND association_id=:aid"
+        ), safe)
+    await session.execute(sa_text(
+        "UPDATE resident_update_requests SET status='approved', reviewed_at=NOW(), reviewed_by=:uid WHERE id=:id"
+    ), {"uid": str(current.user_id), "id": req_id})
+    await session.commit()
+    return {"ok": True}
+
+
+@router.post("/update-requests/{req_id}/reject", summary="Rejeitar atualização de cadastro")
+async def reject_update_request(
+    req_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    row = (await session.execute(sa_text(
+        "SELECT id FROM resident_update_requests WHERE id=:id AND association_id=:aid AND status='pending'"
+    ), {"id": req_id, "aid": str(current.association_id)})).fetchone()
+    if not row:
+        raise HTTPException(404, "Solicitação não encontrada.")
+    await session.execute(sa_text(
+        "UPDATE resident_update_requests SET status='rejected', reviewed_at=NOW(), reviewed_by=:uid WHERE id=:id"
+    ), {"uid": str(current.user_id), "id": req_id})
+    await session.commit()
+    return {"ok": True}
