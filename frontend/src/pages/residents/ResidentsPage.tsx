@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus, FileText, AlertCircle, Printer } from 'lucide-react'
+import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus, FileText, AlertCircle, Printer, Merge } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import type { Resident, ResidentStatus, ResidentType } from '../../types'
@@ -1122,6 +1122,11 @@ export default function ResidentsPage() {
   const [counts, setCounts] = useState({ associados: 0, dependentes: 0, visitantes: 0 })
   const [promptDep, setPromptDep] = useState(false)
   const [lastSavedId, setLastSavedId] = useState<string | null>(null)
+  const [mergeMode, setMergeMode] = useState(false)
+  const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set())
+  const [showMergeModal, setShowMergeModal] = useState(false)
+  const [mergePrimaryId, setMergePrimaryId] = useState<string | null>(null)
+  const [mergeSaving, setMergeSaving] = useState(false)
 
   const load = async () => {
     try {
@@ -1251,15 +1256,34 @@ export default function ResidentsPage() {
           <Users className="w-6 h-6 text-[#26619c]" />
           Moradores
         </h1>
-        <button
-          onClick={() => {
-            if (activeTab === 'dependentes') { setShowDepForm(true) }
-            else { setEditTarget(null); setShowForm(true) }
-          }}
-          className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition">
-          <Plus className="w-4 h-4" />
-          {activeTab === 'dependentes' ? 'Novo Dependente' : 'Novo'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setMergeMode(m => !m); setMergeSelected(new Set()) }}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition border ${
+              mergeMode ? 'bg-amber-50 border-amber-400 text-amber-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+            }`}>
+            <Merge className="w-4 h-4" />
+            {mergeMode ? 'Cancelar' : 'Unir'}
+          </button>
+          {!mergeMode && (
+            <button
+              onClick={() => {
+                if (activeTab === 'dependentes') { setShowDepForm(true) }
+                else { setEditTarget(null); setShowForm(true) }
+              }}
+              className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+              <Plus className="w-4 h-4" />
+              {activeTab === 'dependentes' ? 'Novo Dependente' : 'Novo'}
+            </button>
+          )}
+          {mergeMode && mergeSelected.size >= 2 && (
+            <button
+              onClick={() => { setMergePrimaryId([...mergeSelected][0]); setShowMergeModal(true) }}
+              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition">
+              Unir {mergeSelected.size} cadastros
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -1312,8 +1336,14 @@ export default function ResidentsPage() {
         ) : (
           <ul className="divide-y divide-gray-100">
             {displayedResidents.map((r) => (
-              <li key={r.id} className="flex items-center justify-between px-4 py-3">
+              <li key={r.id}
+                className={`flex items-center justify-between px-4 py-3 ${mergeMode ? 'cursor-pointer hover:bg-amber-50' : ''} ${mergeSelected.has(r.id) ? 'bg-amber-50' : ''}`}
+                onClick={mergeMode ? () => setMergeSelected(s => { const n = new Set(s); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n }) : undefined}>
                 <div className="flex items-center gap-3 min-w-0">
+                  {mergeMode && (
+                    <input type="checkbox" readOnly checked={mergeSelected.has(r.id)}
+                      className="w-4 h-4 accent-amber-500 shrink-0" />
+                  )}
                   <div className="w-9 h-9 rounded-full bg-[#e8f0fb] flex items-center justify-center text-[#26619c] font-bold text-sm shrink-0">
                     {r.full_name.charAt(0).toUpperCase()}
                   </div>
@@ -1373,6 +1403,76 @@ export default function ResidentsPage() {
           onSave={handleSaveDependent}
           onCancel={() => setShowDepForm(false)}
         />
+      )}
+
+      {/* Merge modal */}
+      {showMergeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                <Merge className="w-4 h-4 text-amber-500" /> Unir cadastros
+              </h2>
+              <button onClick={() => setShowMergeModal(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="px-5 py-4 flex flex-col gap-4">
+              <p className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Escolha o cadastro <strong>principal</strong> (que será mantido). Os dados em branco serão preenchidos dos outros. Mensalidades, pacotes e transações serão transferidos.
+              </p>
+              <div className="flex flex-col gap-2">
+                {[...mergeSelected].map(id => {
+                  const r = displayedResidents.find(x => x.id === id)
+                  if (!r) return null
+                  const isPrimary = mergePrimaryId === id
+                  return (
+                    <button key={id} type="button" onClick={() => setMergePrimaryId(id)}
+                      className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition ${
+                        isPrimary ? 'border-amber-400 bg-amber-50' : 'border-gray-200 hover:border-amber-300'
+                      }`}>
+                      <div className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center ${
+                        isPrimary ? 'border-amber-500 bg-amber-500' : 'border-gray-300'
+                      }`}>
+                        {isPrimary && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800">{r.full_name} {isPrimary && <span className="text-amber-600 text-xs font-normal">(principal)</span>}</p>
+                        <p className="text-xs text-gray-400">{r.cpf ? maskCpf(r.cpf) : 'Sem CPF'} · {r.phone_primary ?? '—'}</p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="flex gap-3 px-5 pb-5">
+              <button onClick={() => setShowMergeModal(false)}
+                className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
+              <button
+                disabled={!mergePrimaryId || mergeSaving}
+                onClick={async () => {
+                  if (!mergePrimaryId) return
+                  setMergeSaving(true)
+                  try {
+                    await api.post('/residents/merge', {
+                      primary_id: mergePrimaryId,
+                      secondary_ids: [...mergeSelected].filter(id => id !== mergePrimaryId),
+                    })
+                    toast.success('Cadastros unidos com sucesso!')
+                    setShowMergeModal(false)
+                    setMergeMode(false)
+                    setMergeSelected(new Set())
+                    setMergePrimaryId(null)
+                    load()
+                    loadCounts()
+                  } catch (e: any) {
+                    toast.error(e.response?.data?.detail ?? 'Erro ao unir cadastros.')
+                  } finally { setMergeSaving(false) }
+                }}
+                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                {mergeSaving ? 'Unindo…' : 'Confirmar fusão'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Prompt: add dependent after saving associado */}

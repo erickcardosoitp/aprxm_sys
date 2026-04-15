@@ -467,3 +467,85 @@ async def update_status(
     session.add(resident)
     return {"id": str(resident.id), "status": resident.status}
 
+
+class MergeResidentsRequest(BaseModel):
+    primary_id: UUID
+    secondary_ids: list[UUID]
+
+
+@router.post("/merge", summary="Unir cadastros duplicados")
+async def merge_residents(
+    body: MergeResidentsRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+
+    aid = str(current.association_id)
+    if not body.secondary_ids:
+        raise HTTPException(400, "Selecione ao menos dois cadastros para unir.")
+    all_ids = [str(body.primary_id)] + [str(s) for s in body.secondary_ids]
+
+    rows = (await session.execute(sa_text(
+        "SELECT id, full_name, cpf, phone_primary, phone_secondary, email, unit, block, "
+        "address_street, address_number, address_cep, date_of_birth, type, status "
+        "FROM residents WHERE id = ANY(:ids) AND association_id = :aid"
+    ), {"ids": all_ids, "aid": aid})).fetchall()
+
+    if len(rows) != len(all_ids):
+        raise HTTPException(404, "Um ou mais cadastros não encontrados.")
+
+    primary = next(r for r in rows if str(r[0]) == str(body.primary_id))
+    secondaries = [r for r in rows if str(r[0]) != str(body.primary_id)]
+
+    # Build update dict: fill NULL fields on primary from secondaries
+    fields = ["cpf", "phone_primary", "phone_secondary", "email", "unit", "block",
+              "address_street", "address_number", "address_cep", "date_of_birth"]
+    col_idx = {f: i + 1 for i, f in enumerate(["full_name", "cpf", "phone_primary", "phone_secondary",
+                                                 "email", "unit", "block", "address_street",
+                                                 "address_number", "address_cep", "date_of_birth"])}
+    updates: dict = {}
+    for field in fields:
+        idx = col_idx.get(field)
+        if idx is not None and primary[idx] is None:
+            for sec in secondaries:
+                if sec[idx] is not None:
+                    updates[field] = sec[idx]
+                    break
+
+    sec_id_list = [str(s) for s in body.secondary_ids]
+
+    # Reassign foreign keys
+    for table, col in [
+        ("transactions", "resident_id"),
+        ("mensalidades", "resident_id"),
+        ("migration_payments", "resident_id"),
+        ("packages", "resident_id"),
+        ("packages", "delivered_to_resident_id"),
+        ("service_orders", "requester_resident_id"),
+        ("residents", "responsible_id"),
+    ]:
+        await session.execute(sa_text(
+            f"UPDATE {table} SET {col} = :pid WHERE {col} = ANY(:sids) AND association_id = :aid"
+        ), {"pid": str(body.primary_id), "sids": sec_id_list, "aid": aid})
+
+    # Apply data fill-in to primary
+    if updates:
+        set_clause = ", ".join(f"{k} = :{k}" for k in updates)
+        updates["pid"] = str(body.primary_id)
+        updates["aid"] = aid
+        await session.execute(sa_text(
+            f"UPDATE residents SET {set_clause} WHERE id = :pid AND association_id = :aid"
+        ), updates)
+
+    # Delete secondaries
+    await session.execute(sa_text(
+        "DELETE FROM residents WHERE id = ANY(:sids) AND association_id = :aid"
+    ), {"sids": sec_id_list, "aid": aid})
+
+    await session.commit()
+    return {
+        "merged_into": str(body.primary_id),
+        "removed": sec_id_list,
+        "fields_filled": list(updates.keys()),
+    }
