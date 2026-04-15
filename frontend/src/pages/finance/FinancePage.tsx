@@ -620,9 +620,9 @@ export default function FinancePage() {
   }, [canSeeTotals])
   useEffect(() => { if (session) loadPendingApprovals() }, [session?.id])
 
-  const today = new Date().toLocaleDateString('pt-BR')
+  const todayLabel = new Date().toLocaleDateString('pt-BR')
   const activeTxs = transactions.filter(t => !t.reversed_at && !t.is_reversal)
-  const todayTxs = activeTxs.filter(t => new Date(t.transaction_at).toLocaleDateString('pt-BR') === today)
+  const todayTxs = activeTxs.filter(t => new Date(t.transaction_at).toLocaleDateString('pt-BR') === todayLabel)
   // Saldo usa TODA a sessão; KPIs de entrada/saída só hoje
   const income = todayTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
   const expenses = todayTxs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
