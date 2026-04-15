@@ -711,8 +711,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
               {/* Standard fields — hidden for proof_of_residence (has its own section above) */}
               {!isProof && (
                 <>
-                  {/* Category */}
-                  {categories.length > 0 && (
+                  {/* Category — hidden for mensalidade (subtype already is the category) */}
+                  {categories.length > 0 && !(txType === 'income' && incomeSubtype === 'mensalidade') && (
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
                       <div className="flex flex-wrap gap-2">
