@@ -91,19 +91,25 @@ class FinanceService:
         await self._session.flush()
         return session
 
-    async def get_open_session(self, association_id: UUID, session_id: UUID | None = None) -> CashSession:
+    async def get_open_session(self, association_id: UUID, session_id: UUID | None = None, preferred_by: UUID | None = None) -> CashSession:
         stmt = select(CashSession).where(
             CashSession.association_id == association_id,
             CashSession.status == CashSessionStatus.open,
         )
         if session_id:
             stmt = stmt.where(CashSession.id == session_id)
+        if preferred_by:
+            user_stmt = stmt.where(CashSession.opened_by == preferred_by).order_by(CashSession.opened_at.desc())
+            result = await self._session.execute(user_stmt)
+            sess = result.scalars().first()
+            if sess:
+                return sess
         stmt = stmt.order_by(CashSession.opened_at.desc())
         result = await self._session.execute(stmt)
-        session = result.scalars().first()
-        if not session:
+        sess = result.scalars().first()
+        if not sess:
             raise CashSessionError("Nenhuma sessão de caixa aberta.")
-        return session
+        return sess
 
     async def close_session(
         self,

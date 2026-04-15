@@ -4,6 +4,7 @@ import {
   PlusCircle, TrendingUp, Unlock, User, X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import api from '../../services/api'
 import { financeService } from '../../services/finance'
 import { settingsService } from '../../services/settings'
 import { useAuthStore } from '../../store/authStore'
@@ -53,6 +54,7 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ expected: number; counted: number; diff: number; blindPix: number; blindDinheiro: number } | null>(null)
+  const [registrarQuebra, setRegistrarQuebra] = useState(false)
 
   const blindPixVal = parseFloat(blindPix.replace(',', '.')) || 0
   const blindDinheiroVal = parseFloat(blindDinheiro.replace(',', '.')) || 0
@@ -99,8 +101,8 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
       const res = await financeService.listTransactions()
       const txs: Transaction[] = res.data
       setTransactions(txs)
-      const income = txs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
-      const exits = txs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+      const income = txs.filter(t => t.type === 'income' && !(t as any).reversed_at && !t.is_reversal).reduce((s, t) => s + parseFloat(t.amount), 0)
+      const exits = txs.filter(t => t.type !== 'income' && !(t as any).reversed_at && !t.is_reversal).reduce((s, t) => s + parseFloat(t.amount), 0)
       const expected = openingBalance + income - exits
       setResult({ expected, counted, diff: counted - expected, blindPix: blindPixVal, blindDinheiro: blindDinheiroVal })
       setStep(isOperator ? 'sign' : 'review')
@@ -183,6 +185,13 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
     setLoading(true)
     try {
       await financeService.closeSession(result.counted)
+      if (registrarQuebra && result.diff !== 0) {
+        const tipo = result.diff > 0 ? 'sobra' : 'desconto'
+        await api.post(`/finance/sessions/${session.id}/quebra`, {
+          tipo,
+          amount: Math.abs(result.diff).toFixed(2),
+        }).catch(() => {})
+      }
       printClosingReceipt(transactions, result, (settings as any)?.association_name ?? '')
       onRefresh()
       setStep('done')
@@ -195,8 +204,8 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
     }
   }
 
-  const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
-  const exits = transactions.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+  const income = transactions.filter(t => t.type === 'income' && !(t as any).reversed_at && !t.is_reversal).reduce((s, t) => s + parseFloat(t.amount), 0)
+  const exits = transactions.filter(t => t.type !== 'income' && !(t as any).reversed_at && !t.is_reversal).reduce((s, t) => s + parseFloat(t.amount), 0)
 
   // Step labels differ per role
   const stepLabels = isOperator
@@ -374,6 +383,20 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
                 ) : null
               })()}
 
+              {result.diff !== 0 && (
+                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={registrarQuebra}
+                    onChange={e => setRegistrarQuebra(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <span className="text-gray-700">
+                    Registrar quebra de caixa (R$ {fmt(Math.abs(result.diff))})
+                  </span>
+                </label>
+              )}
+
               <div className="flex gap-3">
                 <button onClick={() => setStep('blind')}
                   className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
@@ -434,6 +457,8 @@ function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) 
   const [blindDinheiro, setBlindDinheiro] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ expected: number; counted: number; diff: number; income: number; exits: number; blindPix: number; blindDinheiro: number } | null>(null)
+  const [syncingPix, setSyncingPix] = useState(false)
+  const [pixSynced, setPixSynced] = useState<number | null>(null)
 
   const blindPixVal = parseFloat(blindPix.replace(',', '.')) || 0
   const blindDinheiroVal = parseFloat(blindDinheiro.replace(',', '.')) || 0
@@ -537,6 +562,25 @@ function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) 
                   <span className="text-lg font-bold text-gray-900">R$ {fmt(blindTotal)}</span>
                 </div>
               </div>
+
+              <button
+                onClick={async () => {
+                  setSyncingPix(true)
+                  try {
+                    const r = await api.post<{ synced: number }>('/finance/sessions/sync-pix')
+                    setPixSynced(r.data.synced)
+                    toast.success(`${r.data.synced} lançamento(s) PIX sincronizado(s).`)
+                  } catch {
+                    toast.error('Erro ao sincronizar PIX.')
+                  } finally {
+                    setSyncingPix(false)
+                  }
+                }}
+                disabled={syncingPix}
+                className="w-full border border-blue-300 text-blue-700 py-2 rounded-xl text-sm font-medium hover:bg-blue-50 transition disabled:opacity-50"
+              >
+                {syncingPix ? 'Sincronizando…' : pixSynced !== null ? `PIX sincronizado (${pixSynced})` : 'Sincronizar PIX'}
+              </button>
 
               <div className="flex gap-3">
                 <button onClick={onCancel}
@@ -659,6 +703,7 @@ function ConferenciaModal({ session, onDone, onCancel }: ConferenciaModalProps) 
 
 export function CashSessionPanel({ session, onRefresh, canConferencia = true }: Props) {
   const fullName = useAuthStore((s) => s.fullName)
+  const userId = useAuthStore((s) => s.userId)
   const role = useAuthStore((s) => s.role)
   const isOperator = role === 'operator'
   const [openBalance, setOpenBalance] = useState('')
@@ -787,6 +832,24 @@ export function CashSessionPanel({ session, onRefresh, canConferencia = true }: 
             <button onClick={() => setShowClose(true)} className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-semibold text-sm transition">
               <Lock className="w-4 h-4" />
               Fechar Caixa
+            </button>
+          )}
+
+          {userId && session.opened_by !== userId && (
+            <button
+              onClick={async () => {
+                try {
+                  await financeService.openSession(0)
+                  toast.success('Seu caixa foi aberto!')
+                  onRefresh()
+                } catch (e: any) {
+                  toast.error(e.response?.data?.detail ?? 'Erro ao abrir caixa.')
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 border border-[#26619c] text-[#26619c] hover:bg-[#26619c]/5 py-2.5 rounded-xl text-sm font-medium transition"
+            >
+              <Unlock className="w-4 h-4" />
+              Abrir meu caixa
             </button>
           )}
         </div>

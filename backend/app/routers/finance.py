@@ -289,7 +289,7 @@ async def current_session(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = FinanceService(session)
-    cash = await svc.get_open_session(current.association_id)
+    cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
     from app.models.user import User
     opener = await session.get(User, cash.opened_by)
     return {
@@ -369,7 +369,7 @@ async def register_transaction(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = FinanceService(session)
-    cash = await svc.get_open_session(current.association_id)
+    cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
     tx = await svc.register_transaction(
         association_id=current.association_id,
         cash_session_id=cash.id,
@@ -384,6 +384,67 @@ async def register_transaction(
         reference_number=body.reference_number,
     )
     return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
+
+
+@router.post("/sessions/sync-pix", summary="Sincronizar lançamentos PIX para o extrato")
+async def sync_pix(
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    r = await session.execute(text("""
+        INSERT INTO bank_statements (association_id, bank, date, amount, name, description, tipo, conciliado, transaction_id)
+        SELECT t.association_id, 'PIX', t.created_at::date, t.amount, t.description, t.description,
+               'entrada', false, t.id
+        FROM transactions t
+        JOIN payment_methods pm ON pm.id = t.payment_method_id
+        WHERE t.association_id = :aid
+          AND t.type = 'income'
+          AND LOWER(pm.name) LIKE '%pix%'
+          AND t.reversed_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM bank_statements bs WHERE bs.transaction_id = t.id)
+        RETURNING id
+    """), {"aid": str(current.association_id)})
+    count = len(r.fetchall())
+    await session.commit()
+    return {"synced": count}
+
+
+class QuebraCaixaRequest(BaseModel):
+    tipo: str
+    amount: Decimal = Field(gt=0)
+    funcionario_id: UUID | None = None
+
+
+@router.post("/sessions/{session_id}/quebra", summary="Registrar quebra de caixa")
+async def registrar_quebra(
+    session_id: UUID,
+    body: QuebraCaixaRequest,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    row = (await session.execute(sa_text(
+        "SELECT id, status FROM cash_sessions WHERE id=:id AND association_id=:aid"
+    ), {"id": str(session_id), "aid": str(current.association_id)})).fetchone()
+    if not row:
+        raise HTTPException(404, "Sessão não encontrada.")
+    svc = FinanceService(session)
+    desc = "Sobra de Caixa" if body.tipo == 'sobra' else "Quebra de Caixa — desconto"
+    if body.funcionario_id:
+        fn = (await session.execute(sa_text("SELECT full_name FROM users WHERE id=:id AND association_id=:aid"),
+              {"id": str(body.funcionario_id), "aid": str(current.association_id)})).scalar()
+        if fn:
+            desc += f" ({fn})"
+    tx = await svc.register_transaction(
+        association_id=current.association_id,
+        cash_session_id=session_id,
+        tx_type=TransactionType.income if body.tipo == 'sobra' else TransactionType.expense,
+        amount=body.amount,
+        description=desc,
+        created_by=current.user_id,
+    )
+    await session.commit()
+    return {"id": str(tx.id), "description": tx.description, "amount": str(tx.amount), "type": tx.type}
 
 
 @router.post("/transactions/offline", summary="Registrar saída externa (sem sessão ativa)")

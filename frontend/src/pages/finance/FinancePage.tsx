@@ -948,13 +948,18 @@ export default function FinancePage() {
                 <div className="px-4 py-3 border-b border-gray-100">
                   <h3 className="font-semibold text-gray-800">Movimentações</h3>
                 </div>
-                {loadingTx ? (
+                {(() => {
+                  const isOperator = !isConferenteOrAbove && role !== 'viewer'
+                  const displayTxsInMain = isOperator
+                    ? transactions.filter(t => new Date(t.transaction_at).toLocaleDateString('pt-BR') === todayLabel)
+                    : transactions
+                  return loadingTx ? (
                   <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
-                ) : transactions.length === 0 ? (
+                ) : displayTxsInMain.length === 0 ? (
                   <div className="p-6 text-center text-gray-400 text-sm">Nenhuma movimentação ainda.</div>
                 ) : (
                   <ul className="divide-y divide-gray-100">
-                    {transactions.map(tx => {
+                    {displayTxsInMain.map(tx => {
                       const isVoided = !!(tx as any).reversed_at
                       const isEstorno = !!tx.is_reversal
                       const isCanceled = isVoided || isEstorno
@@ -996,7 +1001,8 @@ export default function FinancePage() {
                       )
                     })}
                   </ul>
-                )}
+                )
+                })()}
               </div>
             </>
           )}
