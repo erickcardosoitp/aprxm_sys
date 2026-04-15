@@ -98,12 +98,12 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
     const counted = blindTotal
     setLoading(true)
     try {
-      const res = await financeService.listTransactions()
+      const res = await financeService.listTransactions(session.id)
       const txs: Transaction[] = res.data
       setTransactions(txs)
       const income = txs.filter(t => t.type === 'income' && !(t as any).reversed_at && !t.is_reversal).reduce((s, t) => s + parseFloat(t.amount), 0)
       const exits = txs.filter(t => t.type !== 'income' && !(t as any).reversed_at && !t.is_reversal).reduce((s, t) => s + parseFloat(t.amount), 0)
-      const expected = openingBalance + income - exits
+      const expected = income - exits
       setResult({ expected, counted, diff: counted - expected, blindPix: blindPixVal, blindDinheiro: blindDinheiroVal })
       setStep(isOperator ? 'sign' : 'review')
     } catch {
