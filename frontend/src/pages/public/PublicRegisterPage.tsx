@@ -93,7 +93,6 @@ export default function PublicRegisterPage() {
 
   const handleSubmit = async () => {
     if (!form.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
-    if (!form.cpf.trim()) { toast.error('CPF é obrigatório.'); return }
     if (!form.phone_primary.trim()) { toast.error('Telefone é obrigatório.'); return }
     if (!proofUrl) { toast.error('Comprovante de pagamento é obrigatório.'); return }
     setSaving(true)
@@ -168,7 +167,7 @@ export default function PublicRegisterPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">CPF <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">CPF (opcional)</label>
               <input value={form.cpf} onChange={e => set('cpf', formatCpf(e.target.value))} className={inputCls} placeholder="000.000.000-00" />
             </div>
             <div>

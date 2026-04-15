@@ -465,21 +465,25 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
               {isProof && (
                 <div className="flex flex-col gap-3">
                   <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-                    Busque o morador pelo CPF para preencher automaticamente, ou preencha manualmente.
+                    Busque o morador pelo nome, CPF ou telefone para preencher automaticamente, ou preencha manualmente.
                   </p>
-                  {/* CPF lookup */}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Buscar por CPF</label>
-                    <div className="flex gap-2">
-                      <input value={cpfQuery} onChange={e => setCpfQuery(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && lookupCpf()}
-                        placeholder="000.000.000-00"
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
-                      <button type="button" onClick={lookupCpf} disabled={cpfLoading}
-                        className="px-3 py-2 bg-[#26619c] text-white rounded-lg hover:bg-[#1a4f87] disabled:opacity-50">
-                        {cpfLoading ? '…' : <Search className="w-4 h-4" />}
-                      </button>
-                    </div>
+                  {/* Resident search */}
+                  <div className="relative">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Buscar morador</label>
+                    <input value={feeQuery} onChange={e => searchFeeResident(e.target.value)}
+                      placeholder="Nome, CPF ou telefone…"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                    {feeResults.length > 0 && (
+                      <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                        {feeResults.map(r => (
+                          <button key={r.id} type="button" onClick={() => selectFeeResident(r)}
+                            className="w-full text-left px-4 py-2.5 hover:bg-blue-50 transition border-b border-gray-50 last:border-0">
+                            <p className="text-sm font-medium text-gray-800">{r.full_name}</p>
+                            <p className="text-xs text-gray-400">{r.cpf ?? r.phone_primary ?? ''}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {resident && (
                       <p className="text-xs text-blue-600 mt-1 bg-blue-50 rounded px-2 py-1">
                         ✓ {resident.full_name} — dados preenchidos automaticamente
