@@ -120,6 +120,74 @@ const parseTxName = (desc: string, subtype: string | null | undefined): string =
   return desc
 }
 
+// ── Saldo Consolidado component ───────────────────────────────────────────────
+function SaldoConsolidado() {
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const params: Record<string, string> = {}
+      if (from) params.from_date = from
+      if (to) params.to_date = to
+      const res = await api.get('/cash-boxes/saldo-consolidado', { params })
+      setData(res.data)
+    } catch { toast.error('Erro ao carregar saldo consolidado') }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const fmt2 = (v: string | number) => `R$ ${parseFloat(String(v)).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2 justify-between">
+        <p className="text-sm font-semibold text-gray-800">Saldo Líquido Consolidado</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none" />
+          <input type="date" value={to} onChange={e => setTo(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none" />
+          <button onClick={load} disabled={loading}
+            className="text-xs bg-[#26619c] text-white px-3 py-1.5 rounded-lg disabled:opacity-50">
+            {loading ? '…' : 'Filtrar'}
+          </button>
+        </div>
+      </div>
+      {data && (
+        <div className="p-4 flex flex-col gap-3">
+          <div className="bg-green-50 rounded-xl p-4 text-center border border-green-200">
+            <p className="text-xs text-green-600 font-medium mb-1">TOTAL CONSOLIDADO</p>
+            <p className="text-3xl font-bold text-green-700">{fmt2(data.total_consolidado)}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-xl border border-gray-200 p-3">
+              <p className="text-xs font-semibold text-gray-500 mb-2">Sessões de Caixa ({data.caixas.sessoes})</p>
+              <div className="flex flex-col gap-1 text-xs">
+                <div className="flex justify-between"><span className="text-gray-500">Bruto lançado</span><span className="font-medium">{fmt2(data.caixas.bruto)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Baixas</span><span className="text-red-600 font-medium">−{fmt2(data.caixas.baixas)}</span></div>
+                <div className="flex justify-between border-t border-gray-100 pt-1 mt-1"><span className="font-semibold text-gray-700">Líquido</span><span className="font-bold text-green-700">{fmt2(data.caixas.liquido)}</span></div>
+                <div className="flex justify-between text-gray-400 mt-1"><span>PIX</span><span>{fmt2(data.caixas.pix)}</span></div>
+                <div className="flex justify-between text-gray-400"><span>Dinheiro</span><span>{fmt2(data.caixas.dinheiro)}</span></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-3">
+              <p className="text-xs font-semibold text-gray-500 mb-2">Porta a Porta ({data.porta_a_porta.total_pagos} pagos)</p>
+              <div className="flex flex-col gap-1 text-xs">
+                <div className="flex justify-between border-t border-gray-100 pt-1"><span className="font-semibold text-gray-700">Recebido</span><span className="font-bold text-green-700">{fmt2(data.porta_a_porta.recebido)}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function FinanceiroPage() {
   const location = useLocation()
   const [tab, setTab] = useState<Tab>('dashboard')
@@ -258,7 +326,10 @@ export default function FinanceiroPage() {
   const [papToken, setPapToken] = useState('')
   const [papLinkCommissionedTo, setPapLinkCommissionedTo] = useState('')
   const [showPapForm, setShowPapForm] = useState(false)
-  const [papForm, setPapForm] = useState({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '', commissioned_to: '' })
+  const [papForm, setPapForm] = useState({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '', commissioned_to: '', lancado_por: '' })
+  const [showAcordoModal, setShowAcordoModal] = useState<any>(null)
+  const [acordoForm, setAcordoForm] = useState({ sinal: '', parcelas: '2', payment_method: '' })
+  const [savingAcordo, setSavingAcordo] = useState(false)
   const [papDeps, setPapDeps] = useState<{ name: string; phone: string; cpf: string }[]>([])
   const [savingPap, setSavingPap] = useState(false)
   const [showCommPay, setShowCommPay] = useState(false)
@@ -853,14 +924,41 @@ export default function FinanceiroPage() {
 
   const handlePapSubmit = async () => {
     if (!papForm.full_name.trim() || !papForm.address_street.trim() || !papForm.address_number.trim()) { toast.error('Preencha os campos obrigatórios.'); return }
+    if (!papForm.lancado_por) { toast.error('Selecione quem está lançando o cadastro.'); return }
     setSavingPap(true)
     try {
-      await api.post('/porta-a-porta/leads', { ...papForm, total_installments: Number(papForm.total_installments), monthly_fee: parseFloat(papForm.monthly_fee), dependents: papDeps, commissioned_to: papForm.commissioned_to || null })
+      const users = [...conferentes, ...operadores].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i)
+      const lancadoPorUser = users.find(u => u.id === papForm.lancado_por)
+      await api.post('/porta-a-porta/leads', {
+        ...papForm,
+        total_installments: Number(papForm.total_installments),
+        monthly_fee: parseFloat(papForm.monthly_fee),
+        dependents: papDeps,
+        commissioned_to: papForm.commissioned_to || null,
+        lancado_por: lancadoPorUser?.full_name ?? null,
+      })
       toast.success('Lead registrado.')
       setShowPapForm(false)
-      setPapForm({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '', commissioned_to: '' })
+      setPapForm({ full_name: '', phone: '', cpf: '', address_street: '', address_number: '', address_complement: '', payment_type: 'avista', total_installments: 1, monthly_fee: '20.00', notes: '', commissioned_to: '', lancado_por: '' })
       setPapDeps([]); loadPap()
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao salvar.') } finally { setSavingPap(false) }
+  }
+
+  const handleAcordo = async () => {
+    if (!showAcordoModal || !acordoForm.sinal) { toast.error('Informe o valor do sinal.'); return }
+    setSavingAcordo(true)
+    try {
+      await api.post(`/porta-a-porta/leads/${showAcordoModal.id}/acordo`, {
+        sinal: parseFloat(acordoForm.sinal),
+        parcelas: parseInt(acordoForm.parcelas),
+        payment_method: acordoForm.payment_method || null,
+      })
+      toast.success('Acordo registrado.')
+      setShowAcordoModal(null)
+      setAcordoForm({ sinal: '', parcelas: '2', payment_method: '' })
+      loadPap()
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao registrar acordo.') }
+    finally { setSavingAcordo(false) }
   }
 
   const handlePapPay = async (leadId: string) => {
@@ -1851,6 +1949,9 @@ export default function FinanceiroPage() {
             <div className="text-center text-gray-400 text-sm py-8">Carregando…</div>
           ) : (
             <>
+              {/* Saldo Consolidado */}
+              <SaldoConsolidado />
+
               {/* Summary cards */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
@@ -2192,6 +2293,55 @@ export default function FinanceiroPage() {
           </div>
         </div>
       )}
+      {/* ── ACORDO MODAL ── */}
+      {showAcordoModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 flex flex-col gap-4 mb-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-800">Registrar Acordo</h2>
+              <button onClick={() => setShowAcordoModal(null)} className="text-gray-400 text-xl">×</button>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-sm">
+              <p className="font-medium text-gray-800">{showAcordoModal.full_name}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Total a pagar: <span className="font-semibold text-gray-700">{fmt(showAcordoModal.monthly_fee)}</span></p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-xs text-gray-500 mb-0.5 block">Sinal (entrada agora) *</label>
+                <input type="number" step="0.01" min="0.01" value={acordoForm.sinal}
+                  onChange={e => setAcordoForm(f => ({ ...f, sinal: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+                  placeholder="Ex: 240.00" />
+                {acordoForm.sinal && parseFloat(acordoForm.sinal) > 0 && (
+                  <p className="text-xs text-purple-600 mt-1">
+                    Restante: {fmt(Math.max(0, parseFloat(showAcordoModal.monthly_fee) - parseFloat(acordoForm.sinal)))} ÷ {acordoForm.parcelas} = {fmt(Math.max(0, parseFloat(showAcordoModal.monthly_fee) - parseFloat(acordoForm.sinal)) / parseInt(acordoForm.parcelas || '1'))} /parcela
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-0.5 block">Parcelas para o restante</label>
+                <input type="number" min="1" max="24" value={acordoForm.parcelas}
+                  onChange={e => setAcordoForm(f => ({ ...f, parcelas: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-0.5 block">Forma de pagamento do sinal</label>
+                <input placeholder="PIX, Dinheiro…" value={acordoForm.payment_method}
+                  onChange={e => setAcordoForm(f => ({ ...f, payment_method: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowAcordoModal(null)} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
+              <button onClick={handleAcordo} disabled={savingAcordo || !acordoForm.sinal}
+                className="flex-1 bg-purple-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 hover:bg-purple-700">
+                {savingAcordo ? 'Registrando…' : 'Confirmar Acordo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── SESSION REVIEW MODAL ── */}
       {reviewSession && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 overflow-y-auto">
@@ -2571,30 +2721,19 @@ export default function FinanceiroPage() {
                 </div>
               )}
 
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-3">
-                <p className="text-xs font-semibold text-blue-700">Link de cadastro público</p>
-                <div>
-                  <label className="text-xs text-blue-600 mb-1 block">Responsável pelo link</label>
-                  <select
-                    value={papLinkCommissionedTo}
-                    onChange={e => { setPapLinkCommissionedTo(e.target.value); loadPapToken(e.target.value || undefined) }}
-                    className="w-full text-xs border border-blue-200 rounded-lg px-3 py-2 bg-white focus:outline-none">
-                    <option value="">— Sem responsável específico —</option>
-                    {[...conferentes, ...operadores].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i).map(u => (
-                      <option key={u.id} value={u.id}>{u.full_name}</option>
-                    ))}
-                  </select>
+              {/* Link único da associação */}
+              {papToken && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-blue-700 mb-0.5">Link de cadastro público (único)</p>
+                    <p className="text-xs text-blue-500 break-all truncate">{window.location.origin}/associar?token={papToken}</p>
+                  </div>
+                  <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/associar?token=${papToken}`); toast.success('Link copiado!') }}
+                    className="shrink-0 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">
+                    Copiar
+                  </button>
                 </div>
-                {papToken && (
-                  <>
-                    <p className="text-xs text-blue-500 break-all">{window.location.origin}/associar?token={papToken}</p>
-                    <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/associar?token=${papToken}`); toast.success('Link copiado!') }}
-                      className="self-start text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition">
-                      Copiar link
-                    </button>
-                  </>
-                )}
-              </div>
+              )}
 
               <div className="flex gap-2">
                 <button onClick={() => setShowPapForm(v => !v)}
@@ -2653,9 +2792,9 @@ export default function FinanceiroPage() {
                   </div>
                   <input placeholder="Observações" value={papForm.notes} onChange={e => setPapForm(f => ({ ...f, notes: e.target.value }))} className={inputCls} />
                   <div>
-                    <label className="text-xs text-gray-500 mb-0.5 block">Responsável pelo lançamento</label>
-                    <select value={papForm.commissioned_to} onChange={e => setPapForm(f => ({ ...f, commissioned_to: e.target.value }))} className={inputCls}>
-                      <option value="">— Selecionar —</option>
+                    <label className="text-xs text-gray-500 mb-0.5 block">Lançado por *</label>
+                    <select value={papForm.lancado_por} onChange={e => setPapForm(f => ({ ...f, lancado_por: e.target.value, commissioned_to: e.target.value }))} className={inputCls}>
+                      <option value="">— Selecionar responsável —</option>
                       {[...conferentes, ...operadores].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i).map(u => (
                         <option key={u.id} value={u.id}>{u.full_name}</option>
                       ))}
@@ -2693,7 +2832,10 @@ export default function FinanceiroPage() {
                           </p>
                         </div>
                         <div className="flex flex-col gap-1 shrink-0">
-                          {lead.status === 'pending' && <button onClick={() => handlePapPay(lead.id)} className="text-xs bg-green-600 text-white px-2.5 py-1 rounded-lg hover:bg-green-700">Confirmar</button>}
+                          {lead.status === 'pending' && <>
+                            <button onClick={() => handlePapPay(lead.id)} className="text-xs bg-green-600 text-white px-2.5 py-1 rounded-lg hover:bg-green-700">Confirmar</button>
+                            <button onClick={() => { setShowAcordoModal(lead); setAcordoForm({ sinal: '', parcelas: '2', payment_method: '' }) }} className="text-xs bg-purple-600 text-white px-2.5 py-1 rounded-lg hover:bg-purple-700">Acordo</button>
+                          </>}
                           {lead.status === 'agreement' && <button onClick={() => handlePapPay(lead.id)} className="text-xs bg-purple-600 text-white px-2.5 py-1 rounded-lg hover:bg-purple-700">Pagar parcela</button>}
                           <button onClick={() => handlePapCancel(lead.id)} className="text-xs border border-red-200 text-red-500 px-2.5 py-1 rounded-lg hover:bg-red-50">Cancelar</button>
                         </div>

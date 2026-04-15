@@ -60,6 +60,13 @@ class LeadIn(BaseModel):
     monthly_fee: Decimal = Field(default=Decimal("20.00"), gt=0)
     notes: str | None = None
     commissioned_to: UUID | None = None
+    lancado_por: str | None = Field(default=None, max_length=200)
+
+
+class AcordoIn(BaseModel):
+    sinal: Decimal = Field(gt=0, description="Valor pago como entrada agora")
+    parcelas: int = Field(ge=1, le=24, description="Número de parcelas para o restante")
+    payment_method: str | None = None
 
 
 class PayInstallmentIn(BaseModel):
@@ -172,6 +179,7 @@ async def create_lead(
         monthly_fee=body.monthly_fee,
         notes=body.notes,
         commissioned_to=body.commissioned_to,
+        lancado_por=body.lancado_por,
     )
     session.add(lead)
     await session.flush()  # get id
@@ -362,6 +370,77 @@ async def pay_lead(
 
     await session.commit()
     return {"ok": True, "lead_status": lead.status, "resident_id": str(lead.resident_id) if lead.resident_id else None}
+
+
+@router.post("/leads/{lead_id}/acordo", summary="Registrar acordo: sinal + parcelas do restante")
+async def fazer_acordo(
+    lead_id: str,
+    body: AcordoIn,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    lead = (await session.execute(
+        select(PortaAPortaLead).where(
+            PortaAPortaLead.id == UUID(lead_id),
+            PortaAPortaLead.association_id == current.association_id,
+        )
+    )).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado.")
+
+    total = float(lead.monthly_fee)
+    sinal = float(body.sinal)
+    if sinal >= total:
+        raise HTTPException(status_code=400, detail="Sinal não pode ser igual ou maior que o total. Use o pagamento normal.")
+
+    restante = round(total - sinal, 2)
+    per_parcela = round(restante / body.parcelas, 2)
+    now = datetime.utcnow()
+
+    # Delete existing pending payments
+    existing = (await session.execute(
+        select(PortaAPortaPayment).where(
+            PortaAPortaPayment.lead_id == lead.id,
+            PortaAPortaPayment.status == "pending",
+        )
+    )).scalars().all()
+    for p in existing:
+        await session.delete(p)
+    await session.flush()
+
+    # Register sinal as paid installment 0
+    sinal_pmt = PortaAPortaPayment(
+        association_id=current.association_id,
+        lead_id=lead.id,
+        installment_number=0,
+        total_installments=body.parcelas + 1,
+        amount=Decimal(str(sinal)),
+        status="paid",
+        paid_at=now,
+        payment_method=body.payment_method,
+        due_date=date.today(),
+    )
+    session.add(sinal_pmt)
+
+    # Create installments for remainder
+    for i in range(1, body.parcelas + 1):
+        pmt = PortaAPortaPayment(
+            association_id=current.association_id,
+            lead_id=lead.id,
+            installment_number=i,
+            total_installments=body.parcelas + 1,
+            amount=Decimal(str(per_parcela)),
+            due_date=date.today().replace(day=1) + timedelta(days=30 * i),
+        )
+        session.add(pmt)
+
+    lead.payment_type = "parcelado"
+    lead.total_installments = body.parcelas + 1
+    lead.status = "agreement"
+    lead.updated_at = now
+    session.add(lead)
+    await session.commit()
+    return {"ok": True, "sinal": str(sinal), "restante": str(restante), "parcelas": body.parcelas, "per_parcela": str(per_parcela)}
 
 
 @router.delete("/leads/{lead_id}", summary="Cancelar lead")

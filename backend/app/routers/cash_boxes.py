@@ -63,6 +63,75 @@ async def summary(
     }
 
 
+@router.get("/saldo-consolidado", summary="Saldo líquido consolidado: caixas + porta a porta")
+async def saldo_consolidado(
+    from_date: str | None = None,
+    to_date: str | None = None,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    aid = str(current.association_id)
+    date_filter = ""
+    params: dict = {"aid": aid}
+    if from_date:
+        date_filter += " AND DATE(cs.opened_at) >= :from_date"
+        params["from_date"] = from_date
+    if to_date:
+        date_filter += " AND DATE(cs.opened_at) <= :to_date"
+        params["to_date"] = to_date
+
+    sessoes_row = (await session.execute(text(f"""
+        SELECT
+            COUNT(*) AS total_sessoes,
+            COALESCE(SUM(cs.manual_total_bruto), 0) AS bruto,
+            COALESCE(SUM(cs.manual_total_baixas), 0) AS baixas,
+            COALESCE(SUM(cs.total_pix), 0) AS pix,
+            COALESCE(SUM(cs.total_dinheiro), 0) AS dinheiro
+          FROM cash_sessions cs
+         WHERE cs.association_id = :aid AND cs.status != 'open' {date_filter}
+    """), params)).fetchone()
+
+    pap_params: dict = {"aid": aid}
+    pap_date_filter = ""
+    if from_date:
+        pap_date_filter += " AND DATE(l.updated_at) >= :from_date"
+        pap_params["from_date"] = from_date
+    if to_date:
+        pap_date_filter += " AND DATE(l.updated_at) <= :to_date"
+        pap_params["to_date"] = to_date
+
+    pap_row = (await session.execute(text(f"""
+        SELECT
+            COUNT(*) AS total_pagos,
+            COALESCE(SUM(p.amount), 0) AS recebido
+          FROM porta_a_porta_payments p
+          JOIN porta_a_porta_leads l ON l.id = p.lead_id
+         WHERE l.association_id = :aid AND p.status = 'paid' {pap_date_filter}
+    """), pap_params)).fetchone()
+
+    bruto = float(sessoes_row[1])
+    baixas = float(sessoes_row[2])
+    liquido_caixas = round(bruto - baixas, 2)
+    pap_recebido = float(pap_row[1])
+    total_consolidado = round(liquido_caixas + pap_recebido, 2)
+
+    return {
+        "total_consolidado": str(total_consolidado),
+        "caixas": {
+            "sessoes": int(sessoes_row[0]),
+            "bruto": str(round(bruto, 2)),
+            "baixas": str(round(baixas, 2)),
+            "liquido": str(liquido_caixas),
+            "pix": str(round(float(sessoes_row[3]), 2)),
+            "dinheiro": str(round(float(sessoes_row[4]), 2)),
+        },
+        "porta_a_porta": {
+            "total_pagos": int(pap_row[0]),
+            "recebido": str(round(pap_recebido, 2)),
+        },
+    }
+
+
 @router.get("", summary="Listar caixinhas")
 async def list_boxes(
     current: CurrentUser = Depends(get_current_user),
