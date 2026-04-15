@@ -2,13 +2,29 @@
 Router /superadmin — painel de TI interno.
 Apenas superadmin (role=superadmin) pode acessar.
 """
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
+
+
+async def _exec_ro(session: AsyncSession, query: str, params: dict | None = None):
+    """Execute a read-only query with retry on transient deadlocks."""
+    for attempt in range(3):
+        try:
+            await session.execute(text("SET TRANSACTION READ ONLY"))
+            return await session.execute(text(query), params or {})
+        except DBAPIError as e:
+            await session.rollback()
+            if "deadlock" in str(e).lower() and attempt < 2:
+                await asyncio.sleep(0.15 * (attempt + 1))
+                continue
+            raise
 
 router = APIRouter(prefix="/superadmin", tags=["SuperAdmin TI"])
 
@@ -40,7 +56,7 @@ async def list_organizations(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     _require_superadmin(current)
-    rows = await session.execute(text("""
+    rows = await _exec_ro(session, """
         SELECT a.id, a.name, a.slug, a.plan_name, a.is_active,
                a.plan_expires_at, a.created_at,
                COUNT(DISTINCT u.id) AS user_count,
@@ -53,7 +69,7 @@ async def list_organizations(
           LEFT JOIN packages p ON p.association_id = a.id
          GROUP BY a.id
          ORDER BY a.name
-    """))
+    """)
     return [
         {
             "id": str(r[0]), "name": r[1], "slug": r[2],
@@ -76,13 +92,13 @@ async def org_users(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     _require_superadmin(current)
-    rows = await session.execute(text("""
+    rows = await _exec_ro(session, """
         SELECT u.id, u.full_name, u.email, u.role, u.is_active, u.last_login_at
           FROM users u
           JOIN associations a ON a.id = u.association_id
          WHERE a.slug = :slug
          ORDER BY u.full_name
-    """), {"slug": slug})
+    """, {"slug": slug})
     return [
         {
             "id": str(r[0]), "full_name": r[1], "email": r[2],
@@ -99,7 +115,7 @@ async def active_sessions(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     _require_superadmin(current)
-    rows = await session.execute(text("""
+    rows = await _exec_ro(session, """
         SELECT cs.id, cs.opened_at, cs.opening_balance,
                u.full_name AS opened_by_name, u.email AS opened_by_email,
                a.name AS association_name, a.slug
@@ -108,7 +124,7 @@ async def active_sessions(
           JOIN associations a ON a.id = cs.association_id
          WHERE cs.status = 'open'
          ORDER BY cs.opened_at DESC
-    """))
+    """)
     return [
         {
             "id": str(r[0]),
@@ -166,14 +182,11 @@ async def get_org_settings(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     _require_superadmin(current)
-    row = (await session.execute(
-        text("""
+    row = (await _exec_ro(session, """
             SELECT default_cash_balance, max_cash_before_sangria,
                    default_mensalidade_amount, delinquency_grace_days, permitir_transferencia
             FROM association_settings WHERE association_id = :id
-        """),
-        {"id": org_id},
-    )).fetchone()
+        """, {"id": org_id})).fetchone()
     if not row:
         return {"default_cash_balance": 200, "max_cash_before_sangria": 500,
                 "default_mensalidade_amount": 0, "delinquency_grace_days": 2,
@@ -218,7 +231,7 @@ async def health_summary(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     _require_superadmin(current)
-    stats = await session.execute(text("""
+    stats = await _exec_ro(session, """
         SELECT
           (SELECT COUNT(*) FROM associations WHERE is_active = true) AS active_orgs,
           (SELECT COUNT(*) FROM users WHERE is_active = true) AS active_users,
@@ -227,7 +240,7 @@ async def health_summary(
           (SELECT COUNT(*) FROM transactions WHERE created_at > NOW() - INTERVAL '24 hours') AS tx_last_24h,
           (SELECT COUNT(*) FROM cash_sessions WHERE status = 'open') AS open_sessions,
           (SELECT COUNT(*) FROM mensalidades WHERE status != 'paid') AS pending_mensalidades
-    """))
+    """)
     r = stats.fetchone()
     return {
         "active_orgs": r[0], "active_users": r[1], "total_residents": r[2],
@@ -244,21 +257,21 @@ async def it_metrics(
     _require_superadmin(current)
 
     # ── Database size ───────────────────────────────────────────────────────
-    db_size_row = (await session.execute(text(
+    db_size_row = (await _exec_ro(session,
         "SELECT pg_database_size(current_database()) AS db_bytes"
-    ))).fetchone()
+    )).fetchone()
 
-    table_sizes = (await session.execute(text("""
+    table_sizes = (await _exec_ro(session, """
         SELECT relname AS tbl,
                pg_total_relation_size(relid) AS bytes,
                n_live_tup AS rows
           FROM pg_stat_user_tables
          ORDER BY bytes DESC
          LIMIT 12
-    """))).fetchall()
+    """)).fetchall()
 
     # ── Package SLA ─────────────────────────────────────────────────────────
-    sla_row = (await session.execute(text("""
+    sla_row = (await _exec_ro(session, """
         SELECT
             COUNT(*) FILTER (WHERE status = 'delivered') AS total_delivered,
             ROUND(AVG(
@@ -277,50 +290,50 @@ async def it_metrics(
             ) AS overdue_packages,
             COUNT(*) FILTER (WHERE status NOT IN ('delivered','returned')) AS pending_packages,
             COUNT(*) FILTER (WHERE status = 'notified'
-                  AND notified_at < NOW() - INTERVAL '72 hours') AS overdue_notified
+                  AND updated_at < NOW() - INTERVAL '72 hours') AS overdue_notified
         FROM packages
-    """))).fetchone()
+    """)).fetchone()
 
     # ── Activity last 7 days (transactions per day) ─────────────────────────
-    activity = (await session.execute(text("""
+    activity = (await _exec_ro(session, """
         SELECT DATE(created_at) AS day, COUNT(*) AS cnt
           FROM transactions
          WHERE created_at > NOW() - INTERVAL '7 days'
          GROUP BY 1 ORDER BY 1
-    """))).fetchall()
+    """)).fetchall()
 
     # ── Logins last 7 days ──────────────────────────────────────────────────
-    logins = (await session.execute(text("""
+    logins = (await _exec_ro(session, """
         SELECT DATE(last_login_at) AS day, COUNT(*) AS cnt
           FROM users
          WHERE last_login_at > NOW() - INTERVAL '7 days'
          GROUP BY 1 ORDER BY 1
-    """))).fetchall()
+    """)).fetchall()
 
     # ── Errors / audit last 24h ─────────────────────────────────────────────
-    audit_row = (await session.execute(text("""
+    audit_row = (await _exec_ro(session, """
         SELECT COUNT(*) AS total_actions,
                COUNT(*) FILTER (WHERE acao ILIKE '%estorno%' OR acao ILIKE '%cancel%') AS reversals
-          FROM audit_logs
+          FROM audit_log
          WHERE created_at > NOW() - INTERVAL '24 hours'
-    """))).fetchone()
+    """)).fetchone()
 
     # ── Top orgs by activity (last 30 days) ─────────────────────────────────
-    top_orgs = (await session.execute(text("""
+    top_orgs = (await _exec_ro(session, """
         SELECT a.name, COUNT(t.id) AS tx_count, COUNT(DISTINCT DATE(t.created_at)) AS active_days
           FROM transactions t
           JOIN associations a ON a.id = t.association_id
          WHERE t.created_at > NOW() - INTERVAL '30 days'
          GROUP BY a.name ORDER BY tx_count DESC LIMIT 5
-    """))).fetchall()
+    """)).fetchall()
 
     # ── Uptime proxy: sessions opened per day last 7 days ───────────────────
-    sessions_daily = (await session.execute(text("""
+    sessions_daily = (await _exec_ro(session, """
         SELECT DATE(opened_at) AS day, COUNT(*) AS cnt
           FROM cash_sessions
          WHERE opened_at > NOW() - INTERVAL '7 days'
          GROUP BY 1 ORDER BY 1
-    """))).fetchall()
+    """)).fetchall()
 
     return {
         "database": {

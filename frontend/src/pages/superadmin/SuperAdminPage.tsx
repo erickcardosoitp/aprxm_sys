@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Activity, AlertTriangle, Building2, CheckCircle2, ChevronDown, ChevronRight, Clock, Database, Monitor, Package, RefreshCw, Server, TrendingUp, Users, Pencil, Trash2, Settings, X, Check, Wifi, Zap } from 'lucide-react'
+import { Activity, AlertTriangle, Building2, CheckCircle2, Clock, Database, Monitor, Package, RefreshCw, Server, TrendingUp, Users, Wifi, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -12,14 +12,11 @@ interface OrgSummary {
 interface OrgUser { id: string; full_name: string; email: string; role: string; is_active: boolean; last_login_at: string | null }
 interface ActiveSession { id: string; opened_at: string; opening_balance: number; opened_by_name: string; opened_by_email: string; association_name: string; slug: string }
 interface HealthSummary { active_orgs: number; active_users: number; total_residents: number; pending_packages: number; tx_last_24h: number; open_sessions: number; pending_mensalidades: number }
-interface OrgSettings { default_cash_balance: number; max_cash_before_sangria: number; default_mensalidade_amount: number; delinquency_grace_days: number; permitir_transferencia: boolean }
 
 const ROLE_LABELS: Record<string, string> = {
   superadmin: 'SuperAdmin', admin_master: 'Admin Master', admin: 'Admin', conferente: 'Conferente',
   diretoria: 'Diretoria', diretoria_adjunta: 'Dir. Adjunta', operator: 'Operador', viewer: 'Visualizador',
 }
-const PLANS = ['basic', 'pro', 'aggregator']
-const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30'
 
 // ── IT Metrics Tab ────────────────────────────────────────────────────────────
 interface ITMetrics {
@@ -33,17 +30,21 @@ interface ITMetrics {
 function ITMetricsTab() {
   const [data, setData] = useState<ITMetrics | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [perfMetrics, setPerfMetrics] = useState<{ loadTime: number | null; apiTimes: { name: string; duration: number }[] }>({ loadTime: null, apiTimes: [] })
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = async () => {
+    setError(false)
     try {
       const res = await api.get<ITMetrics>('/superadmin/it-metrics')
       setData(res.data)
       setLastUpdate(new Date())
-    } catch { toast.error('Erro ao carregar métricas TI') }
-    finally { setLoading(false) }
+    } catch {
+      setError(true)
+      toast.error('Erro ao carregar métricas TI')
+    } finally { setLoading(false) }
   }
 
   useEffect(() => {
@@ -53,7 +54,6 @@ function ITMetricsTab() {
   }, [])
 
   useEffect(() => {
-    // Frontend performance metrics
     const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
     const loadTime = nav ? Math.round(nav.loadEventEnd - nav.startTime) : null
     const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[]
@@ -66,7 +66,13 @@ function ITMetricsTab() {
   }, [])
 
   if (loading) return <div className="p-12 text-center text-gray-400 text-sm">Carregando métricas…</div>
-  if (!data) return null
+  if (error || !data) return (
+    <div className="p-12 text-center flex flex-col items-center gap-3">
+      <AlertTriangle className="w-8 h-8 text-red-400" />
+      <p className="text-sm text-gray-500">Erro ao carregar métricas.</p>
+      <button onClick={load} className="text-sm border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50">Tentar novamente</button>
+    </div>
+  )
 
   const { database, package_sla, activity, audit, top_orgs_30d } = data
   const maxTx = Math.max(...activity.transactions_7d.map(d => d.count), 1)
@@ -75,11 +81,10 @@ function ITMetricsTab() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Auto-refresh indicator */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-xs text-gray-400">Atualização automática a cada 60s</span>
+          <span className="text-xs text-gray-400">Auto-refresh a cada 60s</span>
         </div>
         <div className="flex items-center gap-2">
           {lastUpdate && <span className="text-xs text-gray-400">Atualizado: {lastUpdate.toLocaleTimeString('pt-BR')}</span>}
@@ -89,9 +94,8 @@ function ITMetricsTab() {
         </div>
       </div>
 
-      {/* Row 1: Package SLA + DB */}
+      {/* SLA + DB */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Package SLA */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Package className="w-4 h-4 text-[#26619c]" /> SLA de Encomendas
@@ -128,7 +132,6 @@ function ITMetricsTab() {
           </div>
         </div>
 
-        {/* Database */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Database className="w-4 h-4 text-[#26619c]" /> Armazenamento — Banco de Dados
@@ -159,10 +162,10 @@ function ITMetricsTab() {
         </div>
       </div>
 
-      {/* Row 2: Activity chart */}
+      {/* Activity chart */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-[#26619c]" /> Atividade — Últimos 7 dias
+          <TrendingUp className="w-4 h-4 text-[#26619c]" /> Transações — Últimos 7 dias
         </p>
         {activity.transactions_7d.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-4">Sem dados de atividade.</p>
@@ -172,8 +175,7 @@ function ITMetricsTab() {
               const days: Record<string, number> = {}
               for (let i = 6; i >= 0; i--) {
                 const d = new Date(); d.setDate(d.getDate() - i)
-                const key = d.toISOString().slice(0, 10)
-                days[key] = 0
+                days[d.toISOString().slice(0, 10)] = 0
               }
               activity.transactions_7d.forEach(d => { days[d.day] = d.count })
               return Object.entries(days).map(([day, count]) => {
@@ -194,9 +196,8 @@ function ITMetricsTab() {
         )}
       </div>
 
-      {/* Row 3: Frontend perf + Audit + Top orgs */}
+      {/* Frontend perf + Audit + Top orgs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Frontend performance */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Zap className="w-4 h-4 text-amber-500" /> Performance Frontend
@@ -228,7 +229,6 @@ function ITMetricsTab() {
           </div>
         </div>
 
-        {/* Audit 24h */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Server className="w-4 h-4 text-purple-500" /> Auditoria — 24h
@@ -266,7 +266,6 @@ function ITMetricsTab() {
           </div>
         </div>
 
-        {/* Top orgs */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Wifi className="w-4 h-4 text-green-500" /> Top Orgs — 30 dias
@@ -282,7 +281,7 @@ function ITMetricsTab() {
                   <div key={org.name}>
                     <div className="flex justify-between text-xs mb-0.5">
                       <span className="text-gray-700 font-medium truncate max-w-[120px]">
-                        <span className="text-gray-400 mr-1">#{i+1}</span>{org.name}
+                        <span className="text-gray-400 mr-1">#{i + 1}</span>{org.name}
                       </span>
                       <span className="text-gray-500 shrink-0">{org.tx_count} TX · {org.active_days}d</span>
                     </div>
@@ -297,10 +296,10 @@ function ITMetricsTab() {
         </div>
       </div>
 
-      {/* Network indicator */}
+      {/* Sessions + Logins */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <Clock className="w-4 h-4 text-blue-500" /> Volume de Atividade — Sessões de Caixa e Logins (7 dias)
+          <Clock className="w-4 h-4 text-blue-500" /> Sessões de Caixa e Logins — 7 dias
         </p>
         <div className="grid grid-cols-2 gap-4">
           {[
@@ -338,7 +337,8 @@ function ITMetricsTab() {
   )
 }
 
-export default function SuperAdminPage() {
+// ── Orgs Tab ──────────────────────────────────────────────────────────────────
+function OrgsTab() {
   const [orgs, setOrgs] = useState<OrgSummary[]>([])
   const [health, setHealth] = useState<HealthSummary | null>(null)
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([])
@@ -346,17 +346,6 @@ export default function SuperAdminPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [orgUsers, setOrgUsers] = useState<Record<string, OrgUser[]>>({})
   const [loadingUsers, setLoadingUsers] = useState<string | null>(null)
-
-  // Edit org
-  const [editOrg, setEditOrg] = useState<OrgSummary | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', slug: '', plan_name: '', is_active: true })
-  const [savingEdit, setSavingEdit] = useState(false)
-
-  // Settings per org
-  const [settingsOrg, setSettingsOrg] = useState<OrgSummary | null>(null)
-  const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null)
-  const [settingsForm, setSettingsForm] = useState({ default_cash_balance: '', max_cash_before_sangria: '', default_mensalidade_amount: '', delinquency_grace_days: '', permitir_transferencia: false })
-  const [savingSettings, setSavingSettings] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -369,7 +358,7 @@ export default function SuperAdminPage() {
       setOrgs(orgsRes.data)
       setHealth(healthRes.data)
       setActiveSessions(sessionsRes.data)
-    } catch { toast.error('Erro ao carregar painel de TI.') }
+    } catch { toast.error('Erro ao carregar dados.') }
     finally { setLoading(false) }
   }
 
@@ -387,96 +376,18 @@ export default function SuperAdminPage() {
     finally { setLoadingUsers(null) }
   }
 
-  const openEdit = (org: OrgSummary) => {
-    setEditOrg(org)
-    setEditForm({ name: org.name, slug: org.slug, plan_name: org.plan_name, is_active: org.is_active })
-  }
-
-  const handleSaveEdit = async () => {
-    if (!editOrg) return
-    setSavingEdit(true)
-    try {
-      await api.put(`/superadmin/organizations/${editOrg.id}`, editForm)
-      toast.success('Organização atualizada.')
-      setEditOrg(null)
-      load()
-    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao salvar.') }
-    finally { setSavingEdit(false) }
-  }
-
-  const handleDeactivate = async (org: OrgSummary) => {
-    if (!window.confirm(`Desativar "${org.name}"? Usuários não conseguirão fazer login.`)) return
-    try {
-      await api.delete(`/superadmin/organizations/${org.id}`)
-      toast.success(`"${org.name}" desativada.`)
-      load()
-    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao desativar.') }
-  }
-
-  const openSettings = async (org: OrgSummary) => {
-    setSettingsOrg(org)
-    setOrgSettings(null)
-    try {
-      const res = await api.get<OrgSettings>(`/superadmin/organizations/${org.id}/settings`)
-      setOrgSettings(res.data)
-      setSettingsForm({
-        default_cash_balance: String(res.data.default_cash_balance),
-        max_cash_before_sangria: String(res.data.max_cash_before_sangria),
-        default_mensalidade_amount: String(res.data.default_mensalidade_amount),
-        delinquency_grace_days: String(res.data.delinquency_grace_days),
-        permitir_transferencia: res.data.permitir_transferencia,
-      })
-    } catch { toast.error('Erro ao carregar configurações.') }
-  }
-
-  const handleSaveSettings = async () => {
-    if (!settingsOrg) return
-    setSavingSettings(true)
-    try {
-      await api.put(`/superadmin/organizations/${settingsOrg.id}/settings`, {
-        default_cash_balance: parseFloat(settingsForm.default_cash_balance) || 200,
-        max_cash_before_sangria: parseFloat(settingsForm.max_cash_before_sangria) || 500,
-        default_mensalidade_amount: parseFloat(settingsForm.default_mensalidade_amount) || 0,
-        delinquency_grace_days: parseInt(settingsForm.delinquency_grace_days) || 2,
-        permitir_transferencia: settingsForm.permitir_transferencia,
-      })
-      toast.success('Configurações salvas.')
-      setSettingsOrg(null)
-    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao salvar.') }
-    finally { setSavingSettings(false) }
-  }
-
   const fmtDate = (s: string | null) => s
     ? new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
     : '—'
 
-  const [tab, setTab] = useState<'orgs' | 'ti'>('orgs')
-
   return (
-    <div className="flex flex-col gap-5 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-          <Activity className="w-5 h-5 text-[#26619c]" />
-          Painel TI — SuperAdmin
-        </h1>
+    <div className="flex flex-col gap-5">
+      <div className="flex justify-end">
         <button onClick={load} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg">
           <RefreshCw className="w-4 h-4" /> Atualizar
         </button>
       </div>
 
-      {/* Tab switcher */}
-      <div className="flex gap-2 bg-gray-100 rounded-xl p-1 self-start">
-        {([['orgs', 'Organizações'], ['ti', 'Métricas TI']] as const).map(([key, label]) => (
-          <button key={key} onClick={() => setTab(key)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === key ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'ti' && <ITMetricsTab />}
-
-      {tab === 'orgs' && <>
       {/* Health KPIs */}
       {health && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -510,7 +421,7 @@ export default function SuperAdminPage() {
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
             <Monitor className="w-4 h-4 text-amber-500" />
-            Caixas abertos
+            Caixas abertos agora
             {activeSessions.length > 0 && <span className="ml-1 bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium">{activeSessions.length}</span>}
           </h2>
         </div>
@@ -543,49 +454,42 @@ export default function SuperAdminPage() {
       {/* Organizations list */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-800 text-sm flex items-center gap-2"><Building2 className="w-4 h-4 text-gray-400" />Organizações</h2>
+          <h2 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-gray-400" /> Organizações
+          </h2>
         </div>
         {loading ? <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div> : (
           <ul className="divide-y divide-gray-100">
             {orgs.map(org => (
               <li key={org.id}>
-                <div className="flex items-center justify-between px-4 py-3.5 hover:bg-gray-50">
-                  <button onClick={() => toggleOrg(org.slug)} className="flex items-center gap-3 min-w-0 flex-1 text-left">
+                <button onClick={() => toggleOrg(org.slug)} className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 text-left">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className={`w-2 h-2 rounded-full shrink-0 ${org.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-800 truncate">{org.name}</p>
                       <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400 flex-wrap">
                         <span className="font-mono text-gray-300">/{org.slug}</span>
-                        <span className="flex items-center gap-1"><Users className="w-3 h-3" />{org.user_count}</span>
+                        <span className="flex items-center gap-1"><Users className="w-3 h-3" />{org.user_count} usuários</span>
                         <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{org.resident_count} mor.</span>
-                        <span className="flex items-center gap-1"><Package className="w-3 h-3" />{org.open_packages} enc.</span>
-                        <span>Login: {fmtDate(org.last_login_at)}</span>
+                        <span className="flex items-center gap-1"><Package className="w-3 h-3" />{org.open_packages} enc. abertas</span>
+                        <span>Último login: {fmtDate(org.last_login_at)}</span>
                       </div>
                     </div>
-                  </button>
-                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-2">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                       org.plan_name === 'aggregator' ? 'bg-purple-100 text-purple-700' :
                       org.plan_name === 'pro' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
                     }`}>{org.plan_name}</span>
-                    <button onClick={() => openSettings(org)} title="Configurações" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition">
-                      <Settings className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => openEdit(org)} title="Editar" className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => handleDeactivate(org)} title="Desativar" className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => toggleOrg(org.slug)} className="p-1.5 text-gray-300">
-                      {expanded === org.slug ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                    </button>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${org.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                      {org.is_active ? 'Ativa' : 'Inativa'}
+                    </span>
                   </div>
-                </div>
+                </button>
 
                 {expanded === org.slug && (
                   <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
-                    <p className="text-xs font-medium text-gray-600 mb-2">Usuários da organização</p>
+                    <p className="text-xs font-medium text-gray-600 mb-2">Usuários</p>
                     {loadingUsers === org.slug ? <p className="text-xs text-gray-400">Carregando…</p> : (
                       <table className="w-full text-xs">
                         <thead><tr className="text-gray-400">
@@ -617,79 +521,34 @@ export default function SuperAdminPage() {
           </ul>
         )}
       </div>
+    </div>
+  )
+}
 
-      <p className="text-xs text-gray-400 text-center">Painel de TI — dados em tempo real · APRXM v1.0</p>
-      </>}
+// ── Main ──────────────────────────────────────────────────────────────────────
+export default function SuperAdminPage() {
+  const [tab, setTab] = useState<'orgs' | 'ti'>('orgs')
 
-      {/* Edit org modal */}
-      {editOrg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-800">Editar — {editOrg.name}</h3>
-              <button onClick={() => setEditOrg(null)}><X className="w-5 h-5 text-gray-400" /></button>
-            </div>
-            <div className="flex flex-col gap-3">
-              <div><label className="block text-xs text-gray-600 mb-1">Nome</label>
-                <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} className={inputCls} /></div>
-              <div><label className="block text-xs text-gray-600 mb-1">Slug</label>
-                <input value={editForm.slug} onChange={e => setEditForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))} className={inputCls} /></div>
-              <div><label className="block text-xs text-gray-600 mb-1">Plano</label>
-                <select value={editForm.plan_name} onChange={e => setEditForm(f => ({ ...f, plan_name: e.target.value }))} className={inputCls}>
-                  {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
-                </select></div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={editForm.is_active} onChange={e => setEditForm(f => ({ ...f, is_active: e.target.checked }))} className="w-4 h-4 accent-[#26619c]" />
-                <span className="text-sm text-gray-700">Ativa</span>
-              </label>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setEditOrg(null)} className="flex-1 py-2 border border-gray-200 rounded-xl text-sm text-gray-600">Cancelar</button>
-              <button onClick={handleSaveEdit} disabled={savingEdit} className="flex-1 py-2 bg-[#26619c] text-white rounded-xl text-sm font-semibold disabled:opacity-50">
-                {savingEdit ? '…' : <span className="flex items-center justify-center gap-1"><Check className="w-4 h-4" />Salvar</span>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+  return (
+    <div className="flex flex-col gap-5 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
+      <div className="flex items-center gap-3">
+        <Activity className="w-5 h-5 text-[#26619c]" />
+        <h1 className="text-xl font-bold text-gray-900">Monitoramento — SuperAdmin</h1>
+      </div>
 
-      {/* Settings modal */}
-      {settingsOrg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-800">Config — {settingsOrg.name}</h3>
-              <button onClick={() => setSettingsOrg(null)}><X className="w-5 h-5 text-gray-400" /></button>
-            </div>
-            {!orgSettings ? <p className="text-sm text-center text-gray-400 py-4">Carregando…</p> : (
-              <div className="flex flex-col gap-3">
-                {[
-                  { key: 'default_cash_balance', label: 'Fundo de caixa (R$)' },
-                  { key: 'max_cash_before_sangria', label: 'Limite sangria (R$)' },
-                  { key: 'default_mensalidade_amount', label: 'Mensalidade padrão (R$)' },
-                  { key: 'delinquency_grace_days', label: 'Carência inadimplência (dias)' },
-                ].map(({ key, label }) => (
-                  <div key={key}><label className="block text-xs text-gray-600 mb-1">{label}</label>
-                    <input type="number" value={(settingsForm as any)[key]}
-                      onChange={e => setSettingsForm(f => ({ ...f, [key]: e.target.value }))}
-                      className={inputCls} /></div>
-                ))}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={settingsForm.permitir_transferencia}
-                    onChange={e => setSettingsForm(f => ({ ...f, permitir_transferencia: e.target.checked }))} className="w-4 h-4 accent-[#26619c]" />
-                  <span className="text-sm text-gray-700">Permitir transferências</span>
-                </label>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button onClick={() => setSettingsOrg(null)} className="flex-1 py-2 border border-gray-200 rounded-xl text-sm text-gray-600">Cancelar</button>
-              <button onClick={handleSaveSettings} disabled={savingSettings || !orgSettings} className="flex-1 py-2 bg-[#26619c] text-white rounded-xl text-sm font-semibold disabled:opacity-50">
-                {savingSettings ? '…' : <span className="flex items-center justify-center gap-1"><Check className="w-4 h-4" />Salvar</span>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="flex gap-2 bg-gray-100 rounded-xl p-1 self-start">
+        {([['orgs', 'Organizações'], ['ti', 'Métricas TI']] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === key ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'orgs' && <OrgsTab />}
+      {tab === 'ti' && <ITMetricsTab />}
+
+      <p className="text-xs text-gray-400 text-center">Painel de Monitoramento · APRXM</p>
     </div>
   )
 }

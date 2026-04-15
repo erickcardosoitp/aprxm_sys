@@ -225,6 +225,10 @@ export default function FinanceiroPage() {
       toast.success('Lançamento corrigido.')
       setEditTarget(null); setEditAmount(''); setEditPmId(''); setEditDesc(''); setEditPassword('')
       loadTransactions()
+      if (reviewSession) {
+        const r = await api.get<TxReview[]>(`/finance/sessions/${reviewSession.id}/transactions`)
+        setReviewTxs(r.data)
+      }
     } catch (e: any) {
       const d = e.response?.data?.detail
       toast.error(typeof d === 'string' ? d : 'Erro ao corrigir.')
@@ -2368,6 +2372,7 @@ export default function FinanceiroPage() {
                     <th className="px-2 py-2 text-left text-gray-500 font-medium">Pessoa</th>
                     <th className="px-2 py-2 text-right text-gray-500 font-medium">Valor</th>
                     <th className="px-2 py-2 text-center text-gray-500 font-medium">OK</th>
+                    <th className="px-2 py-2 text-center text-gray-500 font-medium">Editar</th>
                     <th className="px-2 py-2 text-left text-gray-500 font-medium">Observação</th>
                   </tr>
                 </thead>
@@ -2407,6 +2412,23 @@ export default function FinanceiroPage() {
                           onChange={e => setReviewTxs(prev => prev.map((t, j) => j === i ? { ...t, conferido: e.target.checked } : t))}
                           className="w-4 h-4 accent-indigo-600" />
                       </td>
+                      <td className="px-2 py-2 text-center">
+                        {!isReversed && (
+                          <button
+                            title="Corrigir lançamento (requer senha de admin)"
+                            onClick={() => {
+                              setEditTarget(tx as unknown as Tx)
+                              setEditDesc(tx.description)
+                              setEditAmount(tx.amount)
+                              setEditPmId('')
+                              setEditPassword('')
+                            }}
+                            className="p-1 text-gray-400 hover:text-[#26619c] hover:bg-blue-50 rounded transition"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </td>
                       <td className="px-2 py-2">
                         <input type="text" value={tx.observacao ?? ''} placeholder={tx.conferido ? '' : 'Observação…'}
                           onChange={e => setReviewTxs(prev => prev.map((t, j) => j === i ? { ...t, observacao: e.target.value } : t))}
@@ -2416,7 +2438,7 @@ export default function FinanceiroPage() {
                     )
                   })}
                   {reviewTxs.length === 0 && (
-                    <tr><td colSpan={7} className="px-2 py-4 text-center text-gray-400">Nenhuma transação nesta sessão.</td></tr>
+                    <tr><td colSpan={8} className="px-2 py-4 text-center text-gray-400">Nenhuma transação nesta sessão.</td></tr>
                   )}
                 </tbody>
               </table>
