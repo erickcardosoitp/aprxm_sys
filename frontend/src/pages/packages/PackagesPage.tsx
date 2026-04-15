@@ -284,7 +284,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
                     <button onClick={handleSaveDeliveryEdit} disabled={savingDelivery} className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">{savingDelivery ? 'Salvando…' : 'Salvar'}</button>
                   </div>
                 </div>
-              ) : (
+              ) : (<>
               <div className="grid grid-cols-2 gap-2 text-sm mb-2">
                 {pkg.delivered_to_name && (
                   <div>
@@ -342,7 +342,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
                   </div>
                 )}
               </div>
-              )}
+              </>)}
             </div>
           )}
 
