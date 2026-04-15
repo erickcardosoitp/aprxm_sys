@@ -206,7 +206,7 @@ function ITMetricsTab() {
             <div className="flex justify-between items-center">
               <span className="text-xs text-gray-500">Tempo de carregamento</span>
               <span className={`text-sm font-bold ${perfMetrics.loadTime == null ? 'text-gray-400' : perfMetrics.loadTime < 2000 ? 'text-green-600' : perfMetrics.loadTime < 4000 ? 'text-amber-600' : 'text-red-600'}`}>
-                {perfMetrics.loadTime != null ? `${perfMetrics.loadTime}ms` : '—'}
+                {perfMetrics.loadTime != null ? `${perfMetrics.loadTime}ms (${(perfMetrics.loadTime / 1000).toFixed(2)}s)` : '—'}
               </span>
             </div>
             <div className="border-t border-gray-100 pt-2">
@@ -346,6 +346,9 @@ function OrgsTab() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [orgUsers, setOrgUsers] = useState<Record<string, OrgUser[]>>({})
   const [loadingUsers, setLoadingUsers] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [filterPlan, setFilterPlan] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -453,14 +456,39 @@ function OrgsTab() {
 
       {/* Organizations list */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+        <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2">
+          <h2 className="font-semibold text-gray-800 text-sm flex items-center gap-2 mr-2">
             <Building2 className="w-4 h-4 text-gray-400" /> Organizações
           </h2>
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar por nome ou slug…"
+            className="border border-gray-200 rounded-lg px-2.5 py-1 text-xs flex-1 min-w-[160px] focus:outline-none focus:ring-1 focus:ring-[#26619c]/30"
+          />
+          <select value={filterPlan} onChange={e => setFilterPlan(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none">
+            <option value="">Todos os planos</option>
+            <option value="basic">basic</option>
+            <option value="pro">pro</option>
+            <option value="aggregator">aggregator</option>
+          </select>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none">
+            <option value="">Todas</option>
+            <option value="active">Ativas</option>
+            <option value="inactive">Inativas</option>
+          </select>
         </div>
         {loading ? <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div> : (
           <ul className="divide-y divide-gray-100">
-            {orgs.map(org => (
+            {orgs.filter(org => {
+              const q = search.toLowerCase()
+              if (q && !org.name.toLowerCase().includes(q) && !org.slug.toLowerCase().includes(q)) return false
+              if (filterPlan && org.plan_name !== filterPlan) return false
+              if (filterStatus === 'active' && !org.is_active) return false
+              if (filterStatus === 'inactive' && org.is_active) return false
+              return true
+            }).map(org => (
               <li key={org.id}>
                 <button onClick={() => toggleOrg(org.slug)} className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 text-left">
                   <div className="flex items-center gap-3 min-w-0 flex-1">

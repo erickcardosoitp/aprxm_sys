@@ -109,6 +109,48 @@ async def org_users(
     ]
 
 
+@router.get("/organizations/{slug}/overview", summary="KPIs de uma organização para superadmin")
+async def org_overview(
+    slug: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    _require_superadmin(current)
+    row = (await _exec_ro(session, """
+        SELECT
+            a.id,
+            a.name,
+            (SELECT COUNT(*) FROM residents r WHERE r.association_id = a.id AND r.status = 'active' AND r.type = 'member' AND r.responsible_id IS NULL) AS associados,
+            (SELECT COUNT(*) FROM residents r WHERE r.association_id = a.id AND r.status = 'active' AND r.type = 'guest') AS visitantes,
+            (SELECT COUNT(*) FROM packages p WHERE p.association_id = a.id AND p.status IN ('received','notified')) AS enc_pendentes,
+            (SELECT COUNT(*) FROM service_orders so WHERE so.association_id = a.id AND so.status IN ('open','in_progress')) AS os_abertas,
+            (SELECT COUNT(*) FROM mensalidades m WHERE m.association_id = a.id AND m.status = 'pending') AS mens_pendentes,
+            (SELECT COALESCE(SUM(m.amount),0) FROM mensalidades m WHERE m.association_id = a.id AND m.status = 'pending') AS mens_valor,
+            (SELECT COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END),0)
+               FROM transactions t WHERE t.association_id = a.id
+                 AND t.transaction_at >= date_trunc('month', NOW())) AS receita_mes,
+            (SELECT COALESCE(SUM(CASE WHEN t.type IN ('expense','sangria') THEN t.amount ELSE 0 END),0)
+               FROM transactions t WHERE t.association_id = a.id
+                 AND t.transaction_at >= date_trunc('month', NOW())) AS despesa_mes,
+            (SELECT cs.status = 'open' FROM cash_sessions cs WHERE cs.association_id = a.id ORDER BY cs.opened_at DESC LIMIT 1) AS caixa_aberto
+          FROM associations a
+         WHERE a.slug = :slug
+    """, {"slug": slug})).fetchone()
+    if not row:
+        raise HTTPException(404, "Organização não encontrada.")
+    return {
+        "id": str(row[0]), "name": row[1],
+        "associados": int(row[2]), "visitantes": int(row[3]),
+        "enc_pendentes": int(row[4]), "os_abertas": int(row[5]),
+        "mens_pendentes": int(row[6]),
+        "mens_valor": round(float(row[7] or 0), 2),
+        "receita_mes": round(float(row[8] or 0), 2),
+        "despesa_mes": round(float(row[9] or 0), 2),
+        "saldo_mes": round(float(row[8] or 0) - float(row[9] or 0), 2),
+        "caixa_aberto": bool(row[10]) if row[10] is not None else False,
+    }
+
+
 @router.get("/active-sessions", summary="Caixas abertos em todas as orgs")
 async def active_sessions(
     current: CurrentUser = Depends(get_current_user),

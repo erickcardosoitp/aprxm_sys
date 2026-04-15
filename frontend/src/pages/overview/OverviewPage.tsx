@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp } from 'lucide-react'
+import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp, TrendingDown, DollarSign, AlertCircle } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LabelList,
@@ -404,19 +404,46 @@ function SensoTab() {
   )
 }
 
+interface OrgOption { id: string; name: string; slug: string }
+interface OrgKpi { associados: number; visitantes: number; enc_pendentes: number; os_abertas: number; mens_pendentes: number; mens_valor: number; receita_mes: number; despesa_mes: number; saldo_mes: number; caixa_aberto: boolean; name: string }
+
 // ── Overview tab ──────────────────────────────────────────────────────────────
 
 function OverviewTab() {
   const role = useAuthStore((s) => s.role)
   const isViewer = role === 'viewer'
+  const isSuperAdmin = role === 'superadmin'
 
   const [kpi, setKpi] = useState<KpiData | null>(null)
   const [activity, setActivity] = useState<{ packages: Pkg[]; orders: ServiceOrder[] }>({ packages: [], orders: [] })
   const [loading, setLoading] = useState(true)
   const [papSummary, setPapSummary] = useState<any>(null)
+  const [financeSummary, setFinanceSummary] = useState<any>(null)
+
+  // Superadmin org selector
+  const [orgs, setOrgs] = useState<OrgOption[]>([])
+  const [selectedOrg, setSelectedOrg] = useState<string>('')
+  const [orgKpi, setOrgKpi] = useState<OrgKpi | null>(null)
+  const [loadingOrgKpi, setLoadingOrgKpi] = useState(false)
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      api.get<OrgOption[]>('/superadmin/organizations').then(r => setOrgs(r.data)).catch(() => {})
+    }
+  }, [isSuperAdmin])
+
+  useEffect(() => {
+    if (!isSuperAdmin || !selectedOrg) { setOrgKpi(null); return }
+    setLoadingOrgKpi(true)
+    api.get<OrgKpi>(`/superadmin/organizations/${selectedOrg}/overview`)
+      .then(r => setOrgKpi(r.data))
+      .catch(() => setOrgKpi(null))
+      .finally(() => setLoadingOrgKpi(false))
+  }, [selectedOrg, isSuperAdmin])
 
   useEffect(() => {
     api.get('/porta-a-porta/summary').then(r => setPapSummary(r.data)).catch(() => {})
+    api.get('/financeiro/summary').then(r => setFinanceSummary(r.data)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -460,8 +487,53 @@ function OverviewTab() {
   const ORDER_STATUS_LABEL: Record<string, string> = { pending: 'Pendente', open: 'Aberta', in_progress: 'Em andamento', waiting_third_party: 'Ag. Terceiros', resolved: 'Resolvida', archived: 'Arquivada', cancelled: 'Cancelada' }
   const ORDER_STATUS_COLOR: Record<string, string> = { pending: 'bg-gray-100 text-gray-600', open: 'bg-red-100 text-red-700', in_progress: 'bg-amber-100 text-amber-700', waiting_third_party: 'bg-purple-100 text-purple-700', resolved: 'bg-green-100 text-green-700', archived: 'bg-gray-100 text-gray-400', cancelled: 'bg-gray-100 text-gray-500' }
 
+  const fmt = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
   return (
     <div className="flex flex-col gap-6">
+
+      {/* Superadmin: org selector + org KPIs */}
+      {isSuperAdmin && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-500 shrink-0">Filtrar por organização:</label>
+            <select value={selectedOrg} onChange={e => setSelectedOrg(e.target.value)}
+              className="flex-1 max-w-xs border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30">
+              <option value="">— Minha organização —</option>
+              {orgs.map(o => <option key={o.slug} value={o.slug}>{o.name}</option>)}
+            </select>
+            {loadingOrgKpi && <span className="text-xs text-gray-400">Carregando…</span>}
+          </div>
+          {orgKpi && (
+            <div className="bg-gradient-to-br from-[#26619c]/5 to-blue-50 border border-[#26619c]/20 rounded-xl p-4">
+              <p className="text-xs font-bold text-[#26619c] uppercase tracking-wide mb-3">{orgKpi.name}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white rounded-xl p-3 border border-gray-100">
+                  <p className="text-[10px] text-gray-400 flex items-center gap-1"><Users className="w-3 h-3" />Associados</p>
+                  <p className="text-xl font-bold text-gray-800">{orgKpi.associados}</p>
+                  {orgKpi.visitantes > 0 && <p className="text-[10px] text-gray-400">{orgKpi.visitantes} visitantes</p>}
+                </div>
+                <div className={`bg-white rounded-xl p-3 border ${orgKpi.enc_pendentes > 0 ? 'border-amber-200' : 'border-gray-100'}`}>
+                  <p className="text-[10px] text-gray-400 flex items-center gap-1"><Package className="w-3 h-3" />Enc. pendentes</p>
+                  <p className={`text-xl font-bold ${orgKpi.enc_pendentes > 0 ? 'text-amber-600' : 'text-gray-800'}`}>{orgKpi.enc_pendentes}</p>
+                  <p className="text-[10px] text-gray-400">{orgKpi.os_abertas} OS abertas</p>
+                </div>
+                <div className={`bg-white rounded-xl p-3 border ${orgKpi.mens_pendentes > 0 ? 'border-red-200' : 'border-gray-100'}`}>
+                  <p className="text-[10px] text-gray-400 flex items-center gap-1"><AlertCircle className="w-3 h-3" />Mensalidades pend.</p>
+                  <p className={`text-xl font-bold ${orgKpi.mens_pendentes > 0 ? 'text-red-600' : 'text-gray-800'}`}>{orgKpi.mens_pendentes}</p>
+                  <p className="text-[10px] text-gray-400">{fmt(orgKpi.mens_valor)}</p>
+                </div>
+                <div className={`bg-white rounded-xl p-3 border ${orgKpi.saldo_mes >= 0 ? 'border-green-200' : 'border-red-200'}`}>
+                  <p className="text-[10px] text-gray-400">Saldo do mês</p>
+                  <p className={`text-xl font-bold ${orgKpi.saldo_mes >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(orgKpi.saldo_mes)}</p>
+                  <p className="text-[10px] text-gray-400">{fmt(orgKpi.receita_mes)} rec.</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[...Array(4)].map((_, i) => <div key={i} className="bg-gray-100 rounded-xl p-4 h-24 animate-pulse" />)}
@@ -495,6 +567,29 @@ function OverviewTab() {
           </div>
         </div>
       ) : null}
+
+      {/* Financial KPIs */}
+      {financeSummary && !isViewer && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-green-50 border border-green-100 rounded-xl p-3 flex flex-col gap-1">
+            <div className="flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-green-600" /><p className="text-xs font-medium text-green-700">Receita ({financeSummary.period_label})</p></div>
+            <p className="text-xl font-bold text-green-700">{fmt(financeSummary.total_income)}</p>
+          </div>
+          <div className="bg-red-50 border border-red-100 rounded-xl p-3 flex flex-col gap-1">
+            <div className="flex items-center gap-1.5"><TrendingDown className="w-3.5 h-3.5 text-red-500" /><p className="text-xs font-medium text-red-600">Despesa ({financeSummary.period_label})</p></div>
+            <p className="text-xl font-bold text-red-600">{fmt(financeSummary.total_expense)}</p>
+          </div>
+          <div className={`border rounded-xl p-3 flex flex-col gap-1 ${financeSummary.total_balance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-red-50 border-red-100'}`}>
+            <div className="flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5 text-[#26619c]" /><p className="text-xs font-medium text-[#26619c]">Saldo do mês</p></div>
+            <p className={`text-xl font-bold ${financeSummary.total_balance >= 0 ? 'text-[#26619c]' : 'text-red-600'}`}>{fmt(financeSummary.total_balance)}</p>
+          </div>
+          <div className={`border rounded-xl p-3 flex flex-col gap-1 ${financeSummary.contas_a_receber > 0 ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100'}`}>
+            <div className="flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5 text-amber-500" /><p className="text-xs font-medium text-amber-700">A receber</p></div>
+            <p className={`text-xl font-bold ${financeSummary.contas_a_receber > 0 ? 'text-amber-700' : 'text-gray-600'}`}>{fmt(financeSummary.contas_a_receber)}</p>
+            {financeSummary.contas_a_receber_count > 0 && <p className="text-[10px] text-gray-400">{financeSummary.contas_a_receber_count} mensalidades</p>}
+          </div>
+        </div>
+      )}
 
       {/* Porta a Porta summary card */}
       {papSummary && (papSummary.total_leads > 0) && (
