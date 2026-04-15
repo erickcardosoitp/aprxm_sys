@@ -712,7 +712,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
               {!isProof && (
                 <>
                   {/* Category — hidden for mensalidade (subtype already is the category) */}
-                  {categories.length > 0 && !(txType === 'income' && incomeSubtype === 'mensalidade') && (
+                  {categories.length > 0 && txType !== 'income' && (
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
                       <div className="flex flex-wrap gap-2">
