@@ -16,6 +16,7 @@ router = APIRouter(prefix="/cash-boxes", tags=["Caixinhas"])
 class BoxRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
+    is_malote: bool = False
 
 
 class MovementRequest(BaseModel):
@@ -165,11 +166,12 @@ async def list_boxes(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     rows = (await session.execute(text("""
-        SELECT id, name, description, balance, is_active, created_at
+        SELECT id, name, description, balance, is_active, created_at, is_malote
           FROM cash_boxes WHERE association_id = :aid ORDER BY name
     """), {"aid": str(current.association_id)})).fetchall()
     return [{"id": str(r[0]), "name": r[1], "description": r[2],
-             "balance": str(r[3]), "is_active": r[4], "created_at": str(r[5])} for r in rows]
+             "balance": str(r[3]), "is_active": r[4], "created_at": str(r[5]),
+             "is_malote": bool(r[6])} for r in rows]
 
 
 @router.post("", summary="Criar caixinha")
@@ -179,12 +181,12 @@ async def create_box(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     r = (await session.execute(text("""
-        INSERT INTO cash_boxes (id, association_id, name, description)
-        VALUES (gen_random_uuid(), :aid, :name, :desc)
-        RETURNING id, name, balance
-    """), {"aid": str(current.association_id), "name": body.name, "desc": body.description})).fetchone()
+        INSERT INTO cash_boxes (id, association_id, name, description, is_malote)
+        VALUES (gen_random_uuid(), :aid, :name, :desc, :malote)
+        RETURNING id, name, balance, is_malote
+    """), {"aid": str(current.association_id), "name": body.name, "desc": body.description, "malote": body.is_malote})).fetchone()
     await session.commit()
-    return {"id": str(r[0]), "name": r[1], "balance": str(r[2])}
+    return {"id": str(r[0]), "name": r[1], "balance": str(r[2]), "is_malote": bool(r[3])}
 
 
 @router.put("/{box_id}", summary="Editar caixinha")
@@ -195,9 +197,9 @@ async def update_box(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     await session.execute(text("""
-        UPDATE cash_boxes SET name=:name, description=:desc, updated_at=NOW()
+        UPDATE cash_boxes SET name=:name, description=:desc, is_malote=:malote, updated_at=NOW()
          WHERE id=:id AND association_id=:aid
-    """), {"id": box_id, "aid": str(current.association_id), "name": body.name, "desc": body.description})
+    """), {"id": box_id, "aid": str(current.association_id), "name": body.name, "desc": body.description, "malote": body.is_malote})
     await session.commit()
     return {"ok": True}
 

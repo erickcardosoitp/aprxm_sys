@@ -131,8 +131,16 @@ async def _run_migrations() -> None:
             "manual_total_baixas NUMERIC(12,2)",
             "quebra_caixa NUMERIC(12,2)",
             "reviewed_by UUID REFERENCES users(id)",
+            "malote_sent_at TIMESTAMPTZ",
         ]:
             await session.execute(text(f"ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS {col}"))
+
+        await session.execute(text(
+            "ALTER TABLE cash_boxes ADD COLUMN IF NOT EXISTS is_malote BOOLEAN DEFAULT false NOT NULL"
+        ))
+        await session.execute(text(
+            "ALTER TABLE bank_statements ADD COLUMN IF NOT EXISTS batched_at TIMESTAMPTZ"
+        ))
 
         for ddl in [
             """CREATE TABLE IF NOT EXISTS sangria_destinations (

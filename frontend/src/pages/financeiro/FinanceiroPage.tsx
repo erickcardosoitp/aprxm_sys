@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, BarChart2, Upload,
   CheckCircle, AlertCircle, Clock, Plus, Search, X, RotateCcw,
   CreditCard, Users, ArrowLeftRight, Pencil, Trash2, MapPin, FileBarChart, RefreshCw,
-  FileSpreadsheet, Image, Filter,
+  FileSpreadsheet, Image, Filter, Printer,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
@@ -48,6 +48,7 @@ interface Session {
   total_pix?: string; total_dinheiro?: string
   total_bruto?: string; total_baixas?: string
   quebra_caixa?: string | null
+  malote_sent_at?: string | null
 }
 
 interface ManualSessionForm {
@@ -72,7 +73,7 @@ interface TxReview {
 }
 
 interface CashBox {
-  id: string; name: string; description?: string; balance: string; is_active: boolean
+  id: string; name: string; description?: string; balance: string; is_active: boolean; is_malote?: boolean
 }
 
 interface BoxMovement {
@@ -269,7 +270,7 @@ export default function FinanceiroPage() {
   const [selectedBox, setSelectedBox] = useState<CashBox | null>(null)
   const [boxMovements, setBoxMovements] = useState<BoxMovement[]>([])
   const [showBoxForm, setShowBoxForm] = useState(false)
-  const [boxForm, setBoxForm] = useState({ name: '', description: '' })
+  const [boxForm, setBoxForm] = useState({ name: '', description: '', is_malote: false })
   const [editBox, setEditBox] = useState<CashBox | null>(null)
   const [showMoveForm, setShowMoveForm] = useState(false)
   const [moveForm, setMoveForm] = useState({ amount: '', movement_type: 'credit', description: '' })
@@ -375,6 +376,7 @@ export default function FinanceiroPage() {
     if (tab === 'relatorios') { loadSessions(); loadConferentes() }
     if (tab === 'cobrancas') { loadOpenSession(); loadCobrancas() }
     if (tab === 'transferencias') loadBoxSummary()
+    if (tab === 'conciliacao') { loadPixPending(); if (cashBoxes.length === 0) loadBoxSummary() }
     if (tab === 'porta_a_porta') { loadPap(); loadPapToken(); loadConferentes() }
   }, [tab, period])
 
@@ -471,17 +473,89 @@ export default function FinanceiroPage() {
     } catch { /* ignore */ } finally { setSavingReviews(false) }
   }
 
+  const [tesouraria, setTesouraria] = useState<{
+    open_sessions: { id: string; opened_at: string; opening_balance: string; operador: string; expected_balance: string }[]
+    conferido_sessions: { id: string; opened_at: string; closing_balance: string | null; expected_balance: string | null; difference: string | null; operador: string }[]
+    pap_today: { total: string; count: number }
+    caixinhas: { id: string; name: string; balance: string }[]
+    total_limbo: string
+  } | null>(null)
+  const [transferTroco, setTransferTroco] = useState('0')
+  const [transferClose, setTransferClose] = useState(true)
+
+  // Malote
+  const [sendingMalote, setSendingMalote] = useState<string | null>(null)
+
+  // PIX batch
+  const [pixPending, setPixPending] = useState<{ id: string; bank: string; date: string; amount: string; name: string | null }[]>([])
+  const [pixSelected, setPixSelected] = useState<Set<string>>(new Set())
+  const [pixBatchBox, setPixBatchBox] = useState('')
+  const [loadingPixPending, setLoadingPixPending] = useState(false)
+  const [batchingPix, setBatchingPix] = useState(false)
+
+  // Comprovante reprint
+  const [reprinting, setReprinting] = useState<string | null>(null)
+
+  const handleSendToMalote = async (sessionId: string) => {
+    if (!confirm('Confirmar envio do valor de fechamento para o Malote?')) return
+    setSendingMalote(sessionId)
+    try {
+      await api.post(`/finance/sessions/${sessionId}/send-to-malote`)
+      toast.success('Dinheiro enviado para o Malote.')
+      loadSessions()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao enviar para malote.')
+    } finally { setSendingMalote(null) }
+  }
+
+  const loadPixPending = async () => {
+    setLoadingPixPending(true)
+    try {
+      const res = await api.get('/finance/pix/pending')
+      setPixPending(res.data)
+    } catch { toast.error('Erro ao carregar PIX pendentes.') } finally { setLoadingPixPending(false) }
+  }
+
+  const handlePixBatch = async () => {
+    if (!pixBatchBox || pixSelected.size === 0) return
+    setBatchingPix(true)
+    try {
+      const res = await api.post('/financeiro/bank-statements/batch-to-cashbox', {
+        cash_box_id: pixBatchBox,
+        statement_ids: Array.from(pixSelected),
+      })
+      toast.success(`${res.data.count} PIX (R$ ${parseFloat(res.data.total).toFixed(2)}) enviados para a caixinha.`)
+      setPixSelected(new Set())
+      setPixBatchBox('')
+      loadPixPending()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao enviar para caixinha.')
+    } finally { setBatchingPix(false) }
+  }
+
+  const handleReprint = async (txId: string) => {
+    setReprinting(txId)
+    try {
+      const res = await api.get(`/finance/proof-of-residence/${txId}/reprint`, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+    } catch (e: any) {
+      toast.error('Erro ao gerar 2ª via.')
+    } finally { setReprinting(null) }
+  }
+
   const loadBoxSummary = async () => {
     setLoadingBoxes(true)
     try {
-      const [sumR, boxR, sessR] = await Promise.all([
+      const [sumR, boxR, tesR] = await Promise.all([
         api.get('/cash-boxes/summary'),
         api.get<CashBox[]>('/cash-boxes'),
-        api.get<{ id: string; status: string; opened_at: string; operador_name?: string; closing_balance?: string }[]>('/finance/sessions'),
+        api.get('/finance/tesouraria'),
       ])
       setBoxSummary(sumR.data)
       setCashBoxes(boxR.data)
-      setConferidoSessions(sessR.data.filter(s => s.status === 'conferido' && s.closing_balance))
+      setTesouraria(tesR.data)
+      setConferidoSessions(tesR.data.conferido_sessions.filter((s: any) => s.closing_balance))
     } catch { /* ignore */ } finally { setLoadingBoxes(false) }
   }
 
@@ -492,11 +566,14 @@ export default function FinanceiroPage() {
       await api.post(`/finance/sessions/${transferTarget.id}/transfer-to-cashbox`, {
         cash_box_id: transferBoxId,
         amount: parseFloat(transferAmt),
+        troco: parseFloat(transferTroco) || 0,
+        close_session: transferClose,
       })
-      toast.success('Valor transferido — sangria registrada e caixinha creditada!')
+      toast.success('Repasse realizado!' + (transferClose ? ' Caixa fechado.' : ''))
       setTransferTarget(null)
       setTransferBoxId('')
       setTransferAmt('')
+      setTransferTroco('0')
       loadBoxSummary()
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao transferir.')
@@ -516,7 +593,7 @@ export default function FinanceiroPage() {
       } else {
         await api.post('/cash-boxes', boxForm)
       }
-      setShowBoxForm(false); setEditBox(null); setBoxForm({ name: '', description: '' })
+      setShowBoxForm(false); setEditBox(null); setBoxForm({ name: '', description: '', is_malote: false })
       loadBoxSummary()
     } catch { /* ignore */ } finally { setSavingBox(false) }
   }
@@ -1260,6 +1337,12 @@ export default function FinanceiroPage() {
                             <RotateCcw className="w-3.5 h-3.5" />
                           </button>
                         )}
+                        {t.income_subtype === 'proof_of_residence' && !t.reversed_at && (
+                          <button onClick={() => handleReprint(t.id)} disabled={reprinting === t.id} title="2ª via"
+                            className="p-1.5 text-purple-400 hover:text-purple-600 rounded-lg hover:bg-purple-50 transition">
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -1840,7 +1923,7 @@ export default function FinanceiroPage() {
                   <table className="w-full text-sm min-w-[1100px]">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        {['Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Origem'].map(h => (
+                        {['Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Malote','Origem'].map(h => (
                           <th key={h} className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap text-xs">{h}</th>
                         ))}
                       </tr>
@@ -1869,6 +1952,20 @@ export default function FinanceiroPage() {
                             <td className={`px-4 py-3 whitespace-nowrap font-medium ${s.quebra_caixa && parseFloat(s.quebra_caixa) !== 0 ? 'text-amber-600' : 'text-gray-400'}`}>
                               {s.quebra_caixa ? fmt(s.quebra_caixa) : '—'}
                             </td>
+                            <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                              {s.status === 'closed' && s.closing_balance && parseFloat(s.closing_balance) > 0 ? (
+                                s.malote_sent_at ? (
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Enviado</span>
+                                ) : (
+                                  <button
+                                    onClick={() => handleSendToMalote(s.id)}
+                                    disabled={sendingMalote === s.id}
+                                    className="px-2 py-1 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50 whitespace-nowrap">
+                                    {sendingMalote === s.id ? '…' : 'Enviar'}
+                                  </button>
+                                )
+                              ) : <span className="text-gray-300 text-xs">—</span>}
+                            </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isManual ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-600'}`}>
                                 {s.origin ?? 'Sessão de Caixa'}
@@ -1878,7 +1975,7 @@ export default function FinanceiroPage() {
                         )
                       })}
                       {filtered.length === 0 && (
-                        <tr><td colSpan={12} className="px-4 py-6 text-center text-gray-400 text-sm">Nenhuma sessão no filtro selecionado.</td></tr>
+                        <tr><td colSpan={13} className="px-4 py-6 text-center text-gray-400 text-sm">Nenhuma sessão no filtro selecionado.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -1981,17 +2078,86 @@ export default function FinanceiroPage() {
               {/* Saldo Consolidado */}
               <SaldoConsolidado />
 
-              {/* Summary cards */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                  <p className="text-xs text-gray-500 mb-1">Caixa Aberto</p>
-                  <p className="text-xl font-bold text-gray-800">{boxSummary?.open_session_balance ? fmt(boxSummary.open_session_balance) : '—'}</p>
+              {/* KPI cards */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
+                  <p className="text-xs text-gray-500 mb-1">Em Limbo</p>
+                  <p className="text-base font-bold text-amber-700">{tesouraria ? fmt(tesouraria.total_limbo) : '—'}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">conferido, aguardando repasse</p>
                 </div>
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                  <p className="text-xs text-gray-500 mb-1">Total em Caixinhas</p>
-                  <p className="text-xl font-bold text-indigo-700">{boxSummary ? fmt(boxSummary.total_in_boxes) : '—'}</p>
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
+                  <p className="text-xs text-gray-500 mb-1">PAP Hoje</p>
+                  <p className="text-base font-bold text-green-700">{tesouraria ? fmt(tesouraria.pap_today.total) : '—'}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{tesouraria?.pap_today.count ?? 0} pagamentos</p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
+                  <p className="text-xs text-gray-500 mb-1">Em Caixinhas</p>
+                  <p className="text-base font-bold text-indigo-700">{boxSummary ? fmt(boxSummary.total_in_boxes) : '—'}</p>
                 </div>
               </div>
+
+              {/* Caixas abertos */}
+              {tesouraria && tesouraria.open_sessions.length > 0 && (
+                <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-blue-100 bg-blue-50">
+                    <h3 className="text-sm font-semibold text-blue-800">Caixas abertos</h3>
+                  </div>
+                  <ul className="divide-y divide-gray-100">
+                    {tesouraria.open_sessions.map(s => (
+                      <li key={s.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</p>
+                          <p className="text-xs text-gray-500">{s.operador}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400">Saldo esperado</p>
+                          <p className="text-sm font-bold text-blue-700">{fmt(s.expected_balance)}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Sessões conferidas aguardando repasse */}
+              {tesouraria && tesouraria.conferido_sessions.length > 0 && (
+                <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-amber-100 bg-amber-50">
+                    <h3 className="text-sm font-semibold text-amber-800">Conferidas — aguardando repasse</h3>
+                    <p className="text-xs text-amber-600 mt-0.5">Informe o troco que fica no caixa e transfira o restante.</p>
+                  </div>
+                  <ul className="divide-y divide-gray-100">
+                    {tesouraria.conferido_sessions.map(s => (
+                      <li key={s.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</p>
+                          <p className="text-xs text-gray-500">{s.operador}</p>
+                          <p className="text-xs font-semibold text-amber-700 mt-0.5">
+                            Contado: {fmt(s.closing_balance ?? '0')}
+                            {s.difference && parseFloat(s.difference) !== 0 && (
+                              <span className={`ml-2 ${parseFloat(s.difference) < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                ({parseFloat(s.difference) > 0 ? '+' : ''}{fmt(s.difference)})
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setTransferTarget({ id: s.id, opened_at: s.opened_at, operador_name: s.operador, closing_balance: s.closing_balance ?? undefined })
+                            setTransferAmt(s.closing_balance ?? '')
+                            setTransferTroco('0')
+                            setTransferClose(true)
+                            setTransferBoxId('')
+                          }}
+                          className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg transition whitespace-nowrap"
+                        >
+                          Repassar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Sangrias por destino */}
               {boxSummary && boxSummary.sangria_by_destination.length > 0 && (
@@ -2008,40 +2174,11 @@ export default function FinanceiroPage() {
                 </div>
               )}
 
-              {/* Sessões conferidas aguardando repasse */}
-              {conferidoSessions.length > 0 && (
-                <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
-                  <div className="px-4 py-3 border-b border-amber-100 bg-amber-50">
-                    <h3 className="text-sm font-semibold text-amber-800">Sessões conferidas — aguardando repasse</h3>
-                    <p className="text-xs text-amber-600 mt-0.5">Transfira o valor contado para a caixinha (ex: cofre).</p>
-                  </div>
-                  <ul className="divide-y divide-gray-100">
-                    {conferidoSessions.map(s => (
-                      <li key={s.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</p>
-                          <p className="text-xs text-gray-500">{s.operador_name ?? '—'}</p>
-                          <p className="text-xs font-semibold text-blue-700 mt-0.5">
-                            Contado: R$ {parseFloat(s.closing_balance!).toFixed(2)}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => { setTransferTarget(s); setTransferAmt(s.closing_balance ?? ''); setTransferBoxId('') }}
-                          className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg transition whitespace-nowrap"
-                        >
-                          Transferir
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
               {/* Caixinhas list */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-800">Caixinhas</h3>
-                  <button onClick={() => { setEditBox(null); setBoxForm({ name: '', description: '' }); setShowBoxForm(true) }}
+                  <button onClick={() => { setEditBox(null); setBoxForm({ name: '', description: '', is_malote: false }); setShowBoxForm(true) }}
                     className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-medium">+ Nova</button>
                 </div>
                 {cashBoxes.length === 0 ? (
@@ -2052,12 +2189,15 @@ export default function FinanceiroPage() {
                       <li key={box.id} className="px-4 py-3">
                         <div className="flex items-center justify-between mb-1">
                           <div>
-                            <p className="text-sm font-medium text-gray-800">{box.name}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-medium text-gray-800">{box.name}</p>
+                              {box.is_malote && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">Malote</span>}
+                            </div>
                             {box.description && <p className="text-xs text-gray-400">{box.description}</p>}
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="text-base font-bold text-indigo-700">{fmt(box.balance)}</span>
-                            <button onClick={() => { setEditBox(box); setBoxForm({ name: box.name, description: box.description ?? '' }); setShowBoxForm(true) }}
+                            <button onClick={() => { setEditBox(box); setBoxForm({ name: box.name, description: box.description ?? '', is_malote: box.is_malote ?? false }); setShowBoxForm(true) }}
                               className="text-gray-400 hover:text-gray-600"><Pencil className="w-3.5 h-3.5" /></button>
                             <button onClick={() => handleDeactivateBox(box.id)} className="text-red-400 hover:text-red-600">
                               <Trash2 className="w-3.5 h-3.5" /></button>
@@ -2103,26 +2243,38 @@ export default function FinanceiroPage() {
                   <p className="text-xs text-gray-500">Sessão de {new Date(transferTarget.opened_at).toLocaleDateString('pt-BR')} — {transferTarget.operador_name ?? ''}</p>
                   <p className="text-xs text-blue-700 font-medium mt-0.5">Contado: R$ {parseFloat(transferTarget.closing_balance!).toFixed(2)}</p>
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Valor (R$)</label>
-                  <input type="number" min="0.01" step="0.01" value={transferAmt} onChange={e => setTransferAmt(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Valor a repassar (R$)</label>
+                    <input type="number" min="0.01" step="0.01" value={transferAmt} onChange={e => setTransferAmt(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Troco que fica (R$)</label>
+                    <input type="number" min="0" step="0.01" value={transferTroco} onChange={e => setTransferTroco(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Caixinha destino</label>
                   <select value={transferBoxId} onChange={e => setTransferBoxId(e.target.value)}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
                     <option value="">Selecione…</option>
-                    {cashBoxes.map(b => (
+                    {cashBoxes.filter(b => !b.is_malote).map(b => (
                       <option key={b.id} value={b.id}>{b.name} — R$ {parseFloat(b.balance).toFixed(2)}</option>
                     ))}
                   </select>
                 </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input type="checkbox" checked={transferClose} onChange={e => setTransferClose(e.target.checked)}
+                    className="w-4 h-4 rounded" />
+                  Fechar sessão após transferência
+                </label>
                 <div className="flex gap-2">
                   <button onClick={() => setTransferTarget(null)} className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
                   <button onClick={handleTransferConferido} disabled={!transferBoxId || !transferAmt || transferring}
                     className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
-                    {transferring ? 'Transferindo…' : 'Confirmar'}
+                    {transferring ? 'Transferindo…' : 'Confirmar repasse'}
                   </button>
                 </div>
               </div>
@@ -2147,6 +2299,10 @@ export default function FinanceiroPage() {
                   <input value={boxForm.description} onChange={e => setBoxForm(f => ({ ...f, description: e.target.value }))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Opcional" />
                 </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input type="checkbox" checked={boxForm.is_malote} onChange={e => setBoxForm(f => ({ ...f, is_malote: e.target.checked }))} className="w-4 h-4 rounded" />
+                  É um Malote (recebe dinheiro físico do fechamento)
+                </label>
                 <button onClick={handleSaveBox} disabled={savingBox}
                   className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
                   {savingBox ? 'Salvando…' : 'Salvar'}
@@ -2199,6 +2355,50 @@ export default function FinanceiroPage() {
       {/* ── CONCILIAÇÃO PIX ── */}
       {tab === 'conciliacao' && (
         <div className="flex flex-col gap-4">
+
+          {/* PIX não conciliados — envio para caixinha */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-800">PIX Pendentes de Destino</h2>
+              <button onClick={loadPixPending} disabled={loadingPixPending} className="text-xs text-[#26619c] hover:underline">
+                {loadingPixPending ? 'Carregando…' : 'Atualizar'}
+              </button>
+            </div>
+            {pixPending.length === 0 ? (
+              <p className="text-xs text-gray-400">Nenhum PIX aguardando destino.</p>
+            ) : (
+              <>
+                <ul className="flex flex-col gap-1 max-h-48 overflow-y-auto mb-3">
+                  {pixPending.map(p => (
+                    <li key={p.id} className="flex items-center gap-2 text-xs bg-gray-50 rounded-lg px-3 py-2">
+                      <input type="checkbox" checked={pixSelected.has(p.id)}
+                        onChange={e => setPixSelected(prev => { const s = new Set(prev); e.target.checked ? s.add(p.id) : s.delete(p.id); return s })}
+                        className="w-3.5 h-3.5" />
+                      <span className="flex-1 truncate text-gray-700">{p.name || p.description || '—'}</span>
+                      <span className="text-gray-400">{p.date}</span>
+                      <span className="font-semibold text-green-700 whitespace-nowrap">{fmt(p.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex gap-2 items-center flex-wrap">
+                  <button onClick={() => setPixSelected(new Set(pixPending.map(p => p.id)))} className="text-xs text-[#26619c] hover:underline">Selecionar todos</button>
+                  <button onClick={() => setPixSelected(new Set())} className="text-xs text-gray-400 hover:underline">Limpar</button>
+                  <select value={pixBatchBox} onChange={e => setPixBatchBox(e.target.value)}
+                    className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs min-w-[140px]">
+                    <option value="">Caixinha destino…</option>
+                    {cashBoxes.filter(b => !b.is_malote).map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                  <button onClick={handlePixBatch} disabled={batchingPix || pixSelected.size === 0 || !pixBatchBox}
+                    className="bg-[#26619c] text-white px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 whitespace-nowrap">
+                    {batchingPix ? '…' : `Enviar ${pixSelected.size} itens`}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <h2 className="font-semibold text-gray-800 mb-1">Importar Extrato Bancário</h2>
             <p className="text-xs text-gray-400 mb-4">Importe o extrato CSV para conciliar pagamentos PIX.</p>

@@ -248,6 +248,76 @@ async def verify_proof_of_residence(
     }
 
 
+@router.get("/proof-of-residence/{tx_id}/reprint", summary="Reimprimir comprovante sem estornar")
+async def reprint_proof_of_residence(
+    tx_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    from sqlalchemy import text as sa_text
+    row = (await session.execute(sa_text("""
+        SELECT t.reference_number, t.resident_id, t.reversed_at, t.income_subtype
+          FROM transactions t
+         WHERE t.id = :tid AND t.association_id = :aid
+    """), {"tid": str(tx_id), "aid": str(current.association_id)})).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Comprovante não encontrado.")
+    if row[2] is not None:
+        raise HTTPException(status_code=400, detail="Comprovante já estornado.")
+    if row[3] != "proof_of_residence":
+        raise HTTPException(status_code=400, detail="Transação não é um comprovante.")
+
+    barcode_code = row[0] or ""
+    resident_id = row[1]
+
+    res_row = None
+    if resident_id:
+        res_row = (await session.execute(sa_text("""
+            SELECT full_name, cpf, address_neighborhood, address_cep, address_street, address_number
+              FROM residents WHERE id = :rid AND association_id = :aid
+        """), {"rid": str(resident_id), "aid": str(current.association_id)})).fetchone()
+
+    cfg = (await session.execute(sa_text("""
+        SELECT assoc_logo_url, president_signature_url, president_name,
+               community_name, assoc_address, assoc_cep
+          FROM association_settings WHERE association_id = :aid
+    """), {"aid": str(current.association_id)})).fetchone()
+
+    if not cfg or not cfg[0] or not cfg[1]:
+        raise HTTPException(status_code=422, detail="Configurações da associação incompletas.")
+
+    import httpx
+    async with httpx.AsyncClient(timeout=10) as client:
+        logo_resp = await client.get(cfg[0])
+        sig_resp = await client.get(cfg[1])
+    if logo_resp.status_code != 200 or sig_resp.status_code != 200:
+        raise HTTPException(status_code=422, detail="Falha ao baixar logo/assinatura.")
+
+    svc = FinanceService(session)
+    barcode_bytes = svc._build_barcode_image(barcode_code)
+    pdf_bytes = svc._build_proof_pdf(
+        resident_name=res_row[0] if res_row else "—",
+        resident_cpf=res_row[1] if res_row else "",
+        resident_neighborhood=res_row[2] if res_row else "",
+        resident_cep=res_row[3] if res_row else "",
+        resident_address_street=res_row[4] if res_row else "",
+        resident_address_number=res_row[5] if res_row else "",
+        community_name=cfg[3] or "",
+        assoc_address=cfg[4] or "",
+        assoc_cep=cfg[5] or "",
+        president_name=cfg[2] or "PRESIDENTE",
+        logo_bytes=logo_resp.content,
+        sig_bytes=sig_resp.content,
+        barcode_code=barcode_code,
+        barcode_bytes=barcode_bytes,
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="comprovante_2via.pdf"'},
+    )
+
+
 @router.post("/sessions/open", response_model=dict, summary="Abrir sessão de caixa")
 async def open_session(
     body: OpenSessionRequest,
@@ -518,6 +588,63 @@ async def transfer_to_cashbox(
     }
 
 
+@router.post("/sessions/{session_id}/send-to-malote", summary="Operador envia dinheiro físico para o malote")
+async def send_to_malote(
+    session_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    cs = (await session.execute(text(
+        "SELECT status, closing_balance, malote_sent_at FROM cash_sessions WHERE id=:id AND association_id=:aid"
+    ), {"id": str(session_id), "aid": str(current.association_id)})).fetchone()
+    if not cs:
+        raise HTTPException(404, "Sessão não encontrada.")
+    if cs[0] != "closed":
+        raise HTTPException(400, "Sessão deve estar fechada.")
+    if cs[2] is not None:
+        raise HTTPException(400, "Dinheiro já enviado para o malote.")
+    if cs[1] is None or float(cs[1]) <= 0:
+        raise HTTPException(400, "Valor de fechamento (conf. cega) inválido.")
+
+    malote = (await session.execute(text(
+        "SELECT id, balance FROM cash_boxes WHERE association_id=:aid AND is_malote=true AND is_active=true ORDER BY created_at LIMIT 1"
+    ), {"aid": str(current.association_id)})).fetchone()
+    if not malote:
+        raise HTTPException(404, "Nenhuma caixinha malote ativa. Crie uma em Caixinhas e marque como Malote.")
+
+    amount = float(cs[1])
+    new_bal = float(malote[1]) + amount
+    await session.execute(text("UPDATE cash_boxes SET balance=:b, updated_at=NOW() WHERE id=:id"),
+                          {"b": new_bal, "id": str(malote[0])})
+    await session.execute(text("""
+        INSERT INTO cash_box_movements (id, association_id, cash_box_id, amount, movement_type, description, created_by)
+        VALUES (gen_random_uuid(), :aid, :bid, :amt, 'credit', :desc, :usr)
+    """), {"aid": str(current.association_id), "bid": str(malote[0]),
+           "amt": amount, "desc": f"Malote — sessão {str(session_id)[:8]}", "usr": str(current.user_id)})
+    await session.execute(text(
+        "UPDATE cash_sessions SET malote_sent_at=NOW() WHERE id=:id AND association_id=:aid"
+    ), {"id": str(session_id), "aid": str(current.association_id)})
+    await session.commit()
+    return {"ok": True, "amount": str(round(amount, 2)), "malote_balance": str(round(new_bal, 2))}
+
+
+@router.get("/pix/pending", summary="PIX não conciliados (bank_statements)")
+async def list_pix_pending(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    rows = (await session.execute(text("""
+        SELECT bs.id, bs.bank, bs.date, bs.amount, bs.name, bs.description, bs.conciliado,
+               bs.transaction_id, bs.batched_at
+          FROM bank_statements bs
+         WHERE bs.association_id = :aid AND bs.conciliado = false AND bs.batched_at IS NULL
+         ORDER BY bs.date DESC, bs.amount DESC
+    """), {"aid": str(current.association_id)})).fetchall()
+    return [{"id": str(r[0]), "bank": r[1], "date": str(r[2]), "amount": str(r[3]),
+             "name": r[4], "description": r[5], "conciliado": r[6],
+             "transaction_id": str(r[7]) if r[7] else None} for r in rows]
+
+
 @router.post("/transactions/offline", summary="Registrar saída externa (sem sessão ativa)")
 async def register_offline_transaction(
     body: TransactionRequest,
@@ -700,21 +827,28 @@ async def list_sessions(
                 cs.origin,
                 a.name            AS association_name,
                 cs.quebra_caixa,
+                cs.malote_sent_at,
                 CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_pix, 0)
                      ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
+                          AND (t.reversed_at IS NULL AND t.is_reversal = false)
                           AND pm.name ILIKE '%pix%' THEN t.amount ELSE 0 END), 0)
                 END AS total_pix,
                 CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_dinheiro, 0)
                      ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
+                          AND (t.reversed_at IS NULL AND t.is_reversal = false)
                           AND (pm.name ILIKE '%dinheiro%' OR pm.name ILIKE '%espécie%'
                                OR pm.name ILIKE '%especie%' OR t.payment_method_id IS NULL)
                           THEN t.amount ELSE 0 END), 0)
                 END AS total_dinheiro,
                 CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_total_bruto, 0)
-                     ELSE COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0)
+                     ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
+                          AND (t.reversed_at IS NULL AND t.is_reversal = false)
+                          THEN t.amount ELSE 0 END), 0)
                 END AS total_bruto,
                 CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_total_baixas, 0)
-                     ELSE COALESCE(SUM(CASE WHEN t.type = 'sangria' THEN t.amount ELSE 0 END), 0)
+                     ELSE COALESCE(SUM(CASE WHEN t.type = 'sangria'
+                          AND (t.reversed_at IS NULL AND t.is_reversal = false)
+                          THEN t.amount ELSE 0 END), 0)
                 END AS total_baixas
             FROM cash_sessions cs
             LEFT JOIN users u_open   ON u_open.id   = cs.opened_by
@@ -728,7 +862,7 @@ async def list_sessions(
             GROUP BY cs.id, cs.status, cs.opened_at, cs.closed_at,
                      cs.opening_balance, cs.closing_balance, cs.expected_balance,
                      cs.difference, u_open.full_name, u_close.full_name, u_review.full_name,
-                     cs.origin, a.name, cs.quebra_caixa, cs.manual_pix, cs.manual_dinheiro,
+                     cs.origin, a.name, cs.quebra_caixa, cs.malote_sent_at, cs.manual_pix, cs.manual_dinheiro,
                      cs.manual_total_bruto, cs.manual_total_baixas
             ORDER BY cs.opened_at DESC
         """),
@@ -751,10 +885,11 @@ async def list_sessions(
             "origin": r[11] or "Sessão de Caixa",
             "association_name": r[12],
             "quebra_caixa": str(round(float(r[13]), 2)) if r[13] is not None else None,
-            "total_pix": str(round(float(r[14]), 2)),
-            "total_dinheiro": str(round(float(r[15]), 2)),
-            "total_bruto": str(round(float(r[16]), 2)),
-            "total_baixas": str(round(float(r[17]), 2)),
+            "malote_sent_at": str(r[14]) if r[14] is not None else None,
+            "total_pix": str(round(float(r[15]), 2)),
+            "total_dinheiro": str(round(float(r[16]), 2)),
+            "total_bruto": str(round(float(r[17]), 2)),
+            "total_baixas": str(round(float(r[18]), 2)),
         }
         for r in rows
     ]

@@ -144,10 +144,13 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [proofCpf, setProofCpf] = useState('')
   const [proofNeighborhood, setProofNeighborhood] = useState('')
   const [proofCep, setProofCep] = useState('')
+  const [proofStreet, setProofStreet] = useState('')
+  const [proofNumber, setProofNumber] = useState('')
 
   // Step 3 — barcode confirmation
   const [pendingBarcodeCode, setPendingBarcodeCode] = useState('')
   const [barcodeInput, setBarcodeInput] = useState('')
+  const [proofDone, setProofDone] = useState(false)
 
   // Step 2 — expense specific
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState('')
@@ -187,6 +190,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       setProofName(resident.full_name)
       setProofCpf(resident.cpf ?? '')
       setProofCep(resident.address_cep ?? '')
+      setProofStreet(resident.address_street ?? '')
+      setProofNumber(resident.address_number ?? '')
     }
   }, [resident, incomeSubtype])
 
@@ -323,6 +328,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           resident_cpf: proofCpf.trim(),
           resident_neighborhood: proofNeighborhood.trim(),
           resident_cep: proofCep.trim(),
+          resident_address_street: proofStreet.trim(),
+          resident_address_number: proofNumber.trim(),
           amount: parseFloat(amount),
           payment_method_id: paymentMethodId || undefined,
           category_id: categoryId || undefined,
@@ -386,10 +393,34 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     if (barcodeInput.trim() === pendingBarcodeCode) {
       toast.success(`Venda confirmada! Código ${pendingBarcodeCode} verificado.`)
       onSuccess()
-      onClose()
+      setProofDone(true)
     } else {
       toast.error('Código incorreto. Verifique o comprovante impresso.')
     }
+  }
+
+  const resetForSamePerson = () => {
+    setPendingBarcodeCode('')
+    setBarcodeInput('')
+    setProofDone(false)
+    setStep(2)
+  }
+
+  const resetForNewPerson = () => {
+    setPendingBarcodeCode('')
+    setBarcodeInput('')
+    setProofDone(false)
+    setResident(null)
+    setFeeQuery('')
+    setProofName('')
+    setProofCpf('')
+    setProofNeighborhood('')
+    setProofCep('')
+    setProofStreet('')
+    setProofNumber('')
+    setAmount('')
+    setPaymentMethodId('')
+    setStep(1)
   }
 
   return (
@@ -501,6 +532,20 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                     <input value={proofCpf} onChange={e => setProofCpf(e.target.value)}
                       placeholder="000.000.000-00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Logradouro</label>
+                      <input value={proofStreet} onChange={e => setProofStreet(e.target.value)}
+                        placeholder="Rua / Beco / Travessa…"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Número</label>
+                      <input value={proofNumber} onChange={e => setProofNumber(e.target.value)}
+                        placeholder="Ex: 12"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -770,7 +815,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           )}
 
           {/* ── Step 3 (proof only): Verificar código de barras ── */}
-          {step === 3 && (
+          {step === 3 && !proofDone && (
             <div className="flex flex-col gap-4">
               <div className="bg-green-50 border border-green-200 rounded-xl p-4">
                 <p className="text-sm font-semibold text-green-700 mb-1">PDF gerado com sucesso!</p>
@@ -797,6 +842,25 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                   <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Código correto!</p>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ── Step 3 done: opções multi-comprovante ── */}
+          {step === 3 && proofDone && (
+            <div className="flex flex-col gap-3">
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-green-700">Comprovante confirmado!</p>
+                <p className="text-xs text-gray-500 mt-1">Deseja emitir outro comprovante?</p>
+              </div>
+              <button onClick={resetForSamePerson}
+                className="w-full py-3 rounded-xl border-2 border-[#26619c] text-[#26619c] text-sm font-semibold hover:bg-blue-50 transition flex items-center justify-center gap-2">
+                <Printer className="w-4 h-4" /> Emitir outro para <strong>{proofName}</strong>
+              </button>
+              <button onClick={resetForNewPerson}
+                className="w-full py-3 rounded-xl border-2 border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-50 transition">
+                Emitir para outra pessoa
+              </button>
             </div>
           )}
 
@@ -836,11 +900,13 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
-          {step === 3 ? (
+          {step === 3 && !proofDone ? (
             <button onClick={() => { onSuccess(); onClose() }}
               className="text-sm text-gray-400 hover:text-gray-600">
               Pular verificação
             </button>
+          ) : step === 3 && proofDone ? (
+            <span />
           ) : (
             <button onClick={step === 0 ? onClose : () => setStep(step - 1)}
               className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
@@ -848,7 +914,12 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
               {step === 0 ? 'Cancelar' : 'Anterior'}
             </button>
           )}
-          {step === 3 ? (
+          {step === 3 && proofDone ? (
+            <button onClick={onClose}
+              className="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-6 py-2 rounded-xl text-sm font-semibold transition">
+              Finalizar
+            </button>
+          ) : step === 3 ? (
             <button onClick={confirmBarcode} disabled={barcodeInput.length !== 8}
               className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-6 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50">
               <CheckCircle2 className="w-4 h-4" /> Confirmar Venda

@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -350,3 +353,49 @@ async def run_reconciliation(
     result = await svc.run_reconciliation(current.association_id)
     await session.commit()
     return result
+
+
+class BatchToCashboxRequest(BaseModel):
+    cash_box_id: UUID
+    statement_ids: List[UUID]
+
+
+@router.post("/bank-statements/batch-to-cashbox", summary="Enviar PIX conciliados para caixinha")
+async def batch_pix_to_cashbox(
+    body: BatchToCashboxRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    aid = str(current.association_id)
+
+    box = (await session.execute(text(
+        "SELECT id, balance FROM cash_boxes WHERE id=:id AND association_id=:aid AND is_active=true"
+    ), {"id": str(body.cash_box_id), "aid": aid})).fetchone()
+    if not box:
+        raise HTTPException(404, "Caixinha não encontrada.")
+
+    id_list = [str(s) for s in body.statement_ids]
+    rows = (await session.execute(text("""
+        SELECT id, amount FROM bank_statements
+         WHERE id = ANY(:ids) AND association_id = :aid AND batched_at IS NULL
+    """), {"ids": id_list, "aid": aid})).fetchall()
+
+    if not rows:
+        raise HTTPException(400, "Nenhum lançamento válido para enviar.")
+
+    total = sum(float(r[1]) for r in rows)
+    new_bal = float(box[1]) + total
+
+    await session.execute(text("""
+        UPDATE bank_statements SET batched_at=NOW(), conciliado=true
+         WHERE id = ANY(:ids) AND association_id = :aid
+    """), {"ids": id_list, "aid": aid})
+    await session.execute(text("UPDATE cash_boxes SET balance=:b, updated_at=NOW() WHERE id=:id"),
+                          {"b": new_bal, "id": str(body.cash_box_id)})
+    await session.execute(text("""
+        INSERT INTO cash_box_movements (id, association_id, cash_box_id, amount, movement_type, description, created_by)
+        VALUES (gen_random_uuid(), :aid, :bid, :amt, 'credit', :desc, :usr)
+    """), {"aid": aid, "bid": str(body.cash_box_id), "amt": total,
+           "desc": f"PIX conciliados — lote {len(rows)} lançamentos", "usr": str(current.user_id)})
+    await session.commit()
+    return {"ok": True, "total": str(round(total, 2)), "count": len(rows), "new_balance": str(round(new_bal, 2))}

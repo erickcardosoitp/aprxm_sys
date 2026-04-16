@@ -77,7 +77,7 @@ ERP/SaaS multi-tenant — Instituto Tia Pretinha (`c:\aprxm_sass`)
 - Backend: Python 3.10 / FastAPI / SQLModel / PostgreSQL (asyncpg)
 - Frontend: React 18 / Vite / Tailwind CSS (mobile-first)
 - Auth: JWT Bearer (`jose` + `passlib[bcrypt]`)
-- Deploy: Render (backend) + Vercel (frontend)
+- Deploy: **NÃO usa Render**. Frontend no Vercel. Backend: confirmar com o usuário.
 
 **Multi-tenancy:** toda tabela tem `association_id UUID NOT NULL`. Nunca bypassar esse filtro.
 
