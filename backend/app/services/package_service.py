@@ -118,8 +118,11 @@ class PackageService:
             package.deliverer_name.strip().lower() == delivery_person_name.strip().lower()
         )
         if (not is_active_member or is_delinquent) and not same_deliverer and not skip_fee:
-            # Charge fee — open session required
-            cash_session = await self._finance.get_open_session(association_id)
+            # Charge fee — prefer caller-supplied session, fall back to any open session
+            if cash_session_id:
+                cash_session = await self._finance.get_open_session(association_id, session_id=cash_session_id)
+            else:
+                cash_session = await self._finance.get_open_session(association_id)
 
             # Try to find "Taxa de Entrega" category for this association
             cat_result = await self._session.execute(

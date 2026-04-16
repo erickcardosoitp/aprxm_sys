@@ -8,6 +8,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from fastapi import HTTPException
+from app.core.exceptions import CashSessionError
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
 from app.models.package import Package, PackageStatus
@@ -50,6 +52,7 @@ class DeliverPackageRequest(BaseModel):
     picker_id_photo_url: str | None = None
     picker_phone: str | None = None
     payment_method_id: UUID | None = None
+    cash_session_id: UUID | None = None
 
 
 @router.post("", summary="Registrar recebimento de encomenda")
@@ -84,23 +87,27 @@ async def deliver_package(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = PackageService(session)
-    pkg = await svc.deliver_package(
-        package_id=package_id,
-        association_id=current.association_id,
-        delivered_by=current.user_id,
-        delivered_to_name=body.delivered_to_name,
-        signature_url=body.signature_url,
-        delivered_to_cpf=body.delivered_to_cpf,
-        delivered_to_resident_id=body.delivered_to_resident_id,
-        proof_of_residence_url=body.proof_of_residence_url,
-        recipient_id_photo_url=body.recipient_id_photo_url,
-        delivery_person_name=body.delivery_person_name,
-        third_party_pickup=body.third_party_pickup,
-        owner_id_photo_url=body.owner_id_photo_url,
-        picker_id_photo_url=body.picker_id_photo_url,
-        picker_phone=body.picker_phone,
-        payment_method_id=body.payment_method_id,
-    )
+    try:
+        pkg = await svc.deliver_package(
+            package_id=package_id,
+            association_id=current.association_id,
+            delivered_by=current.user_id,
+            delivered_to_name=body.delivered_to_name,
+            signature_url=body.signature_url,
+            delivered_to_cpf=body.delivered_to_cpf,
+            delivered_to_resident_id=body.delivered_to_resident_id,
+            proof_of_residence_url=body.proof_of_residence_url,
+            recipient_id_photo_url=body.recipient_id_photo_url,
+            delivery_person_name=body.delivery_person_name,
+            third_party_pickup=body.third_party_pickup,
+            owner_id_photo_url=body.owner_id_photo_url,
+            picker_id_photo_url=body.picker_id_photo_url,
+            picker_phone=body.picker_phone,
+            payment_method_id=body.payment_method_id,
+            cash_session_id=body.cash_session_id,
+        )
+    except CashSessionError:
+        raise HTTPException(status_code=422, detail="NO_SESSION")
     return {
         "id": str(pkg.id),
         "status": pkg.status,

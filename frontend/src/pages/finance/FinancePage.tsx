@@ -582,6 +582,8 @@ export default function FinancePage() {
 
   const [tab, setTab] = useState<Tab>('caixa')
   const [session, setSession] = useState<CashSession | null>(null)
+  const [openSessions, setOpenSessions] = useState<{ id: string; opened_by_name: string; opening_balance: string }[]>([])
+  const [viewedSessionId, setViewedSessionId] = useState<string | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [showSangria, setShowSangria] = useState(false)
   const [showTransaction, setShowTransaction] = useState(false)
@@ -630,14 +632,23 @@ export default function FinancePage() {
 
 
   const loadSession = async () => {
-    try { const res = await financeService.getCurrentSession(); setSession(res.data) }
+    try {
+      const res = await financeService.getCurrentSession()
+      setSession(res.data)
+      if (isConferenteOrAbove) {
+        const sessRes = await financeService.listOpenSessions()
+        setOpenSessions(sessRes.data)
+        if (!viewedSessionId) setViewedSessionId(res.data.id)
+      }
+    }
     catch { setSession(null) }
   }
 
   const loadTransactions = async () => {
-    if (!session) return
+    const sid = viewedSessionId ?? session?.id
+    if (!sid) return
     setLoadingTx(true)
-    try { const res = await financeService.listTransactions(session.id); setTransactions(res.data) }
+    try { const res = await financeService.listTransactions(sid); setTransactions(res.data) }
     catch { toast.error('Erro ao carregar transações.') }
     finally { setLoadingTx(false) }
   }
@@ -709,7 +720,7 @@ export default function FinancePage() {
     api.get<{ id: string; name: string }[]>('/finance/categories', { params: { type: 'expense' } })
       .then(r => setOfflineCategories(r.data)).catch(() => {})
   }, [])
-  useEffect(() => { loadTransactions() }, [session?.id])
+  useEffect(() => { loadTransactions() }, [session?.id, viewedSessionId])
   useEffect(() => { if (tab === 'sessoes') loadSessions() }, [tab])
   useEffect(() => { if (tab === 'extrato') loadExtrato() }, [tab])
   useEffect(() => { if (tab === 'relatorios') loadRelatorios() }, [tab])
@@ -727,7 +738,10 @@ export default function FinancePage() {
   const expenses = todayTxs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
   const sessionIncome = activeTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
   const sessionExpenses = activeTxs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
-  const currentBalance = session ? parseFloat(session.opening_balance) + sessionIncome - sessionExpenses : 0
+  const viewedOpeningBalance = viewedSessionId && viewedSessionId !== session?.id
+    ? parseFloat(openSessions.find(s => s.id === viewedSessionId)?.opening_balance ?? '0')
+    : (session ? parseFloat(session.opening_balance) : 0)
+  const currentBalance = (session || viewedSessionId) ? viewedOpeningBalance + sessionIncome - sessionExpenses : 0
 
   // Payment method breakdown (income only, today)
   const pmBreakdown = todayTxs
@@ -973,6 +987,24 @@ export default function FinancePage() {
       {/* ── TAB: CAIXA ── */}
       {tab === 'caixa' && (
         <>
+          {/* Admin session selector */}
+          {isConferenteOrAbove && openSessions.length > 1 && (
+            <div className="flex gap-2 flex-wrap">
+              {openSessions.map(s => (
+                <button key={s.id} onClick={async () => {
+                  setViewedSessionId(s.id)
+                  setLoadingTx(true)
+                  try { const r = await financeService.listTransactions(s.id); setTransactions(r.data) }
+                  catch { toast.error('Erro ao carregar transações.') }
+                  finally { setLoadingTx(false) }
+                }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${viewedSessionId === s.id ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#26619c]'}`}>
+                  {s.opened_by_name}
+                </button>
+              ))}
+            </div>
+          )}
+
           <CashSessionPanel session={session} onRefresh={loadSession} canConferencia={isConferenteOrAbove} />
 
           {/* Lançamento sem caixa — disponível mesmo sem caixa aberto (admin+) */}

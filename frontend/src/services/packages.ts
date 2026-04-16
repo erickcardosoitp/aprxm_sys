@@ -31,6 +31,7 @@ export const packageService = {
       picker_id_photo_url?: string
       picker_phone?: string
       payment_method_id?: string
+      cash_session_id?: string
     },
   ) => api.post<Package>(`/packages/${packageId}/deliver`, data),
 

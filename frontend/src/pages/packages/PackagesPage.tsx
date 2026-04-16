@@ -9,6 +9,7 @@ import { SignaturePad } from '../../components/packages/SignaturePad'
 import { PhotoCapture } from '../../components/packages/PhotoCapture'
 import { BarcodeScannerModal } from '../../components/packages/BarcodeScanner'
 import { packageService } from '../../services/packages'
+import { financeService } from '../../services/finance'
 import { maskCpf } from '../../utils'
 import { uploadService } from '../../services/upload'
 import api from '../../services/api'
@@ -761,6 +762,9 @@ export default function PackagesPage() {
   const [pickerPhone, setPickerPhone] = useState('')
   const [deliveryPaymentMethodId, setDeliveryPaymentMethodId] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
+  const [deliverySessionPicker, setDeliverySessionPicker] = useState<{ id: string; opened_by_name: string; opening_balance: string }[] | null>(null)
+  type DeliverPayload = Parameters<typeof packageService.deliver>[1]
+  const [pendingDeliveryPayload, setPendingDeliveryPayload] = useState<DeliverPayload | null>(null)
 
   // Upgrade guest to member modal
   const [showUpgrade, setShowUpgrade] = useState(false)
@@ -1192,29 +1196,25 @@ export default function PackagesPage() {
     setNewResType('guest'); setNewResCpf(''); setNewResResponsibleSearch(''); setNewResResponsible(null); setNewResResponsibleResults([])
   }
 
-  const handleDeliver = async () => {
+  const doDeliver = async (cash_session_id?: string) => {
     if (!deliveryTarget) return
-    const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
-    if (!recipientName || !recipientSig) { toast.error('Nome e assinatura do recebedor obrigatórios.'); return }
-    if (isGuest && !deliveryPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
-    if (isThirdParty && !ownerIdPhoto) { toast.error('Identidade do dono da encomenda obrigatória.'); return }
-    if (isThirdParty && !pickerIdPhoto) { toast.error('Identidade de quem está retirando obrigatória.'); return }
-    if (isThirdParty && !pickerPhone.trim()) { toast.error('Telefone de contato obrigatório.'); return }
+    const base: DeliverPayload = pendingDeliveryPayload ?? {
+      delivered_to_name: recipientName,
+      signature_url: recipientSig,
+      delivered_to_resident_id: deliveryTarget.resident_id,
+      proof_of_residence_url: proofResidenceUrl || undefined,
+      recipient_id_photo_url: recipientIdPhoto || undefined,
+      delivery_person_name: deliveryPersonName || fullName || undefined,
+      third_party_pickup: isThirdParty,
+      owner_id_photo_url: ownerIdPhoto || undefined,
+      picker_id_photo_url: pickerIdPhoto || undefined,
+      picker_phone: pickerPhone.trim() || undefined,
+      payment_method_id: deliveryPaymentMethodId || undefined,
+    }
+    const payload: DeliverPayload = cash_session_id ? { ...base, cash_session_id } : base
     setLoading(true)
     try {
-      const res = await packageService.deliver(deliveryTarget.id, {
-        delivered_to_name: recipientName,
-        signature_url: recipientSig,
-        delivered_to_resident_id: deliveryTarget.resident_id,
-        proof_of_residence_url: proofResidenceUrl || undefined,
-        recipient_id_photo_url: recipientIdPhoto || undefined,
-        delivery_person_name: deliveryPersonName || fullName || undefined,
-        third_party_pickup: isThirdParty,
-        owner_id_photo_url: ownerIdPhoto || undefined,
-        picker_id_photo_url: pickerIdPhoto || undefined,
-        picker_phone: pickerPhone.trim() || undefined,
-        payment_method_id: deliveryPaymentMethodId || undefined,
-      })
+      const res = await packageService.deliver(deliveryTarget.id, payload)
       const pkg = res.data as any
       toast.success(pkg.has_delivery_fee
         ? `Entregue! Taxa R$ ${parseFloat(pkg.delivery_fee_amount).toFixed(2)} cobrada.`
@@ -1223,16 +1223,39 @@ export default function PackagesPage() {
       setDeliveryTarget(null)
       resetDelivery()
       setUpgradedResidentInfo(null)
+      setPendingDeliveryPayload(null)
+      setDeliverySessionPicker(null)
       if (upgraded) {
         navigate('/financeiro', { state: { tab: 'cobrancas', cobrancasView: 'historico', residentId: upgraded.id, residentName: upgraded.name } })
         return
       }
       loadPackages()
     } catch (e: any) {
-      toast.error(apiErr(e, 'Erro na entrega.'))
+      const detail = e.response?.data?.detail
+      if (detail === 'NO_SESSION') {
+        try {
+          const sessRes = await financeService.listOpenSessions()
+          if (sessRes.data.length === 0) { toast.error('Nenhum caixa aberto para registrar a taxa.'); return }
+          setPendingDeliveryPayload(payload)
+          setDeliverySessionPicker(sessRes.data)
+        } catch { toast.error('Erro ao buscar caixas abertos.') }
+      } else {
+        toast.error(apiErr(e, 'Erro na entrega.'))
+      }
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleDeliver = async () => {
+    if (!deliveryTarget) return
+    const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
+    if (!recipientName || !recipientSig) { toast.error('Nome e assinatura do recebedor obrigatórios.'); return }
+    if (isGuest && !deliveryPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
+    if (isThirdParty && !ownerIdPhoto) { toast.error('Identidade do dono da encomenda obrigatória.'); return }
+    if (isThirdParty && !pickerIdPhoto) { toast.error('Identidade de quem está retirando obrigatória.'); return }
+    if (isThirdParty && !pickerPhone.trim()) { toast.error('Telefone de contato obrigatório.'); return }
+    await doDeliver()
   }
 
   const resetDelivery = () => {
@@ -1995,6 +2018,31 @@ export default function PackagesPage() {
       )}
 
       {/* Delivery Modal */}
+      {deliverySessionPicker && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto bg-black/50">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900 text-sm">Selecionar Caixa</h3>
+                <button onClick={() => { setDeliverySessionPicker(null); setPendingDeliveryPayload(null) }}><X className="w-4 h-4 text-gray-400" /></button>
+              </div>
+              <div className="p-4">
+                <p className="text-xs text-gray-500 mb-3">Selecione o caixa para registrar a taxa de entrega:</p>
+                <div className="flex flex-col gap-2">
+                  {deliverySessionPicker.map(s => (
+                    <button key={s.id} onClick={() => doDeliver(s.id)}
+                      className="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 hover:border-[#26619c] hover:bg-blue-50 transition text-left">
+                      <span className="text-sm font-medium text-gray-800">{s.opened_by_name}</span>
+                      <span className="text-xs text-gray-400">Saldo inicial: R$ {parseFloat(s.opening_balance).toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {deliveryTarget && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40">
           <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-4">
