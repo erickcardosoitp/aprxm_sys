@@ -1701,12 +1701,12 @@ export default function PackagesPage() {
             </div>
             <div className="px-5 py-4 flex flex-col gap-3">
               {([
-                ['Remetente', 'sender_name', 'text'],
-                ['Transportadora', 'carrier_name', 'text'],
-                ['Código de rastreio', 'tracking_code', 'text'],
-                ['Tipo de objeto', 'object_type', 'text'],
-                ['Observações', 'notes', 'text'],
-              ] as const).map(([label, key]) => (
+                { label: 'Remetente', key: 'sender_name' },
+                { label: 'Transportadora', key: 'carrier_name' },
+                { label: 'Código de rastreio', key: 'tracking_code' },
+                { label: 'Tipo de objeto', key: 'object_type' },
+                { label: 'Observações', key: 'notes' },
+              ] as { label: string; key: keyof typeof editPkgForm }[]).map(({ label, key }) => (
                 <div key={key}>
                   <label className="block text-xs text-gray-600 mb-1">{label}</label>
                   <input value={editPkgForm[key]} onChange={e => setEditPkgForm(f => ({ ...f, [key]: e.target.value }))}
