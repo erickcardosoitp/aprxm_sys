@@ -451,11 +451,11 @@ export default function FinanceiroPage() {
   }
 
   const openReview = async (s: Session) => {
-    setReviewSession(s)
     try {
       const r = await api.get<TxReview[]>(`/finance/sessions/${s.id}/transactions`)
       setReviewTxs(r.data)
     } catch { setReviewTxs([]) }
+    setReviewSession(s)
   }
 
   const [tesouraria, setTesouraria] = useState<{
