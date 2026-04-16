@@ -644,6 +644,19 @@ class FinanceService:
     ) -> bytes:
         from fpdf import FPDF  # type: ignore
 
+        def _safe(s: str) -> str:
+            return s.encode("latin-1", errors="replace").decode("latin-1")
+
+        resident_name = _safe(resident_name)
+        resident_cpf = _safe(resident_cpf)
+        resident_neighborhood = _safe(resident_neighborhood)
+        resident_cep = _safe(resident_cep)
+        resident_address_street = _safe(resident_address_street)
+        resident_address_number = _safe(resident_address_number)
+        community_name = _safe(community_name)
+        assoc_address = _safe(assoc_address)
+        president_name = _safe(president_name)
+
         pdf = FPDF()
         pdf.add_page()
         pdf.set_margins(20, 20, 20)

@@ -299,7 +299,7 @@ async def reprint_proof_of_residence(
     svc = FinanceService(session)
     barcode_bytes = svc._build_barcode_image(barcode_code)
     pdf_bytes = svc._build_proof_pdf(
-        resident_name=res_row[0] if res_row else "—",
+        resident_name=res_row[0] if res_row else "(nao identificado)",
         resident_cpf=res_row[1] if res_row else "",
         resident_neighborhood=res_row[2] if res_row else "",
         resident_cep=res_row[3] if res_row else "",
