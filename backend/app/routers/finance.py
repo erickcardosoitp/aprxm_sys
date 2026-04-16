@@ -77,6 +77,7 @@ class TransactionRequest(BaseModel):
     payment_method_id: UUID | None = None
     resident_id: UUID | None = None
     reference_number: str | None = None
+    cash_session_id: UUID | None = None
 
 
 class ConferenciaRequest(BaseModel):
@@ -373,10 +374,9 @@ async def current_session(
         )
     except Exception:
         raise HTTPException(status_code=404, detail="Nenhuma sessão de caixa aberta.")
-    if cash.opened_by != current.user_id:
-        raise HTTPException(status_code=404, detail="Nenhuma sessão de caixa aberta.")
     from app.models.user import User
     opener = await session.get(User, cash.opened_by)
+    is_mine = cash.opened_by == current.user_id
     return {
         "id": str(cash.id),
         "status": cash.status,
@@ -384,8 +384,37 @@ async def current_session(
         "opened_at": str(cash.opened_at),
         "opened_by": str(cash.opened_by),
         "opened_by_name": opener.full_name if opener else None,
-        "is_mine": True,
+        "is_mine": is_mine,
     }
+
+
+@router.get("/sessions/open", summary="Todas as sessões de caixa abertas")
+async def list_open_sessions(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from app.models.user import User
+    result = await session.execute(
+        text(
+            "SELECT cs.id, cs.opened_by, cs.opening_balance, cs.opened_at, u.full_name "
+            "FROM cash_sessions cs LEFT JOIN users u ON u.id = cs.opened_by "
+            "WHERE cs.association_id = :aid AND cs.status = 'open' "
+            "ORDER BY cs.opened_at DESC"
+        ),
+        {"aid": str(current.association_id)},
+    )
+    rows = result.fetchall()
+    return [
+        {
+            "id": str(r[0]),
+            "opened_by": str(r[1]),
+            "opening_balance": str(r[2]),
+            "opened_at": str(r[3]),
+            "opened_by_name": r[4],
+            "is_mine": str(r[1]) == str(current.user_id),
+        }
+        for r in rows
+    ]
 
 
 @router.post("/sessions/close", summary="Fechamento cego de caixa")
@@ -455,9 +484,17 @@ async def register_transaction(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = FinanceService(session)
-    cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
-    if cash.opened_by != current.user_id:
-        raise HTTPException(status_code=400, detail="Abra seu caixa antes de registrar transações.")
+    if body.cash_session_id:
+        cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
+    else:
+        try:
+            cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
+            if cash.opened_by != current.user_id:
+                raise HTTPException(status_code=422, detail="NO_SESSION")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=422, detail="NO_SESSION")
     tx = await svc.register_transaction(
         association_id=current.association_id,
         cash_session_id=cash.id,
@@ -1450,6 +1487,29 @@ async def patch_transaction_payment_method(
         "tid": tx_id, "obs": body.observacao,
         "rev": str(body.reviewed_by_id) if body.reviewed_by_id else None,
     })
+    await session.commit()
+    return {"ok": True}
+
+
+class ReassignRequest(BaseModel):
+    cash_session_id: str
+
+
+@router.patch("/transactions/{tx_id}/reassign", summary="Admin: redirecionar transação para outra sessão")
+async def reassign_transaction(
+    tx_id: str,
+    body: ReassignRequest,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    new_session_id = body.cash_session_id
+    from sqlalchemy import text as t
+    result = await session.execute(t(
+        "UPDATE transactions SET cash_session_id = :sid "
+        "WHERE id = :tid AND association_id = :aid RETURNING id"
+    ), {"sid": new_session_id, "tid": tx_id, "aid": str(current.association_id)})
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Transação não encontrada.")
     await session.commit()
     return {"ok": True}
 

@@ -929,20 +929,48 @@ export default function PackagesPage() {
   }
 
   const resetBulkRx = () => {
-    setShowBulkReceive(false); setBulkRxStep('add'); setBulkRxQueue([])
+    setShowBulkReceive(false); setBulkRxStep('sign'); setBulkRxQueue([])
     setBrxDelivererName(''); setBrxDelivererSig(''); setBrxLoading(false); setBrxResult(null)
     setBrxTracking(''); setBrxCarrier(''); setBrxSearch(''); setBrxResults([])
     setBrxSelected(null); setBrxLastAdded(null); setShowBrxScanner(false); setBrxPending(null)
     setBrxGuestName(''); setBrxShowGuest(false)
+    setBrxGuestCep(''); setBrxGuestNumber(''); setBrxGuestStreet(''); setBrxGuestNeighborhood(''); setBrxGuestCity(''); setBrxGuestState('')
   }
 
   // Bulk receive — guest creation
   const [brxShowGuest, setBrxShowGuest] = useState(false)
   const [brxGuestName, setBrxGuestName] = useState('')
+  const [brxGuestCep, setBrxGuestCep] = useState('')
+  const [brxGuestNumber, setBrxGuestNumber] = useState('')
+  const [brxGuestStreet, setBrxGuestStreet] = useState('')
+  const [brxGuestNeighborhood, setBrxGuestNeighborhood] = useState('')
+  const [brxGuestCity, setBrxGuestCity] = useState('')
+  const [brxGuestState, setBrxGuestState] = useState('')
+  const [brxGuestCepLoading, setBrxGuestCepLoading] = useState(false)
   const [brxGuestLoading, setBrxGuestLoading] = useState(false)
 
+  const lookupBrxGuestCep = async (cep: string) => {
+    const digits = cep.replace(/\D/g, '')
+    if (digits.length !== 8) return
+    setBrxGuestCepLoading(true)
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      const data = await r.json()
+      if (!data.erro) {
+        setBrxGuestStreet(data.logradouro ?? '')
+        setBrxGuestNeighborhood(data.bairro ?? '')
+        setBrxGuestCity(data.localidade ?? '')
+        setBrxGuestState(data.uf ?? '')
+      }
+    } catch { /* silent */ } finally { setBrxGuestCepLoading(false) }
+  }
+
   const createBrxGuest = async () => {
-    if (!brxGuestName.trim()) return
+    if (!brxGuestName.trim()) { toast.error('Nome obrigatório.'); return }
+    if (newResType === 'guest') {
+      if (!brxGuestCep.replace(/\D/g, '').trim()) { toast.error('CEP obrigatório para visitante.'); return }
+      if (!brxGuestNumber.trim()) { toast.error('Número do endereço obrigatório.'); return }
+    }
     if (newResType === 'dependent' && !newResResponsible) { toast.error('Selecione o responsável.'); return }
     setBrxGuestLoading(true)
     try {
@@ -951,10 +979,18 @@ export default function PackagesPage() {
         is_member_confirmed: newResType !== 'guest', terms_accepted: newResType !== 'guest', lgpd_accepted: true,
         type: newResType === 'guest' ? 'guest' : 'member',
       }
+      if (newResType === 'guest') {
+        payload.address_cep = brxGuestCep.replace(/\D/g, '')
+        payload.address_number = brxGuestNumber.trim()
+        if (brxGuestStreet) payload.address_street = brxGuestStreet
+        if (brxGuestNeighborhood) payload.address_neighborhood = brxGuestNeighborhood
+        if (brxGuestCity) payload.address_city = brxGuestCity
+        if (brxGuestState) payload.address_state = brxGuestState
+      }
       if (newResType === 'member' && newResCpf.trim()) payload.cpf = newResCpf.trim()
       if (newResType === 'dependent' && newResResponsible) payload.responsible_id = newResResponsible.id
       const res = await api.post<Resident>('/residents', payload)
-      setBrxShowGuest(false); setBrxGuestName('')
+      setBrxShowGuest(false); setBrxGuestName(''); setBrxGuestCep(''); setBrxGuestNumber(''); setBrxGuestStreet(''); setBrxGuestNeighborhood(''); setBrxGuestCity(''); setBrxGuestState('')
       setNewResType('guest'); setNewResCpf(''); setNewResResponsible(null); setNewResResponsibleSearch(''); setNewResResponsibleResults([])
       requestBrxPhoto(res.data, brxTracking)
     } catch (e: any) {
@@ -1025,7 +1061,7 @@ export default function PackagesPage() {
 
   useEffect(() => { loadPackages() }, [filterStatus, filterQ, filterDateFrom, filterDateTo])
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
-  useEffect(() => { if (showBulkReceive && bulkRxStep === 'add') setTimeout(() => brxBarcodeRef.current?.focus(), 100) }, [showBulkReceive, bulkRxStep])
+  useEffect(() => { if (showBulkReceive && bulkRxStep === 'add') setTimeout(() => brxBarcodeRef.current?.focus(), 200) }, [showBulkReceive, bulkRxStep])
 
   const searchResidents = async (q: string) => {
     if (q.length < 2) { setSearchResults([]); setSearchEmpty(false); setShowGuestForm(false); return }
@@ -2304,7 +2340,7 @@ export default function PackagesPage() {
                 <p className="text-xs text-gray-500 mt-0.5">Uma encomenda com foto da etiqueta</p>
               </div>
             </button>
-            <button onClick={() => { setShowReceiveMode(false); setShowBulkReceive(true); setBulkRxStep('add') }}
+            <button onClick={() => { setShowReceiveMode(false); setShowBulkReceive(true); setBulkRxStep('sign') }}
               className="flex items-center gap-4 p-4 rounded-2xl border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 transition text-left">
               <Layers className="w-8 h-8 text-amber-500 shrink-0" />
               <div>
@@ -2328,9 +2364,9 @@ export default function PackagesPage() {
                 <div>
                   <h3 className="font-semibold text-gray-900 text-sm">Recebimento Múltiplo</h3>
                   <p className="text-xs text-gray-400">
-                    {bulkRxStep === 'add'
-                      ? bulkRxQueue.length === 0 ? 'Bipe ou busque cada encomenda' : `${bulkRxQueue.length} na fila — continue bipando`
-                      : `${bulkRxQueue.length} encomenda(s) · dados do entregador`}
+                    {bulkRxStep === 'sign'
+                      ? 'Entregador assina antes de liberar'
+                      : bulkRxQueue.length === 0 ? 'Bipe ou busque cada encomenda' : `${bulkRxQueue.length} na fila — continue bipando`}
                   </p>
                 </div>
               </div>
@@ -2472,6 +2508,21 @@ export default function PackagesPage() {
                         <input value={brxGuestName} onChange={e => setBrxGuestName(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter' && newResType !== 'dependent') createBrxGuest() }}
                           className={inputCls} placeholder="Nome completo *" autoFocus />
+                        {newResType === 'guest' && (
+                          <>
+                            <div className="flex gap-2">
+                              <div className="flex-1">
+                                <input value={brxGuestCep} onChange={e => { setBrxGuestCep(e.target.value); lookupBrxGuestCep(e.target.value) }}
+                                  className={inputCls} placeholder={brxGuestCepLoading ? 'Buscando…' : 'CEP *'} maxLength={9} />
+                              </div>
+                              <div className="w-24">
+                                <input value={brxGuestNumber} onChange={e => setBrxGuestNumber(e.target.value)}
+                                  className={inputCls} placeholder="Nº *" />
+                              </div>
+                            </div>
+                            {brxGuestStreet && <p className="text-xs text-gray-500">{brxGuestStreet}, {brxGuestNeighborhood} — {brxGuestCity}/{brxGuestState}</p>}
+                          </>
+                        )}
                         {newResType === 'member' && (
                           <input value={newResCpf} onChange={e => setNewResCpf(e.target.value)} className={inputCls} placeholder="CPF (opcional)" />
                         )}
@@ -2524,9 +2575,9 @@ export default function PackagesPage() {
                     <div className="border border-gray-200 rounded-xl overflow-hidden">
                       <div className="bg-[#26619c] px-3 py-2 flex items-center justify-between">
                         <span className="text-xs font-bold text-white">{bulkRxQueue.length} encomenda(s) na fila</span>
-                        <button onClick={() => setBulkRxStep('sign')}
-                          className="text-xs bg-white text-[#26619c] px-2.5 py-1 rounded-lg font-semibold">
-                          Finalizar →
+                        <button onClick={handleBulkRxSubmit} disabled={brxLoading}
+                          className="text-xs bg-white text-[#26619c] px-2.5 py-1 rounded-lg font-semibold disabled:opacity-50">
+                          {brxLoading ? '…' : 'Confirmar →'}
                         </button>
                       </div>
                       <ul className="divide-y divide-gray-100 max-h-40 overflow-y-auto">
@@ -2550,10 +2601,10 @@ export default function PackagesPage() {
                 </div>
 
                 <div className="flex gap-3 px-4 py-3 border-t border-gray-100 shrink-0">
-                  <button onClick={resetBulkRx} className="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
-                  <button onClick={() => setBulkRxStep('sign')} disabled={bulkRxQueue.length === 0}
+                  <button onClick={() => setBulkRxStep('sign')} className="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">← Voltar</button>
+                  <button onClick={handleBulkRxSubmit} disabled={brxLoading || bulkRxQueue.length === 0}
                     className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
-                    Finalizar ({bulkRxQueue.length}) →
+                    {brxLoading ? 'Registrando…' : `Confirmar ${bulkRxQueue.length} Recebimento(s)`}
                   </button>
                 </div>
               </>
@@ -2563,17 +2614,9 @@ export default function PackagesPage() {
             {bulkRxStep === 'sign' && !brxResult && (
               <>
                 <div className="overflow-y-auto flex-1 p-5 flex flex-col gap-4">
-                  <div className="bg-[#26619c]/5 border border-[#26619c]/20 rounded-xl px-4 py-3">
-                    <p className="text-xs font-bold text-[#26619c] mb-1">{bulkRxQueue.length} encomenda(s) a registrar</p>
-                    <ul className="flex flex-col gap-0.5 max-h-32 overflow-y-auto">
-                      {bulkRxQueue.map(item => (
-                        <li key={item.id} className="text-xs text-gray-600 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#26619c]/40 shrink-0" />
-                          <span className="font-medium truncate">{item.resident_name}</span>
-                          {item.tracking_code && <span className="font-mono text-gray-400 truncate">{item.tracking_code}</span>}
-                        </li>
-                      ))}
-                    </ul>
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <p className="text-xs font-bold text-amber-700">Etapa 1 de 2 — Identificar entregador</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Colete a assinatura antes de liberar o entregador. As encomendas serão bipadas na próxima etapa.</p>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Entregador (opcional)</label>
@@ -2610,10 +2653,10 @@ export default function PackagesPage() {
                   )}
                 </div>
                 <div className="flex gap-3 px-4 py-3 border-t border-gray-100 shrink-0">
-                  <button onClick={() => setBulkRxStep('add')} className="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">← Voltar</button>
-                  <button onClick={handleBulkRxSubmit} disabled={brxLoading}
-                    className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
-                    {brxLoading ? 'Registrando…' : `Confirmar ${bulkRxQueue.length} Recebimento(s)`}
+                  <button onClick={resetBulkRx} className="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
+                  <button onClick={() => setBulkRxStep('add')}
+                    className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition">
+                    Próximo → Bipar Encomendas
                   </button>
                 </div>
               </>

@@ -28,7 +28,11 @@ export const financeService = {
     category_id?: string
     payment_method_id?: string
     resident_id?: string
+    cash_session_id?: string
   }) => api.post<Transaction>('/finance/transactions', data),
+
+  listOpenSessions: () =>
+    api.get<{ id: string; opened_by: string; opened_by_name: string; opening_balance: string; opened_at: string; is_mine: boolean }[]>('/finance/sessions/open'),
 
   listTransactions: (session_id?: string) =>
     api.get<Transaction[]>('/finance/transactions', { params: { session_id } }),

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowDownLeft, Check, ClipboardCheck, DollarSign, List, Loader2, Plus, RefreshCw, RotateCcw, Scale, TrendingDown, TrendingUp, X, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, Check, ClipboardCheck, DollarSign, List, Loader2, Plus, RefreshCw, RotateCcw, Scale, TrendingDown, TrendingUp, X, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
@@ -178,6 +178,7 @@ type SessionTx = {
   description: string; transaction_at: string; is_sangria: boolean
   created_by_name: string; conferido: boolean; observacao: string | null
   payment_method_id: string | null; payment_method_name: string | null
+  reversed_at: string | null
 }
 
 type PaymentMethodOption = { id: string; name: string }
@@ -192,6 +193,7 @@ function SessionDetailModal({
   const role = useAuthStore((s) => s.role)
   const userId = useAuthStore((s) => s.userId)
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
+  const isAdminRole = role === 'admin' || role === 'superadmin'
   const [transactions, setTransactions] = useState<SessionTx[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([])
   const [loading, setLoading] = useState(false)
@@ -209,6 +211,30 @@ function SessionDetailModal({
   const [recalculating, setRecalculating] = useState(false)
   const [recalcResult, setRecalcResult] = useState<{ expected_balance: string; difference: string | null } | null>(null)
   const [subtypeFilter, setSubtypeFilter] = useState<string | null>(null)
+  const [reassignTarget, setReassignTarget] = useState<SessionTx | null>(null)
+  const [reassignSessions, setReassignSessions] = useState<CashSessionSummary[]>([])
+  const [reassigning, setReassigning] = useState(false)
+
+  const openReassign = async (tx: SessionTx) => {
+    setReassignTarget(tx)
+    try {
+      const res = await financeService.listSessions()
+      setReassignSessions(res.data.filter(s => s.id !== session.id))
+    } catch { setReassignSessions([]) }
+  }
+
+  const doReassign = async (newSessionId: string) => {
+    if (!reassignTarget) return
+    setReassigning(true)
+    try {
+      await api.patch(`/finance/transactions/${reassignTarget.id}/reassign`, { cash_session_id: newSessionId })
+      toast.success('Transação redirecionada.')
+      setReassignTarget(null)
+      loadTx()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao redirecionar.')
+    } finally { setReassigning(false) }
+  }
 
   const fmtBRL = (v: string | undefined) => (v != null ? `R$ ${parseFloat(v).toFixed(2)}` : '—')
   const fmtDate = (s: string) =>
@@ -289,6 +315,32 @@ function SessionDetailModal({
     : session.difference ? parseFloat(session.difference) : null
 
   return (
+    <>
+    {reassignTarget && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-gray-900 text-sm">Redirecionar Transação</h2>
+            <button onClick={() => setReassignTarget(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          </div>
+          <div className="px-5 py-4 flex flex-col gap-2">
+            <p className="text-xs text-gray-500 mb-1">Selecione a nova sessão de caixa:</p>
+            {reassignSessions.length === 0 ? (
+              <p className="text-xs text-gray-400">Nenhuma outra sessão disponível.</p>
+            ) : reassignSessions.map(s => (
+              <button key={s.id} onClick={() => doReassign(s.id)} disabled={reassigning}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-blue-50 hover:border-[#26619c] transition text-left w-full">
+                <ArrowLeftRight className="w-4 h-4 text-gray-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">{s.operador_name ?? '—'}</p>
+                  <p className="text-xs text-gray-400">{new Date(s.opened_at).toLocaleString('pt-BR')} · {s.status}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
@@ -459,9 +511,17 @@ function SessionDetailModal({
                         <p className="text-xs text-amber-600 mt-0.5">Obs: {tx.observacao}</p>
                       )}
                     </div>
-                    <span className={`text-sm font-semibold shrink-0 ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                      {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`text-sm font-semibold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                        {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
+                      </span>
+                      {isAdminRole && !tx.reversed_at && (
+                        <button onClick={() => openReassign(tx)} title="Redirecionar sessão"
+                          className="text-gray-300 hover:text-[#26619c] transition">
+                          <ArrowLeftRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {editingTx && paymentMethods.length > 0 && (
                     <div className="mt-2 flex flex-col gap-1.5">
@@ -509,6 +569,7 @@ function SessionDetailModal({
         </div>
       </div>
     </div>
+    </>
   )
 }
 

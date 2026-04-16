@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { printCarne as printCarneUtil } from '../../utils/printCarne'
-import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2, Download, Printer } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2, Download, Printer, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { financeService } from '../../services/finance'
@@ -12,6 +12,8 @@ interface Props {
   onClose: () => void
   onSuccess: () => void
 }
+
+type OpenSession = { id: string; opened_by: string; opened_by_name: string; opening_balance: string; opened_at: string; is_mine: boolean }
 
 type IncomeSubtype = 'proof_of_residence' | 'delivery_fee' | 'mensalidade' | 'other'
 
@@ -146,6 +148,11 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [proofCep, setProofCep] = useState('')
   const [proofStreet, setProofStreet] = useState('')
   const [proofNumber, setProofNumber] = useState('')
+
+  // Session picker (when user has no open session)
+  const [openSessions, setOpenSessions] = useState<OpenSession[]>([])
+  const [showSessionPicker, setShowSessionPicker] = useState(false)
+  const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
 
   // Step 3 — barcode confirmation
   const [pendingBarcodeCode, setPendingBarcodeCode] = useState('')
@@ -362,7 +369,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       }
 
       if (!amount || !description.trim()) return
-      await financeService.registerTransaction({
+      const txPayload = {
         type: txType,
         amount: parseFloat(amount),
         description: description.trim(),
@@ -370,7 +377,28 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         category_id: categoryId || undefined,
         payment_method_id: paymentMethodId || undefined,
         resident_id: resident?.id || undefined,
-      })
+      }
+      try {
+        await financeService.registerTransaction(txPayload)
+      } catch (e: any) {
+        if (e.response?.data?.detail === 'NO_SESSION') {
+          setSaving(false)
+          try {
+            const res = await financeService.listOpenSessions()
+            if (res.data.length === 0) {
+              toast.error('Nenhum caixa aberto. Abra um caixa antes de registrar.')
+              return
+            }
+            setOpenSessions(res.data)
+            setPendingPayload(txPayload as Record<string, unknown>)
+            setShowSessionPicker(true)
+          } catch {
+            toast.error('Nenhum caixa aberto.')
+          }
+          return
+        }
+        throw e
+      }
       toast.success('Transação registrada!')
       onSuccess()
       onClose()
@@ -421,6 +449,49 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     setAmount('')
     setPaymentMethodId('')
     setStep(1)
+  }
+
+  const handleSessionPick = async (sessionId: string) => {
+    if (!pendingPayload) return
+    setSaving(true)
+    try {
+      await financeService.registerTransaction({ ...pendingPayload as any, cash_session_id: sessionId })
+      toast.success('Transação registrada!')
+      setShowSessionPicker(false)
+      onSuccess()
+      onClose()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao registrar transação.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (showSessionPicker) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="font-bold text-gray-900 text-sm">Selecionar Caixa</h2>
+            <button onClick={() => setShowSessionPicker(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          </div>
+          <div className="px-5 py-4 flex flex-col gap-2">
+            <p className="text-xs text-gray-500 mb-1">Você não tem caixa aberto. Selecione o caixa para registrar esta movimentação:</p>
+            {openSessions.map(s => (
+              <button key={s.id} onClick={() => handleSessionPick(s.id)} disabled={saving}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-blue-50 hover:border-[#26619c] transition text-left w-full">
+                <Building2 className="w-4 h-4 text-gray-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">{s.opened_by_name ?? 'Operador'}</p>
+                  <p className="text-xs text-gray-400">{new Date(s.opened_at).toLocaleString('pt-BR')}</p>
+                </div>
+                {s.is_mine && <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Meu caixa</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
