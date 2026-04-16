@@ -598,10 +598,12 @@ export default function FinancePage() {
   const [offlineType, setOfflineType] = useState<'expense' | 'income'>('expense')
   const [offlineForm, setOfflineForm] = useState({ description: '', amount: '', category_id: '' })
   const [offlineCategories, setOfflineCategories] = useState<{ id: string; name: string }[]>([])
+  const [offlinePayMethods, setOfflinePayMethods] = useState<{ id: string; name: string }[]>([])
   const [offlineResidentQuery, setOfflineResidentQuery] = useState('')
   const [offlineResidentResults, setOfflineResidentResults] = useState<{ id: string; full_name: string; cpf?: string; phone_primary?: string }[]>([])
   const [offlineResident, setOfflineResident] = useState<{ id: string; full_name: string } | null>(null)
   const [offlineSubtype, setOfflineSubtype] = useState('mensalidade')
+  const [offlinePaymentMethodId, setOfflinePaymentMethodId] = useState('')
   const [savingOffline, setSavingOffline] = useState(false)
 
   // ── Transfer conferido → caixinha state ──
@@ -719,6 +721,8 @@ export default function FinancePage() {
     loadSession()
     api.get<{ id: string; name: string }[]>('/finance/categories', { params: { type: 'expense' } })
       .then(r => setOfflineCategories(r.data)).catch(() => {})
+    api.get<{ id: string; name: string }[]>('/finance/payment-methods')
+      .then(r => setOfflinePayMethods(r.data)).catch(() => {})
   }, [])
   useEffect(() => { loadTransactions() }, [session?.id, viewedSessionId])
   useEffect(() => { if (tab === 'sessoes') loadSessions() }, [tab])
@@ -780,6 +784,7 @@ export default function FinancePage() {
         category_id: offlineForm.category_id || null,
         resident_id: offlineResident?.id || null,
         income_subtype: offlineType === 'income' ? offlineSubtype : undefined,
+        payment_method_id: offlinePaymentMethodId || null,
       })
       toast.success(offlineType === 'income' ? 'Entrada registrada (sem caixa)!' : 'Saída externa registrada!')
       setShowOfflineExpense(false)
@@ -787,6 +792,7 @@ export default function FinancePage() {
       setOfflineResident(null)
       setOfflineResidentQuery('')
       setOfflineResidentResults([])
+      setOfflinePaymentMethodId('')
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao registrar.')
     } finally {
@@ -958,6 +964,21 @@ export default function FinancePage() {
                   onChange={e => setOfflineForm(f => ({ ...f, amount: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40" />
               </div>
+
+              {offlinePayMethods.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Forma de pagamento</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {offlinePayMethods.map(m => (
+                      <button key={m.id} type="button"
+                        onClick={() => setOfflinePaymentMethodId(id => id === m.id ? '' : m.id)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${offlinePaymentMethodId === m.id ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600 hover:border-[#26619c]'}`}>
+                        {m.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex gap-3 px-5 pb-5">
               <button onClick={() => setShowOfflineExpense(false)}
