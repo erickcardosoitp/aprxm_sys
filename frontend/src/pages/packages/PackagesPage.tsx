@@ -820,7 +820,7 @@ export default function PackagesPage() {
 
   // Bulk receive flow
   const [showBulkReceive, setShowBulkReceive] = useState(false)
-  const [bulkRxStep, setBulkRxStep] = useState<'add' | 'sign'>('add')
+  const [bulkRxStep, setBulkRxStep] = useState<'add' | 'sign'>('sign')
   type BulkRxItem = { id: string; tracking_code: string; carrier_name: string; resident_id?: string; resident_name: string; resident_type?: string; unit?: string; block?: string; photo_urls: { url: string; label: string; taken_at: string }[] }
   type BrxPending = { resident: Resident; tracking: string }
   const [bulkRxQueue, setBulkRxQueue] = useState<BulkRxItem[]>([])
@@ -2552,7 +2552,7 @@ export default function PackagesPage() {
                         </div>
                       </div>
                     ) : (
-                      <button onClick={() => { setBrxShowGuest(true); setBrxGuestName(brxSearch) }}
+                      <button onClick={() => { setBrxShowGuest(true); setBrxGuestName(brxSearch); setNewResType('guest') }}
                         className="w-full flex items-center gap-2 border border-dashed border-orange-300 bg-orange-50 rounded-lg px-3 py-2.5 text-sm text-orange-600 hover:border-orange-400 transition">
                         <UserX className="w-4 h-4" /> Não encontrado — cadastrar como visitante
                       </button>
