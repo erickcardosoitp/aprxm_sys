@@ -368,6 +368,41 @@ async def pay_lead(
             )
             session.add(dep_resident)
 
+    # Auto-register income transaction in current open session (or offline)
+    paid_amount = sum(
+        p.amount for p in pmts
+        if p.status == "paid" and (
+            (lead.payment_type == "avista") or
+            (lead.payment_type != "avista" and p.paid_at is not None and
+             (paid_at.date() if hasattr(paid_at, 'date') else paid_at) == (p.paid_at.date() if hasattr(p.paid_at, 'date') else p.paid_at))
+        )
+    )
+    if not paid_amount:
+        paid_amount = body.amount if hasattr(body, 'amount') and body.amount else lead.monthly_fee
+
+    from sqlalchemy import text as sa_text
+    open_session_row = (await session.execute(sa_text(
+        "SELECT id FROM cash_sessions WHERE association_id=:aid AND status='open' "
+        "AND opened_by=:uid ORDER BY opened_at DESC LIMIT 1"
+    ), {"aid": str(current.association_id), "uid": str(current.user_id)})).fetchone()
+
+    from app.models.finance import Transaction, TransactionType
+    tx = Transaction(
+        association_id=current.association_id,
+        cash_session_id=open_session_row[0] if open_session_row else None,
+        type=TransactionType.income,
+        amount=Decimal(str(paid_amount)),
+        description=f"Porta a Porta — {lead.full_name}",
+        income_subtype="mensalidade",
+        payment_method_id=None,
+        resident_id=lead.resident_id,
+        approval_status="approved",
+        approved_by=current.user_id,
+        approved_at=datetime.utcnow(),
+        created_by=current.user_id,
+    )
+    session.add(tx)
+
     await session.commit()
     return {"ok": True, "lead_status": lead.status, "resident_id": str(lead.resident_id) if lead.resident_id else None}
 
