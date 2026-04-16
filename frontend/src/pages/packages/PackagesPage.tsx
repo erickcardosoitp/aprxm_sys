@@ -701,6 +701,54 @@ export default function PackagesPage() {
   const barcodeRef = useRef<HTMLInputElement>(null)
   const [showScanner, setShowScanner] = useState(false)
 
+  // Missing-CEP prompt (single receive)
+  const [missingCepCep, setMissingCepCep] = useState('')
+  const [missingCepNumber, setMissingCepNumber] = useState('')
+  const [missingCepStreet, setMissingCepStreet] = useState('')
+  const [missingCepNeighborhood, setMissingCepNeighborhood] = useState('')
+  const [missingCepCity, setMissingCepCity] = useState('')
+  const [missingCepState, setMissingCepState] = useState('')
+  const [missingCepLoading, setMissingCepLoading] = useState(false)
+  const [missingCepSaving, setMissingCepSaving] = useState(false)
+
+  const lookupMissingCep = async (cep: string) => {
+    const digits = cep.replace(/\D/g, '')
+    if (digits.length !== 8) return
+    setMissingCepLoading(true)
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      const data = await r.json()
+      if (!data.erro) {
+        setMissingCepStreet(data.logradouro ?? '')
+        setMissingCepNeighborhood(data.bairro ?? '')
+        setMissingCepCity(data.localidade ?? '')
+        setMissingCepState(data.uf ?? '')
+      }
+    } catch { /* silent */ } finally { setMissingCepLoading(false) }
+  }
+
+  const saveMissingCep = async () => {
+    if (!selectedRecipient) return
+    if (!missingCepCep.replace(/\D/g, '').trim()) { toast.error('CEP obrigatório.'); return }
+    if (!missingCepNumber.trim()) { toast.error('Número obrigatório.'); return }
+    setMissingCepSaving(true)
+    try {
+      await api.put(`/residents/${selectedRecipient.id}`, {
+        address_cep: missingCepCep.replace(/\D/g, ''),
+        address_number: missingCepNumber.trim(),
+        address_street: missingCepStreet || undefined,
+        address_neighborhood: missingCepNeighborhood || undefined,
+        address_city: missingCepCity || undefined,
+        address_state: missingCepState || undefined,
+      })
+      setSelectedRecipient({ ...selectedRecipient, address_cep: missingCepCep.replace(/\D/g, '') } as Resident)
+      setMissingCepCep(''); setMissingCepNumber(''); setMissingCepStreet(''); setMissingCepNeighborhood(''); setMissingCepCity(''); setMissingCepState('')
+      setStep('details')
+    } catch (e: any) {
+      toast.error(apiErr(e, 'Erro ao salvar endereço.'))
+    } finally { setMissingCepSaving(false) }
+  }
+
   // Delivery flow
   const [recipientName, setRecipientName] = useState('')
   const [recipientSig, setRecipientSig] = useState('')
@@ -1208,7 +1256,7 @@ export default function PackagesPage() {
             {pkg.resident_type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-semibold shrink-0">VISITANTE</span>}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
-            {pkg.carrier_name ?? '—'}{pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
+            {pkg.carrier_name ? (pkg.carrier_name.length > 20 ? pkg.carrier_name.slice(0, 20) + '…' : pkg.carrier_name) : '—'}{pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
           </p>
           {(pkg.resident_address_street || pkg.resident_cep) && (
             <p className="text-xs text-gray-400">
@@ -1667,6 +1715,7 @@ export default function PackagesPage() {
                               setSelectedRecipient(r)
                               setSearchResults([])
                               setRecipientSearch(r.full_name)
+                              if (!r.address_cep) return  // stays on recipient step to fill CEP
                               setStep('details')
                             }}
                           >
@@ -1792,9 +1841,40 @@ export default function PackagesPage() {
                   </div>
                 )}
 
+                {/* Missing CEP prompt */}
+                {selectedRecipient && !selectedRecipient.address_cep && !showGuestForm && (
+                  <div className="border border-amber-300 bg-amber-50 rounded-xl p-3 flex flex-col gap-2 mb-2">
+                    <p className="text-xs font-semibold text-amber-800">Endereço incompleto — informe o CEP para continuar</p>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <input value={missingCepCep}
+                          onChange={e => { setMissingCepCep(e.target.value); lookupMissingCep(e.target.value) }}
+                          className={inputCls} placeholder={missingCepLoading ? 'Buscando…' : 'CEP *'} maxLength={9} />
+                      </div>
+                      <div className="w-24">
+                        <input value={missingCepNumber} onChange={e => setMissingCepNumber(e.target.value)}
+                          className={inputCls} placeholder="Nº *" />
+                      </div>
+                    </div>
+                    {missingCepStreet && <p className="text-xs text-gray-500">{missingCepStreet}, {missingCepNeighborhood} — {missingCepCity}/{missingCepState}</p>}
+                    <button onClick={saveMissingCep} disabled={missingCepSaving || !missingCepCep.trim() || !missingCepNumber.trim()}
+                      className="w-full bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50 transition">
+                      {missingCepSaving ? 'Salvando…' : 'Salvar e continuar →'}
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <button onClick={resetReceive} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
-                  <button onClick={() => setStep('details')} disabled={!selectedRecipient}
+                  <button
+                    onClick={() => {
+                      if (selectedRecipient && !selectedRecipient.address_cep) {
+                        toast.error('Informe o CEP do morador antes de continuar.')
+                        return
+                      }
+                      setStep('details')
+                    }}
+                    disabled={!selectedRecipient}
                     className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50">
                     Continuar →
                   </button>
