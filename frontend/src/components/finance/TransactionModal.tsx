@@ -153,8 +153,9 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [proofStreet, setProofStreet] = useState('')
   const [proofNumber, setProofNumber] = useState('')
 
-  // Session picker (when user has no open session)
+  // Session picker — loaded proactively for admin/conferente
   const [openSessions, setOpenSessions] = useState<OpenSession[]>([])
+  const [selectedSessionId, setSelectedSessionId] = useState<string>('')
   const [showSessionPicker, setShowSessionPicker] = useState(false)
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
 
@@ -169,6 +170,13 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   useEffect(() => {
     settingsService.get().then(r => setSettings(r.data)).catch(() => {})
     api.get<{ association_name?: string; assoc_logo_url?: string }>('/settings/association').then(r => setAssocInfo(r.data)).catch(() => {})
+    if (canPickSession) {
+      financeService.listOpenSessions().then(r => {
+        setOpenSessions(r.data)
+        const mine = r.data.find(s => s.is_mine)
+        setSelectedSessionId(mine?.id ?? r.data[0]?.id ?? '')
+      }).catch(() => {})
+    }
   }, [])
 
   useEffect(() => {
@@ -381,6 +389,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         category_id: categoryId || undefined,
         payment_method_id: paymentMethodId || undefined,
         resident_id: resident?.id || undefined,
+        cash_session_id: (canPickSession && selectedSessionId) ? selectedSessionId : undefined,
       }
       try {
         await financeService.registerTransaction(txPayload)
@@ -942,6 +951,20 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           {/* ── Step 2: Confirmação ── */}
           {step === 2 && (
             <div className="flex flex-col gap-3">
+              {canPickSession && openSessions.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-gray-600 mb-1.5">Caixa de destino <span className="text-red-500">*</span></p>
+                  <div className="flex flex-col gap-1.5">
+                    {openSessions.map(s => (
+                      <button key={s.id} type="button" onClick={() => setSelectedSessionId(s.id)}
+                        className={`flex items-center justify-between px-3 py-2 rounded-lg border text-left transition ${selectedSessionId === s.id ? 'border-[#26619c] bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                        <span className="text-sm font-medium text-gray-800">{s.opened_by_name}</span>
+                        {s.is_mine && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">Meu caixa</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <p className="text-sm font-medium text-gray-700">{isProof ? 'Confirmar emissão do comprovante:' : 'Confirmar transação:'}</p>
               <div className={`rounded-xl p-4 border ${txType === 'income' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                 <p className={`text-lg font-bold ${txType === 'income' ? 'text-green-700' : 'text-red-700'}`}>
