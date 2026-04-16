@@ -394,7 +394,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       try {
         await financeService.registerTransaction(txPayload)
       } catch (e: any) {
-        if (e.response?.data?.detail === 'NO_SESSION' && canPickSession) {
+        if (e.response?.data?.detail === 'NO_SESSION') {
           setSaving(false)
           try {
             const res = await financeService.listOpenSessions()
