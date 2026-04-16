@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ClipboardList, Calculator, Award, ArrowRight, Eye, RefreshCw, Pencil } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ClipboardList, Calculator, Award, ArrowRight, Eye, RefreshCw, Pencil, Banknote, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -78,6 +78,10 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
   const [transferring, setTransferring] = useState(false)
   const [transfersDone, setTransfersDone] = useState<string[]>([])
 
+  // PIX reconciliation
+  const [pixSyncLoading, setPixSyncLoading] = useState(false)
+  const [pixSyncResult, setPixSyncResult] = useState<{ synced: number; mode: 'reconciled' | 'batched' } | null>(null)
+
   const bruto = parseFloat(session.total_bruto ?? '0')
   const baixas = parseFloat(session.total_baixas ?? '0')
   const pix = parseFloat(session.total_pix ?? '0')
@@ -102,7 +106,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
   const loadBoxes = async () => {
     setLoadingBoxes(true)
     try {
-      const res = await api.get<CashBox[]>('/finance/cash-boxes')
+      const res = await api.get<CashBox[]>('/cash-boxes')
       setCashBoxes(res.data.filter(b => b.is_active))
     } catch { /* silent */ } finally { setLoadingBoxes(false) }
   }
@@ -148,6 +152,24 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
       toast.error(e.response?.data?.detail ?? 'Erro ao transferir.')
     } finally {
       setTransferring(false)
+    }
+  }
+
+  const handleSyncPix = async (autoReconcile: boolean) => {
+    setPixSyncLoading(true)
+    try {
+      const r = await api.post<{ synced: number }>('/finance/sessions/sync-pix', {
+        session_id: session.id,
+        auto_reconcile: autoReconcile,
+      })
+      setPixSyncResult({ synced: r.data.synced, mode: autoReconcile ? 'reconciled' : 'batched' })
+      toast.success(autoReconcile
+        ? `${r.data.synced} PIX conciliado(s) automaticamente.`
+        : `${r.data.synced} PIX encaminhado(s) para esteira.`)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao sincronizar PIX.')
+    } finally {
+      setPixSyncLoading(false)
     }
   }
 
@@ -511,6 +533,46 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                     + Adicionar destino
                   </button>
                 </>
+              )}
+
+              {/* PIX reconciliation */}
+              {pix > 0 && (
+                <div className="border border-blue-200 rounded-xl p-4 bg-blue-50 flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <Banknote className="w-4 h-4 text-blue-600 shrink-0" />
+                    <div>
+                      <p className="text-xs font-semibold text-blue-800">PIX desta sessão — {fmt(pix)}</p>
+                      <p className="text-[10px] text-blue-500">Deseja conciliar agora ou encaminhar para a esteira?</p>
+                    </div>
+                  </div>
+                  {pixSyncResult ? (
+                    <div className="flex items-center gap-2 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      {pixSyncResult.mode === 'reconciled'
+                        ? `${pixSyncResult.synced} PIX conciliado(s) automaticamente.`
+                        : `${pixSyncResult.synced} PIX encaminhado(s) para esteira de conciliação.`}
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSyncPix(true)}
+                        disabled={pixSyncLoading}
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-semibold py-2 rounded-lg transition"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Conciliar PIX agora
+                      </button>
+                      <button
+                        onClick={() => handleSyncPix(false)}
+                        disabled={pixSyncLoading}
+                        className="flex-1 flex items-center justify-center gap-1.5 border border-blue-300 text-blue-700 hover:bg-blue-100 disabled:opacity-40 text-xs font-semibold py-2 rounded-lg transition"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        Encaminhar para esteira
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

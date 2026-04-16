@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -515,24 +515,36 @@ async def register_transaction(
     return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
 
 
+class SyncPixRequest(BaseModel):
+    session_id: UUID | None = None
+    auto_reconcile: bool = False
+
+
 @router.post("/sessions/sync-pix", summary="Sincronizar lançamentos PIX para o extrato")
 async def sync_pix(
+    body: SyncPixRequest = Body(default=SyncPixRequest()),
     current: CurrentUser = Depends(require_conferente),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    r = await session.execute(text("""
+    params: dict = {"aid": str(current.association_id), "conciliado": body.auto_reconcile}
+    session_filter = ""
+    if body.session_id:
+        session_filter = "AND t.cash_session_id = :sid "
+        params["sid"] = str(body.session_id)
+    r = await session.execute(text(f"""
         INSERT INTO bank_statements (association_id, bank, date, amount, name, description, tipo, conciliado, transaction_id)
         SELECT t.association_id, 'PIX', t.created_at::date, t.amount, t.description, t.description,
-               'entrada', false, t.id
+               'entrada', :conciliado, t.id
         FROM transactions t
         JOIN payment_methods pm ON pm.id = t.payment_method_id
         WHERE t.association_id = :aid
           AND t.type = 'income'
           AND LOWER(pm.name) LIKE '%pix%'
           AND t.reversed_at IS NULL
+          {session_filter}
           AND NOT EXISTS (SELECT 1 FROM bank_statements bs WHERE bs.transaction_id = t.id)
         RETURNING id
-    """), {"aid": str(current.association_id)})
+    """), params)
     count = len(r.fetchall())
     await session.commit()
     return {"synced": count}

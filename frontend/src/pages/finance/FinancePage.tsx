@@ -1312,7 +1312,8 @@ export default function FinancePage() {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b-2 border-gray-200 text-gray-500 text-xs font-bold uppercase tracking-wider">
-                    <th className="px-5 py-3 text-left whitespace-nowrap">Data / Status</th>
+                    <th className="px-5 py-3 text-left whitespace-nowrap">Status</th>
+                    <th className="px-5 py-3 text-left whitespace-nowrap">Data</th>
                     <th className="px-5 py-3 text-left whitespace-nowrap">Operador</th>
                     <th className="px-5 py-3 text-left whitespace-nowrap">Fechado por</th>
                     <th className="px-5 py-3 text-right whitespace-nowrap">Saldo Inicial</th>
@@ -1349,9 +1350,11 @@ export default function FinancePage() {
                         className="hover:bg-blue-50/40 transition cursor-pointer"
                         onClick={() => setSelectedSession(s)}>
                         <td className="px-5 py-4 whitespace-nowrap">
+                          <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap">
                           <div className="font-semibold text-gray-900">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</div>
                           <div className="text-xs text-gray-400 mt-0.5">{new Date(s.opened_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{s.closed_at ? ` – ${new Date(s.closed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}</div>
-                          <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
                         </td>
                         <td className="px-5 py-4 text-gray-800 whitespace-nowrap font-medium">{s.operador_name ?? '—'}</td>
                         <td className="px-5 py-4 text-gray-600 whitespace-nowrap">{s.fechado_por ?? '—'}</td>
