@@ -11,6 +11,7 @@ import * as XLSX from 'xlsx'
 import html2canvas from 'html2canvas'
 import api from '../../services/api'
 import { printCarne as printCarneUtil } from '../../utils/printCarne'
+import { CaixaConferenciaModal } from '../../components/finance/CaixaConferenciaModal'
 import type { Resident } from '../../types'
 
 type Tab = 'dashboard' | 'movimentacoes' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'transferencias' | 'porta_a_porta' | 'dre'
@@ -255,8 +256,6 @@ export default function FinanceiroPage() {
   // Session reviews
   const [reviewSession, setReviewSession] = useState<Session | null>(null)
   const [reviewTxs, setReviewTxs] = useState<TxReview[]>([])
-  const [reviewConferidoPor, setReviewConferidoPor] = useState('')
-  const [savingReviews, setSavingReviews] = useState(false)
 
   // Transferências / Cash Boxes
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([])
@@ -453,24 +452,10 @@ export default function FinanceiroPage() {
 
   const openReview = async (s: Session) => {
     setReviewSession(s)
-    setReviewConferidoPor('')
     try {
       const r = await api.get<TxReview[]>(`/finance/sessions/${s.id}/transactions`)
       setReviewTxs(r.data)
     } catch { setReviewTxs([]) }
-  }
-
-  const handleSaveReviews = async () => {
-    if (!reviewSession) return
-    setSavingReviews(true)
-    try {
-      await api.put(`/finance/sessions/${reviewSession.id}/reviews`, {
-        reviews: reviewTxs.map(t => ({ transaction_id: t.id, conferido: t.conferido, observacao: t.observacao || null })),
-        reviewed_by_id: reviewConferidoPor || null,
-      })
-      setReviewSession(null)
-      loadSessions()
-    } catch { /* ignore */ } finally { setSavingReviews(false) }
   }
 
   const [tesouraria, setTesouraria] = useState<{
@@ -2640,112 +2625,13 @@ export default function FinanceiroPage() {
 
       {/* ── SESSION REVIEW MODAL ── */}
       {reviewSession && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl w-full max-w-2xl p-5 flex flex-col gap-4 my-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-800">Conferência — {fmtDate(reviewSession.opened_at)}</h2>
-              <button onClick={() => setReviewSession(null)} className="text-gray-400 text-xl">×</button>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Conferido por</label>
-              <select value={reviewConferidoPor} onChange={e => setReviewConferidoPor(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
-                <option value="">Selecionar conferente…</option>
-                {conferentes.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-              </select>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[700px]">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr>
-                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Data/Hora</th>
-                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Tipo</th>
-                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Pagamento</th>
-                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Pessoa</th>
-                    <th className="px-2 py-2 text-right text-gray-500 font-medium">Valor</th>
-                    <th className="px-2 py-2 text-center text-gray-500 font-medium">OK</th>
-                    <th className="px-2 py-2 text-center text-gray-500 font-medium">Editar</th>
-                    <th className="px-2 py-2 text-left text-gray-500 font-medium">Observação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {reviewTxs.map((tx, i) => {
-                    const isReversed = !!tx.reversed_at
-                    return (
-                    <tr key={tx.id} className={`${isReversed ? 'opacity-50 bg-gray-50' : tx.conferido ? '' : 'bg-red-50'}`}>
-                      <td className="px-2 py-2 whitespace-nowrap text-gray-500 text-[10px]">
-                        {new Date(tx.transaction_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="px-2 py-2 whitespace-nowrap">
-                        {tx.income_subtype ? (
-                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${SUBTYPE_COLORS[tx.income_subtype] ?? 'bg-gray-100 text-gray-600'}`}>
-                            {SUBTYPE_LABELS[tx.income_subtype] ?? tx.income_subtype}
-                          </span>
-                        ) : (
-                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${tx.type === 'income' ? 'bg-green-100 text-green-700' : tx.type === 'sangria' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
-                            {tx.type === 'income' ? 'Receita' : tx.type === 'sangria' ? 'Sangria' : 'Despesa'}
-                          </span>
-                        )}
-                        {isReversed && <span className="ml-1 text-[9px] text-red-400 font-medium">Estornado</span>}
-                      </td>
-                      <td className="px-2 py-2 whitespace-nowrap">
-                        {tx.payment_method_name ? (
-                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">{tx.payment_method_name}</span>
-                        ) : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-2 py-2 text-gray-800 font-medium max-w-[180px] truncate">
-                        {parseTxName(tx.description, tx.income_subtype)}
-                      </td>
-                      <td className={`px-2 py-2 text-right font-semibold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                        {tx.type === 'income' ? '+' : '-'}{fmt(tx.amount)}
-                      </td>
-                      <td className="px-2 py-2 text-center">
-                        <input type="checkbox" checked={tx.conferido}
-                          onChange={e => setReviewTxs(prev => prev.map((t, j) => j === i ? { ...t, conferido: e.target.checked } : t))}
-                          className="w-4 h-4 accent-indigo-600" />
-                      </td>
-                      <td className="px-2 py-2 text-center">
-                        {!isReversed && (
-                          <button
-                            title="Corrigir lançamento (requer senha de admin)"
-                            onClick={() => {
-                              setEditTarget(tx as unknown as Tx)
-                              setEditDesc(tx.description)
-                              setEditAmount(tx.amount)
-                              setEditPmId('')
-                              setEditPassword('')
-                            }}
-                            className="p-1 text-gray-400 hover:text-[#26619c] hover:bg-blue-50 rounded transition"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-2 py-2">
-                        <input type="text" value={tx.observacao ?? ''} placeholder={tx.conferido ? '' : 'Observação…'}
-                          onChange={e => setReviewTxs(prev => prev.map((t, j) => j === i ? { ...t, observacao: e.target.value } : t))}
-                          className="w-full border border-gray-200 rounded px-2 py-1 text-xs" />
-                      </td>
-                    </tr>
-                    )
-                  })}
-                  {reviewTxs.length === 0 && (
-                    <tr><td colSpan={8} className="px-2 py-4 text-center text-gray-400">Nenhuma transação nesta sessão.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {reviewTxs.some(t => !t.conferido) && (
-              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
-                {reviewTxs.filter(t => !t.conferido).length} movimentação(ões) não conferida(s) — adicione uma observação explicando a irregularidade.
-              </div>
-            )}
-            <button onClick={handleSaveReviews} disabled={savingReviews}
-              className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-              {savingReviews ? 'Salvando…' : 'Salvar Conferência'}
-            </button>
-          </div>
-        </div>
+        <CaixaConferenciaModal
+          session={reviewSession}
+          txs={reviewTxs}
+          conferentes={conferentes}
+          onClose={() => setReviewSession(null)}
+          onSaved={loadSessions}
+        />
       )}
 
       {/* ── DRE ── */}
