@@ -912,9 +912,8 @@ export default function FinancePage() {
                     <select value={offlineSubtype} onChange={e => setOfflineSubtype(e.target.value)}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#26619c]/40">
                       <option value="mensalidade">Mensalidade</option>
-                      <option value="taxa_entrega">Taxa de Entrega</option>
-                      <option value="doacao">Doação</option>
-                      <option value="other">Outro</option>
+                      <option value="delivery_fee">Taxa de Entrega</option>
+                      <option value="other">Doação / Outro</option>
                     </select>
                   </div>
                   <div className="relative">
