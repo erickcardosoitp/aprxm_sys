@@ -570,6 +570,28 @@ class FinanceService:
             reference_number=barcode_code,
         )
 
+        # Sync address back to resident profile
+        if resident_id:
+            update_fields = []
+            update_params: dict = {"rid": str(resident_id), "aid": str(association_id)}
+            if resident_address_street:
+                update_fields.append("address_street = :street")
+                update_params["street"] = resident_address_street
+            if resident_address_number:
+                update_fields.append("address_number = :number")
+                update_params["number"] = resident_address_number
+            if resident_neighborhood:
+                update_fields.append("address_neighborhood = :neighborhood")
+                update_params["neighborhood"] = resident_neighborhood
+            if resident_cep:
+                update_fields.append("address_cep = :cep")
+                update_params["cep"] = resident_cep
+            if update_fields:
+                await self._session.execute(
+                    sa_text(f"UPDATE residents SET {', '.join(update_fields)} WHERE id = :rid AND association_id = :aid"),
+                    update_params,
+                )
+
         # Decrement stock
         await self._session.execute(
             sa_text("UPDATE association_settings SET proof_stock = proof_stock - 1 WHERE association_id = :aid"),
