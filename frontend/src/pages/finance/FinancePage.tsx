@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, Check, ClipboardCheck, DollarSign, List, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Scale, TrendingDown, TrendingUp, X, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, Check, ClipboardCheck, DollarSign, FileText, List, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Scale, TrendingDown, TrendingUp, X, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
@@ -214,6 +214,19 @@ function SessionDetailModal({
   const [reassignTarget, setReassignTarget] = useState<SessionTx | null>(null)
   const [reassignSessions, setReassignSessions] = useState<CashSessionSummary[]>([])
   const [reassigning, setReassigning] = useState(false)
+  const [reprinting, setReprinting] = useState<string | null>(null)
+
+  const handleReprint = async (txId: string) => {
+    setReprinting(txId)
+    try {
+      const res = await api.get(`/finance/proof-of-residence/${txId}/reprint`, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a'); a.href = url; a.download = 'comprovante_2via.pdf'; a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao gerar 2ª via.')
+    } finally { setReprinting(null) }
+  }
 
   const openReassign = async (tx: SessionTx) => {
     setReassignTarget(tx)
@@ -515,6 +528,12 @@ function SessionDetailModal({
                       <span className={`text-sm font-semibold ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                         {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
                       </span>
+                      {tx.income_subtype === 'proof_of_residence' && !tx.reversed_at && (
+                        <button onClick={() => handleReprint(tx.id)} disabled={reprinting === tx.id}
+                          title="2ª via" className="text-gray-300 hover:text-purple-600 transition disabled:opacity-40">
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {isAdminRole && !tx.reversed_at && (
                         <button onClick={() => openReassign(tx)} title="Redirecionar sessão"
                           className="text-gray-300 hover:text-[#26619c] transition">
