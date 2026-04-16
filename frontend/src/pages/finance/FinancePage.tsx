@@ -586,6 +586,7 @@ export default function FinancePage() {
   const [openSessions, setOpenSessions] = useState<{ id: string; opened_by_name: string; opening_balance: string }[]>([])
   const [viewedSessionId, setViewedSessionId] = useState<string | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const latestTxSidRef = useRef<string | null>(null)
   const [showSangria, setShowSangria] = useState(false)
   const [showTransaction, setShowTransaction] = useState(false)
   const [loadingTx, setLoadingTx] = useState(false)
@@ -655,8 +656,12 @@ export default function FinancePage() {
   const loadTransactions = async () => {
     const sid = viewedSessionId ?? session?.id
     if (!sid) return
+    latestTxSidRef.current = sid
     setLoadingTx(true)
-    try { const res = await financeService.listTransactions(sid); setTransactions(res.data) }
+    try {
+      const res = await financeService.listTransactions(sid)
+      if (latestTxSidRef.current === sid) setTransactions(res.data)
+    }
     catch { toast.error('Erro ao carregar transações.') }
     finally { setLoadingTx(false) }
   }
@@ -1032,13 +1037,7 @@ export default function FinancePage() {
           {isConferenteOrAbove && openSessions.length > 1 && (
             <div className="flex gap-2 flex-wrap">
               {openSessions.map(s => (
-                <button key={s.id} onClick={async () => {
-                  setViewedSessionId(s.id)
-                  setLoadingTx(true)
-                  try { const r = await financeService.listTransactions(s.id); setTransactions(r.data) }
-                  catch { toast.error('Erro ao carregar transações.') }
-                  finally { setLoadingTx(false) }
-                }}
+                <button key={s.id} onClick={() => setViewedSessionId(s.id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${viewedSessionId === s.id ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#26619c]'}`}>
                   {s.opened_by_name}
                 </button>
