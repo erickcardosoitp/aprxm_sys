@@ -211,9 +211,6 @@ function SessionDetailModal({
   const [recalculating, setRecalculating] = useState(false)
   const [recalcResult, setRecalcResult] = useState<{ expected_balance: string; difference: string | null } | null>(null)
   const [subtypeFilter, setSubtypeFilter] = useState<string | null>(null)
-  const [editingPayMethodTx, setEditingPayMethodTx] = useState<string | null>(null)
-  const [payMethodEdit, setPayMethodEdit] = useState<string>('')
-  const [savingPayMethod, setSavingPayMethod] = useState(false)
   const [reassignTarget, setReassignTarget] = useState<SessionTx | null>(null)
   const [reassignSessions, setReassignSessions] = useState<CashSessionSummary[]>([])
   const [reassigning, setReassigning] = useState(false)
@@ -224,21 +221,6 @@ function SessionDetailModal({
       const res = await financeService.listSessions()
       setReassignSessions(res.data.filter(s => s.id !== session.id))
     } catch { setReassignSessions([]) }
-  }
-
-  const savePayMethod = async (txId: string) => {
-    setSavingPayMethod(true)
-    try {
-      await api.patch(`/finance/transactions/${txId}/payment-method`, {
-        payment_method_id: payMethodEdit || null,
-        cash_session_id: viewedSessionId ?? session?.id,
-      })
-      toast.success('Forma de pagamento atualizada.')
-      setEditingPayMethodTx(null)
-      loadTx()
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
-    } finally { setSavingPayMethod(false) }
   }
 
   const doReassign = async (newSessionId: string) => {
@@ -597,6 +579,7 @@ export default function FinancePage() {
   const role = useAuthStore((s) => s.role)
   const canSeeTotals = role !== 'operator' && role !== 'viewer'
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
+  const isAdminRole = role === 'admin' || role === 'superadmin'
 
   const [tab, setTab] = useState<Tab>('caixa')
   const [session, setSession] = useState<CashSession | null>(null)
@@ -637,6 +620,11 @@ export default function FinancePage() {
   const [estornoPassword, setEstornoPassword] = useState('')
   const [savingEstorno, setSavingEstorno] = useState(false)
 
+  // ── Inline payment method edit ──
+  const [editingPayMethodTx, setEditingPayMethodTx] = useState<string | null>(null)
+  const [payMethodEdit, setPayMethodEdit] = useState<string>('')
+  const [savingPayMethod, setSavingPayMethod] = useState(false)
+
   // ── Extrato state ──
   const today = new Date().toISOString().slice(0, 10)
   const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
@@ -671,6 +659,21 @@ export default function FinancePage() {
     try { const res = await financeService.listTransactions(sid); setTransactions(res.data) }
     catch { toast.error('Erro ao carregar transações.') }
     finally { setLoadingTx(false) }
+  }
+
+  const savePayMethod = async (txId: string) => {
+    setSavingPayMethod(true)
+    try {
+      await api.patch(`/finance/transactions/${txId}/payment-method`, {
+        payment_method_id: payMethodEdit || null,
+        cash_session_id: viewedSessionId ?? session?.id,
+      })
+      toast.success('Forma de pagamento atualizada.')
+      setEditingPayMethodTx(null)
+      loadTransactions()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
+    } finally { setSavingPayMethod(false) }
   }
 
   const loadPendingApprovals = async () => {
@@ -1247,7 +1250,7 @@ export default function FinancePage() {
                               <select value={payMethodEdit} onChange={e => setPayMethodEdit(e.target.value)}
                                 className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#26619c]/30">
                                 <option value="">— Sem forma —</option>
-                                {paymentMethods.map(pm => (
+                                {offlinePayMethods.map(pm => (
                                   <option key={pm.id} value={pm.id}>{pm.name}</option>
                                 ))}
                               </select>
