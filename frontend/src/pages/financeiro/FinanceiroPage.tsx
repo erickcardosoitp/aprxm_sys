@@ -487,7 +487,7 @@ export default function FinanceiroPage() {
   const [sendingMalote, setSendingMalote] = useState<string | null>(null)
 
   // PIX batch
-  const [pixPending, setPixPending] = useState<{ id: string; bank: string; date: string; amount: string; name: string | null }[]>([])
+  const [pixPending, setPixPending] = useState<{ id: string; bank: string; date: string; amount: string; name: string | null; description?: string | null }[]>([])
   const [pixSelected, setPixSelected] = useState<Set<string>>(new Set())
   const [pixBatchBox, setPixBatchBox] = useState('')
   const [loadingPixPending, setLoadingPixPending] = useState(false)
