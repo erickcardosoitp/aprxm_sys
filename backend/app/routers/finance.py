@@ -393,13 +393,9 @@ async def list_open_sessions(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    # Operators only see their own session; admin/conferente see all
-    if current.is_conferente:
-        where_extra = ""
-        params: dict = {"aid": str(current.association_id)}
-    else:
-        where_extra = "AND cs.opened_by = :uid"
-        params = {"aid": str(current.association_id), "uid": str(current.user_id)}
+    # admin/conferente see all; operators see all (to pick when they have no own session)
+    where_extra = ""
+    params: dict = {"aid": str(current.association_id)}
 
     result = await session.execute(
         text(
