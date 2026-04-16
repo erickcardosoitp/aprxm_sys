@@ -540,7 +540,8 @@ function EsteiraStepper({ status }: { status: string }) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
-  const { fullName } = useAuthStore()
+  const { fullName, role } = useAuthStore()
+  const isAdmin = role === 'admin' || role === 'superadmin'
   const navigate = useNavigate()
   const [upgradedResidentInfo, setUpgradedResidentInfo] = useState<{ id: string; name: string } | null>(null)
   const [pageTab, setPageTab] = useState<'encomendas' | 'cadastros'>('encomendas')
@@ -554,6 +555,9 @@ export default function PackagesPage() {
   const [detailPkg, setDetailPkg] = useState<Package | null>(null)
   const [detailDependents, setDetailDependents] = useState<{ id: string; full_name: string; phone_primary?: string }[]>([])
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({})
+  const [editPkg, setEditPkg] = useState<Package | null>(null)
+  const [editPkgForm, setEditPkgForm] = useState({ sender_name: '', carrier_name: '', tracking_code: '', object_type: '', notes: '' })
+  const [savingEditPkg, setSavingEditPkg] = useState(false)
 
   useEffect(() => {
     if (detailPkg?.resident_id) {
@@ -1333,6 +1337,12 @@ export default function PackagesPage() {
               Entregar
             </button>
           )}
+          {isAdmin && (
+            <button onClick={e => { e.stopPropagation(); setEditPkg(pkg); setEditPkgForm({ sender_name: pkg.sender_name ?? '', carrier_name: pkg.carrier_name ?? '', tracking_code: pkg.tracking_code ?? '', object_type: pkg.object_type ?? '', notes: pkg.notes ?? '' }) }}
+              className="text-xs text-gray-400 hover:text-[#26619c] hover:underline">
+              Editar
+            </button>
+          )}
           {pkg.has_delivery_fee && <span className="text-xs text-amber-600 font-medium">Taxa R$ {parseFloat(pkg.delivery_fee_amount ?? '2.50').toFixed(2)}</span>}
         </div>
       </div>
@@ -1678,6 +1688,51 @@ export default function PackagesPage() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* Edit Package Info Modal */}
+      {editPkg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="font-bold text-gray-900 text-sm">Editar Encomenda</h2>
+              <button onClick={() => setEditPkg(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="px-5 py-4 flex flex-col gap-3">
+              {([
+                ['Remetente', 'sender_name', 'text'],
+                ['Transportadora', 'carrier_name', 'text'],
+                ['Código de rastreio', 'tracking_code', 'text'],
+                ['Tipo de objeto', 'object_type', 'text'],
+                ['Observações', 'notes', 'text'],
+              ] as const).map(([label, key]) => (
+                <div key={key}>
+                  <label className="block text-xs text-gray-600 mb-1">{label}</label>
+                  <input value={editPkgForm[key]} onChange={e => setEditPkgForm(f => ({ ...f, [key]: e.target.value }))}
+                    className={inputCls} placeholder={label} />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 px-5 pb-5">
+              <button onClick={() => setEditPkg(null)}
+                className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50">Cancelar</button>
+              <button disabled={savingEditPkg} onClick={async () => {
+                if (!editPkg) return
+                setSavingEditPkg(true)
+                try {
+                  await api.patch(`/packages/${editPkg.id}/info`, editPkgForm)
+                  toast.success('Encomenda atualizada.')
+                  setEditPkg(null)
+                  loadPackages()
+                } catch (e: any) { toast.error(apiErr(e, 'Erro ao salvar.')) }
+                finally { setSavingEditPkg(false) }
+              }}
+                className="flex-1 bg-[#26619c] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1e4d7d] disabled:opacity-50">
+                {savingEditPkg ? '…' : 'Salvar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

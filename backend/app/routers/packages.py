@@ -433,6 +433,39 @@ async def reassign_package(
     return {"id": str(pkg.id), "resident_id": str(pkg.resident_id), "resident_name": resident.full_name}
 
 
+class EditPackageInfoRequest(BaseModel):
+    sender_name: str | None = None
+    carrier_name: str | None = None
+    tracking_code: str | None = None
+    object_type: str | None = None
+    notes: str | None = None
+
+
+@router.patch("/{package_id}/info", summary="Editar informações da encomenda (admin+)")
+async def edit_package_info(
+    package_id: UUID,
+    body: EditPackageInfoRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from fastapi import HTTPException
+    from datetime import datetime
+    if not current.is_admin:
+        raise HTTPException(403, "Apenas admins podem editar informações da encomenda.")
+    pkg = await session.get(Package, package_id)
+    if not pkg or str(pkg.association_id) != str(current.association_id):
+        raise HTTPException(404, "Encomenda não encontrada.")
+    if body.sender_name is not None: pkg.sender_name = body.sender_name or None
+    if body.carrier_name is not None: pkg.carrier_name = body.carrier_name or None
+    if body.tracking_code is not None: pkg.tracking_code = body.tracking_code or None
+    if body.object_type is not None: pkg.object_type = body.object_type or None
+    if body.notes is not None: pkg.notes = body.notes or None
+    pkg.updated_at = datetime.utcnow()
+    session.add(pkg)
+    await session.commit()
+    return {"ok": True}
+
+
 class EditDeliveryInfoRequest(BaseModel):
     delivered_to_name: str | None = None
     delivered_to_cpf: str | None = None
