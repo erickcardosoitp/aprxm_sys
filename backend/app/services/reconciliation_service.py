@@ -48,6 +48,8 @@ class ReconciliationService:
             statements = self._parse_itau(rows, association_id)
         elif bank == "cora":
             statements = self._parse_cora(rows, association_id)
+        elif bank == "infinitypay":
+            statements = self._parse_infinitypay(rows, association_id)
 
         for stmt in statements:
             self._session.add(stmt)
@@ -148,6 +150,59 @@ class ReconciliationService:
                 cpf=cpf_found,
                 tipo="entrada",
                 description=transacao,
+            ))
+        return result
+
+    def _parse_infinitypay(self, rows: list[dict], association_id: UUID) -> list[BankStatement]:
+        """
+        Formato InfinityPay:
+        Data,Hora,Tipo,Nome,Detalhe,[Valor]
+        - Data: YYYY-MM-DD
+        - Tipo: Pix (só importa entradas do tipo Pix)
+        - Nome: nome do pagador
+        - Detalhe: descrição adicional
+        - Valor: positivo = entrada
+        """
+        import re
+        result = []
+        for row in rows:
+            tipo = (row.get("Tipo") or row.get("tipo") or "").strip().lower()
+            if "pix" not in tipo:
+                continue
+
+            raw_date = (row.get("Data") or row.get("data") or "").strip()
+            nome = (row.get("Nome") or row.get("nome") or "").strip()
+            detalhe = (row.get("Detalhe") or row.get("detalhe") or "").strip()
+            valor_raw = (row.get("Valor") or row.get("valor") or "0").strip()
+
+            try:
+                from datetime import datetime
+                dt = datetime.strptime(raw_date, "%Y-%m-%d").date()
+            except Exception:
+                continue
+
+            try:
+                valor_dec = Decimal(valor_raw.replace("R$", "").replace(".", "").replace(",", "."))
+                if valor_dec <= 0:
+                    continue
+            except Exception:
+                continue
+
+            cpf_found = None
+            cpf_match = re.search(r'\b(\d{11})\b', nome + " " + detalhe)
+            if cpf_match:
+                cpf_found = cpf_match.group(1)
+                nome = nome.replace(cpf_match.group(0), "").strip()
+
+            result.append(BankStatement(
+                association_id=association_id,
+                bank="infinitypay",
+                date=dt,
+                amount=valor_dec,
+                name=normalize_name(nome) if nome else None,
+                cpf=cpf_found,
+                tipo="entrada",
+                description=detalhe or nome,
             ))
         return result
 

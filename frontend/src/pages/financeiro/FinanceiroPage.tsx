@@ -319,7 +319,7 @@ export default function FinanceiroPage() {
 
   // Conciliation
   const [bankFile, setBankFile] = useState<File | null>(null)
-  const [bankType, setBankType] = useState<'itau' | 'cora'>('cora')
+  const [bankType, setBankType] = useState<'itau' | 'cora' | 'infinitypay'>('infinitypay')
   const [importing, setImporting] = useState(false)
   const [reconciling, setReconciling] = useState(false)
   const [reconciliationResults, setReconciliationResults] = useState<{
@@ -2392,6 +2392,7 @@ export default function FinanceiroPage() {
                 <label className="block text-xs text-gray-600 mb-1">Banco</label>
                 <select value={bankType} onChange={e => setBankType(e.target.value as any)}
                   className={inputCls}>
+                  <option value="infinitypay">InfinityPay</option>
                   <option value="cora">Cora</option>
                   <option value="itau">Itaú</option>
                 </select>
