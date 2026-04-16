@@ -51,6 +51,8 @@ class TransactionReview(BaseModel):
 class ReviewsRequest(BaseModel):
     reviews: list[TransactionReview]
     reviewed_by_id: UUID | None = None
+    closing_balance: Decimal | None = Field(default=None, ge=0)
+    notes: str | None = None
 
 
 class SangriaDestinationRequest(BaseModel):
@@ -1452,12 +1454,29 @@ async def save_session_reviews(
             "tid": rev.transaction_id, "conf": rev.conferido,
             "obs": rev.observacao, "rev": str(body.reviewed_by_id) if body.reviewed_by_id else None,
         })
-    if body.reviewed_by_id:
-        await session.execute(t("""
-            UPDATE cash_sessions SET reviewed_by=:rev WHERE id=:sid AND association_id=:aid
-        """), {"rev": str(body.reviewed_by_id), "sid": session_id, "aid": str(current.association_id)})
+    # Mark session as conferido and optionally update closing_balance
+    update_fields = "reviewed_by=:rev, status='conferido'"
+    params: dict = {
+        "rev": str(body.reviewed_by_id) if body.reviewed_by_id else None,
+        "sid": session_id,
+        "aid": str(current.association_id),
+    }
+    if body.closing_balance is not None:
+        # Recalculate expected balance to compute difference
+        cs_row = (await session.execute(t("""
+            SELECT expected_balance FROM cash_sessions WHERE id=:sid AND association_id=:aid
+        """), {"sid": session_id, "aid": str(current.association_id)})).fetchone()
+        expected = Decimal(str(cs_row[0])) if cs_row and cs_row[0] else Decimal("0")
+        diff = body.closing_balance - expected
+        update_fields += ", closing_balance=:cb, difference=:diff, quebra_caixa=:qc"
+        params["cb"] = float(body.closing_balance)
+        params["diff"] = float(diff)
+        params["qc"] = float(diff)
+    await session.execute(t(f"""
+        UPDATE cash_sessions SET {update_fields} WHERE id=:sid AND association_id=:aid
+    """), params)
     await session.commit()
-    return {"ok": True}
+    return {"ok": True, "status": "conferido"}
 
 
 # ── Sangria Destinations ─────────────────────────────────────────────────────
