@@ -573,6 +573,7 @@ export default function PackagesPage() {
   const [filterQ, setFilterQ] = useState('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
+  const loadPackagesKeyRef = useRef(0)
 
   // Carriers & Deliverers
   const [carriers, setCarriers] = useState<{ id: string; name: string }[]>([])
@@ -1092,6 +1093,7 @@ export default function PackagesPage() {
   }, [])
 
   const loadPackages = async () => {
+    const key = ++loadPackagesKeyRef.current
     try {
       const params: Record<string, string> = {}
       if (filterStatus) params.status = filterStatus
@@ -1104,14 +1106,18 @@ export default function PackagesPage() {
           params: { q: filterQ.trim() || undefined, date_from: filterDateFrom || undefined, date_to: filterDateTo || undefined },
         }),
       ])
+      if (key !== loadPackagesKeyRef.current) return
       setPackages(res.data)
       setStatusCounts(cntRes.data)
     } catch {
-      toast.error('Erro ao carregar encomendas.')
+      if (key === loadPackagesKeyRef.current) toast.error('Erro ao carregar encomendas.')
     }
   }
 
-  useEffect(() => { loadPackages() }, [filterStatus, filterQ, filterDateFrom, filterDateTo])
+  useEffect(() => {
+    const t = setTimeout(loadPackages, filterQ ? 350 : 0)
+    return () => clearTimeout(t)
+  }, [filterStatus, filterQ, filterDateFrom, filterDateTo])
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
   useEffect(() => { if (showBulkReceive && bulkRxStep === 'add') setTimeout(() => brxBarcodeRef.current?.focus(), 200) }, [showBulkReceive, bulkRxStep])
 
