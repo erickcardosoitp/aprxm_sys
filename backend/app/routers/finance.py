@@ -393,15 +393,22 @@ async def list_open_sessions(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    from app.models.user import User
+    # Operators only see their own session; admin/conferente see all
+    if current.is_conferente:
+        where_extra = ""
+        params: dict = {"aid": str(current.association_id)}
+    else:
+        where_extra = "AND cs.opened_by = :uid"
+        params = {"aid": str(current.association_id), "uid": str(current.user_id)}
+
     result = await session.execute(
         text(
             "SELECT cs.id, cs.opened_by, cs.opening_balance, cs.opened_at, u.full_name "
             "FROM cash_sessions cs LEFT JOIN users u ON u.id = cs.opened_by "
-            "WHERE cs.association_id = :aid AND cs.status = 'open' "
+            f"WHERE cs.association_id = :aid AND cs.status = 'open' {where_extra} "
             "ORDER BY cs.opened_at DESC"
         ),
-        {"aid": str(current.association_id)},
+        params,
     )
     rows = result.fetchall()
     return [
@@ -484,17 +491,24 @@ async def register_transaction(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = FinanceService(session)
+    can_pick_session = current.is_conferente  # admin/conferente/superadmin can redirect to any session
     if body.cash_session_id:
+        if not can_pick_session:
+            raise HTTPException(status_code=403, detail="Sem permissão para registrar em outro caixa.")
         cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
     else:
         try:
             cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
             if cash.opened_by != current.user_id:
-                raise HTTPException(status_code=422, detail="NO_SESSION")
+                if can_pick_session:
+                    raise HTTPException(status_code=422, detail="NO_SESSION")
+                raise HTTPException(status_code=400, detail="Abra seu caixa antes de registrar transações.")
         except HTTPException:
             raise
         except Exception:
-            raise HTTPException(status_code=422, detail="NO_SESSION")
+            if can_pick_session:
+                raise HTTPException(status_code=422, detail="NO_SESSION")
+            raise HTTPException(status_code=400, detail="Abra seu caixa antes de registrar transações.")
     tx = await svc.register_transaction(
         association_id=current.association_id,
         cash_session_id=cash.id,
@@ -918,14 +932,15 @@ async def list_sessions(
                 ON t.cash_session_id = cs.id AND t.association_id = cs.association_id
             LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
             WHERE cs.association_id = :aid
+            {uid_filter}
             GROUP BY cs.id, cs.status, cs.opened_at, cs.closed_at,
                      cs.opening_balance, cs.closing_balance, cs.expected_balance,
                      cs.difference, u_open.full_name, u_close.full_name, u_review.full_name,
                      cs.origin, a.name, cs.quebra_caixa, cs.malote_sent_at, cs.manual_pix, cs.manual_dinheiro,
                      cs.manual_total_bruto, cs.manual_total_baixas
             ORDER BY cs.opened_at DESC
-        """),
-        {"aid": str(current.association_id)},
+        """.replace("{uid_filter}", "" if current.is_conferente else "AND cs.opened_by = :uid")),
+        {"aid": str(current.association_id)} if current.is_conferente else {"aid": str(current.association_id), "uid": str(current.user_id)},
     )
     rows = result.fetchall()
     return [

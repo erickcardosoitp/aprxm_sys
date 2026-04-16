@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { financeService } from '../../services/finance'
 import { settingsService } from '../../services/settings'
+import { useAuthStore } from '../../store/authStore'
 import { PhotoCapture } from '../packages/PhotoCapture'
 import type { AssociationSettings, TransactionCategory, PaymentMethod, Resident } from '../../types'
 
@@ -100,6 +101,9 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
 
 
 export function TransactionModal({ onClose, onSuccess }: Props) {
+  const role = useAuthStore((s) => s.role)
+  const canPickSession = role === 'admin' || role === 'superadmin' || role === 'conferente'
+
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
 
@@ -381,7 +385,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       try {
         await financeService.registerTransaction(txPayload)
       } catch (e: any) {
-        if (e.response?.data?.detail === 'NO_SESSION') {
+        if (e.response?.data?.detail === 'NO_SESSION' && canPickSession) {
           setSaving(false)
           try {
             const res = await financeService.listOpenSessions()
