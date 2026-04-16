@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, Barcode, Camera, FileText, MessageCircle, Package as PackageIcon, Plus,
-  Search, Shield, User, UserX, List, Columns, Workflow, X, ChevronDown, Layers,
+  Search, Shield, User, UserX, List, Columns, Workflow, X, ChevronDown, Layers, Truck, Pencil, Trash2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SignaturePad } from '../../components/packages/SignaturePad'
@@ -63,9 +63,10 @@ interface PackageDetailModalProps {
   onClose: () => void
   onDeliverClick: () => void
   onRefresh?: () => void
+  dependents?: { id: string; full_name: string; phone_primary?: string }[]
 }
 
-function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: PackageDetailModalProps) {
+function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh, dependents = [] }: PackageDetailModalProps) {
   const [events, setEvents] = useState<PackageEvent[]>([])
   const [newComment, setNewComment] = useState('')
   const [addingEvent, setAddingEvent] = useState(false)
@@ -170,11 +171,26 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh }: Package
 
           {/* Fields */}
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
+            <div className="col-span-2">
               <p className="text-xs text-gray-500">Destinatário</p>
               <p className="font-medium text-gray-800">{pkg.resident_name ?? '—'}</p>
               {pkg.resident_cpf && <p className="text-xs text-gray-400">CPF: {maskCpf(pkg.resident_cpf)}</p>}
               {pkg.resident_phone && <p className="text-xs text-gray-400">Tel: {pkg.resident_phone}</p>}
+              {(pkg.resident_address_street || pkg.resident_cep) && (
+                <p className="text-xs text-gray-400">
+                  {pkg.resident_address_street
+                    ? `${pkg.resident_address_street}${pkg.resident_address_number ? `, ${pkg.resident_address_number}` : ''}${pkg.resident_cep ? ` — CEP ${pkg.resident_cep}` : ''}`
+                    : `CEP: ${pkg.resident_cep}`}
+                </p>
+              )}
+              {dependents.length > 0 && (
+                <div className="mt-1">
+                  <p className="text-xs text-gray-400 font-medium">Dependentes:</p>
+                  {dependents.map((d: { id: string; full_name: string; phone_primary?: string }) => (
+                    <p key={d.id} className="text-xs text-gray-400">{d.full_name}{d.phone_primary ? ` · ${d.phone_primary}` : ''}</p>
+                  ))}
+                </div>
+              )}
             </div>
             {pkg.unit && (
               <div>
@@ -526,19 +542,110 @@ export default function PackagesPage() {
   const { fullName } = useAuthStore()
   const navigate = useNavigate()
   const [upgradedResidentInfo, setUpgradedResidentInfo] = useState<{ id: string; name: string } | null>(null)
+  const [pageTab, setPageTab] = useState<'encomendas' | 'cadastros'>('encomendas')
   const [packages, setPackages] = useState<Package[]>([])
   const [showReceive, setShowReceive] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
   const [loading, setLoading] = useState(false)
   const [filterStatus, setFilterStatus] = useState('')
+  const [filterOp, setFilterOp] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'esteira'>('list')
   const [detailPkg, setDetailPkg] = useState<Package | null>(null)
+  const [detailDependents, setDetailDependents] = useState<{ id: string; full_name: string; phone_primary?: string }[]>([])
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    if (detailPkg?.resident_id) {
+      api.get<{ id: string; full_name: string; phone_primary?: string }[]>(`/residents?responsible_id=${detailPkg.resident_id}`)
+        .then(r => setDetailDependents(r.data))
+        .catch(() => setDetailDependents([]))
+    } else {
+      setDetailDependents([])
+    }
+  }, [detailPkg?.resident_id])
 
   // Filters
   const [filterQ, setFilterQ] = useState('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
+
+  // Carriers & Deliverers
+  const [carriers, setCarriers] = useState<{ id: string; name: string }[]>([])
+  const [deliverers, setDeliverers] = useState<{ id: string; name: string; carrier_id: string | null; carrier_name: string | null }[]>([])
+  const [newCarrierName, setNewCarrierName] = useState('')
+  const [newDelivererName, setNewDelivererName] = useState('')
+  const [newDelivererCarrierId, setNewDelivererCarrierId] = useState('')
+  const [savingCarrier, setSavingCarrier] = useState(false)
+  const [savingDeliverer, setSavingDeliverer] = useState(false)
+  const [newDelivererSig, setNewDelivererSig] = useState('')
+  const [editDeliverer, setEditDeliverer] = useState<{ id: string; name: string; carrier_id: string | null; carrier_name: string | null; signature_url?: string | null } | null>(null)
+  const [editDelivererName, setEditDelivererName] = useState('')
+  const [editDelivererCarrierId, setEditDelivererCarrierId] = useState('')
+  const [editDelivererSig, setEditDelivererSig] = useState('')
+
+  const loadCadastros = async () => {
+    try {
+      const [rc, rd] = await Promise.all([api.get<{ id: string; name: string }[]>('/carriers'), api.get<{ id: string; name: string; carrier_id: string | null; carrier_name: string | null }[]>('/carriers/deliverers')])
+      setCarriers(rc.data)
+      setDeliverers(rd.data)
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => { if (pageTab === 'cadastros') loadCadastros() }, [pageTab])
+
+  const addCarrier = async () => {
+    if (!newCarrierName.trim()) return
+    setSavingCarrier(true)
+    try {
+      const r = await api.post<{ id: string; name: string }>('/carriers', { name: newCarrierName.trim() })
+      setCarriers(prev => [...prev, r.data].sort((a, b) => a.name.localeCompare(b.name)))
+      setNewCarrierName('')
+    } catch { toast.error('Erro ao cadastrar transportadora') } finally { setSavingCarrier(false) }
+  }
+
+  const removeCarrier = async (id: string) => {
+    await api.delete(`/carriers/${id}`)
+    setCarriers(prev => prev.filter(c => c.id !== id))
+  }
+
+  const addDeliverer = async () => {
+    if (!newDelivererName.trim()) return
+    if (!newDelivererSig) { toast.error('Assinatura do entregador é obrigatória.'); return }
+    setSavingDeliverer(true)
+    try {
+      const r = await api.post<{ id: string; name: string; carrier_id: string | null }>('/carriers/deliverers', {
+        name: newDelivererName.trim(),
+        carrier_id: newDelivererCarrierId || null,
+        signature_url: newDelivererSig,
+      })
+      setDeliverers(prev => [...prev, { ...r.data, carrier_name: carriers.find(c => c.id === newDelivererCarrierId)?.name ?? null, signature_url: newDelivererSig }].sort((a, b) => a.name.localeCompare(b.name)))
+      setNewDelivererName('')
+      setNewDelivererCarrierId('')
+      setNewDelivererSig('')
+    } catch { toast.error('Erro ao cadastrar entregador') } finally { setSavingDeliverer(false) }
+  }
+
+  const removeDeliverer = async (id: string) => {
+    await api.delete(`/carriers/deliverers/${id}`)
+    setDeliverers(prev => prev.filter(d => d.id !== id))
+  }
+
+  const saveEditDeliverer = async () => {
+    if (!editDeliverer) return
+    const sig = editDelivererSig || editDeliverer.signature_url
+    if (!sig) { toast.error('Assinatura do entregador é obrigatória.'); return }
+    await api.patch(`/carriers/deliverers/${editDeliverer.id}`, {
+      name: editDelivererName.trim(),
+      carrier_id: editDelivererCarrierId || null,
+      signature_url: sig,
+    })
+    setDeliverers(prev => prev.map(d => d.id === editDeliverer.id
+      ? { ...d, name: editDelivererName, carrier_id: editDelivererCarrierId || null, carrier_name: carriers.find(c => c.id === editDelivererCarrierId)?.name ?? null, signature_url: sig }
+      : d
+    ))
+    setEditDeliverer(null)
+    setEditDelivererSig('')
+  }
 
   // Reassign resident for "received" packages
   const [cardReassignPkgId, setCardReassignPkgId] = useState<string | null>(null)
@@ -741,6 +848,10 @@ export default function PackagesPage() {
   }
 
   const doAddToBulkRxQueue = (resident: Resident, tracking: string, photoUrls: { url: string; label: string; taken_at: string }[]) => {
+    if (carrierOpts.length > 0 && !brxCarrier) {
+      toast.error('Selecione a transportadora antes de continuar.')
+      return
+    }
     const entry: BulkRxItem = {
       id: crypto.randomUUID(),
       tracking_code: tracking,
@@ -754,6 +865,7 @@ export default function PackagesPage() {
     }
     setBulkRxQueue(q => [...q, entry])
     setBrxPending(null)
+    setBrxCarrier('')
     setBrxLastAdded(resident.full_name + (tracking ? ` · ${tracking}` : ''))
     setBrxTracking('')
     setBrxSearch('')
@@ -763,6 +875,7 @@ export default function PackagesPage() {
   }
 
   const requestBrxPhoto = (resident: Resident, tracking: string) => {
+    setBrxCarrier('')
     setBrxPending({ resident, tracking })
     setBrxTracking('')
     setBrxSearch('')
@@ -1055,7 +1168,9 @@ export default function PackagesPage() {
   }
 
   const pendingCount = packages.filter(p => p.status === 'received' || p.status === 'notified').length
-  const clearFilters = () => { setFilterQ(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterStatus('') }
+  const clearFilters = () => { setFilterQ(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterStatus(''); setFilterOp(null) }
+  const opNames = [...new Set(packages.map(p => p.received_by_name).filter(Boolean))] as string[]
+  const displayPackages = filterOp ? packages.filter(p => p.received_by_name === filterOp) : packages
 
   const PackageCard = ({ pkg }: { pkg: Package }) => (
     <div className="px-4 py-3 hover:bg-gray-50 cursor-pointer transition" onClick={() => setDetailPkg(pkg)}>
@@ -1075,7 +1190,11 @@ export default function PackagesPage() {
           )}
           <p className="text-xs text-gray-400">
             {new Date(pkg.received_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            {pkg.received_by_name && <span className="ml-1.5">· {pkg.received_by_name}</span>}
           </p>
+          {pkg.delivered_by_name && (
+            <p className="text-xs text-gray-400">Entregue por: {pkg.delivered_by_name}</p>
+          )}
           {/* Reassign resident — only for "received" */}
           {pkg.status === 'received' && (
             <div onClick={e => e.stopPropagation()} className="mt-1.5">
@@ -1104,6 +1223,9 @@ export default function PackagesPage() {
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
+          {pkg.received_by_name && (
+            <span className="text-[10px] text-gray-400 text-right leading-tight">Recebido por:<br /><span className="font-medium text-gray-600">{pkg.received_by_name}</span></span>
+          )}
           {(pkg.status === 'received' || pkg.status === 'notified' || pkg.status === 'reversed') && (
             <button onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? ''); setDeliveryPersonName(fullName ?? '') }} className="text-xs text-[#26619c] hover:underline">
               Entregar
@@ -1160,8 +1282,143 @@ export default function PackagesPage() {
         </div>
       </div>
 
+      {/* Page tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {(['encomendas', 'cadastros'] as const).map(t => (
+          <button key={t} onClick={() => setPageTab(t)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition -mb-px ${pageTab === t ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {t === 'encomendas' ? 'Encomendas' : 'Transportadoras e Entregadores'}
+          </button>
+        ))}
+      </div>
+
+      {pageTab === 'cadastros' && (
+        <div className="flex flex-col gap-6">
+          {/* Carriers */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
+            <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <Truck className="w-4 h-4 text-[#26619c]" /> Transportadoras
+            </h2>
+            <div className="flex gap-2">
+              <input value={newCarrierName} onChange={e => setNewCarrierName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCarrier()}
+                placeholder="Nome da transportadora" className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]" />
+              <button onClick={addCarrier} disabled={savingCarrier || !newCarrierName.trim()}
+                className="bg-[#26619c] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#1a4f87] disabled:opacity-50 transition flex items-center gap-1">
+                <Plus className="w-4 h-4" /> Adicionar
+              </button>
+            </div>
+            {carriers.length === 0
+              ? <p className="text-xs text-gray-400 text-center py-3">Nenhuma transportadora cadastrada.</p>
+              : <ul className="divide-y divide-gray-100">
+                  {carriers.map(c => (
+                    <li key={c.id} className="flex items-center justify-between py-2.5">
+                      <span className="text-sm text-gray-800">{c.name}</span>
+                      <button onClick={() => removeCarrier(c.id)} className="p-1.5 text-gray-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+            }
+          </div>
+
+          {/* Deliverers */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
+            <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <User className="w-4 h-4 text-[#26619c]" /> Entregadores
+            </h2>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input value={newDelivererName} onChange={e => setNewDelivererName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addDeliverer()}
+                  placeholder="Nome do entregador" className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]" />
+                <select value={newDelivererCarrierId} onChange={e => setNewDelivererCarrierId(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 bg-white focus:outline-none focus:ring-2 focus:ring-[#26619c]/30">
+                  <option value="">Transportadora (opcional)</option>
+                  {carriers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Assinatura <span className="text-red-500">*</span></label>
+                {newDelivererSig
+                  ? <div className="flex items-center gap-3">
+                      <img src={newDelivererSig} alt="assinatura" className="h-14 border border-gray-200 rounded-lg bg-white object-contain px-2" />
+                      <button onClick={() => setNewDelivererSig('')} className="text-xs text-red-500 hover:underline">Refazer</button>
+                    </div>
+                  : <SignaturePad label="Assinatura do entregador" onSave={setNewDelivererSig} onClear={() => setNewDelivererSig('')}
+                      onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')} />
+                }
+              </div>
+              <button onClick={addDeliverer} disabled={savingDeliverer || !newDelivererName.trim() || !newDelivererSig}
+                className="self-end bg-[#26619c] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#1a4f87] disabled:opacity-50 transition flex items-center gap-1">
+                <Plus className="w-4 h-4" /> Adicionar
+              </button>
+            </div>
+            {deliverers.length === 0
+              ? <p className="text-xs text-gray-400 text-center py-3">Nenhum entregador cadastrado.</p>
+              : <ul className="divide-y divide-gray-100">
+                  {deliverers.map(d => (
+                    <li key={d.id} className="py-2.5">
+                      {editDeliverer?.id === d.id ? (
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <input value={editDelivererName} onChange={e => setEditDelivererName(e.target.value)}
+                              className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30" />
+                            <select value={editDelivererCarrierId} onChange={e => setEditDelivererCarrierId(e.target.value)}
+                              className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-600 bg-white focus:outline-none">
+                              <option value="">Sem transportadora</option>
+                              {carriers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Assinatura</label>
+                            {(editDelivererSig || editDeliverer?.signature_url)
+                              ? <div className="flex items-center gap-3">
+                                  <img src={editDelivererSig || editDeliverer?.signature_url!} alt="assinatura" className="h-12 border border-gray-200 rounded-lg bg-white object-contain px-2" />
+                                  <button onClick={() => setEditDelivererSig('')} className="text-xs text-red-500 hover:underline">Trocar</button>
+                                </div>
+                              : <SignaturePad label="Nova assinatura" onSave={setEditDelivererSig} onClear={() => setEditDelivererSig('')}
+                                  onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')} />
+                            }
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => { setEditDeliverer(null); setEditDelivererSig('') }} className="text-xs text-gray-500 px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50">Cancelar</button>
+                            <button onClick={saveEditDeliverer} className="text-xs text-white bg-[#26619c] px-3 py-1 rounded-lg hover:bg-[#1a4f87]">Salvar</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {(d as any).signature_url && (
+                              <img src={(d as any).signature_url} alt="" className="h-10 w-16 border border-gray-200 rounded bg-white object-contain px-1 shrink-0" />
+                            )}
+                            <div>
+                              <p className="text-sm text-gray-800">{d.name}</p>
+                              {d.carrier_name && <p className="text-xs text-gray-400">{d.carrier_name}</p>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => { setEditDeliverer(d as any); setEditDelivererName(d.name); setEditDelivererCarrierId(d.carrier_id ?? ''); setEditDelivererSig('') }}
+                              className="p-1.5 text-gray-300 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition">
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => removeDeliverer(d.id)} className="p-1.5 text-gray-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+            }
+          </div>
+        </div>
+      )}
+
       {/* Filter bar */}
-      <div className="flex flex-col gap-2">
+      {pageTab === 'encomendas' && <div className="flex flex-col gap-2">
         <div className="flex gap-2 items-center">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1172,7 +1429,7 @@ export default function PackagesPage() {
               className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
             />
           </div>
-          {(filterQ || filterDateFrom || filterDateTo || filterStatus) && (
+          {(filterQ || filterDateFrom || filterDateTo || filterStatus || filterOp) && (
             <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 shrink-0">
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1196,6 +1453,14 @@ export default function PackagesPage() {
           />
         </div>
 
+        {opNames.length > 0 && (
+          <select value={filterOp ?? ''} onChange={e => setFilterOp(e.target.value || null)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-600 bg-white focus:outline-none focus:ring-2 focus:ring-[#26619c]/30">
+            <option value="">Todos — Recebido por</option>
+            {opNames.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        )}
+
         {/* Status pills — only in list view */}
         {viewMode === 'list' && (
           <div className="flex gap-2 overflow-x-auto pb-1">
@@ -1211,15 +1476,15 @@ export default function PackagesPage() {
             })}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* List View */}
-      {viewMode === 'list' && (
+      {pageTab === 'encomendas' && viewMode === 'list' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          {packages.length === 0
+          {displayPackages.length === 0
             ? <div className="p-8 text-center text-gray-400 text-sm">Nenhuma encomenda encontrada.</div>
             : <ul className="divide-y divide-gray-100">
-                {packages.map((pkg) => (
+                {displayPackages.map((pkg) => (
                   <li key={pkg.id}><PackageCard pkg={pkg} /></li>
                 ))}
               </ul>
@@ -1228,10 +1493,10 @@ export default function PackagesPage() {
       )}
 
       {/* Kanban View */}
-      {viewMode === 'kanban' && (
+      {pageTab === 'encomendas' && viewMode === 'kanban' && (
         <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4">
           {KANBAN_STATUSES.map(status => {
-            const col = packages.filter(p => p.status === status)
+            const col = displayPackages.filter(p => p.status === status)
             return (
               <div key={status} className="shrink-0 w-64 sm:w-72 flex flex-col gap-2">
                 <div className="flex items-center justify-between">
@@ -1272,7 +1537,7 @@ export default function PackagesPage() {
       )}
 
       {/* Esteira View */}
-      {viewMode === 'esteira' && (
+      {pageTab === 'encomendas' && viewMode === 'esteira' && (
         <div className="flex flex-col gap-3">
           <div className="flex gap-2 overflow-x-auto pb-1">
             {(['', 'received', 'notified', 'delivered', 'returned'] as const).map((s) => (
@@ -2085,8 +2350,22 @@ export default function PackagesPage() {
                           <p className="text-sm font-semibold text-blue-900">{brxPending.resident.full_name}</p>
                           {brxPending.tracking && <p className="text-xs font-mono text-blue-600 mt-0.5">{brxPending.tracking}</p>}
                         </div>
-                        <button onClick={() => { setBrxPending(null); setTimeout(() => brxBarcodeRef.current?.focus(), 50) }}
+                        <button onClick={() => { setBrxPending(null); setBrxCarrier(''); setTimeout(() => brxBarcodeRef.current?.focus(), 50) }}
                           className="text-xs text-blue-400 hover:text-blue-600">Cancelar</button>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-blue-800 mb-1">Transportadora <span className="text-red-500">*</span></label>
+                        {carrierOpts.length > 0 ? (
+                          <select value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
+                            className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400/40">
+                            <option value="">— Selecione —</option>
+                            {carrierOpts.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                          </select>
+                        ) : (
+                          <input value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
+                            className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+                            placeholder="Correios, Mercado Envios…" />
+                        )}
                       </div>
                       <PhotoCapture
                         label="Foto da Etiqueta *"
@@ -2095,21 +2374,6 @@ export default function PackagesPage() {
                       />
                     </div>
                   )}
-
-                  {/* Carrier — persists across items */}
-                  <div className="flex gap-2 items-center">
-                    <label className="text-xs text-gray-500 shrink-0 w-20">Transportadora</label>
-                    {carrierOpts.length > 0 ? (
-                      <select value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
-                        className={`${inputCls} flex-1 bg-white`}>
-                        <option value="">— Selecione —</option>
-                        {carrierOpts.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                      </select>
-                    ) : (
-                      <input value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
-                        className={`${inputCls} flex-1`} placeholder="Correios, Mercado Envios…" />
-                    )}
-                  </div>
 
                   {/* Barcode — primary focus target */}
                   <div className="flex gap-2">
@@ -2271,7 +2535,10 @@ export default function PackagesPage() {
                             <span className="text-xs font-bold text-gray-300 shrink-0 w-5">{i + 1}</span>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-800 truncate">{item.resident_name}</p>
-                              {item.tracking_code && <p className="text-xs text-gray-400 font-mono truncate">{item.tracking_code}</p>}
+                              <p className="text-xs text-gray-400 truncate">
+                                {item.carrier_name || <span className="text-amber-500">Sem transportadora</span>}
+                                {item.tracking_code ? ` · ${item.tracking_code}` : ''}
+                              </p>
                             </div>
                             <button onClick={() => setBulkRxQueue(q => q.filter(x => x.id !== item.id))}
                               className="text-gray-300 hover:text-red-500 shrink-0 transition"><X className="w-4 h-4" /></button>
@@ -2428,6 +2695,7 @@ export default function PackagesPage() {
           pkg={detailPkg}
           onClose={() => setDetailPkg(null)}
           onRefresh={loadPackages}
+          dependents={detailDependents}
           onDeliverClick={() => {
             setDeliveryTarget(detailPkg)
             setRecipientName(detailPkg.resident_name ?? '')

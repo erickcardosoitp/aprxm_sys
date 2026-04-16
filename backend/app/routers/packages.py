@@ -242,62 +242,86 @@ async def list_packages(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    stmt = (
-        select(Package, Resident)
-        .outerjoin(Resident, Package.resident_id == Resident.id)
-        .where(Package.association_id == current.association_id)
-    )
+    from sqlalchemy import text as sa_text
+    filters = ["p.association_id = :aid"]
+    params: dict = {"aid": str(current.association_id)}
     if status:
-        stmt = stmt.where(Package.status == status)
+        filters.append("p.status = :status")
+        params["status"] = status.value if hasattr(status, "value") else status
     if date_from:
-        from datetime import datetime as dt
-        stmt = stmt.where(Package.received_at >= dt.fromisoformat(date_from))
+        filters.append("p.received_at >= :date_from")
+        params["date_from"] = date_from
     if date_to:
-        from datetime import datetime as dt
-        stmt = stmt.where(Package.received_at <= dt.fromisoformat(date_to))
-    stmt = stmt.order_by(Package.received_at.desc())
-    result = await session.execute(stmt)
-    rows = result.all()
+        filters.append("p.received_at <= :date_to")
+        params["date_to"] = date_to
+    where_clause = " AND ".join(filters)
+    result = await session.execute(
+        sa_text(f"""
+            SELECT p.id, p.status, p.unit, p.block, p.carrier_name, p.tracking_code,
+                   p.has_delivery_fee, p.delivery_fee_amount, p.received_at,
+                   p.resident_id, p.photo_urls, p.notes, p.object_type,
+                   p.sender_name, p.delivered_to_name, p.delivered_to_cpf,
+                   p.deliverer_name, p.signature_url, p.deliverer_signature_url,
+                   p.delivered_at, p.proof_of_residence_url,
+                   r.full_name AS resident_name, r.cpf AS resident_cpf,
+                   r.type AS resident_type, r.address_cep AS resident_cep,
+                   r.phone_primary AS resident_phone,
+                   r.address_street AS resident_address_street,
+                   r.address_number AS resident_address_number,
+                   u_rec.full_name AS received_by_name,
+                   u_del.full_name AS delivered_by_name
+            FROM packages p
+            LEFT JOIN residents r ON r.id = p.resident_id
+            LEFT JOIN users u_rec ON u_rec.id = p.received_by
+            LEFT JOIN users u_del ON u_del.id = p.delivered_by
+            WHERE {where_clause}
+            ORDER BY p.received_at DESC
+        """),
+        params,
+    )
+    rows = result.fetchall()
     out = []
-    for p, r in rows:
-        rname = r.full_name if r else None
-        rcpf = r.cpf if r else None
-        rcep = r.address_cep if r else None
-        if q and not (q.lower() in (rname or "").lower() or q.lower() in (p.tracking_code or "").lower()):
+    for row in rows:
+        rname = row[21]
+        rcpf = row[22]
+        rcep = row[24]
+        if q and not (q.lower() in (rname or "").lower() or q.lower() in (row[5] or "").lower()):
             continue
         if cpf and (rcpf or "").replace(".", "").replace("-", "") != cpf.replace(".", "").replace("-", ""):
             continue
         if cep and (rcep or "").replace("-", "") != cep.replace("-", ""):
             continue
         out.append({
-            "id": str(p.id),
-            "status": p.status,
-            "unit": p.unit,
-            "block": p.block,
-            "carrier_name": p.carrier_name,
-            "tracking_code": p.tracking_code,
-            "has_delivery_fee": p.has_delivery_fee,
-            "delivery_fee_amount": str(p.delivery_fee_amount) if p.delivery_fee_amount else None,
-            "received_at": str(p.received_at),
-            "resident_id": str(p.resident_id) if p.resident_id else None,
+            "id": str(row[0]),
+            "status": row[1],
+            "unit": row[2],
+            "block": row[3],
+            "carrier_name": row[4],
+            "tracking_code": row[5],
+            "has_delivery_fee": row[6],
+            "delivery_fee_amount": str(row[7]) if row[7] else None,
+            "received_at": str(row[8]),
+            "resident_id": str(row[9]) if row[9] else None,
+            "photo_urls": row[10] or [],
+            "notes": row[11],
+            "object_type": row[12],
+            "sender_name": row[13],
+            "delivered_to_name": row[14],
+            "delivered_to_cpf": row[15],
+            "deliverer_name": row[16],
+            "signature_url": row[17],
+            "deliverer_signature_url": row[18],
+            "delivered_at": str(row[19]) if row[19] else None,
+            "proof_of_residence_url": row[20],
             "resident_name": rname,
             "resident_cpf": rcpf,
-            "resident_type": r.type if r else None,
+            "resident_type": row[23],
             "resident_cep": rcep,
-            "resident_phone": r.phone_primary if r else None,
-            "resident_address_street": r.address_street if r else None,
-            "resident_address_number": r.address_number if r else None,
-            "photo_urls": p.photo_urls or [],
-            "notes": p.notes,
-            "object_type": p.object_type,
-            "sender_name": p.sender_name,
-            "delivered_to_name": p.delivered_to_name,
-            "delivered_to_cpf": p.delivered_to_cpf,
-            "deliverer_name": p.deliverer_name,
-            "signature_url": p.signature_url,
-            "proof_of_residence_url": getattr(p, 'proof_of_residence_url', None),
-            "deliverer_signature_url": p.deliverer_signature_url,
-            "delivered_at": str(p.delivered_at) if p.delivered_at else None,
+            "resident_phone": row[25],
+            "resident_address_street": row[26],
+            "resident_address_number": row[27],
+            "received_by_name": row[28],
+            "delivered_by_name": row[29],
         })
     return out
 

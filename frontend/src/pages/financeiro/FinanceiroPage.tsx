@@ -38,6 +38,8 @@ interface Tx {
   is_reversal?: boolean
   reversal_of_id?: string
   reversed_at?: string
+  payment_method_name?: string | null
+  created_by_name?: string | null
 }
 
 interface Session {
@@ -361,6 +363,7 @@ export default function FinanceiroPage() {
 
   const [movSubTab, setMovSubTab] = useState<'entradas' | 'saidas'>('entradas')
   const [movSubtypeFilter, setMovSubtypeFilter] = useState<string | null>(null)
+  const [txFilterOp, setTxFilterOp] = useState<string | null>(null)
 
   useEffect(() => {
     api.get<{ association_name?: string }>('/settings/association').then(r => {
@@ -397,8 +400,8 @@ export default function FinanceiroPage() {
 
   const loadOpenSession = async () => {
     try {
-      const res = await api.get<{ id: string }>('/finance/sessions/current')
-      setOpenSession(res.data)
+      const res = await api.get<{ id: string; is_mine?: boolean; opened_by: string; opened_by_name?: string }>('/finance/sessions/current')
+      setOpenSession(res.data.is_mine ? res.data : null)
     } catch {
       setOpenSession(null)
     }
@@ -1221,7 +1224,9 @@ export default function FinanceiroPage() {
         const entradas = filterByPeriod(transactions.filter(t => t.type === 'income' && !t.is_reversal))
         const saidas = filterByPeriod(transactions.filter(t => t.type !== 'income'))
         const baseRows = movSubTab === 'entradas' ? entradas : saidas
-        const rows = movSubtypeFilter ? baseRows.filter(t => t.income_subtype === movSubtypeFilter) : baseRows
+        const opRows = txFilterOp ? baseRows.filter(t => t.created_by_name === txFilterOp) : baseRows
+        const rows = movSubtypeFilter ? opRows.filter(t => t.income_subtype === movSubtypeFilter) : opRows
+        const opNames = [...new Set(baseRows.map(t => t.created_by_name).filter(Boolean))] as string[]
         const totalEntradas = entradas.reduce((s, t) => s + parseFloat(t.amount), 0)
         const totalSaidas = saidas.reduce((s, t) => s + parseFloat(t.amount), 0)
         return (
@@ -1275,6 +1280,13 @@ export default function FinanceiroPage() {
                   )}
                 </div>
               )}
+              {opNames.length > 0 && (
+                <select value={txFilterOp ?? ''} onChange={e => setTxFilterOp(e.target.value || null)}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 bg-white">
+                  <option value="">Todos os operadores</option>
+                  {opNames.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              )}
             </div>
 
             {/* List */}
@@ -1294,9 +1306,9 @@ export default function FinanceiroPage() {
                               {SUBTYPE_LABELS[t.income_subtype] ?? t.income_subtype}
                             </span>
                           )}
-                          {(t as any).payment_method_name && (
+                          {t.payment_method_name && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
-                              {(t as any).payment_method_name}
+                              {t.payment_method_name}
                             </span>
                           )}
                           {t.reversed_at && (
@@ -1306,7 +1318,10 @@ export default function FinanceiroPage() {
                         <p className={`text-sm font-medium truncate ${t.reversed_at ? 'line-through text-gray-400' : 'text-gray-800'}`}>
                           {t.is_sangria ? '🔒 ' : ''}{parseTxName(t.description, t.income_subtype)}
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5">{fmtDate(t.transaction_at)}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {fmtDate(t.transaction_at)}
+                          {t.created_by_name && <span className="ml-1.5 text-[10px] text-gray-400">· {t.created_by_name}</span>}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-sm font-bold ${t.reversed_at ? 'line-through text-gray-400' : movSubTab === 'entradas' ? 'text-green-600' : 'text-red-600'}`}>{fmt(t.amount)}</span>
@@ -2487,7 +2502,7 @@ export default function FinanceiroPage() {
 
       {/* ── MODAL EDIÇÃO DE LANÇAMENTO ── */}
       {editTarget && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">Corrigir Lançamento</h3>

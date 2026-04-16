@@ -263,6 +263,7 @@ async def list_residents(
     status: ResidentStatus | None = None,
     type: ResidentType | None = None,
     q: str | None = None,
+    responsible_id: UUID | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
@@ -271,6 +272,8 @@ async def list_residents(
         stmt = stmt.where(Resident.status == status)
     if type:
         stmt = stmt.where(Resident.type == type)
+    if responsible_id:
+        stmt = stmt.where(Resident.responsible_id == responsible_id)
     if q:
         q_digits = ''.join(c for c in q if c.isdigit())
         filters = [Resident.full_name.ilike(f"%{q}%")]

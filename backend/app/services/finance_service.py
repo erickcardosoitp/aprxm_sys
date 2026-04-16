@@ -119,7 +119,9 @@ class FinanceService:
         notes: str | None = None,
         reviewed_by: UUID | None = None,
     ) -> CashSession:
-        session = await self.get_open_session(association_id)
+        session = await self.get_open_session(association_id, preferred_by=closed_by)
+        if session.opened_by != closed_by:
+            raise CashSessionError("Você só pode fechar o seu próprio caixa.")
 
         expected, bruto, baixas = await self._compute_expected_balance(session)
         liquido = bruto - baixas
@@ -284,7 +286,9 @@ class FinanceService:
         if not receipt_photo_url:
             raise CashSessionError("Foto do recibo é obrigatória para realizar uma sangria.")
 
-        session = await self.get_open_session(association_id)
+        session = await self.get_open_session(association_id, preferred_by=opened_by)
+        if session.opened_by != opened_by:
+            raise CashSessionError("Você só pode realizar sangria no seu próprio caixa.")
 
         tx = Transaction(
             association_id=association_id,

@@ -367,7 +367,14 @@ async def current_session(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = FinanceService(session)
-    cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
+    try:
+        cash = await svc.get_open_session(
+            current.association_id, preferred_by=current.user_id
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Nenhuma sessão de caixa aberta.")
+    if cash.opened_by != current.user_id:
+        raise HTTPException(status_code=404, detail="Nenhuma sessão de caixa aberta.")
     from app.models.user import User
     opener = await session.get(User, cash.opened_by)
     return {
@@ -377,6 +384,7 @@ async def current_session(
         "opened_at": str(cash.opened_at),
         "opened_by": str(cash.opened_by),
         "opened_by_name": opener.full_name if opener else None,
+        "is_mine": True,
     }
 
 
@@ -448,6 +456,8 @@ async def register_transaction(
 ) -> dict:
     svc = FinanceService(session)
     cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
+    if cash.opened_by != current.user_id:
+        raise HTTPException(status_code=400, detail="Abra seu caixa antes de registrar transações.")
     tx = await svc.register_transaction(
         association_id=current.association_id,
         cash_session_id=cash.id,
@@ -688,34 +698,44 @@ async def list_transactions(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    svc = FinanceService(session)
-    txs = await svc.list_transactions(current.association_id, session_id)
-    # Fetch payment method names in one query
-    pm_ids = {t.payment_method_id for t in txs if t.payment_method_id}
-    pm_map: dict = {}
-    if pm_ids:
-        from sqlmodel import select as sqlmodel_select
-        pm_result = await session.execute(
-            sqlmodel_select(PaymentMethod).where(PaymentMethod.id.in_(pm_ids))
-        )
-        pm_map = {pm.id: pm.name for pm in pm_result.scalars().all()}
-
+    filters = "t.association_id = :aid"
+    params: dict = {"aid": str(current.association_id)}
+    if session_id:
+        filters += " AND t.cash_session_id = :sid"
+        params["sid"] = str(session_id)
+    result = await session.execute(
+        text(f"""
+            SELECT t.id, t.type, t.income_subtype, t.amount, t.description,
+                   t.transaction_at, t.is_sangria, t.approval_status,
+                   t.is_reversal, t.reversed_at, t.payment_method_id,
+                   pm.name AS payment_method_name,
+                   u.full_name AS created_by_name
+            FROM transactions t
+            LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+            LEFT JOIN users u ON u.id = t.created_by
+            WHERE {filters}
+            ORDER BY t.transaction_at DESC
+        """),
+        params,
+    )
+    rows = result.fetchall()
     return [
         {
-            "id": str(t.id),
-            "type": t.type,
-            "income_subtype": t.income_subtype,
-            "amount": str(t.amount),
-            "description": t.description,
-            "transaction_at": str(t.transaction_at),
-            "is_sangria": t.is_sangria,
-            "approval_status": t.approval_status,
-            "is_reversal": t.is_reversal,
-            "reversed_at": str(t.reversed_at) if t.reversed_at else None,
-            "payment_method_id": str(t.payment_method_id) if t.payment_method_id else None,
-            "payment_method_name": pm_map.get(t.payment_method_id) if t.payment_method_id else None,
+            "id": str(r[0]),
+            "type": r[1],
+            "income_subtype": r[2],
+            "amount": str(r[3]),
+            "description": r[4],
+            "transaction_at": str(r[5]),
+            "is_sangria": r[6],
+            "approval_status": r[7],
+            "is_reversal": r[8],
+            "reversed_at": str(r[9]) if r[9] else None,
+            "payment_method_id": str(r[10]) if r[10] else None,
+            "payment_method_name": r[11],
+            "created_by_name": r[12],
         }
-        for t in txs
+        for r in rows
     ]
 
 

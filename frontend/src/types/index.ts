@@ -174,6 +174,8 @@ export interface Package {
   signature_url?: string
   proof_of_residence_url?: string
   deliverer_signature_url?: string
+  received_by_name?: string | null
+  delivered_by_name?: string | null
 }
 
 export interface PackageEvent {

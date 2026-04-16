@@ -724,8 +724,11 @@ export function CashSessionPanel({ session, onRefresh, canConferencia = true }: 
     }
   }
 
-  // ── Caixa fechado ─────────────────────────────────────────────────────────
-  if (!session) {
+  const mySession = session && session.opened_by === userId
+  const otherSession = session && session.opened_by !== userId
+
+  // ── Caixa fechado ou pertence a outro operador ─────────────────────────────
+  if (!session || otherSession) {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="bg-gray-50 px-5 py-4 border-b border-gray-100">
@@ -733,7 +736,9 @@ export function CashSessionPanel({ session, onRefresh, canConferencia = true }: 
             <DollarSign className="w-4 h-4 text-gray-400" />
             Frente de Caixa
           </h2>
-          <p className="text-xs text-gray-400 mt-0.5">Nenhuma sessão ativa</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {otherSession ? `Caixa aberto por ${session!.opened_by_name ?? 'outro operador'}` : 'Nenhuma sessão ativa'}
+          </p>
         </div>
 
         <div className="p-5 flex flex-col gap-4">
