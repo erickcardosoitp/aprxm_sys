@@ -756,8 +756,13 @@ export default function PackagesPage() {
   const [proofResidenceUrl, setProofResidenceUrl] = useState('')
   const [recipientIdPhoto, setRecipientIdPhoto] = useState('')
   const [deliveryPersonName, setDeliveryPersonName] = useState('')
-  const [isThirdParty, setIsThirdParty] = useState(false)
-  const [ownerIdPhoto, setOwnerIdPhoto] = useState('')
+  const [pickupType, setPickupType] = useState<'resident' | 'dependent' | 'other'>('resident')
+  const [dependents, setDependents] = useState<{ id: string; full_name: string }[]>([])
+  const [selectedDependent, setSelectedDependent] = useState<{ id: string; full_name: string } | null>(null)
+  const [addingDependent, setAddingDependent] = useState(false)
+  const [newDepName, setNewDepName] = useState('')
+  const [newDepPhone, setNewDepPhone] = useState('')
+  const [savingDep, setSavingDep] = useState(false)
   const [pickerIdPhoto, setPickerIdPhoto] = useState('')
   const [pickerPhone, setPickerPhone] = useState('')
   const [deliveryPaymentMethodId, setDeliveryPaymentMethodId] = useState('')
@@ -1201,14 +1206,13 @@ export default function PackagesPage() {
     const base: DeliverPayload = pendingDeliveryPayload ?? {
       delivered_to_name: recipientName,
       signature_url: recipientSig,
-      delivered_to_resident_id: deliveryTarget.resident_id,
+      delivered_to_resident_id: pickupType === 'dependent' ? selectedDependent?.id : deliveryTarget.resident_id,
       proof_of_residence_url: proofResidenceUrl || undefined,
       recipient_id_photo_url: recipientIdPhoto || undefined,
       delivery_person_name: deliveryPersonName || fullName || undefined,
-      third_party_pickup: isThirdParty,
-      owner_id_photo_url: ownerIdPhoto || undefined,
-      picker_id_photo_url: pickerIdPhoto || undefined,
-      picker_phone: pickerPhone.trim() || undefined,
+      third_party_pickup: pickupType === 'other',
+      picker_id_photo_url: pickupType === 'other' ? pickerIdPhoto || undefined : undefined,
+      picker_phone: pickupType === 'other' ? pickerPhone.trim() || undefined : undefined,
       payment_method_id: deliveryPaymentMethodId || undefined,
     }
     const payload: DeliverPayload = cash_session_id ? { ...base, cash_session_id } : base
@@ -1252,16 +1256,16 @@ export default function PackagesPage() {
     const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
     if (!recipientName || !recipientSig) { toast.error('Nome e assinatura do recebedor obrigatórios.'); return }
     if (isGuest && !deliveryPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
-    if (isThirdParty && !ownerIdPhoto) { toast.error('Identidade do dono da encomenda obrigatória.'); return }
-    if (isThirdParty && !pickerIdPhoto) { toast.error('Identidade de quem está retirando obrigatória.'); return }
-    if (isThirdParty && !pickerPhone.trim()) { toast.error('Telefone de contato obrigatório.'); return }
+    if (pickupType === 'dependent' && !selectedDependent) { toast.error('Selecione um dependente.'); return }
+    if (pickupType === 'other' && !pickerIdPhoto) { toast.error('Documento de identificação obrigatório para retirada por terceiros.'); return }
     await doDeliver()
   }
 
   const resetDelivery = () => {
     setRecipientName(''); setRecipientSig('')
     setProofResidenceUrl(''); setRecipientIdPhoto(''); setDeliveryPersonName('')
-    setIsThirdParty(false); setOwnerIdPhoto(''); setPickerIdPhoto(''); setPickerPhone('')
+    setPickupType('resident'); setDependents([]); setSelectedDependent(null)
+    setAddingDependent(false); setNewDepName(''); setNewDepPhone(''); setPickerIdPhoto(''); setPickerPhone('')
     setDeliveryPaymentMethodId(''); setShowUpgrade(false); setUpgradeCpf(''); setUpgradedResidentInfo(null)
   }
 
@@ -2091,24 +2095,101 @@ export default function PackagesPage() {
             })()}
 
             <div className="p-5 flex flex-col gap-4">
-              {/* Third-party toggle */}
+              {/* Pickup type selector */}
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <p className="text-xs font-semibold text-amber-900 mb-2 flex items-center gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                   Quem está retirando?
                 </p>
                 <div className="flex gap-2">
-                  <button type="button"
-                    onClick={() => setIsThirdParty(false)}
-                    className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${!isThirdParty ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600'}`}>
-                    O próprio morador
-                  </button>
-                  <button type="button"
-                    onClick={() => setIsThirdParty(true)}
-                    className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${isThirdParty ? 'bg-amber-500 text-white border-amber-500' : 'border-gray-300 text-gray-600'}`}>
-                    Outra pessoa
-                  </button>
+                  {(['resident', 'dependent', 'other'] as const).map(t => (
+                    <button key={t} type="button"
+                      onClick={async () => {
+                        setPickupType(t)
+                        setSelectedDependent(null)
+                        setAddingDependent(false)
+                        if (t === 'resident') {
+                          setRecipientName(deliveryTarget?.resident_name ?? '')
+                        } else if (t === 'dependent') {
+                          setRecipientName('')
+                          if (deliveryTarget?.resident_id) {
+                            try {
+                              const r = await api.get<{ id: string; full_name: string }[]>('/residents', { params: { responsible_id: deliveryTarget.resident_id } })
+                              setDependents(r.data)
+                            } catch { setDependents([]) }
+                          }
+                        } else {
+                          setRecipientName('')
+                        }
+                      }}
+                      className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${
+                        pickupType === t
+                          ? t === 'other' ? 'bg-amber-500 text-white border-amber-500' : 'bg-[#26619c] text-white border-[#26619c]'
+                          : 'border-gray-300 text-gray-600'
+                      }`}>
+                      {t === 'resident' ? 'Morador' : t === 'dependent' ? 'Dependente' : 'Outra pessoa'}
+                    </button>
+                  ))}
                 </div>
+
+                {/* Dependent selector */}
+                {pickupType === 'dependent' && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    {dependents.length > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        {dependents.map(d => (
+                          <button key={d.id} type="button"
+                            onClick={() => { setSelectedDependent(d); setRecipientName(d.full_name) }}
+                            className={`text-left px-3 py-2 rounded-lg border text-xs transition ${selectedDependent?.id === d.id ? 'border-[#26619c] bg-blue-50 font-semibold text-[#26619c]' : 'border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                            {d.full_name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">Nenhum dependente cadastrado.</p>
+                    )}
+                    {!addingDependent ? (
+                      <button type="button" onClick={() => setAddingDependent(true)}
+                        className="text-xs text-[#26619c] underline self-start mt-1">
+                        + Cadastrar dependente
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-2 mt-1 border border-dashed border-gray-300 rounded-xl p-3">
+                        <p className="text-xs font-medium text-gray-700">Novo dependente</p>
+                        <input value={newDepName} onChange={e => setNewDepName(e.target.value)}
+                          className={inputCls} placeholder="Nome completo *" />
+                        <input value={newDepPhone} onChange={e => setNewDepPhone(e.target.value)}
+                          className={inputCls} placeholder="Telefone" type="tel" />
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => { setAddingDependent(false); setNewDepName(''); setNewDepPhone('') }}
+                            className="flex-1 border border-gray-300 text-gray-600 py-1.5 rounded-lg text-xs">Cancelar</button>
+                          <button type="button" disabled={savingDep || !newDepName.trim()}
+                            onClick={async () => {
+                              if (!deliveryTarget?.resident_id || !newDepName.trim()) return
+                              setSavingDep(true)
+                              try {
+                                const r = await api.post<{ id: string; full_name: string }>('/residents', {
+                                  full_name: newDepName.trim(),
+                                  phone_primary: newDepPhone.trim() || undefined,
+                                  type: 'member',
+                                  responsible_id: deliveryTarget.resident_id,
+                                })
+                                const dep = { id: r.data.id, full_name: r.data.full_name }
+                                setDependents(prev => [...prev, dep])
+                                setSelectedDependent(dep)
+                                setRecipientName(dep.full_name)
+                                setAddingDependent(false); setNewDepName(''); setNewDepPhone('')
+                              } catch (e: any) { toast.error(apiErr(e, 'Erro ao cadastrar dependente.')) }
+                              finally { setSavingDep(false) }
+                            }}
+                            className="flex-1 bg-[#26619c] text-white py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50">
+                            {savingDep ? '…' : 'Salvar'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Proof of residence — obrigatório p/ visitante ou terceiro */}
@@ -2130,8 +2211,8 @@ export default function PackagesPage() {
                 )
               })()}
 
-              {/* Third-party extra docs */}
-              {isThirdParty && (
+              {/* Other-person extra docs */}
+              {pickupType === 'other' && (
                 <div className="rounded-xl border border-amber-200 overflow-hidden">
                   <div className="bg-amber-500 px-4 py-2.5 flex items-center gap-2">
                     <Shield className="w-4 h-4 text-white" />
@@ -2140,18 +2221,7 @@ export default function PackagesPage() {
                   <div className="p-4 flex flex-col gap-4">
                     <div>
                       <p className="text-xs font-semibold text-gray-700 mb-2">
-                        Identidade do dono da encomenda (xerox ou PDF) <span className="text-red-500">*</span>
-                      </p>
-                      <PhotoCapture
-                        label="RG/CNH do morador dono"
-                        onCapture={entry => setOwnerIdPhoto(entry.url)}
-                        onUpload={file => uploadService.uploadFile(file, 'packages/ids')}
-                      />
-                      {ownerIdPhoto && <p className="text-xs text-green-600 mt-1">✓ Documento registrado</p>}
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-gray-700 mb-2">
-                        Identidade de quem está retirando <span className="text-red-500">*</span>
+                        Documento de identificação de quem retira <span className="text-red-500">*</span>
                       </p>
                       <PhotoCapture
                         label="RG/CNH do portador"
@@ -2162,7 +2232,7 @@ export default function PackagesPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Telefone de contato de quem retira <span className="text-red-500">*</span>
+                        Telefone de contato <span className="text-gray-400 font-normal">(opcional)</span>
                       </label>
                       <input value={pickerPhone} onChange={e => setPickerPhone(e.target.value)}
                         type="tel" placeholder="(00) 00000-0000" className={inputCls} />
@@ -2242,14 +2312,14 @@ export default function PackagesPage() {
                 <div className="bg-blue-600 px-4 py-2.5 flex items-center gap-2">
                   <User className="w-4 h-4 text-white" />
                   <span className="text-sm font-semibold text-white">
-                    {isThirdParty ? 'Portador (quem está retirando)' : 'Recebedor (Morador)'}
+                    {pickupType === 'other' ? 'Portador (quem está retirando)' : pickupType === 'dependent' ? 'Dependente' : 'Recebedor (Morador)'}
                   </span>
                 </div>
                 <div className="p-4 flex flex-col gap-3">
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
                     <input value={recipientName} onChange={e => setRecipientName(e.target.value)} className={inputCls}
-                      placeholder={isThirdParty ? 'Nome de quem está retirando' : 'Nome de quem está recebendo'} />
+                      placeholder={pickupType === 'other' ? 'Nome de quem está retirando' : 'Nome de quem está recebendo'} />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Funcionário que está entregando</label>
