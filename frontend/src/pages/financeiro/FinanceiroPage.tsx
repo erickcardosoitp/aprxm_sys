@@ -2632,6 +2632,13 @@ export default function FinanceiroPage() {
           conferentes={conferentes}
           onClose={() => setReviewSession(null)}
           onSaved={loadSessions}
+          onEditTx={tx => {
+            setEditTarget(tx as unknown as Tx)
+            setEditAmount(tx.amount)
+            setEditDesc(tx.description)
+            setEditPmId('')
+            setEditPassword('')
+          }}
         />
       )}
 

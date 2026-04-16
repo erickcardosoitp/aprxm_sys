@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ClipboardList, Calculator, Award, ArrowRight, Eye, RefreshCw } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, ClipboardList, Calculator, Award, ArrowRight, Eye, RefreshCw, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -35,6 +35,7 @@ interface Props {
   conferentes: Conferente[]
   onClose: () => void
   onSaved: () => void
+  onEditTx: (tx: TxReview) => void
 }
 
 const fmt = (v: string | number) =>
@@ -61,7 +62,7 @@ const STEPS = [
   { label: 'Repasse', icon: ArrowRight },
 ]
 
-export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, onClose, onSaved }: Props) {
+export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, onClose, onSaved, onEditTx }: Props) {
   const [step, setStep] = useState(0)
   const [txs, setTxs] = useState<TxReview[]>(initialTxs)
   const [contagemInput, setContagemInput] = useState(session.closing_balance ?? '')
@@ -311,9 +312,17 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-sm text-gray-700 truncate">{tx.description}</p>
-                            <p className={`text-sm font-bold shrink-0 ${isIncome ? 'text-green-600' : 'text-red-600'}`}>
-                              {isIncome ? '+' : '-'}{fmt(tx.amount)}
-                            </p>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <p className={`text-sm font-bold ${isIncome ? 'text-green-600' : 'text-red-600'}`}>
+                                {isIncome ? '+' : '-'}{fmt(tx.amount)}
+                              </p>
+                              {!isReversed && (
+                                <button onClick={() => onEditTx(tx)} title="Corrigir lançamento"
+                                  className="p-1 text-gray-300 hover:text-[#26619c] hover:bg-blue-50 rounded transition">
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                           {!tx.conferido && !isReversed && (
                             <input type="text" value={tx.observacao ?? ''}
