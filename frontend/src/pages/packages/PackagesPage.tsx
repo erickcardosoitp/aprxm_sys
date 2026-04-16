@@ -848,10 +848,6 @@ export default function PackagesPage() {
   }
 
   const doAddToBulkRxQueue = (resident: Resident, tracking: string, photoUrls: { url: string; label: string; taken_at: string }[]) => {
-    if (carrierOpts.length > 0 && !brxCarrier) {
-      toast.error('Selecione a transportadora antes de continuar.')
-      return
-    }
     const entry: BulkRxItem = {
       id: crypto.randomUUID(),
       tracking_code: tracking,
@@ -884,7 +880,9 @@ export default function PackagesPage() {
   }
 
   const handleBarcodeEnter = () => {
-    if (brxSelected) {
+    if (brxTracking.trim() && brxResults.length > 0) {
+      requestBrxPhoto(brxResults[0], brxTracking)
+    } else if (brxSelected) {
       requestBrxPhoto(brxSelected, brxTracking)
     } else {
       setTimeout(() => brxSearchRef.current?.focus(), 30)
@@ -892,14 +890,7 @@ export default function PackagesPage() {
   }
 
   const selectBrxResident = (r: Resident) => {
-    if (brxTracking.trim()) {
-      requestBrxPhoto(r, brxTracking)
-    } else {
-      setBrxSelected(r)
-      setBrxSearch(r.full_name)
-      setBrxResults([])
-      setTimeout(() => brxBarcodeRef.current?.focus(), 30)
-    }
+    requestBrxPhoto(r, brxTracking)
   }
 
   const handleBulkRxSubmit = async () => {
@@ -2379,38 +2370,45 @@ export default function PackagesPage() {
                 <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-3">
 
                   {/* Photo capture step */}
-                  {brxPending && (
+                  {brxPending ? (
                     <div className="flex flex-col gap-3 bg-blue-50 border border-blue-200 rounded-xl p-4">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-semibold text-blue-900">{brxPending.resident.full_name}</p>
                           {brxPending.tracking && <p className="text-xs font-mono text-blue-600 mt-0.5">{brxPending.tracking}</p>}
                         </div>
-                        <button onClick={() => { setBrxPending(null); setBrxCarrier(''); setTimeout(() => brxBarcodeRef.current?.focus(), 50) }}
+                        <button onClick={() => { setBrxPending(null); setBrxCarrier(''); setBrxSearch(''); setBrxResults([]); setTimeout(() => brxBarcodeRef.current?.focus(), 50) }}
                           className="text-xs text-blue-400 hover:text-blue-600">Cancelar</button>
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-blue-800 mb-1">Transportadora <span className="text-red-500">*</span></label>
+                        <label className="block text-xs font-medium text-blue-800 mb-1">Transportadora (opcional)</label>
                         {carrierOpts.length > 0 ? (
                           <select value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
                             className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400/40">
-                            <option value="">— Selecione —</option>
+                            <option value="">— Sem transportadora —</option>
                             {carrierOpts.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                           </select>
                         ) : (
                           <input value={brxCarrier} onChange={e => setBrxCarrier(e.target.value)}
                             className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40"
-                            placeholder="Correios, Mercado Envios…" />
+                            placeholder="Correios, Mercado Envios… (opcional)" />
                         )}
                       </div>
                       <PhotoCapture
-                        label="Foto da Etiqueta *"
+                        label="Foto da Etiqueta"
                         onCapture={entry => doAddToBulkRxQueue(brxPending.resident, brxPending.tracking, [entry])}
                         onUpload={file => uploadService.uploadFile(file, 'packages/labels')}
                       />
+                      <button
+                        type="button"
+                        onClick={() => doAddToBulkRxQueue(brxPending.resident, brxPending.tracking, [])}
+                        className="text-xs text-blue-500 hover:text-blue-700 underline text-center"
+                      >
+                        Adicionar sem foto
+                      </button>
                     </div>
-                  )}
-
+                  ) : (
+                  <>
                   {/* Barcode — primary focus target */}
                   <div className="flex gap-2">
                     <div className="relative flex-1">
@@ -2597,6 +2595,8 @@ export default function PackagesPage() {
                         ))}
                       </ul>
                     </div>
+                  )}
+                  </>
                   )}
                 </div>
 
