@@ -493,22 +493,16 @@ async def register_transaction(
     svc = FinanceService(session)
     can_pick_session = current.is_conferente  # admin/conferente/superadmin can redirect to any session
     if body.cash_session_id:
-        if not can_pick_session:
-            raise HTTPException(status_code=403, detail="Sem permissão para registrar em outro caixa.")
         cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
     else:
         try:
             cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
             if cash.opened_by != current.user_id:
-                if can_pick_session:
-                    raise HTTPException(status_code=422, detail="NO_SESSION")
-                raise HTTPException(status_code=400, detail="Abra seu caixa antes de registrar transações.")
+                raise HTTPException(status_code=422, detail="NO_SESSION")
         except HTTPException:
             raise
         except Exception:
-            if can_pick_session:
-                raise HTTPException(status_code=422, detail="NO_SESSION")
-            raise HTTPException(status_code=400, detail="Abra seu caixa antes de registrar transações.")
+            raise HTTPException(status_code=422, detail="NO_SESSION")
     tx = await svc.register_transaction(
         association_id=current.association_id,
         cash_session_id=cash.id,
