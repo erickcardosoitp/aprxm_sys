@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, Check, ClipboardCheck, DollarSign, List, Loader2, Plus, RefreshCw, RotateCcw, Scale, TrendingDown, TrendingUp, X, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, Check, ClipboardCheck, DollarSign, List, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Scale, TrendingDown, TrendingUp, X, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
@@ -211,6 +211,9 @@ function SessionDetailModal({
   const [recalculating, setRecalculating] = useState(false)
   const [recalcResult, setRecalcResult] = useState<{ expected_balance: string; difference: string | null } | null>(null)
   const [subtypeFilter, setSubtypeFilter] = useState<string | null>(null)
+  const [editingPayMethodTx, setEditingPayMethodTx] = useState<string | null>(null)
+  const [payMethodEdit, setPayMethodEdit] = useState<string>('')
+  const [savingPayMethod, setSavingPayMethod] = useState(false)
   const [reassignTarget, setReassignTarget] = useState<SessionTx | null>(null)
   const [reassignSessions, setReassignSessions] = useState<CashSessionSummary[]>([])
   const [reassigning, setReassigning] = useState(false)
@@ -221,6 +224,21 @@ function SessionDetailModal({
       const res = await financeService.listSessions()
       setReassignSessions(res.data.filter(s => s.id !== session.id))
     } catch { setReassignSessions([]) }
+  }
+
+  const savePayMethod = async (txId: string) => {
+    setSavingPayMethod(true)
+    try {
+      await api.patch(`/finance/transactions/${txId}/payment-method`, {
+        payment_method_id: payMethodEdit || null,
+        cash_session_id: viewedSessionId ?? session?.id,
+      })
+      toast.success('Forma de pagamento atualizada.')
+      setEditingPayMethodTx(null)
+      loadTx()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
+    } finally { setSavingPayMethod(false) }
   }
 
   const doReassign = async (newSessionId: string) => {
@@ -1182,39 +1200,67 @@ export default function FinancePage() {
                       const isEstorno = !!tx.is_reversal
                       const isCanceled = isVoided || isEstorno
                       return (
-                        <li key={tx.id} className={`flex items-center justify-between px-4 py-3 gap-2 ${
+                        <li key={tx.id} className={`px-4 py-3 ${
                           isCanceled ? 'bg-gray-50/70 opacity-60' :
                           tx.approval_status === 'pending' ? 'bg-amber-50/50' :
                           tx.approval_status === 'rejected' ? 'bg-red-50/40' : ''
                         }`}>
-                          <div className="min-w-0 flex-1">
-                            <p className={`text-sm font-medium truncate ${isCanceled ? 'line-through text-gray-400' : 'text-gray-800'}`}>{tx.description}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                              <span className="text-xs text-gray-400">{new Date(tx.transaction_at).toLocaleString('pt-BR')}</span>
-                              {!isCanceled && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLORS[tx.type]}`}>{TYPE_LABELS[tx.type]}</span>}
-                              {tx.payment_method_name && !isCanceled && (
-                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{tx.payment_method_name}</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className={`text-sm font-medium truncate ${isCanceled ? 'line-through text-gray-400' : 'text-gray-800'}`}>{tx.description}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span className="text-xs text-gray-400">{new Date(tx.transaction_at).toLocaleString('pt-BR')}</span>
+                                {!isCanceled && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLORS[tx.type]}`}>{TYPE_LABELS[tx.type]}</span>}
+                                {tx.payment_method_name && !isCanceled && (
+                                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{tx.payment_method_name}</span>
+                                )}
+                                {isEstorno && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500">Estorno</span>}
+                                {isVoided && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500">Estornado</span>}
+                                {tx.approval_status === 'pending' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Aguarda aprovação</span>}
+                                {tx.approval_status === 'rejected' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Recusada</span>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {canSeeTotals && (
+                                <span className={`text-sm font-semibold ${isCanceled ? 'line-through text-gray-400' : tx.type === 'income' ? 'text-green-600' : tx.approval_status === 'pending' ? 'text-amber-500' : 'text-red-600'}`}>
+                                  {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
+                                </span>
                               )}
-                              {isEstorno && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500">Estorno</span>}
-                              {isVoided && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500">Estornado</span>}
-                              {tx.approval_status === 'pending' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Aguarda aprovação</span>}
-                              {tx.approval_status === 'rejected' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Recusada</span>}
+                              {isAdminRole && !isCanceled && (
+                                <button onClick={() => { setEditingPayMethodTx(tx.id); setPayMethodEdit(tx.payment_method_id ?? '') }}
+                                  className="p-1.5 rounded-lg text-gray-400 hover:text-[#26619c] hover:bg-blue-50 transition"
+                                  title="Alterar forma de pagamento">
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {isConferenteOrAbove && !tx.is_reversal && !(tx as any).reversed_at && (
+                                <button onClick={() => setEstornoTarget(tx)}
+                                  className="p-1.5 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition"
+                                  title="Estornar">
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {canSeeTotals && (
-                              <span className={`text-sm font-semibold ${isCanceled ? 'line-through text-gray-400' : tx.type === 'income' ? 'text-green-600' : tx.approval_status === 'pending' ? 'text-amber-500' : 'text-red-600'}`}>
-                                {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
-                              </span>
-                            )}
-                            {isConferenteOrAbove && !tx.is_reversal && !(tx as any).reversed_at && (
-                              <button onClick={() => setEstornoTarget(tx)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition"
-                                title="Estornar">
-                                <RotateCcw className="w-3.5 h-3.5" />
+                          {editingPayMethodTx === tx.id && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <select value={payMethodEdit} onChange={e => setPayMethodEdit(e.target.value)}
+                                className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#26619c]/30">
+                                <option value="">— Sem forma —</option>
+                                {paymentMethods.map(pm => (
+                                  <option key={pm.id} value={pm.id}>{pm.name}</option>
+                                ))}
+                              </select>
+                              <button onClick={() => savePayMethod(tx.id)} disabled={savingPayMethod}
+                                className="px-3 py-1 bg-[#26619c] text-white text-xs rounded-lg hover:bg-[#1e4d7d] disabled:opacity-50">
+                                {savingPayMethod ? '…' : 'Salvar'}
                               </button>
-                            )}
-                          </div>
+                              <button onClick={() => setEditingPayMethodTx(null)}
+                                className="px-3 py-1 border border-gray-300 text-gray-600 text-xs rounded-lg hover:bg-gray-50">
+                                Cancelar
+                              </button>
+                            </div>
+                          )}
                         </li>
                       )
                     })}
