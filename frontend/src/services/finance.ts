@@ -1,9 +1,13 @@
 import api from './api'
 import type { CashSession, CashSessionSummary, Transaction } from '../types'
 
+function getDeviceToken(): string {
+  return localStorage.getItem('aprxm-device-token') ?? ''
+}
+
 export const financeService = {
   openSession: (opening_balance: number, notes?: string) =>
-    api.post<CashSession>('/finance/sessions/open', { opening_balance, notes }),
+    api.post<CashSession>('/finance/sessions/open', { opening_balance, notes, device_token: getDeviceToken() }),
 
   getCurrentSession: () =>
     api.get<CashSession>('/finance/sessions/current'),

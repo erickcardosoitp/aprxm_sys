@@ -122,7 +122,7 @@ class PackageService:
             if cash_session_id:
                 cash_session = await self._finance.get_open_session(association_id, session_id=cash_session_id)
             else:
-                cash_session = await self._finance.get_open_session(association_id)
+                cash_session = await self._finance.get_open_session(association_id, preferred_by=delivered_by, strict_owner=True)
 
             # Try to find "Taxa de Entrega" category for this association
             cat_result = await self._session.execute(

@@ -611,6 +611,7 @@ export default function FinancePage() {
   const [loadingTx, setLoadingTx] = useState(false)
   const [sessions, setSessions] = useState<CashSessionSummary[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
+  const [recalcingRow, setRecalcingRow] = useState<string | null>(null)
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
   const [selectedSession, setSelectedSession] = useState<CashSessionSummary | null>(null)
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
@@ -1395,19 +1396,40 @@ export default function FinancePage() {
                         </td>
                         <td className="px-5 py-4 text-gray-600 whitespace-nowrap">{s.conferido_por ?? '—'}</td>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          {s.status === 'conferido' && cashBoxes.length > 0 && (
-                            <button
-                              onClick={e => {
-                                e.stopPropagation()
-                                setTransferSession(s)
-                                setTransferAmount(s.closing_balance ?? s.expected_balance ?? '0')
-                                setTransferBoxId('')
-                              }}
-                              className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg transition"
-                            >
-                              Transferir
-                            </button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {s.status !== 'open' && isConferenteOrAbove && (
+                              <button
+                                disabled={recalcingRow === s.id}
+                                onClick={async e => {
+                                  e.stopPropagation()
+                                  setRecalcingRow(s.id)
+                                  try {
+                                    const res = await api.post<{ expected_balance: string; difference: string | null }>(`/finance/sessions/${s.id}/recalculate`)
+                                    setSessions(prev => prev.map(x => x.id === s.id
+                                      ? { ...x, expected_balance: res.data.expected_balance, difference: res.data.difference }
+                                      : x))
+                                    toast.success('Recalculado.')
+                                  } catch { toast.error('Erro ao recalcular.') } finally { setRecalcingRow(null) }
+                                }}
+                                className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 whitespace-nowrap"
+                              >
+                                {recalcingRow === s.id ? '…' : 'Recalcular'}
+                              </button>
+                            )}
+                            {s.status === 'conferido' && cashBoxes.length > 0 && (
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation()
+                                  setTransferSession(s)
+                                  setTransferAmount(s.closing_balance ?? s.expected_balance ?? '0')
+                                  setTransferBoxId('')
+                                }}
+                                className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg transition"
+                              >
+                                Transferir
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )

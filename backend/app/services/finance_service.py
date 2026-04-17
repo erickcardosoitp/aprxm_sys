@@ -30,6 +30,7 @@ class FinanceService:
         opened_by: UUID,
         opening_balance: Decimal = Decimal("0.00"),
         notes: str | None = None,
+        device_token: str | None = None,
     ) -> CashSession:
 
         session = CashSession(
@@ -38,6 +39,7 @@ class FinanceService:
             opening_balance=opening_balance,
             notes=notes,
             origin="Sessão de Caixa",
+            device_token=device_token,
         )
         self._session.add(session)
         await self._session.flush()
@@ -91,7 +93,7 @@ class FinanceService:
         await self._session.flush()
         return session
 
-    async def get_open_session(self, association_id: UUID, session_id: UUID | None = None, preferred_by: UUID | None = None) -> CashSession:
+    async def get_open_session(self, association_id: UUID, session_id: UUID | None = None, preferred_by: UUID | None = None, strict_owner: bool = False) -> CashSession:
         stmt = select(CashSession).where(
             CashSession.association_id == association_id,
             CashSession.status == CashSessionStatus.open,
@@ -104,6 +106,8 @@ class FinanceService:
             sess = result.scalars().first()
             if sess:
                 return sess
+            if strict_owner:
+                raise CashSessionError("Você não possui uma sessão de caixa aberta.")
         stmt = stmt.order_by(CashSession.opened_at.desc())
         result = await self._session.execute(stmt)
         sess = result.scalars().first()

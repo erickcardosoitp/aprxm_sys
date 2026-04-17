@@ -457,14 +457,50 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh, dependent
             </a>
           )}
 
+          {/* Timeline */}
+          {(() => {
+            type TLItem = { key: string; at: string; label: string; sub?: string; color: string }
+            const items: TLItem[] = []
+            items.push({ key: 'received', at: pkg.received_at, label: 'Recebido', sub: pkg.received_by_name ?? undefined, color: 'bg-blue-500' })
+            for (const ev of events) {
+              if (ev.event_type === 'notification') items.push({ key: ev.id, at: ev.created_at, label: 'Notificado', sub: ev.author_name, color: 'bg-yellow-400' })
+              else if (ev.event_type === 'return') items.push({ key: ev.id, at: ev.created_at, label: 'Devolvido', sub: ev.comment ?? undefined, color: 'bg-red-400' })
+              else if (ev.event_type === 'reversal') items.push({ key: ev.id, at: ev.created_at, label: 'Entrega estornada', sub: ev.comment ?? undefined, color: 'bg-orange-400' })
+              else if (ev.event_type === 'comment') items.push({ key: ev.id, at: ev.created_at, label: ev.comment ?? '', sub: ev.author_name, color: 'bg-gray-400' })
+            }
+            if (pkg.delivered_at && !events.some(e => e.event_type === 'reversal')) {
+              items.push({ key: 'delivered', at: pkg.delivered_at, label: 'Entregue', sub: pkg.delivered_by_name ?? pkg.deliverer_name ?? undefined, color: 'bg-green-500' })
+            }
+            items.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+            return (
+              <div className="border-t border-gray-100 pt-3 mt-1">
+                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">Histórico</p>
+                <ol className="relative border-l border-gray-200 ml-2 flex flex-col gap-3 mb-3">
+                  {items.map(item => (
+                    <li key={item.key} className="ml-4">
+                      <span className={`absolute -left-1.5 w-3 h-3 rounded-full border-2 border-white ${item.color}`} />
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium text-gray-800">{item.label}</span>
+                        <span className="text-xs text-gray-400 shrink-0">
+                          {new Date(item.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {item.sub && <p className="text-xs text-gray-500 mt-0.5">{item.sub}</p>}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )
+          })()}
+
           {/* Events / Observações */}
           <div className="border-t border-gray-100 pt-3 mt-1">
             <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">Observações</p>
-            {events.length === 0 ? (
+            {events.filter(e => e.event_type === 'comment').length === 0 ? (
               <p className="text-xs text-gray-400 mb-3">Nenhuma observação registrada.</p>
             ) : (
               <ul className="flex flex-col gap-2 mb-3">
-                {events.map(ev => (
+                {events.filter(e => e.event_type === 'comment').map(ev => (
                   <li key={ev.id} className="bg-gray-50 rounded-lg px-3 py-2">
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-xs font-medium text-gray-700">{ev.author_name ?? 'Sistema'}</span>

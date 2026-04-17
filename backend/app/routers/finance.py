@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/finance", tags=["Finanças"])
 class OpenSessionRequest(BaseModel):
     opening_balance: Decimal = Field(default=Decimal("0.00"), ge=0)
     notes: str | None = None
+    device_token: str | None = None
 
 
 class CloseSessionRequest(BaseModel):
@@ -340,6 +341,7 @@ async def open_session(
         opened_by=current.user_id,
         opening_balance=body.opening_balance,
         notes=body.notes,
+        device_token=body.device_token,
     )
     return {"id": str(cash.id), "status": cash.status, "opened_at": str(cash.opened_at)}
 
@@ -495,6 +497,7 @@ async def register_transaction(
     body: TransactionRequest,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    x_device_token: str | None = Header(default=None),
 ) -> dict:
     svc = FinanceService(session)
     can_pick_session = current.is_conferente
@@ -502,6 +505,8 @@ async def register_transaction(
         cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
         if not can_pick_session and cash.opened_by != current.user_id:
             raise HTTPException(status_code=403, detail="Você não pode lançar em sessão de outro operador.")
+        if cash.device_token and x_device_token and cash.device_token != x_device_token:
+            raise HTTPException(status_code=403, detail="Dispositivo não autorizado para esta sessão.")
     else:
         try:
             cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
