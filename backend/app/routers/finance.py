@@ -709,43 +709,58 @@ async def send_to_malote(
     return {"ok": True, "amount": str(round(amount, 2)), "malote_balance": str(round(new_bal, 2))}
 
 
-@router.get("/pix/pending", summary="PIX não conciliados (bank_statements)")
+@router.get("/pix/pending", summary="Transações de entrada com status de conciliação PIX")
 async def list_pix_pending(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     rows = (await session.execute(text("""
-        SELECT bs.id, bs.bank, bs.date, bs.amount, bs.name, bs.description,
-               bs.conciliado, bs.transaction_id, bs.batched_at,
-               t.reversed_at, cs.opened_at AS session_opened_at,
-               u_op.full_name AS operador_name,
-               u_rev.full_name AS conferente_name,
-               cs.id AS session_id
-          FROM bank_statements bs
-          LEFT JOIN transactions t ON t.id = bs.transaction_id
-          LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
-          LEFT JOIN users u_op ON u_op.id = cs.opened_by
-          LEFT JOIN users u_rev ON u_rev.id = cs.reviewed_by
-         WHERE bs.association_id = :aid
-           AND bs.conciliado = false
-           AND (bs.transaction_id IS NULL OR t.reversed_at IS NULL)
-         ORDER BY bs.date DESC, bs.amount DESC
+        SELECT
+            t.id, t.amount, t.description, t.transaction_at, t.reversed_at,
+            r.full_name AS resident_name,
+            rec.status AS recon_status, rec.score,
+            bs.id AS statement_id, bs.bank, bs.name AS payer_name,
+            cs.opened_at AS session_opened_at, cs.id AS session_id,
+            u_op.full_name AS operador_name,
+            u_rev.full_name AS conferente_name
+        FROM transactions t
+        LEFT JOIN residents r ON r.id = t.resident_id
+        LEFT JOIN reconciliations rec ON rec.transaction_id = t.id
+        LEFT JOIN bank_statements bs ON bs.id = rec.statement_id
+        LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
+        LEFT JOIN users u_op ON u_op.id = cs.opened_by
+        LEFT JOIN users u_rev ON u_rev.id = cs.reviewed_by
+        WHERE t.association_id = :aid
+          AND t.type = 'income'
+        ORDER BY t.transaction_at DESC
+        LIMIT 300
     """), {"aid": str(current.association_id)})).fetchall()
+
     def derive_status(r) -> str:
-        if r[6]:  # conciliado
+        if r[4]:  # reversed_at
+            return "cancelado"
+        rs = r[6]  # recon_status
+        if rs == "automatico":
             return "conciliado"
-        if r[8] is not None:  # batched_at
+        if rs == "sugestao":
             return "pendente"
         return "nao_conciliado"
+
     return [{
-        "id": str(r[0]), "bank": r[1], "date": str(r[2]), "amount": str(r[3]),
-        "name": r[4], "description": r[5], "conciliado": r[6],
-        "transaction_id": str(r[7]) if r[7] else None,
+        "id": str(r[0]),
+        "amount": str(r[1]),
+        "description": r[2],
+        "date": str(r[3])[:10],
         "status": derive_status(r),
-        "session_opened_at": str(r[10]) if r[10] else None,
-        "operador_name": r[11],
-        "conferente_name": r[12],
-        "session_id": str(r[13]) if r[13] else None,
+        "recon_score": r[7],
+        "resident_name": r[5],
+        "bank_statement_id": str(r[8]) if r[8] else None,
+        "bank": r[9],
+        "payer_name": r[10],
+        "session_opened_at": str(r[11]) if r[11] else None,
+        "session_id": str(r[12]) if r[12] else None,
+        "operador_name": r[13],
+        "conferente_name": r[14],
     } for r in rows]
 
 
@@ -908,7 +923,7 @@ async def tesouraria_summary(
     faturamento_row = (await session.execute(sa_text("""
         SELECT
           COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END), 0) AS bruto,
-          COALESCE(SUM(CASE WHEN t.type IN ('expense','sangria') THEN t.amount ELSE 0 END), 0) AS saidas
+          COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS saidas
         FROM transactions t
         WHERE t.association_id=:aid AND t.reversed_at IS NULL AND t.is_reversal=false
           AND DATE(t.transaction_at) = CURRENT_DATE

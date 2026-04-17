@@ -489,8 +489,12 @@ export default function FinanceiroPage() {
 
   // PIX batch
   const [pixPending, setPixPending] = useState<{
-    id: string; bank: string; date: string; amount: string; name: string | null; description?: string | null;
-    status: string; session_opened_at: string | null; operador_name: string | null; conferente_name: string | null; session_id: string | null;
+    id: string; amount: string; description: string | null; date: string
+    status: string; recon_score: number | null
+    resident_name: string | null; bank_statement_id: string | null
+    bank: string | null; payer_name: string | null
+    session_opened_at: string | null; session_id: string | null
+    operador_name: string | null; conferente_name: string | null
   }[]>([])
   const [pixSelected, setPixSelected] = useState<Set<string>>(new Set())
   const [pixBatchBox, setPixBatchBox] = useState('')
@@ -2436,53 +2440,66 @@ export default function FinanceiroPage() {
               </button>
             </div>
             {pixPending.length === 0 ? (
-              <p className="text-xs text-gray-400">Nenhum PIX pendente de conciliação.</p>
+              <p className="text-xs text-gray-400">Nenhuma venda registrada.</p>
             ) : (
               <>
-                <ul className="flex flex-col gap-2 max-h-96 overflow-y-auto mb-3">
-                  {pixPending.map(p => {
-                    const statusMap: Record<string, { label: string; cls: string }> = {
-                      nao_conciliado: { label: 'Não-Conciliado', cls: 'bg-gray-100 text-gray-500' },
-                      pendente: { label: 'Pendente', cls: 'bg-amber-100 text-amber-700' },
-                      conciliado: { label: 'Conciliado', cls: 'bg-green-100 text-green-700' },
-                      cancelado: { label: 'Cancelado', cls: 'bg-red-100 text-red-600' },
-                    }
-                    const st = statusMap[p.status] ?? statusMap.nao_conciliado
-                    return (
-                      <li key={p.id} className="flex items-start gap-2 text-xs bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
-                        <input type="checkbox" checked={pixSelected.has(p.id)}
-                          onChange={e => setPixSelected(prev => { const s = new Set(prev); e.target.checked ? s.add(p.id) : s.delete(p.id); return s })}
-                          className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${st.cls}`}>{st.label}</span>
-                            <span className="font-medium text-gray-800 truncate">{p.name || p.description || '—'}</span>
-                          </div>
-                          <div className="flex flex-wrap gap-x-3 text-[10px] text-gray-400">
-                            <span>{new Date(p.date).toLocaleDateString('pt-BR')}</span>
-                            {p.session_opened_at && <span>Sessão {new Date(p.session_opened_at).toLocaleDateString('pt-BR')}</span>}
-                            {p.operador_name && <span>Op: {p.operador_name}</span>}
-                            {p.conferente_name && <span>Conf: {p.conferente_name}</span>}
-                          </div>
-                        </div>
-                        <span className="font-semibold text-green-700 whitespace-nowrap shrink-0">{fmt(p.amount)}</span>
-                      </li>
-                    )
-                  })}
-                </ul>
+                <div className="overflow-x-auto max-h-[480px] overflow-y-auto mb-3">
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="sticky top-0 bg-gray-50 z-10">
+                      <tr className="text-gray-500 text-left">
+                        <th className="px-2 py-2 font-medium">Status</th>
+                        <th className="px-2 py-2 font-medium">Data</th>
+                        <th className="px-2 py-2 font-medium">Valor</th>
+                        <th className="px-2 py-2 font-medium">Descrição</th>
+                        <th className="px-2 py-2 font-medium">Morador</th>
+                        <th className="px-2 py-2 font-medium">Pagador PIX</th>
+                        <th className="px-2 py-2 font-medium">Operador</th>
+                        <th className="px-2 py-2 font-medium">Sessão</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pixPending.map(p => {
+                        const statusMap: Record<string, { label: string; cls: string }> = {
+                          nao_conciliado: { label: 'Não-Conciliado', cls: 'bg-gray-100 text-gray-500' },
+                          pendente: { label: 'Pendente', cls: 'bg-amber-100 text-amber-700' },
+                          conciliado: { label: 'Conciliado', cls: 'bg-green-100 text-green-700' },
+                          cancelado: { label: 'Cancelado', cls: 'bg-red-100 text-red-600' },
+                        }
+                        const st = statusMap[p.status] ?? statusMap.nao_conciliado
+                        const canBatch = !!p.bank_statement_id
+                        return (
+                          <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${st.cls}`}>{st.label}</span>
+                            </td>
+                            <td className="px-2 py-2 whitespace-nowrap text-gray-600">
+                              {new Date(p.date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                            </td>
+                            <td className="px-2 py-2 whitespace-nowrap font-semibold text-green-700">{fmt(p.amount)}</td>
+                            <td className="px-2 py-2 text-gray-800 max-w-[180px] truncate">{p.description || '—'}</td>
+                            <td className="px-2 py-2 text-gray-600 max-w-[140px] truncate">{p.resident_name || '—'}</td>
+                            <td className="px-2 py-2 text-gray-600 max-w-[140px] truncate">{p.payer_name || '—'}</td>
+                            <td className="px-2 py-2 text-gray-400 whitespace-nowrap">{p.operador_name || '—'}</td>
+                            <td className="px-2 py-2 text-gray-400 whitespace-nowrap">
+                              {p.session_opened_at ? new Date(p.session_opened_at).toLocaleDateString('pt-BR') : '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
                 <div className="flex gap-2 items-center flex-wrap">
-                  <button onClick={() => setPixSelected(new Set(pixPending.map(p => p.id)))} className="text-xs text-[#26619c] hover:underline">Selecionar todos</button>
-                  <button onClick={() => setPixSelected(new Set())} className="text-xs text-gray-400 hover:underline">Limpar</button>
                   <select value={pixBatchBox} onChange={e => setPixBatchBox(e.target.value)}
                     className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs min-w-[140px]">
-                    <option value="">Caixinha destino…</option>
+                    <option value="">Caixinha destino (conciliados)…</option>
                     {cashBoxes.filter(b => !b.is_malote).map(b => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
                   <button onClick={handlePixBatch} disabled={batchingPix || pixSelected.size === 0 || !pixBatchBox}
                     className="bg-[#26619c] text-white px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 whitespace-nowrap">
-                    {batchingPix ? '…' : `Enviar ${pixSelected.size} itens`}
+                    {batchingPix ? '…' : `Enviar ${pixSelected.size} conciliados`}
                   </button>
                 </div>
               </>
