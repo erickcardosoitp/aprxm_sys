@@ -825,7 +825,9 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           <p class="label">Forma de pagamento</p><p class="val">${d.payment_method}</p>
           <hr/>
           <p class="label">Associação</p><p class="val">${d.association_name}</p>
+          ${d.city ? `<p class="label">Cidade</p><p class="val">${d.city}</p>` : ''}
           ${d.assoc_phone ? `<p class="label">Telefone</p><p class="val">${d.assoc_phone}</p>` : ''}
+          ${d.tx_desc ? `<p class="label">Descrição</p><p class="val">${d.tx_desc}</p>` : ''}
         </body></html>`
       const win = window.open('', '_blank')
       if (win) { win.document.write(html); win.document.close(); win.print() }

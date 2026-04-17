@@ -1190,7 +1190,7 @@ export default function PackagesPage() {
         carrier_name: carrier || undefined,
         tracking_code: tracking || undefined,
         photo_urls: photos,
-        deliverer_name: delivererName || undefined,
+        deliverer_name: (delivererName && delivererName !== '__manual__') ? delivererName : undefined,
         deliverer_signature_url: delivererSig || undefined,
       })
       toast.success('Encomenda registrada!')
@@ -2035,22 +2035,32 @@ export default function PackagesPage() {
                         <label className="block text-xs text-gray-600 mb-1">Entregador</label>
                         {delivererOpts.length > 0 ? (
                           <select
-                            value={delivererOpts.find(d => d.name === delivererName)?.id ?? ''}
+                            value={delivererOpts.find(d => d.name === delivererName)?.id ?? (delivererName === '__manual__' ? '__manual__' : '')}
                             onChange={e => {
-                              const d = delivererOpts.find(x => x.id === e.target.value)
-                              if (d) { setDelivererName(d.name); if (d.signature_url) setDelivererSig(d.signature_url) }
-                              else { setDelivererName(''); setDelivererSig('') }
+                              if (e.target.value === '__manual__') { setDelivererName('__manual__'); setDelivererSig('') }
+                              else {
+                                const d = delivererOpts.find(x => x.id === e.target.value)
+                                if (d) { setDelivererName(d.name); setDelivererSig(d.signature_url ?? '') }
+                                else { setDelivererName(''); setDelivererSig('') }
+                              }
                             }}
                             className={`${inputCls} bg-white`}
                           >
                             <option value="">— Selecione —</option>
                             {delivererOpts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                            <option value="__manual__">✏️ Digitar manualmente</option>
                           </select>
-                        ) : (
-                          <input value={delivererName} onChange={e => setDelivererName(e.target.value)} className={inputCls} placeholder="Nome do courier/transportadora" />
+                        ) : null}
+                        {(delivererOpts.length === 0 || delivererName === '__manual__') && (
+                          <input
+                            value={delivererName === '__manual__' ? '' : delivererName}
+                            onChange={e => setDelivererName(e.target.value)}
+                            className={`${inputCls} ${delivererOpts.length > 0 ? 'mt-2' : ''}`}
+                            placeholder="Nome do entregador"
+                          />
                         )}
                       </div>
-                      {delivererOpts.length === 0 && (
+                      {(!delivererSig) && (
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">Assinatura do entregador</label>
                         <SignaturePad
@@ -2061,10 +2071,13 @@ export default function PackagesPage() {
                         />
                       </div>
                       )}
-                      {delivererOpts.length > 0 && delivererSig && (
+                      {delivererSig && (
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Assinatura</label>
-                          <img src={delivererSig} alt="assinatura" className="h-16 border border-gray-200 rounded-lg bg-white object-contain" />
+                          <div className="flex items-center gap-3">
+                            <img src={delivererSig} alt="assinatura" className="h-16 border border-gray-200 rounded-lg bg-white object-contain flex-1" />
+                            <button onClick={() => setDelivererSig('')} className="text-xs text-red-500 hover:underline shrink-0">Refazer</button>
+                          </div>
                         </div>
                       )}
                     </div>

@@ -249,7 +249,7 @@ async def get_comprovante(
         "resident_name": row[4], "resident_cpf": row[5],
         "unit": row[6], "block": row[7],
         "association_name": row[8], "city": row[9], "assoc_phone": row[10],
-        "payment_method": row[12] or "Dinheiro",
+        "tx_desc": row[11], "payment_method": row[12] or "Dinheiro",
     }
 
 

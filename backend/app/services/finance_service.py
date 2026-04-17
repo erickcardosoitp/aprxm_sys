@@ -743,7 +743,7 @@ class FinanceService:
         addr_str = ", ".join(addr_parts) if addr_parts else f"CEP {resident_cep}"
         body = (
             f"O Sr(a) {resident_name}, portador(a) do CPF {resident_cpf}, "
-            f"residente na comunidade Vaz Lobo, em {addr_str}, "
+            f"residente na comunidade {community_name}, em {addr_str}, "
             f"localizado no bairro de {resident_neighborhood}."
         )
         pdf.multi_cell(0, 8, body, align="J")
