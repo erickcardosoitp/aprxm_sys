@@ -399,6 +399,10 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       } catch (e: any) {
         if (e.response?.data?.detail === 'NO_SESSION') {
           setSaving(false)
+          if (!canPickSession) {
+            toast.error('Você não tem caixa aberto. Abra seu caixa antes de registrar.')
+            return
+          }
           try {
             const res = await financeService.listOpenSessions()
             if (res.data.length === 0) {

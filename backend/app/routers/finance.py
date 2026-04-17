@@ -398,9 +398,10 @@ async def list_open_sessions(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    # admin/conferente see all; operators see all (to pick when they have no own session)
-    where_extra = ""
+    where_extra = "" if current.is_conferente else "AND cs.opened_by = :uid"
     params: dict = {"aid": str(current.association_id)}
+    if not current.is_conferente:
+        params["uid"] = str(current.user_id)
 
     result = await session.execute(
         text(
@@ -494,9 +495,11 @@ async def register_transaction(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = FinanceService(session)
-    can_pick_session = current.is_conferente  # admin/conferente/superadmin can redirect to any session
+    can_pick_session = current.is_conferente
     if body.cash_session_id:
         cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
+        if not can_pick_session and cash.opened_by != current.user_id:
+            raise HTTPException(status_code=403, detail="Você não pode lançar em sessão de outro operador.")
     else:
         try:
             cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
