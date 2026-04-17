@@ -152,6 +152,10 @@ class FinanceService:
         for tx in transactions:
             if tx.reversed_at is not None or tx.is_reversal:
                 continue
+            # Exclude repasse sangrias from expected balance — they don't affect the
+            # conference difference (money was already counted before the transfer).
+            if tx.type == TransactionType.sangria and (tx.description or "").startswith("Repasse para caixinha"):
+                continue
             if tx.type == TransactionType.income:
                 balance += tx.amount
                 bruto += tx.amount

@@ -617,6 +617,22 @@ async def transfer_to_cashbox(
     if not box:
         raise HTTPException(404, "Caixinha não encontrada.")
 
+    # Validate: total repasses cannot exceed closing_balance
+    if row[1] == "conferido":
+        closing_bal = (await session.execute(sa_text(
+            "SELECT closing_balance FROM cash_sessions WHERE id=:id"
+        ), {"id": str(session_id)})).scalar()
+        already_transferred = (await session.execute(sa_text("""
+            SELECT COALESCE(SUM(amount),0) FROM transactions
+            WHERE cash_session_id=:sid AND type='sangria'
+              AND description LIKE 'Repasse para caixinha%'
+              AND reversed_at IS NULL
+        """), {"sid": str(session_id)})).scalar()
+        if closing_bal is not None:
+            available = float(closing_bal) - float(already_transferred or 0)
+            if float(body.amount) > round(available + 0.005, 2):
+                raise HTTPException(400, f"Valor excede o disponível para repasse (R$ {available:.2f}).")
+
     svc = FinanceService(session)
     sess_date = str(row[2])[:10]
     desc = f"Repasse para caixinha — conferência {sess_date}"
@@ -699,15 +715,38 @@ async def list_pix_pending(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     rows = (await session.execute(text("""
-        SELECT bs.id, bs.bank, bs.date, bs.amount, bs.name, bs.description, bs.conciliado,
-               bs.transaction_id, bs.batched_at
+        SELECT bs.id, bs.bank, bs.date, bs.amount, bs.name, bs.description,
+               bs.conciliado, bs.transaction_id, bs.batched_at,
+               t.reversed_at, cs.opened_at AS session_opened_at,
+               u_op.full_name AS operador_name,
+               u_rev.full_name AS conferente_name,
+               cs.id AS session_id
           FROM bank_statements bs
-         WHERE bs.association_id = :aid AND bs.conciliado = false AND bs.batched_at IS NULL
+          LEFT JOIN transactions t ON t.id = bs.transaction_id
+          LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
+          LEFT JOIN users u_op ON u_op.id = cs.opened_by
+          LEFT JOIN users u_rev ON u_rev.id = cs.reviewed_by
+         WHERE bs.association_id = :aid
+           AND bs.conciliado = false
+           AND (bs.transaction_id IS NULL OR t.reversed_at IS NULL)
          ORDER BY bs.date DESC, bs.amount DESC
     """), {"aid": str(current.association_id)})).fetchall()
-    return [{"id": str(r[0]), "bank": r[1], "date": str(r[2]), "amount": str(r[3]),
-             "name": r[4], "description": r[5], "conciliado": r[6],
-             "transaction_id": str(r[7]) if r[7] else None} for r in rows]
+    def derive_status(r) -> str:
+        if r[6]:  # conciliado
+            return "conciliado"
+        if r[8] is not None:  # batched_at
+            return "pendente"
+        return "nao_conciliado"
+    return [{
+        "id": str(r[0]), "bank": r[1], "date": str(r[2]), "amount": str(r[3]),
+        "name": r[4], "description": r[5], "conciliado": r[6],
+        "transaction_id": str(r[7]) if r[7] else None,
+        "status": derive_status(r),
+        "session_opened_at": str(r[10]) if r[10] else None,
+        "operador_name": r[11],
+        "conferente_name": r[12],
+        "session_id": str(r[13]) if r[13] else None,
+    } for r in rows]
 
 
 @router.post("/transactions/offline", summary="Registrar saída externa (sem sessão ativa)")
@@ -865,6 +904,35 @@ async def tesouraria_summary(
         "SELECT id, name, balance FROM cash_boxes WHERE association_id=:aid AND is_active=true ORDER BY name"
     ), {"aid": aid})).fetchall()
 
+    # Faturamento líquido: all non-reversed income minus expenses (all time, active sessions)
+    faturamento_row = (await session.execute(sa_text("""
+        SELECT
+          COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END), 0) AS bruto,
+          COALESCE(SUM(CASE WHEN t.type IN ('expense','sangria') THEN t.amount ELSE 0 END), 0) AS saidas
+        FROM transactions t
+        WHERE t.association_id=:aid AND t.reversed_at IS NULL AND t.is_reversal=false
+          AND DATE(t.transaction_at) = CURRENT_DATE
+    """), {"aid": aid})).fetchone()
+    faturamento = round(float(faturamento_row[0]) - float(faturamento_row[1]), 2) if faturamento_row else 0.0
+
+    # Per-cashbox movement breakdown by payment method (from cash_box_movements)
+    box_breakdown_rows = (await session.execute(sa_text("""
+        SELECT cbm.cash_box_id, COALESCE(pm.name, 'Dinheiro') AS pm_name,
+               SUM(CASE WHEN cbm.movement_type='credit' THEN cbm.amount ELSE -cbm.amount END) AS total
+          FROM cash_box_movements cbm
+          LEFT JOIN transactions t ON t.description = cbm.description
+            AND t.association_id = cbm.association_id
+          LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+         WHERE cbm.association_id=:aid AND cbm.movement_type='credit'
+         GROUP BY cbm.cash_box_id, COALESCE(pm.name, 'Dinheiro')
+    """), {"aid": aid})).fetchall()
+    breakdown_by_box: dict = {}
+    for r in box_breakdown_rows:
+        bid = str(r[0])
+        if bid not in breakdown_by_box:
+            breakdown_by_box[bid] = []
+        breakdown_by_box[bid].append({"pm": r[1], "total": str(round(float(r[2]), 2))})
+
     return {
         "open_sessions": [{"id": str(r[0]), "opened_at": str(r[1]), "opening_balance": str(r[2]),
                             "operador": r[3], "expected_balance": str(round(float(r[4]),2))} for r in open_rows],
@@ -874,8 +942,10 @@ async def tesouraria_summary(
                                   "difference": str(r[4]) if r[4] else None,
                                   "operador": r[5]} for r in conf_rows],
         "pap_today": {"total": str(round(float(pap_row[0]),2)), "count": pap_row[1]},
-        "caixinhas": [{"id": str(r[0]), "name": r[1], "balance": str(round(float(r[2]),2))} for r in boxes],
+        "caixinhas": [{"id": str(r[0]), "name": r[1], "balance": str(round(float(r[2]),2)),
+                       "breakdown": breakdown_by_box.get(str(r[0]), [])} for r in boxes],
         "total_limbo": str(round(sum(float(r[2] or 0) for r in conf_rows), 2)),
+        "faturamento_hoje": str(faturamento),
     }
 
 
@@ -1046,6 +1116,30 @@ async def recalculate_session(
         "total_baixas": str(baixas),
         "difference": str(cash.difference) if cash.difference is not None else None,
     }
+
+
+@router.post("/sessions/{session_id}/revert-conferencia", summary="Desfazer conferência — volta ao status closed")
+async def revert_conferencia(
+    session_id: UUID,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlmodel import select as sql_select
+    result = await session.execute(
+        sql_select(CashSession).where(
+            CashSession.id == session_id,
+            CashSession.association_id == current.association_id,
+        )
+    )
+    cash = result.scalar_one_or_none()
+    if not cash:
+        raise HTTPException(404, "Sessão não encontrada.")
+    if cash.status != "conferido":
+        raise HTTPException(400, "Apenas sessões conferidas podem ser revertidas.")
+    cash.status = CashSessionStatus.closed
+    session.add(cash)
+    await session.commit()
+    return {"ok": True, "session_id": str(cash.id), "status": "closed"}
 
 
 @router.post("/sessions/conferencia", summary="Conferência de caixa (sem fechar)")

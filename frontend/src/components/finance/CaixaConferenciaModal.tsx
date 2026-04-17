@@ -93,8 +93,12 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
   const naoConferidos = txs.filter(t => !t.reversed_at && !t.conferido)
   const irregularesSemObs = naoConferidos.filter(t => !t.observacao?.trim())
 
+  const transferredAmount = repasses
+    .filter(r => transfersDone.includes(r.boxId))
+    .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
   const repasseTotal = repasses.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
   const disponivel = isNaN(contagem) || contagemInput === '' ? dinheiro : contagem
+  const disponivelReal = disponivel - transferredAmount
   const repasseRestante = disponivel - repasseTotal
 
   const isAlreadyConferido = session.status === 'conferido' || savedConferencia
@@ -162,9 +166,13 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
         auto_reconcile: autoReconcile,
       })
       setPixSyncResult({ synced: r.data.synced, mode: autoReconcile ? 'reconciled' : 'batched' })
-      toast.success(autoReconcile
-        ? `${r.data.synced} PIX conciliado(s) automaticamente.`
-        : `${r.data.synced} PIX encaminhado(s) para esteira.`)
+      if (r.data.synced === 0) {
+        toast.success('Todos os PIX já estão na esteira de conciliação.')
+      } else {
+        toast.success(autoReconcile
+          ? `${r.data.synced} PIX conciliado(s) automaticamente.`
+          : `${r.data.synced} PIX encaminhado(s) para esteira.`)
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao sincronizar PIX.')
     } finally {
@@ -517,7 +525,9 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                                 onChange={e => setRepasses(prev => prev.map((r, j) => j === i ? { ...r, amount: e.target.value } : r))}
                                 placeholder="Valor"
                                 className="w-24 border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none" />
-                              <button onClick={() => handleTransfer(i)} disabled={transferring || !rep.boxId || !rep.amount}
+                              <button
+                                onClick={() => handleTransfer(i)}
+                                disabled={transferring || !rep.boxId || !rep.amount || parseFloat(rep.amount || '0') > disponivelReal + 0.005}
                                 className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold disabled:opacity-40 whitespace-nowrap">
                                 Repassar
                               </button>

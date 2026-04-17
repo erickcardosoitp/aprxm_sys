@@ -461,12 +461,23 @@ export default function FinanceiroPage() {
     setReviewSession(s)
   }
 
+  const handleRevertConferencia = async (sessionId: string) => {
+    try {
+      await api.post(`/finance/sessions/${sessionId}/revert-conferencia`)
+      toast.success('Conferência revertida — sessão voltou para Fechada.')
+      loadSessions()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao reverter.')
+    }
+  }
+
   const [tesouraria, setTesouraria] = useState<{
     open_sessions: { id: string; opened_at: string; opening_balance: string; operador: string; expected_balance: string }[]
     conferido_sessions: { id: string; opened_at: string; closing_balance: string | null; expected_balance: string | null; difference: string | null; operador: string }[]
     pap_today: { total: string; count: number }
-    caixinhas: { id: string; name: string; balance: string }[]
+    caixinhas: { id: string; name: string; balance: string; breakdown: { pm: string; total: string }[] }[]
     total_limbo: string
+    faturamento_hoje: string
   } | null>(null)
   const [transferTroco, setTransferTroco] = useState('0')
   const [transferClose, setTransferClose] = useState(true)
@@ -475,7 +486,10 @@ export default function FinanceiroPage() {
   const [sendingMalote, setSendingMalote] = useState<string | null>(null)
 
   // PIX batch
-  const [pixPending, setPixPending] = useState<{ id: string; bank: string; date: string; amount: string; name: string | null; description?: string | null }[]>([])
+  const [pixPending, setPixPending] = useState<{
+    id: string; bank: string; date: string; amount: string; name: string | null; description?: string | null;
+    status: string; session_opened_at: string | null; operador_name: string | null; conferente_name: string | null; session_id: string | null;
+  }[]>([])
   const [pixSelected, setPixSelected] = useState<Set<string>>(new Set())
   const [pixBatchBox, setPixBatchBox] = useState('')
   const [loadingPixPending, setLoadingPixPending] = useState(false)
@@ -1923,7 +1937,7 @@ export default function FinanceiroPage() {
                   <table className="w-full text-sm min-w-[1100px]">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        {['Status','Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Malote','Origem'].map(h => (
+                        {['Status','Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Malote','Origem',''].map(h => (
                           <th key={h} className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap text-xs">{h}</th>
                         ))}
                       </tr>
@@ -1983,11 +1997,21 @@ export default function FinanceiroPage() {
                                 {s.origin ?? 'Sessão de Caixa'}
                               </span>
                             </td>
+                            <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                              {s.status === 'conferido' && (
+                                <button
+                                  onClick={() => handleRevertConferencia(s.id)}
+                                  title="Desfazer conferência"
+                                  className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-800 hover:bg-amber-50 px-2 py-1 rounded-lg transition">
+                                  <RotateCcw className="w-3 h-3" /> Reverter
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         )
                       })}
                       {filtered.length === 0 && (
-                        <tr><td colSpan={14} className="px-4 py-6 text-center text-gray-400 text-sm">Nenhuma sessão no filtro selecionado.</td></tr>
+                        <tr><td colSpan={15} className="px-4 py-6 text-center text-gray-400 text-sm">Nenhuma sessão no filtro selecionado.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -2091,8 +2115,13 @@ export default function FinanceiroPage() {
               <SaldoConsolidado />
 
               {/* KPI cards */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
+                  <p className="text-xs text-gray-500 mb-1">Faturamento Hoje</p>
+                  <p className="text-base font-bold text-green-700">{tesouraria ? fmt(tesouraria.faturamento_hoje) : '—'}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">líquido (entradas − saídas)</p>
+                </div>
+                <div className="bg-white rounded-xl border border-amber-100 shadow-sm p-3">
                   <p className="text-xs text-gray-500 mb-1">Em Limbo</p>
                   <p className="text-base font-bold text-amber-700">{tesouraria ? fmt(tesouraria.total_limbo) : '—'}</p>
                   <p className="text-[10px] text-gray-400 mt-0.5">conferido, aguardando repasse</p>
@@ -2107,6 +2136,34 @@ export default function FinanceiroPage() {
                   <p className="text-base font-bold text-indigo-700">{boxSummary ? fmt(boxSummary.total_in_boxes) : '—'}</p>
                 </div>
               </div>
+
+              {/* Caixinhas breakdown */}
+              {tesouraria && tesouraria.caixinhas.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <h3 className="text-sm font-semibold text-gray-800">Saldo por Caixinha</h3>
+                  </div>
+                  <ul className="divide-y divide-gray-100">
+                    {tesouraria.caixinhas.map(box => (
+                      <li key={box.id} className="px-4 py-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-sm font-semibold text-gray-800">{box.name}</p>
+                          <p className="text-sm font-bold text-indigo-700">{fmt(box.balance)}</p>
+                        </div>
+                        {box.breakdown.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {box.breakdown.map(b => (
+                              <span key={b.pm} className="text-[10px] bg-gray-50 border border-gray-200 rounded px-2 py-0.5 text-gray-600">
+                                {b.pm}: {fmt(b.total)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Caixas abertos */}
               {tesouraria && tesouraria.open_sessions.length > 0 && (
@@ -2368,29 +2425,48 @@ export default function FinanceiroPage() {
       {tab === 'conciliacao' && (
         <div className="flex flex-col gap-4">
 
-          {/* PIX não conciliados — envio para caixinha */}
+          {/* Conciliação PIX */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-gray-800">PIX Pendentes de Destino</h2>
+              <h2 className="font-semibold text-gray-800">Conciliação PIX</h2>
               <button onClick={loadPixPending} disabled={loadingPixPending} className="text-xs text-[#26619c] hover:underline">
                 {loadingPixPending ? 'Carregando…' : 'Atualizar'}
               </button>
             </div>
             {pixPending.length === 0 ? (
-              <p className="text-xs text-gray-400">Nenhum PIX aguardando destino.</p>
+              <p className="text-xs text-gray-400">Nenhum PIX pendente de conciliação.</p>
             ) : (
               <>
-                <ul className="flex flex-col gap-1 max-h-48 overflow-y-auto mb-3">
-                  {pixPending.map(p => (
-                    <li key={p.id} className="flex items-center gap-2 text-xs bg-gray-50 rounded-lg px-3 py-2">
-                      <input type="checkbox" checked={pixSelected.has(p.id)}
-                        onChange={e => setPixSelected(prev => { const s = new Set(prev); e.target.checked ? s.add(p.id) : s.delete(p.id); return s })}
-                        className="w-3.5 h-3.5" />
-                      <span className="flex-1 truncate text-gray-700">{p.name || p.description || '—'}</span>
-                      <span className="text-gray-400">{p.date}</span>
-                      <span className="font-semibold text-green-700 whitespace-nowrap">{fmt(p.amount)}</span>
-                    </li>
-                  ))}
+                <ul className="flex flex-col gap-2 max-h-96 overflow-y-auto mb-3">
+                  {pixPending.map(p => {
+                    const statusMap: Record<string, { label: string; cls: string }> = {
+                      nao_conciliado: { label: 'Não-Conciliado', cls: 'bg-gray-100 text-gray-500' },
+                      pendente: { label: 'Pendente', cls: 'bg-amber-100 text-amber-700' },
+                      conciliado: { label: 'Conciliado', cls: 'bg-green-100 text-green-700' },
+                      cancelado: { label: 'Cancelado', cls: 'bg-red-100 text-red-600' },
+                    }
+                    const st = statusMap[p.status] ?? statusMap.nao_conciliado
+                    return (
+                      <li key={p.id} className="flex items-start gap-2 text-xs bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
+                        <input type="checkbox" checked={pixSelected.has(p.id)}
+                          onChange={e => setPixSelected(prev => { const s = new Set(prev); e.target.checked ? s.add(p.id) : s.delete(p.id); return s })}
+                          className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${st.cls}`}>{st.label}</span>
+                            <span className="font-medium text-gray-800 truncate">{p.name || p.description || '—'}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 text-[10px] text-gray-400">
+                            <span>{new Date(p.date).toLocaleDateString('pt-BR')}</span>
+                            {p.session_opened_at && <span>Sessão {new Date(p.session_opened_at).toLocaleDateString('pt-BR')}</span>}
+                            {p.operador_name && <span>Op: {p.operador_name}</span>}
+                            {p.conferente_name && <span>Conf: {p.conferente_name}</span>}
+                          </div>
+                        </div>
+                        <span className="font-semibold text-green-700 whitespace-nowrap shrink-0">{fmt(p.amount)}</span>
+                      </li>
+                    )
+                  })}
                 </ul>
                 <div className="flex gap-2 items-center flex-wrap">
                   <button onClick={() => setPixSelected(new Set(pixPending.map(p => p.id)))} className="text-xs text-[#26619c] hover:underline">Selecionar todos</button>
