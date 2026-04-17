@@ -318,12 +318,33 @@ class ReconciliationService:
             cw = set(norm_cand.split()) - stop
             if not sw or not cw:
                 return 0
-            overlap = len(sw & cw)
+            # Fuzzy word matching: exact, prefix, or high similarity (e.g. CRISTINE/CHRISTINE)
+            from difflib import SequenceMatcher as _SM
+            def _words_match(a: str, b: str) -> bool:
+                if a == b:
+                    return True
+                if len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5]:
+                    return True
+                if len(a) >= 4 and len(b) >= 4 and _SM(None, a, b).ratio() >= 0.8:
+                    return True
+                return False
+            overlap = sum(1 for w in sw if any(_words_match(w, c) for c in cw))
             ratio = overlap / max(len(sw), len(cw))
             return int(60 * ratio) if ratio >= 0.4 else 0
 
+        def _desc_name(description: str) -> str:
+            """Extract payer name from description like 'Mensalidade — Fulano de Tal'."""
+            if not description:
+                return ""
+            if " — " in description:
+                return description.split(" — ", 1)[1].strip()
+            if " - " in description:
+                return description.split(" - ", 1)[1].strip()
+            return ""
+
         for stmt in statements:
             best_score = 0
+            best_name_score = 0  # track if any name evidence exists
             best_tx = None
             matches = []
 
@@ -331,20 +352,31 @@ class ReconciliationService:
             for tx in transactions:
                 tx_id, tx_amount, tx_desc, tx_at, res_name, res_cpf, _ = tx
                 score = 0
+                name_score = 0
 
                 if stmt.cpf and res_cpf and clean_cpf(res_cpf) == stmt.cpf:
                     score += 100
-                score += _name_score(stmt.name or "", res_name or "")
+                    name_score = 100
+
+                # Match against resident name OR description name (for transactions without resident)
+                ns = _name_score(stmt.name or "", res_name or "")
+                if ns == 0 and not res_name:
+                    ns = _name_score(stmt.name or "", _desc_name(tx_desc or ""))
+                score += ns
+                name_score = max(name_score, ns)
+
                 if Decimal(str(tx_amount)) == stmt.amount:
                     score += 50
                 tx_date = tx_at.date() if hasattr(tx_at, 'date') else date.fromisoformat(str(tx_at)[:10])
                 if abs((stmt.date - tx_date).days) <= 1:
                     score += 20
 
-                if score > 0:
+                # Only record if there's name/CPF evidence (not just amount+date collision)
+                if score > 0 and name_score > 0:
                     matches.append((score, tx_id, tx_desc))
                     if score > best_score:
                         best_score = score
+                        best_name_score = name_score
                         best_tx = (tx_id, tx_desc)
 
             # --- Dependent / all-resident name fallback ---
