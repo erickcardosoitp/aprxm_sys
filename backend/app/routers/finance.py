@@ -80,6 +80,8 @@ class TransactionRequest(BaseModel):
     reference_number: str | None = None
     cash_session_id: UUID | None = None
     payment_status: str | None = None  # "paid" | "pending"
+    is_acordo: bool = False
+    acordo_installments: int = Field(default=2, ge=2, le=12)
 
 
 class ConferenciaRequest(BaseModel):
@@ -521,6 +523,8 @@ async def register_transaction(
         payment_method_id=body.payment_method_id,
         resident_id=body.resident_id,
         reference_number=body.reference_number,
+        is_acordo=body.is_acordo,
+        acordo_installments=body.acordo_installments,
     )
     return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
 

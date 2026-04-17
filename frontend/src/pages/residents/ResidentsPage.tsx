@@ -296,7 +296,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
                 <input ref={firstNameRef as any} value={form.full_name}
-                  onChange={(e) => set('full_name', e.target.value.replace(/\b\w/g, c => c.toUpperCase()))}
+                  onChange={(e) => set('full_name', e.target.value.replace(/(^\s*\S|\s\S)/g, c => c.toUpperCase()))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
                   placeholder="Nome completo" />
               </div>
@@ -349,7 +349,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
                 <input ref={firstNameRef as any} value={form.full_name}
-                  onChange={(e) => set('full_name', e.target.value.replace(/\b\w/g, c => c.toUpperCase()))}
+                  onChange={(e) => set('full_name', e.target.value.replace(/(^\s*\S|\s\S)/g, c => c.toUpperCase()))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
                   placeholder="Nome completo" />
               </div>
@@ -592,7 +592,7 @@ function DependentForm({ onSave, onCancel }: {
           {/* Dependent fields */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
-            <input value={form.full_name} onChange={e => set('full_name', e.target.value.replace(/\b\w/g, c => c.toUpperCase()))}
+            <input value={form.full_name} onChange={e => set('full_name', e.target.value.replace(/(^\s*\S|\s\S)/g, c => c.toUpperCase()))}
               autoFocus placeholder="Nome do dependente"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
           </div>

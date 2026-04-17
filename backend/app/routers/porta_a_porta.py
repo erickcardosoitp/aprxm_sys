@@ -404,6 +404,11 @@ async def pay_lead(
         "SELECT id FROM cash_sessions WHERE association_id=:aid AND status='open' "
         "AND opened_by=:uid ORDER BY opened_at DESC LIMIT 1"
     ), {"aid": str(current.association_id), "uid": str(current.user_id)})).fetchone()
+    if not open_session_row:
+        open_session_row = (await session.execute(sa_text(
+            "SELECT id FROM cash_sessions WHERE association_id=:aid AND status='open' "
+            "ORDER BY opened_at DESC LIMIT 1"
+        ), {"aid": str(current.association_id)})).fetchone()
 
     from app.models.finance import Transaction, TransactionType
     tx = Transaction(

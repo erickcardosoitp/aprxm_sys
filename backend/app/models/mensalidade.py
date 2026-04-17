@@ -12,6 +12,7 @@ class MensalidadeStatus(str, Enum):
     pending = "pending"
     paid = "paid"
     overdue = "overdue"
+    agreement = "agreement"
 
 
 class Mensalidade(SQLModel, table=True):

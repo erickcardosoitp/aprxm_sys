@@ -123,6 +123,9 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
 
+  const [isAcordo, setIsAcordo] = useState(false)
+  const [acordoInstallments, setAcordoInstallments] = useState(2)
+
   // Step 2 — income specific
   const [cpfQuery, setCpfQuery] = useState('')
   const [cpfLoading, setCpfLoading] = useState(false)
@@ -393,6 +396,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         payment_method_id: paymentMethodId || undefined,
         resident_id: resident?.id || undefined,
         cash_session_id: (canPickSession && selectedSessionId) ? selectedSessionId : undefined,
+        is_acordo: isAcordo || undefined,
+        acordo_installments: isAcordo ? acordoInstallments : undefined,
       }
       try {
         await financeService.registerTransaction(txPayload)
@@ -855,6 +860,27 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                 </div>
               )}
 
+              {/* Acordo toggle — mensalidade only */}
+              {txType === 'income' && incomeSubtype === 'mensalidade' && resident && (
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" checked={isAcordo} onChange={e => setIsAcordo(e.target.checked)}
+                      className="w-4 h-4 rounded accent-purple-600" />
+                    <span className="text-sm font-medium text-purple-700">Pagamento por Acordo</span>
+                  </label>
+                  {isAcordo && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 flex items-center gap-3">
+                      <span className="text-xs text-purple-700 font-medium">Parcelas restantes:</span>
+                      <select value={acordoInstallments} onChange={e => setAcordoInstallments(Number(e.target.value))}
+                        className="border border-purple-300 rounded-lg px-2 py-1 text-sm text-purple-800 bg-white">
+                        {[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}
+                      </select>
+                      <span className="text-xs text-purple-500">Será refletido em Leads</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Standard fields — hidden for proof_of_residence (has its own section above) */}
               {!isProof && (
                 <>
@@ -984,9 +1010,10 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                 </div>
               )}
               <p className="text-sm font-medium text-gray-700">{isProof ? 'Confirmar emissão do comprovante:' : 'Confirmar transação:'}</p>
-              <div className={`rounded-xl p-4 border ${txType === 'income' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <p className={`text-lg font-bold ${txType === 'income' ? 'text-green-700' : 'text-red-700'}`}>
+              <div className={`rounded-xl p-4 border ${isAcordo ? 'bg-purple-50 border-purple-200' : txType === 'income' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <p className={`text-lg font-bold ${isAcordo ? 'text-purple-700' : txType === 'income' ? 'text-green-700' : 'text-red-700'}`}>
                   {isProof && proofIsento ? 'ISENTO' : `${txType === 'income' ? '+' : '-'} R$ ${parseFloat(amount || '0').toFixed(2)}`}
+                  {isAcordo && <span className="ml-2 text-sm font-semibold bg-purple-200 text-purple-800 px-2 py-0.5 rounded-full">ACORDO {acordoInstallments}x</span>}
                 </p>
                 {isProof ? (
                   <>

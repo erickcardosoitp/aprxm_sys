@@ -199,6 +199,8 @@ class FinanceService:
         resident_id: UUID | None = None,
         reference_number: str | None = None,
         package_id: UUID | None = None,
+        is_acordo: bool = False,
+        acordo_installments: int = 2,
     ) -> Transaction:
         # Expense transactions require approval before affecting balance
         approval_status = "pending" if tx_type == TransactionType.expense else None
@@ -236,9 +238,10 @@ class FinanceService:
                 )
             )
             mens = existing.scalar_one_or_none()
+            target_status = MensalidadeStatus.agreement if is_acordo else MensalidadeStatus.paid
             if mens:
                 if mens.status != MensalidadeStatus.paid:
-                    mens.status = MensalidadeStatus.paid
+                    mens.status = target_status
                     mens.paid_at = datetime.utcnow()
                     mens.transaction_id = tx.id
                     self._session.add(mens)
@@ -250,12 +253,44 @@ class FinanceService:
                     reference_month=ref_month,
                     due_date=due,
                     amount=amount,
-                    status=MensalidadeStatus.paid,
+                    status=target_status,
                     paid_at=datetime.utcnow(),
                     transaction_id=tx.id,
                     created_by=created_by,
                 )
                 self._session.add(new_mens)
+
+            if is_acordo:
+                from app.models.porta_a_porta import PortaAPortaLead
+                from app.models.resident import Resident as ResidentModel
+                res_obj = await self._session.get(ResidentModel, resident_id)
+                if res_obj:
+                    ex_lead = (await self._session.execute(
+                        select(PortaAPortaLead).where(
+                            PortaAPortaLead.association_id == association_id,
+                            PortaAPortaLead.resident_id == resident_id,
+                            PortaAPortaLead.status != "cancelled",
+                        )
+                    )).scalar_one_or_none()
+                    if ex_lead:
+                        ex_lead.status = "agreement"
+                        ex_lead.updated_at = datetime.utcnow()
+                        self._session.add(ex_lead)
+                    else:
+                        self._session.add(PortaAPortaLead(
+                            association_id=association_id,
+                            operator_id=created_by,
+                            full_name=res_obj.full_name,
+                            phone=res_obj.phone_primary,
+                            cpf=res_obj.cpf,
+                            address_street=res_obj.address_street or "—",
+                            address_number=res_obj.address_number or "—",
+                            payment_type="parcelado",
+                            total_installments=acordo_installments,
+                            monthly_fee=amount,
+                            status="agreement",
+                            resident_id=resident_id,
+                        ))
 
         # Auto-create bank statement entry for PIX income transactions
         if tx_type == TransactionType.income and payment_method_id is not None:
@@ -341,8 +376,8 @@ class FinanceService:
         if cash_session_id:
             cs_result = await self._session.execute(select(CashSession).where(CashSession.id == cash_session_id))
             cash_session = cs_result.scalar_one_or_none()
-            if not cash_session:
-                raise CashSessionError("Sessão de caixa não encontrada.")
+            if not cash_session or cash_session.status != CashSessionStatus.open:
+                cash_session = await self.get_open_session(association_id)
         else:
             cash_session = await self.get_open_session(association_id)
 
