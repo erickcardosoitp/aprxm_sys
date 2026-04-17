@@ -469,15 +469,21 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
               <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-1.5 text-xs">
                 <div className="flex justify-between text-sm font-semibold">
                   <span className="text-gray-700">Disponível para repasse</span>
-                  <span className="text-gray-900">{fmt(disponivel)}</span>
+                  <span className={disponivelReal < 0 ? 'text-red-600' : 'text-gray-900'}>{fmt(disponivelReal)}</span>
                 </div>
+                {transferredAmount > 0 && (
+                  <div className="flex justify-between text-gray-400">
+                    <span>Já repassado (sessões anteriores)</span>
+                    <span className="text-orange-500 font-medium">− {fmt(transferredAmount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-gray-500">
                   <span>PIX (conciliar separado)</span>
                   <span className="text-blue-600 font-medium">{fmt(pix)}</span>
                 </div>
                 {repasseTotal > 0 && <>
                   <div className="flex justify-between border-t border-gray-200 pt-1.5">
-                    <span className="text-gray-500">Distribuído</span>
+                    <span className="text-gray-500">Distribuído agora</span>
                     <span className="font-medium text-green-600">{fmt(repasseTotal)}</span>
                   </div>
                   <div className="flex justify-between font-semibold">
