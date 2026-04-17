@@ -174,9 +174,9 @@ async def create_resident(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    # Validate phone required for members
-    if body.type == ResidentType.member and not body.phone_primary:
-        raise HTTPException(status_code=422, detail="Telefone é obrigatório para associados.")
+    # Normalize name — title case
+    if body.full_name:
+        body = body.model_copy(update={"full_name": body.full_name.strip().title()})
 
     # Validate CPF uniqueness
     if body.cpf:
@@ -401,6 +401,8 @@ async def update_resident(
         raise HTTPException(status_code=404, detail="Morador não encontrado.")
     # Use model_fields_set so explicit null (e.g. clearing CPF) is applied
     data = {k: v for k, v in body.model_dump().items() if k in body.model_fields_set}
+    if "full_name" in data and data["full_name"]:
+        data["full_name"] = data["full_name"].strip().title()
 
     if "cpf" in data:
         cpf_val = data["cpf"]
