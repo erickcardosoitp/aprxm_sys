@@ -577,6 +577,7 @@ async def reverse_delivery(
     pkg.delivered_by = None
     pkg.signature_url = None
     pkg.has_delivery_fee = False
+    pkg.delivery_fee_amount = None
     pkg.delivery_fee_paid = False
     pkg.delivery_fee_tx_id = None
     pkg.updated_at = datetime.utcnow()
