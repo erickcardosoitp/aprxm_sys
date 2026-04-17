@@ -68,10 +68,30 @@ class ReconciliationService:
         elif bank == "infinitypay":
             statements = self._parse_infinitypay(rows, association_id)
 
+        # Dedup: skip entries already in DB (same association+bank+date+name+amount)
+        existing_q = await self._session.execute(
+            text("""
+                SELECT date, name, amount FROM bank_statements
+                WHERE association_id = :aid AND bank = :bank
+            """),
+            {"aid": str(association_id), "bank": bank},
+        )
+        existing_keys = {
+            (str(r[0]), (r[1] or "").upper(), str(r[2]))
+            for r in existing_q.fetchall()
+        }
+
+        new_statements = []
         for stmt in statements:
+            key = (str(stmt.date), (stmt.name or "").upper(), str(stmt.amount))
+            if key not in existing_keys:
+                new_statements.append(stmt)
+                existing_keys.add(key)  # prevent intra-batch dups too
+
+        for stmt in new_statements:
             self._session.add(stmt)
         await self._session.flush()
-        return statements
+        return new_statements
 
     def _parse_itau(self, rows: list[dict], association_id: UUID) -> list[BankStatement]:
         result = []
