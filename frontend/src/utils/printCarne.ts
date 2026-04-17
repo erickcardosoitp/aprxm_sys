@@ -26,7 +26,7 @@ export function printCarne(
   resident: CarneResident,
   mensalidades: CarneEntry[],
   assocName: string,
-  opts?: { operatorName?: string; logoUrl?: string },
+  opts?: { operatorName?: string; logoUrl?: string; filterMonths?: string[] },
 ) {
   const now = new Date()
   const year = now.getFullYear()
@@ -39,25 +39,29 @@ export function printCarne(
   const sorted = [...mensalidades].sort((a, b) => a.reference_month.localeCompare(b.reference_month))
   const defaultAmount = sorted.length > 0 ? parseFloat(sorted[sorted.length - 1].amount).toFixed(2) : '0.00'
 
-  // Months: current month → December of current year (max 12)
+  // Months: filtered list or current month → December
+  const refsToShow: string[] = opts?.filterMonths ??
+    Array.from({ length: 12 - now.getMonth() }, (_, i) => {
+      const mo = now.getMonth() + i
+      return `${year}-${String(mo + 1).padStart(2, '0')}`
+    })
+
   const months: Array<{
     ref: string; label: string; amount: string; due: string
     status: string; paid_at?: string; isAcordo: boolean
-  }> = []
-
-  for (let mo = now.getMonth(); mo <= 11 && months.length < 12; mo++) {
-    const ref = `${year}-${String(mo + 1).padStart(2, '0')}`
+  }> = refsToShow.map(ref => {
+    const [y, m] = ref.split('-')
     const existing = byRef[ref]
-    months.push({
+    return {
       ref,
-      label: `${MONTH_PT[mo]} ${year}`,
+      label: `${MONTH_PT[parseInt(m) - 1]} ${y}`,
       amount: existing ? parseFloat(existing.amount).toFixed(2) : defaultAmount,
       due: existing?.due_date ? sd(existing.due_date) : '—',
       status: existing?.status ?? 'pending',
       paid_at: existing?.paid_at ?? undefined,
       isAcordo: existing?.tipo === 'acordo' || existing?.status === 'agreement',
-    })
-  }
+    }
+  }).filter(Boolean)
 
   const SC: Record<string, string> = { paid: '#16a34a', pending: '#d97706', overdue: '#dc2626', agreement: '#7c3aed' }
   const SL: Record<string, string> = { paid: 'PAGO', pending: 'PENDENTE', overdue: 'EM ATRASO', agreement: 'ACORDO' }

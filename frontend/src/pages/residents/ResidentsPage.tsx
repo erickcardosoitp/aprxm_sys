@@ -5,6 +5,7 @@ import api from '../../services/api'
 import type { Resident, ResidentStatus, ResidentType } from '../../types'
 import { printCarne as printCarneUtil } from '../../utils/printCarne'
 import { maskCpf, formatCpf, formatPhone, formatCep, formatDateInput, parseDateInput } from '../../utils'
+import { useAuthStore } from '../../store/authStore'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -678,8 +679,14 @@ function fmtComp(comp: string) {
   return `${MONTH_NAMES[parseInt(m) - 1]}/${y}`
 }
 
-function printCarne(resident: Resident, mensalidades: MensalidadeEntry[], assocName: string, operatorName?: string) {
-  printCarneUtil(resident, mensalidades, assocName, { operatorName })
+function printCarne(
+  resident: Resident,
+  mensalidades: MensalidadeEntry[],
+  assocName: string,
+  operatorName?: string,
+  filterMonths?: string[],
+) {
+  printCarneUtil(resident, mensalidades, assocName, { operatorName, filterMonths })
 }
 
 function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClose: () => void }) {
@@ -692,7 +699,16 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_de: '', quitado_ate: '', mode: 'single' as 'single' | 'bulk' | 'range', valor_pago: '', data_pagamento: '' })
   const [migSaving, setMigSaving] = useState(false)
   const [assocName, setAssocName] = useState('')
+  const loggedFullName = useAuthStore(s => s.fullName) ?? ''
   const [carneOperator, setCarneOperator] = useState('')
+  const [carnePeriodModal, setCarnePeriodModal] = useState(false)
+  const [carnePeriod, setCarnePeriod] = useState<'current' | 'pending' | 'year' | 'custom'>('pending')
+  const [carneFrom, setCarneFrom] = useState('')
+  const [carneTo, setCarneTo] = useState('')
+
+  useEffect(() => {
+    if (loggedFullName && !carneOperator) setCarneOperator(loggedFullName)
+  }, [loggedFullName])
 
   useEffect(() => {
     api.get<{ name?: string }>('/settings/association').then(r => setAssocName(r.data.name ?? 'Associação')).catch(() => {})
@@ -943,16 +959,86 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                   type="text"
                   value={carneOperator}
                   onChange={e => setCarneOperator(e.target.value)}
-                  placeholder="Nome do operador (opcional)"
+                  placeholder="Nome do operador"
                   className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300"
                 />
                 <button
-                  onClick={() => printCarne(currentResident, mensalidades, assocName, carneOperator || undefined)}
+                  onClick={() => setCarnePeriodModal(true)}
                   className="flex items-center gap-1.5 text-xs text-[#26619c] border border-[#26619c]/30 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap"
                 >
                   <Printer className="w-3.5 h-3.5" /> Imprimir Carnê
                 </button>
               </div>
+
+              {/* Period selection modal */}
+              {carnePeriodModal && (() => {
+                const now = new Date()
+                const year = now.getFullYear()
+                const currentRef = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}`
+                const pendingRefs = mensalidades.filter(m => m.status !== 'paid').map(m => m.reference_month)
+                const yearRefs = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`)
+
+                const getFilterMonths = (): string[] | undefined => {
+                  if (carnePeriod === 'current') return [currentRef]
+                  if (carnePeriod === 'pending') return pendingRefs.length ? pendingRefs : undefined
+                  if (carnePeriod === 'year') return yearRefs
+                  if (carnePeriod === 'custom' && carneFrom && carneTo) {
+                    return yearRefs.filter(r => r >= carneFrom && r <= carneTo)
+                  }
+                  return undefined
+                }
+
+                return (
+                  <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setCarnePeriodModal(false)}>
+                    <div className="bg-white rounded-2xl shadow-xl p-5 w-full max-w-sm flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+                      <h3 className="font-semibold text-gray-800 text-sm">Selecione o período do carnê</h3>
+                      <div className="flex flex-col gap-2">
+                        {([
+                          ['current', 'Mês atual'],
+                          ['pending', `Meses pendentes (${pendingRefs.length})`],
+                          ['year', 'Ano todo'],
+                          ['custom', 'Período personalizado'],
+                        ] as const).map(([val, label]) => (
+                          <label key={val} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="radio" name="carnePeriod" value={val} checked={carnePeriod === val}
+                              onChange={() => setCarnePeriod(val)} className="accent-[#26619c]" />
+                            {label}
+                          </label>
+                        ))}
+                        {carnePeriod === 'custom' && (
+                          <div className="flex gap-2 mt-1 ml-5">
+                            <div className="flex flex-col gap-0.5 flex-1">
+                              <label className="text-xs text-gray-500">De</label>
+                              <input type="month" value={carneFrom} onChange={e => setCarneFrom(e.target.value)}
+                                className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#26619c]/30" />
+                            </div>
+                            <div className="flex flex-col gap-0.5 flex-1">
+                              <label className="text-xs text-gray-500">Até</label>
+                              <input type="month" value={carneTo} onChange={e => setCarneTo(e.target.value)}
+                                className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#26619c]/30" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => setCarnePeriodModal(false)}
+                          className="flex-1 text-sm text-gray-500 border border-gray-200 rounded-xl py-2 hover:bg-gray-50">Cancelar</button>
+                        <button
+                          onClick={() => {
+                            const months = getFilterMonths()
+                            if (carnePeriod === 'pending' && pendingRefs.length === 0) { toast.error('Nenhum mês pendente.'); return }
+                            if (carnePeriod === 'custom' && (!carneFrom || !carneTo)) { toast.error('Selecione o período.'); return }
+                            setCarnePeriodModal(false)
+                            printCarne(currentResident, mensalidades, assocName, carneOperator || undefined, months)
+                          }}
+                          className="flex-1 text-sm text-white bg-[#26619c] rounded-xl py-2 hover:bg-[#1a4f87] font-medium">
+                          <Printer className="w-3.5 h-3.5 inline mr-1" /> Imprimir
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             {mensalidades.length === 0 ? (
               <div className="py-8 text-center text-gray-400 text-sm">Nenhuma mensalidade registrada.</div>
             ) : (
