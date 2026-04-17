@@ -159,7 +159,6 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
     setPixSyncLoading(true)
     try {
       const r = await api.post<{ synced: number }>('/finance/sessions/sync-pix', {
-        session_id: session.id,
         auto_reconcile: autoReconcile,
       })
       setPixSyncResult({ synced: r.data.synced, mode: autoReconcile ? 'reconciled' : 'batched' })

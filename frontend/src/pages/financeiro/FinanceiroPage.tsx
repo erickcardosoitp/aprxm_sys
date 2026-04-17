@@ -1923,7 +1923,7 @@ export default function FinanceiroPage() {
                   <table className="w-full text-sm min-w-[1100px]">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        {['Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Malote','Origem'].map(h => (
+                        {['Status','Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Malote','Origem'].map(h => (
                           <th key={h} className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap text-xs">{h}</th>
                         ))}
                       </tr>
@@ -1937,6 +1937,18 @@ export default function FinanceiroPage() {
                         const isManual = s.origin === 'Manual'
                         return (
                           <tr key={s.id} className="hover:bg-blue-50/40 cursor-pointer transition" onClick={() => openReview(s)}>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {(() => {
+                                const statusMap: Record<string, { label: string; cls: string }> = {
+                                  open: { label: 'Aberto', cls: 'bg-green-100 text-green-700' },
+                                  closed: { label: 'Fechado', cls: 'bg-gray-100 text-gray-600' },
+                                  conferido: { label: 'Conferido', cls: 'bg-blue-100 text-blue-700' },
+                                  cancelled: { label: 'Cancelado', cls: 'bg-red-100 text-red-700' },
+                                }
+                                const st = statusMap[s.status] ?? { label: s.status, cls: 'bg-gray-100 text-gray-500' }
+                                return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${st.cls}`}>{st.label}</span>
+                              })()}
+                            </td>
                             <td className="px-4 py-3 whitespace-nowrap text-gray-800 font-semibold text-sm">{fmtDate(s.opened_at)}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-gray-700">{s.operador_name ?? '—'}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-blue-700 font-medium">{fmt(s.total_pix ?? '0')}</td>
@@ -1975,7 +1987,7 @@ export default function FinanceiroPage() {
                         )
                       })}
                       {filtered.length === 0 && (
-                        <tr><td colSpan={13} className="px-4 py-6 text-center text-gray-400 text-sm">Nenhuma sessão no filtro selecionado.</td></tr>
+                        <tr><td colSpan={14} className="px-4 py-6 text-center text-gray-400 text-sm">Nenhuma sessão no filtro selecionado.</td></tr>
                       )}
                     </tbody>
                   </table>
