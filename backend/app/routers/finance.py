@@ -79,6 +79,7 @@ class TransactionRequest(BaseModel):
     resident_id: UUID | None = None
     reference_number: str | None = None
     cash_session_id: UUID | None = None
+    payment_status: str | None = None  # "paid" | "pending"
 
 
 class ConferenciaRequest(BaseModel):
@@ -801,9 +802,9 @@ async def register_offline_transaction(
         amount=body.amount,
         description=body.description,
         reference_number=body.reference_number,
-        approval_status="approved",
-        approved_by=current.user_id,
-        approved_at=datetime.utcnow(),
+        approval_status="pending" if body.payment_status == "pending" else "approved",
+        approved_by=current.user_id if body.payment_status != "pending" else None,
+        approved_at=datetime.utcnow() if body.payment_status != "pending" else None,
         created_by=current.user_id,
     )
     session.add(tx)

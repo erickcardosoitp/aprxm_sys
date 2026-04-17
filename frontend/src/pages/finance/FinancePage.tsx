@@ -617,6 +617,7 @@ export default function FinancePage() {
   const [approvalItem, setApprovalItem] = useState<PendingApproval | null>(null)
   const [showOfflineExpense, setShowOfflineExpense] = useState(false)
   const [offlineType, setOfflineType] = useState<'expense' | 'income'>('expense')
+  const [offlinePaymentStatus, setOfflinePaymentStatus] = useState<'paid' | 'pending'>('paid')
   const [offlineForm, setOfflineForm] = useState({ description: '', amount: '', category_id: '' })
   const [offlineCategories, setOfflineCategories] = useState<{ id: string; name: string }[]>([])
   const [offlinePayMethods, setOfflinePayMethods] = useState<{ id: string; name: string }[]>([])
@@ -830,6 +831,7 @@ export default function FinancePage() {
         resident_id: offlineResident?.id || null,
         income_subtype: offlineType === 'income' ? offlineSubtype : undefined,
         payment_method_id: offlinePaymentMethodId || null,
+        payment_status: offlinePaymentStatus,
       })
       toast.success(offlineType === 'income' ? 'Entrada registrada (sem caixa)!' : 'Saída externa registrada!')
       setShowOfflineExpense(false)
@@ -838,6 +840,7 @@ export default function FinancePage() {
       setOfflineResidentQuery('')
       setOfflineResidentResults([])
       setOfflinePaymentMethodId('')
+      setOfflinePaymentStatus('paid')
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao registrar.')
     } finally {
@@ -1023,6 +1026,20 @@ export default function FinancePage() {
                   </div>
                 </div>
               )}
+            </div>
+            {/* Status do pagamento */}
+            <div className="px-5 pb-3">
+              <p className="text-xs font-medium text-gray-600 mb-2">Status do pagamento</p>
+              <div className="flex gap-2">
+                {(['paid', 'pending'] as const).map(s => (
+                  <button key={s} type="button" onClick={() => setOfflinePaymentStatus(s)}
+                    className={`flex-1 py-2 rounded-xl text-sm font-medium border transition ${offlinePaymentStatus === s
+                      ? s === 'paid' ? 'bg-green-600 text-white border-green-600' : 'bg-amber-500 text-white border-amber-500'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    {s === 'paid' ? '✓ Pago' : '⏳ Pendente'}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex gap-3 px-5 pb-5">
               <button onClick={() => setShowOfflineExpense(false)}
