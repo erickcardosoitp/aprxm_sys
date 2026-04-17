@@ -77,7 +77,7 @@ ERP/SaaS multi-tenant — Instituto Tia Pretinha (`c:\aprxm_sass`)
 - Backend: Python 3.10 / FastAPI / SQLModel / PostgreSQL (asyncpg)
 - Frontend: React 18 / Vite / Tailwind CSS (mobile-first)
 - Auth: JWT Bearer (`jose` + `passlib[bcrypt]`)
-- Deploy: **NÃO usa Render**. Frontend no Vercel. Backend: confirmar com o usuário.
+- Deploy: **Tudo na Vercel** (frontend + backend). `git push origin main` dispara deploy automático. `.vercel/project.json` aponta para `aprxm-sys_frontend`. Backend em `backend/vercel.json` via `@vercel/python`.
 
 **Multi-tenancy:** toda tabela tem `association_id UUID NOT NULL`. Nunca bypassar esse filtro.
 
