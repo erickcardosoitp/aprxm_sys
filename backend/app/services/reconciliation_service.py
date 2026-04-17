@@ -22,6 +22,23 @@ def normalize_name(name: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c)).strip()
 
 
+def parse_amount(raw: str) -> Decimal:
+    """Parse amount handling both BR (1.234,56) and US (1,234.56) formats."""
+    v = raw.replace("R$", "").strip()
+    if not v:
+        return Decimal("0")
+    # US format: has period as decimal with 2 digits at end, no comma — e.g. "50.00", "1234.56"
+    if "." in v and "," not in v:
+        parts = v.split(".")
+        if len(parts) == 2 and len(parts[-1]) <= 2:
+            return Decimal(v)  # already valid decimal string
+        # multiple dots = thousands sep — remove and use last segment
+        v = v.replace(".", "")
+        return Decimal(v)
+    # BR format: 50,00 or 1.234,56
+    return Decimal(v.replace(".", "").replace(",", "."))
+
+
 def clean_cpf(cpf: str | None) -> str | None:
     if not cpf:
         return None
@@ -67,7 +84,7 @@ class ReconciliationService:
             cpf_raw = row.get("CPF/CNPJ") or row.get("cpf") or ""
 
             try:
-                valor_dec = Decimal(valor.replace("R$", "").replace(".", "").replace(",", ".").strip())
+                valor_dec = parse_amount(valor)
             except Exception:
                 continue
 
@@ -124,7 +141,7 @@ class ReconciliationService:
                 continue
 
             try:
-                valor_dec = Decimal(valor_raw.replace("R$", "").replace(".", "").replace(",", "."))
+                valor_dec = parse_amount(valor_raw)
                 if valor_dec <= 0:
                     continue
             except Exception:
@@ -164,16 +181,25 @@ class ReconciliationService:
         - Valor: positivo = entrada
         """
         import re
+
+        def _get(row: dict, *keys: str) -> str:
+            for k in keys:
+                v = row.get(k) or row.get(k.lower()) or row.get(k.upper()) or ""
+                if v.strip():
+                    return v.strip()
+            return ""
+
         result = []
         for row in rows:
-            tipo = (row.get("Tipo") or row.get("tipo") or "").strip().lower()
+            tipo = _get(row, "Tipo", "tipo", "Categoria", "Transação", "Transacao").lower()
             if "pix" not in tipo:
                 continue
 
-            raw_date = (row.get("Data") or row.get("data") or "").strip()
-            nome = (row.get("Nome") or row.get("nome") or "").strip()
-            detalhe = (row.get("Detalhe") or row.get("detalhe") or "").strip()
-            valor_raw = (row.get("Valor") or row.get("valor") or "0").strip()
+            raw_date = _get(row, "Data", "data", "Date")
+            nome = _get(row, "Nome", "nome", "Pagador", "Sacado", "Name")
+            detalhe = _get(row, "Detalhe", "detalhe", "Descrição", "Descricao", "Detail")
+            # InfinityPay may have "Valor Bruto", "Valor Líquido", "Valor"
+            valor_raw = _get(row, "Valor Bruto", "Valor Líquido", "Valor Liquido", "Valor", "valor", "Amount") or "0"
 
             try:
                 from datetime import datetime
@@ -182,7 +208,7 @@ class ReconciliationService:
                 continue
 
             try:
-                valor_dec = Decimal(valor_raw.replace("R$", "").replace(".", "").replace(",", "."))
+                valor_dec = parse_amount(valor_raw)
                 if valor_dec <= 0:
                     continue
             except Exception:
@@ -216,11 +242,11 @@ class ReconciliationService:
         result = await self._session.execute(stmt_q)
         statements = list(result.scalars().all())
 
-        # Get income transactions from open/recent sessions
+        # Get income transactions (unreconciled)
         tx_q = await self._session.execute(
             text("""
                 SELECT t.id, t.amount, t.description, t.transaction_at,
-                       r.full_name, r.cpf
+                       r.full_name, r.cpf, t.resident_id
                 FROM transactions t
                 LEFT JOIN residents r ON r.id = t.resident_id
                 WHERE t.association_id = :aid
@@ -234,39 +260,63 @@ class ReconciliationService:
         )
         transactions = tx_q.fetchall()
 
+        # Build lookup: normalized_name -> list of resident_ids (for dependent matching)
+        all_residents_q = await self._session.execute(
+            text("SELECT id, full_name, cpf FROM residents WHERE association_id=:aid"),
+            {"aid": str(association_id)},
+        )
+        # name_to_resident_ids: norm_name -> [(resident_id, cpf)]
+        name_to_residents: dict[str, list[tuple]] = {}
+        cpf_to_resident: dict[str, str] = {}
+        for rr in all_residents_q.fetchall():
+            rid, rname, rcpf = rr
+            norm = normalize_name(rname or "")
+            if norm:
+                name_to_residents.setdefault(norm, []).append((str(rid), rcpf))
+            if rcpf:
+                clean = clean_cpf(rcpf)
+                if clean:
+                    cpf_to_resident[clean] = str(rid)
+
+        # Build lookup: resident_id -> list of transaction ids
+        res_to_txs: dict[str, list] = {}
+        for tx in transactions:
+            rid = str(tx[6]) if tx[6] else None
+            if rid:
+                res_to_txs.setdefault(rid, []).append(tx)
+
         automatico = []
         sugestao = []
         pendente = []
+
+        def _name_score(stmt_name: str, candidate_name: str) -> int:
+            if not stmt_name or not candidate_name:
+                return 0
+            norm_cand = normalize_name(candidate_name)
+            stop = {"DE", "DA", "DO", "DOS", "DAS", "E"}
+            sw = set(stmt_name.split()) - stop
+            cw = set(norm_cand.split()) - stop
+            if not sw or not cw:
+                return 0
+            overlap = len(sw & cw)
+            ratio = overlap / max(len(sw), len(cw))
+            return int(60 * ratio) if ratio >= 0.4 else 0
 
         for stmt in statements:
             best_score = 0
             best_tx = None
             matches = []
 
+            # --- Match against transactions directly ---
             for tx in transactions:
-                tx_id, tx_amount, tx_desc, tx_at, res_name, res_cpf = tx
+                tx_id, tx_amount, tx_desc, tx_at, res_name, res_cpf, _ = tx
                 score = 0
 
-                # CPF match (priority)
                 if stmt.cpf and res_cpf and clean_cpf(res_cpf) == stmt.cpf:
                     score += 100
-
-                # Name similarity — token overlap ratio
-                if stmt.name and res_name:
-                    norm_res = normalize_name(res_name)
-                    stmt_words = set(stmt.name.split()) - {"DE", "DA", "DO", "DOS", "DAS", "E"}
-                    res_words  = set(norm_res.split())  - {"DE", "DA", "DO", "DOS", "DAS", "E"}
-                    if stmt_words and res_words:
-                        overlap = len(stmt_words & res_words)
-                        ratio = overlap / max(len(stmt_words), len(res_words))
-                        if ratio >= 0.5:       # ≥50% dos tokens batem
-                            score += int(60 * ratio)  # proporcional: 30–60 pts
-
-                # Amount match
+                score += _name_score(stmt.name or "", res_name or "")
                 if Decimal(str(tx_amount)) == stmt.amount:
                     score += 50
-
-                # Date proximity (within 1 day)
                 tx_date = tx_at.date() if hasattr(tx_at, 'date') else date.fromisoformat(str(tx_at)[:10])
                 if abs((stmt.date - tx_date).days) <= 1:
                     score += 20
@@ -277,6 +327,47 @@ class ReconciliationService:
                         best_score = score
                         best_tx = (tx_id, tx_desc)
 
+            # --- Dependent / all-resident name fallback ---
+            # If no strong match yet, search all resident names and find their transactions
+            if best_score < 70 and stmt.name:
+                # CPF lookup
+                if stmt.cpf and stmt.cpf in cpf_to_resident:
+                    rid = cpf_to_resident[stmt.cpf]
+                    for tx in res_to_txs.get(rid, []):
+                        tx_id, tx_amount, tx_desc, tx_at, _, _, _ = tx
+                        s = 100  # cpf match via resident
+                        if Decimal(str(tx_amount)) == stmt.amount:
+                            s += 50
+                        tx_date = tx_at.date() if hasattr(tx_at, 'date') else date.fromisoformat(str(tx_at)[:10])
+                        if abs((stmt.date - tx_date).days) <= 1:
+                            s += 20
+                        matches.append((s, tx_id, tx_desc))
+                        if s > best_score:
+                            best_score = s
+                            best_tx = (tx_id, tx_desc)
+
+                # Name fuzzy over all residents
+                for norm_res, res_list in name_to_residents.items():
+                    ns = _name_score(stmt.name, norm_res)
+                    if ns < 30:
+                        continue
+                    for (rid, rcpf) in res_list:
+                        extra = 0
+                        if stmt.cpf and rcpf and clean_cpf(rcpf) == stmt.cpf:
+                            extra = 100
+                        for tx in res_to_txs.get(rid, []):
+                            tx_id, tx_amount, tx_desc, tx_at, _, _, _ = tx
+                            s = ns + extra
+                            if Decimal(str(tx_amount)) == stmt.amount:
+                                s += 50
+                            tx_date = tx_at.date() if hasattr(tx_at, 'date') else date.fromisoformat(str(tx_at)[:10])
+                            if abs((stmt.date - tx_date).days) <= 1:
+                                s += 20
+                            matches.append((s, tx_id, tx_desc))
+                            if s > best_score:
+                                best_score = s
+                                best_tx = (tx_id, tx_desc)
+
             item = {
                 "id": str(stmt.id),
                 "bank": stmt.bank,
@@ -286,6 +377,7 @@ class ReconciliationService:
                 "cpf": stmt.cpf,
                 "score": best_score,
                 "sale_description": best_tx[1] if best_tx else None,
+                "status": "pendente",
             }
 
             if best_score >= 100:
