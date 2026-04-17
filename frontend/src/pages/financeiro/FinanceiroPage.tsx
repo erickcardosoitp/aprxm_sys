@@ -92,9 +92,10 @@ interface DelinquentItem {
 }
 
 interface ReconciliationItem {
-  id: string; bank: string; date: string; amount: number; name: string
-  cpf?: string; status: 'automatico' | 'sugestao' | 'pendente'; score: number
-  sale_description?: string
+  id: string; transaction_id?: string; bank: string; date: string; amount: number
+  name: string; resident?: string; cpf?: string
+  status: 'automatico' | 'sugestao' | 'pendente' | 'identificado'; score: number
+  sale_description?: string; bank_statement_id?: string
 }
 
 const fmt = (v: string | number) =>
@@ -328,6 +329,7 @@ export default function FinanceiroPage() {
     automatico: ReconciliationItem[]
     sugestao: ReconciliationItem[]
     pendente: ReconciliationItem[]
+    identificado: ReconciliationItem[]
   } | null>(null)
 
   // Porta a Porta
@@ -2529,12 +2531,20 @@ export default function FinanceiroPage() {
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {reconciliationResults.automatico.map(item => (
-                      <li key={item.id} className="flex items-center justify-between text-sm bg-green-50 rounded-lg px-3 py-2">
-                        <div>
-                          <p className="font-medium text-gray-800">{item.name}</p>
-                          <p className="text-xs text-gray-400">{item.date} · {item.bank}</p>
+                      <li key={item.id} className="text-sm bg-green-50 rounded-lg px-3 py-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-gray-800">{item.name}</p>
+                            {item.resident && item.resident !== item.name && (
+                              <p className="text-xs text-gray-500">Morador: {item.resident}</p>
+                            )}
+                            {item.sale_description && (
+                              <p className="text-xs text-gray-500">→ {item.sale_description}</p>
+                            )}
+                            <p className="text-xs text-gray-400">{item.date} · {item.bank}</p>
+                          </div>
+                          <span className="font-bold text-green-700 ml-3">R$ {item.amount.toFixed(2)}</span>
                         </div>
-                        <span className="font-bold text-green-700">R$ {item.amount.toFixed(2)}</span>
                       </li>
                     ))}
                   </ul>
@@ -2550,13 +2560,18 @@ export default function FinanceiroPage() {
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {reconciliationResults.sugestao.map(item => (
-                      <li key={item.id} className="flex items-center justify-between text-sm bg-yellow-50 rounded-lg px-3 py-2">
-                        <div>
-                          <p className="font-medium text-gray-800">{item.name}</p>
-                          <p className="text-xs text-gray-400">{item.date} · Score: {item.score}</p>
-                          {item.sale_description && <p className="text-xs text-gray-600">→ {item.sale_description}</p>}
+                      <li key={item.id} className="text-sm bg-yellow-50 rounded-lg px-3 py-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-gray-800">{item.name}</p>
+                            {item.resident && item.resident !== item.name && (
+                              <p className="text-xs text-gray-500">Morador: {item.resident}</p>
+                            )}
+                            {item.sale_description && <p className="text-xs text-gray-500">→ {item.sale_description}</p>}
+                            <p className="text-xs text-gray-400">{item.date} · Score: {item.score}</p>
+                          </div>
+                          <span className="font-bold text-yellow-700 ml-3">R$ {item.amount.toFixed(2)}</span>
                         </div>
-                        <span className="font-bold text-yellow-700">R$ {item.amount.toFixed(2)}</span>
                       </li>
                     ))}
                   </ul>
@@ -2565,7 +2580,7 @@ export default function FinanceiroPage() {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
                 <h3 className="font-semibold text-gray-600 mb-3 flex items-center gap-2">
                   <Clock className="w-4 h-4" />
-                  Não identificados ({reconciliationResults.pendente.length})
+                  Sem lançamento correspondente ({reconciliationResults.pendente.length})
                 </h3>
                 {reconciliationResults.pendente.length === 0 ? (
                   <p className="text-xs text-gray-400">Nenhum pendente.</p>
@@ -2574,8 +2589,9 @@ export default function FinanceiroPage() {
                     {reconciliationResults.pendente.map(item => (
                       <li key={item.id} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2">
                         <div>
-                          <p className="font-medium text-gray-800">{item.name}</p>
-                          <p className="text-xs text-gray-400">{item.date} · {item.bank}</p>
+                          <p className="font-medium text-gray-800">{item.sale_description || item.name}</p>
+                          {item.resident && <p className="text-xs text-gray-500">Morador: {item.resident}</p>}
+                          <p className="text-xs text-gray-400">{item.date}</p>
                         </div>
                         <span className="font-bold text-gray-600">R$ {item.amount.toFixed(2)}</span>
                       </li>
@@ -2583,6 +2599,29 @@ export default function FinanceiroPage() {
                   </ul>
                 )}
               </div>
+              {reconciliationResults.identificado?.length > 0 && (
+                <div className="bg-white rounded-xl border border-purple-200 shadow-sm p-4">
+                  <h3 className="font-semibold text-purple-700 mb-1 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    PIX de associados sem lançamento ({reconciliationResults.identificado.length})
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-3">Pagadores identificados na base, mas sem transação registrada no sistema.</p>
+                  <ul className="flex flex-col gap-2">
+                    {reconciliationResults.identificado.map(item => (
+                      <li key={item.id} className="text-sm bg-purple-50 rounded-lg px-3 py-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-gray-800">{item.name}</p>
+                            <p className="text-xs text-purple-600">→ {item.resident}</p>
+                            <p className="text-xs text-gray-400">{item.date} · {item.bank}</p>
+                          </div>
+                          <span className="font-bold text-purple-700 ml-3">R$ {item.amount.toFixed(2)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>

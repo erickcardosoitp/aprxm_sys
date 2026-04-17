@@ -321,6 +321,30 @@ class ReconciliationService:
                 return description.split(" - ", 1)[1].strip()
             return ""
 
+        # Build resident name/CPF lookup for reverse matching (payer → resident → tx)
+        all_res_q = await self._session.execute(
+            text("SELECT id, full_name, cpf FROM residents WHERE association_id=:aid"),
+            {"aid": str(association_id)},
+        )
+        name_to_residents: dict[str, list[tuple]] = {}
+        cpf_to_resident_id: dict[str, str] = {}
+        for rr in all_res_q.fetchall():
+            rid, rname, rcpf = rr
+            norm = normalize_name(rname or "")
+            if norm:
+                name_to_residents.setdefault(norm, []).append((str(rid), rcpf))
+            if rcpf:
+                c = clean_cpf(rcpf)
+                if c:
+                    cpf_to_resident_id[c] = str(rid)
+
+        # resident_id → transactions for reverse lookup
+        res_to_txs: dict[str, list] = {}
+        for tx in transactions:
+            rid = str(tx[6]) if tx[6] else None
+            if rid:
+                res_to_txs.setdefault(rid, []).append(tx)
+
         automatico = []
         sugestao = []
         pendente = []
@@ -329,13 +353,13 @@ class ReconciliationService:
         claimed_stmt_ids: set[str] = set()
 
         for tx in transactions:
-            tx_id, tx_amount, tx_desc, tx_at, res_name, res_cpf, _ = tx
+            tx_id, tx_amount, tx_desc, tx_at, res_name, res_cpf, tx_resident_id = tx
             tx_date = tx_at.date() if hasattr(tx_at, 'date') else date.fromisoformat(str(tx_at)[:10])
             tx_amount_dec = Decimal(str(tx_amount))
-
-            # Candidate names for this transaction: resident name + description name
             tx_res_name = normalize_name(res_name or "")
             tx_desc_name = normalize_name(_desc_name(tx_desc or ""))
+            # Primary name to match against: resident name, fallback to description name
+            tx_primary_name = tx_res_name or tx_desc_name
 
             best_score = 0
             best_stmt: BankStatement | None = None
@@ -348,15 +372,31 @@ class ReconciliationService:
                 score = 0
                 name_score = 0
 
-                # CPF match
+                # CPF match (resident CPF = stmt payer CPF)
                 if res_cpf and stmt.cpf and clean_cpf(res_cpf) == stmt.cpf:
                     score += 100
                     name_score = 100
 
-                # Name match: try resident name first, then description name
-                ns = _name_score(tx_res_name or tx_desc_name, stmt.name or "")
+                # Direct name match: transaction resident/desc vs stmt payer
+                ns = _name_score(tx_primary_name, stmt.name or "")
                 score += ns
                 name_score = max(name_score, ns)
+
+                # Reverse lookup: stmt payer name → resident → is that resident the tx's resident?
+                if name_score == 0 and stmt.name and tx_resident_id:
+                    for norm_res, res_list in name_to_residents.items():
+                        rns = _name_score(normalize_name(stmt.name), norm_res)
+                        if rns < 30:
+                            continue
+                        for (rid, rcpf) in res_list:
+                            if rid == str(tx_resident_id):
+                                # stmt payer is a known resident that matches this tx's resident
+                                score += rns
+                                name_score = max(name_score, rns)
+                                if rcpf and stmt.cpf and clean_cpf(rcpf) == stmt.cpf:
+                                    score += 100
+                                    name_score = 100
+                                break
 
                 # Amount
                 if tx_amount_dec == stmt.amount:
@@ -373,15 +413,19 @@ class ReconciliationService:
                         best_score = score
                         best_stmt = stmt
 
+            # Build item with frontend-compatible fields
             item = {
+                "id": str(best_stmt.id) if best_stmt else str(tx_id),
                 "transaction_id": str(tx_id),
-                "description": tx_desc,
-                "amount": float(tx_amount),
+                "bank": best_stmt.bank if best_stmt else "",
                 "date": str(tx_date),
+                "amount": float(tx_amount),
+                "name": best_stmt.name if best_stmt else (res_name or _desc_name(tx_desc or "")),
                 "resident": res_name or "",
+                "cpf": best_stmt.cpf if best_stmt else (clean_cpf(res_cpf) if res_cpf else None),
                 "score": best_score,
+                "sale_description": tx_desc,
                 "bank_statement_id": str(best_stmt.id) if best_stmt else None,
-                "bank_name": best_stmt.name if best_stmt else None,
                 "status": "pendente",
             }
 
@@ -399,7 +443,7 @@ class ReconciliationService:
                 claimed_stmt_ids.add(str(best_stmt.id))
                 item["status"] = "automatico"
 
-                if stmt.cpf and best_stmt:
+                if best_stmt.cpf:
                     await self._pay_pending_mensalidade(
                         association_id=association_id,
                         cpf=best_stmt.cpf,
@@ -427,10 +471,44 @@ class ReconciliationService:
 
         await self._session.flush()
 
+        # --- Pass 2: identify unmatched bank statements whose payer is a known resident ---
+        # These are payments received but with no registered transaction in the system
+        identificado = []
+        for stmt in statements:
+            if stmt.conciliado or str(stmt.id) in claimed_stmt_ids:
+                continue
+            # Check if payer CPF or name matches a known resident
+            resident_match: str | None = None
+            if stmt.cpf and stmt.cpf in cpf_to_resident_id:
+                rid = cpf_to_resident_id[stmt.cpf]
+                for norm_res, res_list in name_to_residents.items():
+                    if any(r[0] == rid for r in res_list):
+                        resident_match = norm_res
+                        break
+            if not resident_match and stmt.name:
+                for norm_res, _ in name_to_residents.items():
+                    if _name_score(normalize_name(stmt.name), norm_res) >= 40:
+                        resident_match = norm_res
+                        break
+            if resident_match:
+                identificado.append({
+                    "id": str(stmt.id),
+                    "bank": stmt.bank,
+                    "date": str(stmt.date),
+                    "amount": float(stmt.amount),
+                    "name": stmt.name or "",
+                    "cpf": stmt.cpf,
+                    "score": 0,
+                    "sale_description": None,
+                    "resident": resident_match,
+                    "status": "identificado",
+                })
+
         return {
             "automatico": automatico,
             "sugestao": sugestao,
             "pendente": pendente,
+            "identificado": identificado,
         }
 
     async def _pay_pending_mensalidade(
