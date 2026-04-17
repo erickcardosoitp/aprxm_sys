@@ -806,29 +806,47 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
     try {
       const res = await api.get<any>(`/mensalidades/${id}/comprovante`)
       const d = res.data
-      const html = `
-        <html><head><title>Comprovante</title><style>
-          body{font-family:sans-serif;padding:24px;max-width:480px;margin:auto}
-          h2{color:#26619c}p{margin:4px 0}.label{color:#666;font-size:12px}.val{font-weight:600;font-size:14px}
-          hr{margin:16px 0}
-        </style></head><body>
-          <h2>Comprovante de Mensalidade</h2>
-          <hr/>
-          <p class="label">Morador</p><p class="val">${d.resident_name}</p>
-          ${d.resident_cpf ? `<p class="label">CPF</p><p class="val">${maskCpf(d.resident_cpf)}</p>` : ''}
-          ${d.unit ? `<p class="label">Unidade</p><p class="val">${d.unit}${d.block ? ' / Bl. ' + d.block : ''}</p>` : ''}
-          <hr/>
-          <p class="label">Referência</p><p class="val">${d.reference_month}</p>
-          <p class="label">Vencimento</p><p class="val">${safeDate(d.due_date)}</p>
-          <p class="label">Valor</p><p class="val">R$ ${parseFloat(d.amount).toFixed(2)}</p>
-          <p class="label">Pago em</p><p class="val">${safeDate(d.paid_at)}</p>
-          <p class="label">Forma de pagamento</p><p class="val">${d.payment_method}</p>
-          <hr/>
-          <p class="label">Associação</p><p class="val">${d.association_name}</p>
-          ${d.city ? `<p class="label">Cidade</p><p class="val">${d.city}</p>` : ''}
-          ${d.assoc_phone ? `<p class="label">Telefone</p><p class="val">${d.assoc_phone}</p>` : ''}
-          ${d.tx_desc ? `<p class="label">Descrição</p><p class="val">${d.tx_desc}</p>` : ''}
-        </body></html>`
+      const via = (label: string) => `
+        <div class="via">
+          <div class="via-header">
+            <span class="assoc">${d.association_name}</span>
+            <span class="via-label">${label}</span>
+          </div>
+          <div class="title">Comprovante de Mensalidade</div>
+          <div class="row"><span class="lbl">Morador</span><span class="val">${d.resident_name}</span></div>
+          ${d.resident_cpf ? `<div class="row"><span class="lbl">CPF</span><span class="val">${maskCpf(d.resident_cpf)}</span></div>` : ''}
+          ${d.unit ? `<div class="row"><span class="lbl">Unidade</span><span class="val">${d.unit}${d.block ? ' / Bl. ' + d.block : ''}</span></div>` : ''}
+          <div class="divider"></div>
+          <div class="row"><span class="lbl">Referência</span><span class="val">${d.reference_month}</span></div>
+          <div class="row"><span class="lbl">Vencimento</span><span class="val">${safeDate(d.due_date)}</span></div>
+          <div class="row"><span class="lbl">Valor</span><span class="val bold">R$ ${parseFloat(d.amount).toFixed(2)}</span></div>
+          <div class="row"><span class="lbl">Pago em</span><span class="val">${safeDate(d.paid_at)}</span></div>
+          <div class="row"><span class="lbl">Pagamento</span><span class="val">${d.payment_method}</span></div>
+          ${d.assoc_phone ? `<div class="row"><span class="lbl">Tel</span><span class="val">${d.assoc_phone}</span></div>` : ''}
+        </div>`
+      const html = `<html><head><title>Comprovante</title><style>
+        @page{size:A4 portrait;margin:10mm}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:sans-serif;display:flex;flex-direction:column;align-items:center;gap:0}
+        .via{width:140mm;padding:8mm;border:1px solid #ccc;background:#fff}
+        .via-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+        .assoc{font-size:9px;color:#555;font-weight:600;text-transform:uppercase;max-width:80%}
+        .via-label{font-size:8px;color:#888;border:1px solid #ccc;padding:1px 5px;border-radius:3px;white-space:nowrap}
+        .title{font-size:11px;font-weight:700;color:#26619c;text-align:center;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+        .divider{border-top:1px dashed #ddd;margin:5px 0}
+        .row{display:flex;justify-content:space-between;padding:2px 0}
+        .lbl{font-size:9px;color:#777}
+        .val{font-size:10px;color:#222;font-weight:500;text-align:right}
+        .bold{font-weight:700;font-size:11px;color:#111}
+        .cut{width:140mm;display:flex;align-items:center;gap:4px;padding:4px 0}
+        .cut-line{flex:1;border-top:1px dashed #aaa}
+        .cut-text{font-size:8px;color:#aaa;white-space:nowrap}
+        @media print{body{margin:0}.cut{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+      </style></head><body>
+        ${via('1ª VIA — ASSOCIAÇÃO')}
+        <div class="cut"><div class="cut-line"></div><span class="cut-text">✂ cortar</span><div class="cut-line"></div></div>
+        ${via('2ª VIA — MORADOR')}
+      </body></html>`
       const win = window.open('', '_blank')
       if (win) { win.document.write(html); win.document.close(); win.print() }
     } catch { toast.error('Comprovante não disponível.') }
