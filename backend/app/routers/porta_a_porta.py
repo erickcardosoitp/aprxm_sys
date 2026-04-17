@@ -90,7 +90,7 @@ class CommissionPaymentIn(BaseModel):
 
 class PublicLeadIn(BaseModel):
     token: str
-    lancado_por: str = Field(min_length=2, max_length=200, description="Nome de quem está lançando o cadastro")
+    lancado_por: str | None = Field(default=None, max_length=200)
     full_name: str = Field(min_length=2, max_length=200)
     phone: str | None = None
     cpf: str | None = None
@@ -134,6 +134,24 @@ def _commission(paid_count: int, monthly_fee: float = 20.0) -> float:
 
 
 # ── Operator / admin endpoints ────────────────────────────────────────────────
+
+@router.get("/public-users", summary="Lista de usuários para formulário público")
+async def public_users(
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as sa_text
+    settings = get_settings()
+    try:
+        payload = _decode_public_token(token, settings.secret_key)
+    except Exception:
+        raise HTTPException(400, "Token inválido.")
+    assoc_id = payload["assoc"]
+    rows = (await session.execute(sa_text(
+        "SELECT id, full_name FROM users WHERE association_id = :aid AND is_active = true ORDER BY full_name"
+    ), {"aid": assoc_id})).fetchall()
+    return [{"id": str(r[0]), "full_name": r[1]} for r in rows]
+
 
 @router.get("/public-token", summary="Gerar token para link público")
 async def get_public_token(
@@ -247,6 +265,7 @@ async def list_leads(
             "operator_name": r["operator_name"],
             "commissioned_to": str(r["commissioned_to"]) if r["commissioned_to"] else None,
             "commissioned_to_name": r["commissioned_to_name"],
+            "lancado_por": r["lancado_por"],
             "created_at": str(r["created_at"]),
         }
         for r in rows

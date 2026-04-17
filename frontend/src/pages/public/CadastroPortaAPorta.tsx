@@ -15,6 +15,7 @@ export default function CadastroPortaAPorta() {
 
   const [done, setDone] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [users, setUsers] = useState<{ id: string; full_name: string }[]>([])
 
   const [form, setForm] = useState({
     lancado_por: '',
@@ -26,6 +27,13 @@ export default function CadastroPortaAPorta() {
     address_complement: '',
     notes: '',
   })
+
+  useEffect(() => {
+    if (!token) return
+    axios.get(`${API}/porta-a-porta/public-users?token=${token}`)
+      .then(r => setUsers(r.data))
+      .catch(() => {})
+  }, [token])
   const [dependents, setDependents] = useState<Dependent[]>([])
 
   const set = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -94,8 +102,15 @@ export default function CadastroPortaAPorta() {
         {/* Lançado por */}
         <div className="flex flex-col gap-2">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Responsável pelo cadastro</p>
-          <input className={`${inp} border-[#26619c]/40 bg-blue-50`} placeholder="Lançado por (seu nome) *" value={form.lancado_por}
-            onChange={e => set('lancado_por', e.target.value)} />
+          {users.length > 0 ? (
+            <select className={`${inp} border-[#26619c]/40 bg-blue-50`} value={form.lancado_por} onChange={e => set('lancado_por', e.target.value)}>
+              <option value="">— Selecione quem está lançando —</option>
+              {users.map(u => <option key={u.id} value={u.full_name}>{u.full_name}</option>)}
+            </select>
+          ) : (
+            <input className={`${inp} border-[#26619c]/40 bg-blue-50`} placeholder="Lançado por (seu nome) *" value={form.lancado_por}
+              onChange={e => set('lancado_por', e.target.value)} />
+          )}
         </div>
 
         {/* Dados pessoais */}
