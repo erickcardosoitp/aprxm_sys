@@ -118,9 +118,15 @@ class FinanceService:
         closing_balance: Decimal,
         notes: str | None = None,
         reviewed_by: UUID | None = None,
+        session_id: UUID | None = None,
+        is_admin: bool = False,
     ) -> CashSession:
-        session = await self.get_open_session(association_id, preferred_by=closed_by)
-        if session.opened_by != closed_by:
+        session = await self.get_open_session(
+            association_id,
+            session_id=session_id,
+            preferred_by=None if session_id else closed_by,
+        )
+        if not is_admin and session.opened_by != closed_by:
             raise CashSessionError("Você só pode fechar o seu próprio caixa.")
 
         expected, bruto, baixas = await self._compute_expected_balance(session)
