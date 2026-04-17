@@ -1880,8 +1880,12 @@ export default function PackagesPage() {
                     <input value={guest.full_name} onChange={e => setGuest(g => ({ ...g, full_name: e.target.value }))}
                       className={inputCls} placeholder="Nome completo *" autoFocus />
                     {newResType === 'member' && (
-                      <input value={newResCpf} onChange={e => setNewResCpf(e.target.value)}
-                        className={inputCls} placeholder="CPF (opcional)" />
+                      <>
+                        <input value={newResCpf} onChange={e => setNewResCpf(e.target.value)}
+                          className={inputCls} placeholder="CPF (opcional)" />
+                        <input value={guest.phone_primary} onChange={e => setGuest(g => ({ ...g, phone_primary: e.target.value }))}
+                          className={inputCls} placeholder="Telefone (opcional)" type="tel" />
+                      </>
                     )}
                     {newResType === 'dependent' && (
                       <div className="flex flex-col gap-1">
@@ -2801,7 +2805,11 @@ export default function PackagesPage() {
                           </>
                         )}
                         {newResType === 'member' && (
-                          <input value={newResCpf} onChange={e => setNewResCpf(e.target.value)} className={inputCls} placeholder="CPF (opcional)" />
+                          <>
+                            <input value={newResCpf} onChange={e => setNewResCpf(e.target.value)} className={inputCls} placeholder="CPF (opcional)" />
+                            <input value={guest.phone_primary} onChange={e => setGuest(g => ({ ...g, phone_primary: e.target.value }))}
+                              className={inputCls} placeholder="Telefone (opcional)" type="tel" />
+                          </>
                         )}
                         {newResType === 'dependent' && (
                           <div className="flex flex-col gap-1">

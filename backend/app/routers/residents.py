@@ -275,8 +275,16 @@ async def list_residents(
     if responsible_id:
         stmt = stmt.where(Resident.responsible_id == responsible_id)
     if q:
+        import unicodedata
+        def _norm(s: str) -> str:
+            return unicodedata.normalize('NFD', s).encode('ascii', 'ignore').decode().lower()
+        q_norm = _norm(q)
         q_digits = ''.join(c for c in q if c.isdigit())
-        filters = [Resident.full_name.ilike(f"%{q}%")]
+        from sqlalchemy import func as sa_func
+        filters = [
+            Resident.full_name.ilike(f"%{q}%"),
+            sa_func.unaccent(Resident.full_name).ilike(f"%{q_norm}%"),
+        ]
         if q_digits:
             from sqlalchemy import func
             filters.append(func.regexp_replace(Resident.phone_primary, r'\D', '', 'g').ilike(f"%{q_digits}%"))
