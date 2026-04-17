@@ -88,7 +88,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
   const dinheiro = parseFloat(session.total_dinheiro ?? '0')
   const liquido = bruto - baixas
   const contagem = parseFloat(contagemInput || '0')
-  const diferenca = contagemInput !== '' && !isNaN(contagem) ? contagem - dinheiro : null
+  const diferenca = contagemInput !== '' && !isNaN(contagem) ? contagem - liquido : null
 
   const naoConferidos = txs.filter(t => !t.reversed_at && !t.conferido)
   const irregularesSemObs = naoConferidos.filter(t => !t.observacao?.trim())
@@ -384,7 +384,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="bg-gray-50 rounded-xl p-3">
                   <p className="text-[10px] text-gray-400 mb-1">Esperado</p>
-                  <p className="text-base font-bold text-gray-800">{fmt(dinheiro)}</p>
+                  <p className="text-base font-bold text-gray-800">{fmt(liquido)}</p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3">
                   <p className="text-[10px] text-gray-400 mb-1">Contado</p>
