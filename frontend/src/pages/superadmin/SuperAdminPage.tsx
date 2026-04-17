@@ -33,13 +33,22 @@ function ITMetricsTab() {
   const [error, setError] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [perfMetrics, setPerfMetrics] = useState<{ loadTime: number | null; apiTimes: { name: string; duration: number }[] }>({ loadTime: null, apiTimes: [] })
+  const [period, setPeriod] = useState<7 | 30 | 90>(7)
+  const [orgs, setOrgs] = useState<{ id: string; name: string; slug: string }[]>([])
+  const [filterOrg, setFilterOrg] = useState('')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = async () => {
     setError(false)
     try {
-      const res = await api.get<ITMetrics>('/superadmin/it-metrics')
-      setData(res.data)
+      const params: Record<string, any> = { days: period }
+      if (filterOrg) params.association_id = filterOrg
+      const [metricsRes, orgsRes] = await Promise.all([
+        api.get<ITMetrics>('/superadmin/it-metrics', { params }),
+        orgs.length === 0 ? api.get<{ id: string; name: string; slug: string }[]>('/superadmin/organizations') : Promise.resolve(null),
+      ])
+      setData(metricsRes.data)
+      if (orgsRes) setOrgs(orgsRes.data)
       setLastUpdate(new Date())
     } catch {
       setError(true)
@@ -51,7 +60,7 @@ function ITMetricsTab() {
     load()
     intervalRef.current = setInterval(load, 60000)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [])
+  }, [period, filterOrg])
 
   useEffect(() => {
     const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
@@ -81,10 +90,25 @@ function ITMetricsTab() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-xs text-gray-400">Auto-refresh a cada 60s</span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+            {([7, 30, 90] as const).map(d => (
+              <button key={d} onClick={() => setPeriod(d)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition ${period === d ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                {d}d
+              </button>
+            ))}
+          </div>
+          <select value={filterOrg} onChange={e => setFilterOrg(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#26619c]/30 bg-white">
+            <option value="">Todas as orgs</option>
+            {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs text-gray-400">Auto-refresh 60s</span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {lastUpdate && <span className="text-xs text-gray-400">Atualizado: {lastUpdate.toLocaleTimeString('pt-BR')}</span>}
@@ -165,7 +189,7 @@ function ITMetricsTab() {
       {/* Activity chart */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-[#26619c]" /> Transações — Últimos 7 dias
+          <TrendingUp className="w-4 h-4 text-[#26619c]" /> Transações — Últimos {period} dias{filterOrg && orgs.find(o => o.id === filterOrg) ? ` · ${orgs.find(o => o.id === filterOrg)!.name}` : ''}
         </p>
         {activity.transactions_7d.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-4">Sem dados de atividade.</p>
@@ -173,7 +197,7 @@ function ITMetricsTab() {
           <div className="flex items-end gap-2 h-32">
             {(() => {
               const days: Record<string, number> = {}
-              for (let i = 6; i >= 0; i--) {
+              for (let i = period - 1; i >= 0; i--) {
                 const d = new Date(); d.setDate(d.getDate() - i)
                 days[d.toISOString().slice(0, 10)] = 0
               }
@@ -299,7 +323,7 @@ function ITMetricsTab() {
       {/* Sessions + Logins */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <Clock className="w-4 h-4 text-blue-500" /> Sessões de Caixa e Logins — 7 dias
+          <Clock className="w-4 h-4 text-blue-500" /> Sessões de Caixa e Logins — {period} dias
         </p>
         <div className="grid grid-cols-2 gap-4">
           {[
@@ -313,7 +337,7 @@ function ITMetricsTab() {
                 <div className="flex items-end gap-1.5 h-16">
                   {(() => {
                     const days: Record<string, number> = {}
-                    for (let i = 6; i >= 0; i--) {
+                    for (let i = period - 1; i >= 0; i--) {
                       const d = new Date(); d.setDate(d.getDate() - i)
                       days[d.toISOString().slice(0, 10)] = 0
                     }
@@ -383,6 +407,26 @@ function OrgsTab() {
     ? new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
     : '—'
 
+  const isFiltered = !!(search || filterPlan || filterStatus)
+  const filteredOrgs = orgs.filter(org => {
+    const q = search.toLowerCase()
+    if (q && !org.name.toLowerCase().includes(q) && !org.slug.toLowerCase().includes(q)) return false
+    if (filterPlan && org.plan_name !== filterPlan) return false
+    if (filterStatus === 'active' && !org.is_active) return false
+    if (filterStatus === 'inactive' && org.is_active) return false
+    return true
+  })
+
+  const kpis = isFiltered ? {
+    active_orgs: filteredOrgs.filter(o => o.is_active).length,
+    active_users: filteredOrgs.reduce((s, o) => s + o.user_count, 0),
+    total_residents: filteredOrgs.reduce((s, o) => s + o.resident_count, 0),
+    pending_packages: filteredOrgs.reduce((s, o) => s + o.open_packages, 0),
+    tx_last_24h: health?.tx_last_24h ?? 0,
+    open_sessions: health?.open_sessions ?? 0,
+    pending_mensalidades: health?.pending_mensalidades ?? 0,
+  } : health
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex justify-end">
@@ -392,30 +436,38 @@ function OrgsTab() {
       </div>
 
       {/* Health KPIs */}
-      {health && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: 'Orgs ativas', value: health.active_orgs, color: 'blue' },
-            { label: 'Usuários ativos', value: health.active_users, color: 'green' },
-            { label: 'Caixas abertos', value: health.open_sessions, color: health.open_sessions > 0 ? 'amber' : 'gray' },
-            { label: 'TX 24h', value: health.tx_last_24h, color: 'purple' },
-            { label: 'Moradores', value: health.total_residents, color: 'gray' },
-            { label: 'Enc. pendentes', value: health.pending_packages, color: health.pending_packages > 10 ? 'red' : 'gray' },
-            { label: 'Mensalidades pendentes', value: health.pending_mensalidades, color: health.pending_mensalidades > 20 ? 'red' : 'amber' },
-          ].map(({ label, value, color }) => (
-            <div key={label} className={`rounded-xl p-3 border ${
-              color === 'blue' ? 'bg-blue-50 border-blue-100' : color === 'green' ? 'bg-green-50 border-green-100' :
-              color === 'amber' ? 'bg-amber-50 border-amber-100' : color === 'red' ? 'bg-red-50 border-red-100' :
-              color === 'purple' ? 'bg-purple-50 border-purple-100' : 'bg-gray-50 border-gray-100'
-            }`}>
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className={`text-2xl font-bold mt-0.5 ${
-                color === 'blue' ? 'text-blue-700' : color === 'green' ? 'text-green-700' :
-                color === 'amber' ? 'text-amber-700' : color === 'red' ? 'text-red-700' :
-                color === 'purple' ? 'text-purple-700' : 'text-gray-700'
-              }`}>{value}</p>
-            </div>
-          ))}
+      {kpis && (
+        <div className="flex flex-col gap-2">
+          {isFiltered && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              Filtrando {filteredOrgs.length} org{filteredOrgs.length !== 1 ? 's' : ''} — TX 24h, caixas e mensalidades refletem o total global
+            </p>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Orgs ativas', value: kpis.active_orgs, color: 'blue' },
+              { label: 'Usuários ativos', value: kpis.active_users, color: 'green' },
+              { label: 'Caixas abertos', value: kpis.open_sessions, color: kpis.open_sessions > 0 ? 'amber' : 'gray', global: isFiltered },
+              { label: 'TX 24h', value: kpis.tx_last_24h, color: 'purple', global: isFiltered },
+              { label: 'Moradores', value: kpis.total_residents, color: 'gray' },
+              { label: 'Enc. pendentes', value: kpis.pending_packages, color: kpis.pending_packages > 10 ? 'red' : 'gray' },
+              { label: 'Mensalidades pend.', value: kpis.pending_mensalidades, color: kpis.pending_mensalidades > 20 ? 'red' : 'amber', global: isFiltered },
+            ].map(({ label, value, color, global: isGlobal }) => (
+              <div key={label} className={`rounded-xl p-3 border ${
+                color === 'blue' ? 'bg-blue-50 border-blue-100' : color === 'green' ? 'bg-green-50 border-green-100' :
+                color === 'amber' ? 'bg-amber-50 border-amber-100' : color === 'red' ? 'bg-red-50 border-red-100' :
+                color === 'purple' ? 'bg-purple-50 border-purple-100' : 'bg-gray-50 border-gray-100'
+              }`}>
+                <p className="text-xs text-gray-500 flex items-center gap-1">{label}{isGlobal && <span className="text-[10px] text-gray-300">(global)</span>}</p>
+                <p className={`text-2xl font-bold mt-0.5 ${
+                  color === 'blue' ? 'text-blue-700' : color === 'green' ? 'text-green-700' :
+                  color === 'amber' ? 'text-amber-700' : color === 'red' ? 'text-red-700' :
+                  color === 'purple' ? 'text-purple-700' : 'text-gray-700'
+                }`}>{value}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -481,14 +533,7 @@ function OrgsTab() {
         </div>
         {loading ? <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div> : (
           <ul className="divide-y divide-gray-100">
-            {orgs.filter(org => {
-              const q = search.toLowerCase()
-              if (q && !org.name.toLowerCase().includes(q) && !org.slug.toLowerCase().includes(q)) return false
-              if (filterPlan && org.plan_name !== filterPlan) return false
-              if (filterStatus === 'active' && !org.is_active) return false
-              if (filterStatus === 'inactive' && org.is_active) return false
-              return true
-            }).map(org => (
+            {filteredOrgs.map(org => (
               <li key={org.id}>
                 <button onClick={() => toggleOrg(org.slug)} className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 text-left">
                   <div className="flex items-center gap-3 min-w-0 flex-1">

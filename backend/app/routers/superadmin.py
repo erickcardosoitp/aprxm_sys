@@ -295,8 +295,11 @@ async def health_summary(
 async def it_metrics(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    days: int = 7,
+    association_id: str | None = None,
 ) -> dict:
     _require_superadmin(current)
+    days = max(1, min(days, 365))
 
     # ── Database size ───────────────────────────────────────────────────────
     db_size_row = (await _exec_ro(session,
@@ -336,46 +339,53 @@ async def it_metrics(
         FROM packages
     """)).fetchone()
 
-    # ── Activity last 7 days (transactions per day) ─────────────────────────
-    activity = (await _exec_ro(session, """
+    assoc_filter = "AND association_id = :aid" if association_id else ""
+    assoc_params = {"aid": association_id} if association_id else {}
+
+    # ── Activity (transactions per day) ────────────────────────────────────
+    activity = (await _exec_ro(session, f"""
         SELECT DATE(created_at) AS day, COUNT(*) AS cnt
           FROM transactions
-         WHERE created_at > NOW() - INTERVAL '7 days'
+         WHERE created_at > NOW() - INTERVAL '{days} days'
+         {assoc_filter}
          GROUP BY 1 ORDER BY 1
-    """)).fetchall()
+    """, assoc_params)).fetchall()
 
-    # ── Logins last 7 days ──────────────────────────────────────────────────
-    logins = (await _exec_ro(session, """
+    # ── Logins ──────────────────────────────────────────────────────────────
+    logins = (await _exec_ro(session, f"""
         SELECT DATE(last_login_at) AS day, COUNT(*) AS cnt
           FROM users
-         WHERE last_login_at > NOW() - INTERVAL '7 days'
+         WHERE last_login_at > NOW() - INTERVAL '{days} days'
          GROUP BY 1 ORDER BY 1
     """)).fetchall()
 
-    # ── Errors / audit last 24h ─────────────────────────────────────────────
-    audit_row = (await _exec_ro(session, """
+    # ── Errors / audit ──────────────────────────────────────────────────────
+    audit_row = (await _exec_ro(session, f"""
         SELECT COUNT(*) AS total_actions,
                COUNT(*) FILTER (WHERE action ILIKE '%estorno%' OR action ILIKE '%cancel%' OR action ILIKE '%revers%') AS reversals
           FROM audit_log
-         WHERE created_at > NOW() - INTERVAL '24 hours'
-    """)).fetchone()
+         WHERE created_at > NOW() - INTERVAL '{days} days'
+         {assoc_filter}
+    """, assoc_params)).fetchone()
 
-    # ── Top orgs by activity (last 30 days) ─────────────────────────────────
-    top_orgs = (await _exec_ro(session, """
+    # ── Top orgs by activity ─────────────────────────────────────────────────
+    top_orgs = (await _exec_ro(session, f"""
         SELECT a.name, COUNT(t.id) AS tx_count, COUNT(DISTINCT DATE(t.created_at)) AS active_days
           FROM transactions t
           JOIN associations a ON a.id = t.association_id
-         WHERE t.created_at > NOW() - INTERVAL '30 days'
+         WHERE t.created_at > NOW() - INTERVAL '{days} days'
+         {assoc_filter}
          GROUP BY a.name ORDER BY tx_count DESC LIMIT 5
-    """)).fetchall()
+    """, assoc_params)).fetchall()
 
-    # ── Uptime proxy: sessions opened per day last 7 days ───────────────────
-    sessions_daily = (await _exec_ro(session, """
+    # ── Sessions per day ─────────────────────────────────────────────────────
+    sessions_daily = (await _exec_ro(session, f"""
         SELECT DATE(opened_at) AS day, COUNT(*) AS cnt
           FROM cash_sessions
-         WHERE opened_at > NOW() - INTERVAL '7 days'
+         WHERE opened_at > NOW() - INTERVAL '{days} days'
+         {assoc_filter}
          GROUP BY 1 ORDER BY 1
-    """)).fetchall()
+    """, assoc_params)).fetchall()
 
     return {
         "database": {
