@@ -534,10 +534,11 @@ class FinanceService:
         amount: Decimal,
         resident_address_street: str = "",
         resident_address_number: str = "",
+        isento: bool = False,
         payment_method_id: UUID | None = None,
         category_id: UUID | None = None,
         resident_id: UUID | None = None,
-    ) -> tuple[Transaction, bytes]:
+    ) -> tuple[Transaction | None, bytes]:
         # Load settings
         row = (await self._session.execute(
             sa_text("""
@@ -559,26 +560,29 @@ class FinanceService:
         if (proof_stock or 0) <= 0:
             raise UnprocessableError("Sem estoque de comprovantes disponível. Solicite reposição ao administrador.")
 
-        # Get open session
-        cash_session = await self.get_open_session(association_id)
-
         # Generate unique 8-digit barcode code
         barcode_code = "".join(random.choices(string.digits, k=8))
 
-        # Register transaction
-        tx = await self.register_transaction(
-            association_id=association_id,
-            cash_session_id=cash_session.id,
-            tx_type=TransactionType.income,
-            amount=amount,
-            description=f"Comprovante de Residência — {resident_name}",
-            created_by=issued_by,
-            income_subtype=IncomeSubtype.proof_of_residence,
-            payment_method_id=payment_method_id,
-            category_id=category_id,
-            resident_id=resident_id,
-            reference_number=barcode_code,
-        )
+        if isento:
+            tx = None
+        else:
+            # Get open session
+            cash_session = await self.get_open_session(association_id)
+
+            # Register transaction
+            tx = await self.register_transaction(
+                association_id=association_id,
+                cash_session_id=cash_session.id,
+                tx_type=TransactionType.income,
+                amount=amount,
+                description=f"Comprovante de Residência — {resident_name}",
+                created_by=issued_by,
+                income_subtype=IncomeSubtype.proof_of_residence,
+                payment_method_id=payment_method_id,
+                category_id=category_id,
+                resident_id=resident_id,
+                reference_number=barcode_code,
+            )
 
         # Sync address back to resident profile
         if resident_id:

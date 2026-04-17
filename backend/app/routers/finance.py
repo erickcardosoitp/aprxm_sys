@@ -100,7 +100,8 @@ class ProofOfResidenceRequest(BaseModel):
     resident_cep: str
     resident_address_street: str = ""
     resident_address_number: str = ""
-    amount: Decimal = Field(gt=0)
+    amount: Decimal = Field(ge=0)
+    isento: bool = False
     payment_method_id: UUID | None = None
     category_id: UUID | None = None
     resident_id: UUID | None = None
@@ -125,16 +126,18 @@ async def issue_proof_of_residence(
         resident_address_street=body.resident_address_street,
         resident_address_number=body.resident_address_number,
         amount=body.amount,
+        isento=body.isento,
         payment_method_id=body.payment_method_id,
         category_id=body.category_id,
         resident_id=body.resident_id,
     )
+    barcode = tx.reference_number if tx else ""
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
             "Content-Disposition": 'attachment; filename="comprovante.pdf"',
-            "X-Barcode-Code": tx.reference_number or "",
+            "X-Barcode-Code": barcode or "",
             "Access-Control-Expose-Headers": "X-Barcode-Code",
         },
     )

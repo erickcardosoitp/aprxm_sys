@@ -146,6 +146,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [registering, setRegistering] = useState(false)
 
   // Step 2 — proof_of_residence specific
+  const [proofIsento, setProofIsento] = useState(false)
   const [proofName, setProofName] = useState('')
   const [proofCpf, setProofCpf] = useState('')
   const [proofNeighborhood, setProofNeighborhood] = useState('')
@@ -325,7 +326,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     if (step === 0) return true
     if (step === 1) {
       if (isProof) {
-        return !!(proofName.trim() && proofCpf.trim() && proofNeighborhood.trim() && proofCep.trim() && amount && parseFloat(amount) > 0)
+        const amountOk = proofIsento || (!!amount && parseFloat(amount) > 0)
+        return !!(proofName.trim() && proofCpf.trim() && proofNeighborhood.trim() && proofCep.trim() && amountOk)
       }
       if (!amount || parseFloat(amount) <= 0) return false
       const isMensalidade = txType === 'income' && incomeSubtype === 'mensalidade'
@@ -349,7 +351,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           resident_cep: proofCep.trim(),
           resident_address_street: proofStreet.trim(),
           resident_address_number: proofNumber.trim(),
-          amount: parseFloat(amount),
+          amount: proofIsento ? 0 : parseFloat(amount),
+          isento: proofIsento,
           payment_method_id: paymentMethodId || undefined,
           category_id: categoryId || undefined,
           resident_id: resident?.id || undefined,
@@ -461,6 +464,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     setProofNumber('')
     setAmount('')
     setPaymentMethodId('')
+    setProofIsento(false)
     setStep(1)
   }
 
@@ -645,15 +649,25 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                     </div>
                   </div>
+                  {/* Isento */}
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" checked={proofIsento}
+                      onChange={e => { setProofIsento(e.target.checked); if (e.target.checked) setAmount('0.00') }}
+                      className="w-4 h-4 rounded accent-[#26619c]" />
+                    <span className="text-sm font-medium text-gray-700">Isento de Pagamento</span>
+                  </label>
+
                   {/* Valor */}
+                  {!proofIsento && (
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$) *</label>
                     <input type="number" min="0.01" step="0.01" value={amount}
                       onChange={e => setAmount(e.target.value)} placeholder="0,00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
+                  )}
                   {/* Forma de pagamento */}
-                  {paymentMethods.length > 0 && (
+                  {!proofIsento && paymentMethods.length > 0 && (
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Forma de pagamento</label>
                       <div className="flex flex-wrap gap-2">
@@ -968,7 +982,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
               <p className="text-sm font-medium text-gray-700">{isProof ? 'Confirmar emissão do comprovante:' : 'Confirmar transação:'}</p>
               <div className={`rounded-xl p-4 border ${txType === 'income' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                 <p className={`text-lg font-bold ${txType === 'income' ? 'text-green-700' : 'text-red-700'}`}>
-                  {txType === 'income' ? '+' : '-'} R$ {parseFloat(amount || '0').toFixed(2)}
+                  {isProof && proofIsento ? 'ISENTO' : `${txType === 'income' ? '+' : '-'} R$ ${parseFloat(amount || '0').toFixed(2)}`}
                 </p>
                 {isProof ? (
                   <>
