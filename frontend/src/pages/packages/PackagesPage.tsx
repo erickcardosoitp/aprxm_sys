@@ -1080,6 +1080,7 @@ export default function PackagesPage() {
   // Receive flow — deliverer
   const [delivererName, setDelivererName] = useState('')
   const [delivererSig, setDelivererSig] = useState('')
+  const [delivererManual, setDelivererManual] = useState(false)
 
   // Carriers & Deliverers catalog
   type CarrierOpt = { id: string; name: string }
@@ -1190,7 +1191,7 @@ export default function PackagesPage() {
         carrier_name: carrier || undefined,
         tracking_code: tracking || undefined,
         photo_urls: photos,
-        deliverer_name: (delivererName && delivererName !== '__manual__') ? delivererName : undefined,
+        deliverer_name: delivererName || undefined,
         deliverer_signature_url: delivererSig || undefined,
       })
       toast.success('Encomenda registrada!')
@@ -1207,7 +1208,7 @@ export default function PackagesPage() {
     setShowReceive(false); setStep('recipient'); setRecipientSearch('')
     setSearchResults([]); setSelectedRecipient(null); setShowGuestForm(false); setSearchEmpty(false)
     setGuest(emptyGuest()); setTracking(''); setCarrier(''); setPhotos([])
-    setDelivererName(''); setDelivererSig('')
+    setDelivererName(''); setDelivererSig(''); setDelivererManual(false)
     setNewResType('guest'); setNewResCpf(''); setNewResResponsibleSearch(''); setNewResResponsible(null); setNewResResponsibleResults([])
   }
 
@@ -2033,11 +2034,11 @@ export default function PackagesPage() {
                     <div className="p-4 flex flex-col gap-3">
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">Entregador</label>
-                        {delivererOpts.length > 0 ? (
+                        {delivererOpts.length > 0 && !delivererManual ? (
                           <select
-                            value={delivererOpts.find(d => d.name === delivererName)?.id ?? (delivererName === '__manual__' ? '__manual__' : '')}
+                            value={delivererOpts.find(d => d.name === delivererName)?.id ?? ''}
                             onChange={e => {
-                              if (e.target.value === '__manual__') { setDelivererName('__manual__'); setDelivererSig('') }
+                              if (e.target.value === '__manual__') { setDelivererManual(true); setDelivererName(''); setDelivererSig('') }
                               else {
                                 const d = delivererOpts.find(x => x.id === e.target.value)
                                 if (d) { setDelivererName(d.name); setDelivererSig(d.signature_url ?? '') }
@@ -2051,13 +2052,19 @@ export default function PackagesPage() {
                             <option value="__manual__">✏️ Digitar manualmente</option>
                           </select>
                         ) : null}
-                        {(delivererOpts.length === 0 || delivererName === '__manual__') && (
-                          <input
-                            value={delivererName === '__manual__' ? '' : delivererName}
-                            onChange={e => setDelivererName(e.target.value)}
-                            className={`${inputCls} ${delivererOpts.length > 0 ? 'mt-2' : ''}`}
-                            placeholder="Nome do entregador"
-                          />
+                        {(delivererOpts.length === 0 || delivererManual) && (
+                          <div className="flex gap-2">
+                            <input
+                              value={delivererName}
+                              onChange={e => setDelivererName(e.target.value)}
+                              className={`${inputCls} flex-1 ${delivererManual ? 'mt-2' : ''}`}
+                              placeholder="Nome do entregador"
+                            />
+                            {delivererManual && (
+                              <button onClick={() => { setDelivererManual(false); setDelivererName(''); setDelivererSig('') }}
+                                className="mt-2 text-xs text-gray-400 hover:text-red-500 shrink-0">✕ Cancelar</button>
+                            )}
+                          </div>
                         )}
                       </div>
                       {(!delivererSig) && (
