@@ -627,10 +627,17 @@ async def transfer_to_cashbox(
         ), {"id": str(session_id)})).scalar()
         already_transferred = (await session.execute(sa_text("""
             SELECT COALESCE(SUM(amount),0) FROM transactions
-            WHERE cash_session_id=:sid AND type='sangria'
-              AND description LIKE 'Repasse para caixinha%'
+            WHERE association_id=:aid AND type='sangria'
+              AND description LIKE :desc_pattern
               AND reversed_at IS NULL
-        """), {"sid": str(session_id)})).scalar()
+              AND (cash_session_id=:sid OR (cash_session_id IS NULL
+                   AND description LIKE :sess_date_pattern))
+        """), {
+            "aid": str(current.association_id),
+            "sid": str(session_id),
+            "desc_pattern": "Repasse para caixinha%",
+            "sess_date_pattern": f"%conferência {str(row[2])[:10]}%",
+        })).scalar()
         if closing_bal is not None:
             available = float(closing_bal) - float(already_transferred or 0)
             if float(body.amount) > round(available + 0.005, 2):
@@ -639,9 +646,12 @@ async def transfer_to_cashbox(
     svc = FinanceService(session)
     sess_date = str(row[2])[:10]
     desc = f"Repasse para caixinha — conferência {sess_date}"
+    # Sessão já conferida: não vincular a sangria à sessão para não alterar o saldo conferido.
+    # A transação fica como registro de auditoria sem cash_session_id.
+    tx_session_id = None if row[1] == "conferido" else session_id
     tx = await svc.register_transaction(
         association_id=current.association_id,
-        cash_session_id=session_id,
+        cash_session_id=tx_session_id,
         tx_type=TransactionType.sangria,
         amount=body.amount,
         description=desc,
