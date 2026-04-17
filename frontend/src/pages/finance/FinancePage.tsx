@@ -1406,7 +1406,7 @@ export default function FinancePage() {
                                   try {
                                     const res = await api.post<{ expected_balance: string; difference: string | null }>(`/finance/sessions/${s.id}/recalculate`)
                                     setSessions(prev => prev.map(x => x.id === s.id
-                                      ? { ...x, expected_balance: res.data.expected_balance, difference: res.data.difference }
+                                      ? { ...x, expected_balance: res.data.expected_balance, difference: res.data.difference ?? undefined }
                                       : x))
                                     toast.success('Recalculado.')
                                   } catch { toast.error('Erro ao recalcular.') } finally { setRecalcingRow(null) }

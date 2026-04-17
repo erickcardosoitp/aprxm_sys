@@ -39,7 +39,7 @@ interface GuestForm {
 }
 
 interface PackageEvent {
-  id: string; comment: string; created_at: string; author_name?: string
+  id: string; comment: string; created_at: string; author_name?: string; event_type?: string
 }
 
 const emptyGuest = (): GuestForm => ({
@@ -578,6 +578,7 @@ function EsteiraStepper({ status }: { status: string }) {
 export default function PackagesPage() {
   const { fullName, role } = useAuthStore()
   const isAdmin = role === 'admin' || role === 'superadmin'
+  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
   const navigate = useNavigate()
   const [upgradedResidentInfo, setUpgradedResidentInfo] = useState<{ id: string; name: string } | null>(null)
   const [pageTab, setPageTab] = useState<'encomendas' | 'cadastros'>('encomendas')
