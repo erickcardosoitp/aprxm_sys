@@ -253,16 +253,14 @@ class ReconciliationService:
         return result
 
     async def run_reconciliation(self, association_id: UUID) -> dict:
-        """Run reconciliation for all non-conciliated bank statements."""
-        # Get non-reconciled statements
-        stmt_q = select(BankStatement).where(
-            BankStatement.association_id == association_id,
-            BankStatement.conciliado == False,
-        )
-        result = await self._session.execute(stmt_q)
-        statements = list(result.scalars().all())
+        """
+        Reconcile by iterating over unreconciled income transactions and finding
+        the best matching bank statement. Only transactions registered in the system
+        are candidates — unmatched bank statements are ignored.
+        """
+        from difflib import SequenceMatcher as _SM
 
-        # Get income transactions (unreconciled)
+        # Unreconciled income transactions (source of truth)
         tx_q = await self._session.execute(
             text("""
                 SELECT t.id, t.amount, t.description, t.transaction_at,
@@ -271,6 +269,7 @@ class ReconciliationService:
                 LEFT JOIN residents r ON r.id = t.resident_id
                 WHERE t.association_id = :aid
                   AND t.type = 'income'
+                  AND t.reversed_at IS NULL
                   AND NOT EXISTS (
                     SELECT 1 FROM reconciliations rec WHERE rec.transaction_id = t.id
                   )
@@ -280,60 +279,40 @@ class ReconciliationService:
         )
         transactions = tx_q.fetchall()
 
-        # Build lookup: normalized_name -> list of resident_ids (for dependent matching)
-        all_residents_q = await self._session.execute(
-            text("SELECT id, full_name, cpf FROM residents WHERE association_id=:aid"),
-            {"aid": str(association_id)},
+        # Available (non-reconciled) bank statements
+        stmt_q = select(BankStatement).where(
+            BankStatement.association_id == association_id,
+            BankStatement.conciliado == False,
         )
-        # name_to_resident_ids: norm_name -> [(resident_id, cpf)]
-        name_to_residents: dict[str, list[tuple]] = {}
-        cpf_to_resident: dict[str, str] = {}
-        for rr in all_residents_q.fetchall():
-            rid, rname, rcpf = rr
-            norm = normalize_name(rname or "")
-            if norm:
-                name_to_residents.setdefault(norm, []).append((str(rid), rcpf))
-            if rcpf:
-                clean = clean_cpf(rcpf)
-                if clean:
-                    cpf_to_resident[clean] = str(rid)
+        result = await self._session.execute(stmt_q)
+        statements = list(result.scalars().all())
+        # Index statements by id for fast lookup
+        stmt_by_id: dict[str, BankStatement] = {str(s.id): s for s in statements}
 
-        # Build lookup: resident_id -> list of transaction ids
-        res_to_txs: dict[str, list] = {}
-        for tx in transactions:
-            rid = str(tx[6]) if tx[6] else None
-            if rid:
-                res_to_txs.setdefault(rid, []).append(tx)
+        def _words_match(a: str, b: str) -> bool:
+            if a == b:
+                return True
+            if len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5]:
+                return True
+            if len(a) >= 4 and len(b) >= 4 and _SM(None, a, b).ratio() >= 0.8:
+                return True
+            return False
 
-        automatico = []
-        sugestao = []
-        pendente = []
-
-        def _name_score(stmt_name: str, candidate_name: str) -> int:
-            if not stmt_name or not candidate_name:
+        def _name_score(tx_name: str, stmt_name: str) -> int:
+            if not tx_name or not stmt_name:
                 return 0
-            norm_cand = normalize_name(candidate_name)
+            norm_tx = normalize_name(tx_name)
+            norm_st = normalize_name(stmt_name)
             stop = {"DE", "DA", "DO", "DOS", "DAS", "E"}
-            sw = set(stmt_name.split()) - stop
-            cw = set(norm_cand.split()) - stop
-            if not sw or not cw:
+            tw = set(norm_tx.split()) - stop
+            sw = set(norm_st.split()) - stop
+            if not tw or not sw:
                 return 0
-            # Fuzzy word matching: exact, prefix, or high similarity (e.g. CRISTINE/CHRISTINE)
-            from difflib import SequenceMatcher as _SM
-            def _words_match(a: str, b: str) -> bool:
-                if a == b:
-                    return True
-                if len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5]:
-                    return True
-                if len(a) >= 4 and len(b) >= 4 and _SM(None, a, b).ratio() >= 0.8:
-                    return True
-                return False
-            overlap = sum(1 for w in sw if any(_words_match(w, c) for c in cw))
-            ratio = overlap / max(len(sw), len(cw))
+            overlap = sum(1 for w in tw if any(_words_match(w, s) for s in sw))
+            ratio = overlap / max(len(tw), len(sw))
             return int(60 * ratio) if ratio >= 0.4 else 0
 
         def _desc_name(description: str) -> str:
-            """Extract payer name from description like 'Mensalidade — Fulano de Tal'."""
             if not description:
                 return ""
             if " — " in description:
@@ -342,126 +321,99 @@ class ReconciliationService:
                 return description.split(" - ", 1)[1].strip()
             return ""
 
-        for stmt in statements:
+        automatico = []
+        sugestao = []
+        pendente = []
+
+        # Track which statements are already claimed (prevent double-use)
+        claimed_stmt_ids: set[str] = set()
+
+        for tx in transactions:
+            tx_id, tx_amount, tx_desc, tx_at, res_name, res_cpf, _ = tx
+            tx_date = tx_at.date() if hasattr(tx_at, 'date') else date.fromisoformat(str(tx_at)[:10])
+            tx_amount_dec = Decimal(str(tx_amount))
+
+            # Candidate names for this transaction: resident name + description name
+            tx_res_name = normalize_name(res_name or "")
+            tx_desc_name = normalize_name(_desc_name(tx_desc or ""))
+
             best_score = 0
-            best_name_score = 0  # track if any name evidence exists
-            best_tx = None
+            best_stmt: BankStatement | None = None
             matches = []
 
-            # --- Match against transactions directly ---
-            for tx in transactions:
-                tx_id, tx_amount, tx_desc, tx_at, res_name, res_cpf, _ = tx
+            for stmt in statements:
+                if str(stmt.id) in claimed_stmt_ids:
+                    continue
+
                 score = 0
                 name_score = 0
 
-                if stmt.cpf and res_cpf and clean_cpf(res_cpf) == stmt.cpf:
+                # CPF match
+                if res_cpf and stmt.cpf and clean_cpf(res_cpf) == stmt.cpf:
                     score += 100
                     name_score = 100
 
-                # Match against resident name OR description name (for transactions without resident)
-                ns = _name_score(stmt.name or "", res_name or "")
-                if ns == 0 and not res_name:
-                    ns = _name_score(stmt.name or "", _desc_name(tx_desc or ""))
+                # Name match: try resident name first, then description name
+                ns = _name_score(tx_res_name or tx_desc_name, stmt.name or "")
                 score += ns
                 name_score = max(name_score, ns)
 
-                if Decimal(str(tx_amount)) == stmt.amount:
+                # Amount
+                if tx_amount_dec == stmt.amount:
                     score += 50
-                tx_date = tx_at.date() if hasattr(tx_at, 'date') else date.fromisoformat(str(tx_at)[:10])
-                if abs((stmt.date - tx_date).days) <= 1:
+
+                # Date proximity (±1 day)
+                if abs((tx_date - stmt.date).days) <= 1:
                     score += 20
 
-                # Only record if there's name/CPF evidence (not just amount+date collision)
+                # Only count if there's name/CPF evidence
                 if score > 0 and name_score > 0:
-                    matches.append((score, tx_id, tx_desc))
+                    matches.append((score, stmt))
                     if score > best_score:
                         best_score = score
-                        best_name_score = name_score
-                        best_tx = (tx_id, tx_desc)
-
-            # --- Dependent / all-resident name fallback ---
-            # If no strong match yet, search all resident names and find their transactions
-            if best_score < 70 and stmt.name:
-                # CPF lookup
-                if stmt.cpf and stmt.cpf in cpf_to_resident:
-                    rid = cpf_to_resident[stmt.cpf]
-                    for tx in res_to_txs.get(rid, []):
-                        tx_id, tx_amount, tx_desc, tx_at, _, _, _ = tx
-                        s = 100  # cpf match via resident
-                        if Decimal(str(tx_amount)) == stmt.amount:
-                            s += 50
-                        tx_date = tx_at.date() if hasattr(tx_at, 'date') else date.fromisoformat(str(tx_at)[:10])
-                        if abs((stmt.date - tx_date).days) <= 1:
-                            s += 20
-                        matches.append((s, tx_id, tx_desc))
-                        if s > best_score:
-                            best_score = s
-                            best_tx = (tx_id, tx_desc)
-
-                # Name fuzzy over all residents
-                for norm_res, res_list in name_to_residents.items():
-                    ns = _name_score(stmt.name, norm_res)
-                    if ns < 30:
-                        continue
-                    for (rid, rcpf) in res_list:
-                        extra = 0
-                        if stmt.cpf and rcpf and clean_cpf(rcpf) == stmt.cpf:
-                            extra = 100
-                        for tx in res_to_txs.get(rid, []):
-                            tx_id, tx_amount, tx_desc, tx_at, _, _, _ = tx
-                            s = ns + extra
-                            if Decimal(str(tx_amount)) == stmt.amount:
-                                s += 50
-                            tx_date = tx_at.date() if hasattr(tx_at, 'date') else date.fromisoformat(str(tx_at)[:10])
-                            if abs((stmt.date - tx_date).days) <= 1:
-                                s += 20
-                            matches.append((s, tx_id, tx_desc))
-                            if s > best_score:
-                                best_score = s
-                                best_tx = (tx_id, tx_desc)
+                        best_stmt = stmt
 
             item = {
-                "id": str(stmt.id),
-                "bank": stmt.bank,
-                "date": str(stmt.date),
-                "amount": float(stmt.amount),
-                "name": stmt.name or "",
-                "cpf": stmt.cpf,
+                "transaction_id": str(tx_id),
+                "description": tx_desc,
+                "amount": float(tx_amount),
+                "date": str(tx_date),
+                "resident": res_name or "",
                 "score": best_score,
-                "sale_description": best_tx[1] if best_tx else None,
+                "bank_statement_id": str(best_stmt.id) if best_stmt else None,
+                "bank_name": best_stmt.name if best_stmt else None,
                 "status": "pendente",
             }
 
             if best_score >= 100:
-                # Auto-reconcile
                 recon = Reconciliation(
                     association_id=association_id,
-                    statement_id=stmt.id,
-                    transaction_id=best_tx[0] if best_tx else None,
+                    statement_id=best_stmt.id,
+                    transaction_id=tx_id,
                     score=best_score,
                     status="automatico",
                 )
                 self._session.add(recon)
-                stmt.conciliado = True
-                self._session.add(stmt)
+                best_stmt.conciliado = True
+                self._session.add(best_stmt)
+                claimed_stmt_ids.add(str(best_stmt.id))
                 item["status"] = "automatico"
 
-                # Dar baixa na mensalidade mais antiga pendente do morador (CPF match)
-                if stmt.cpf and best_tx:
+                if stmt.cpf and best_stmt:
                     await self._pay_pending_mensalidade(
                         association_id=association_id,
-                        cpf=stmt.cpf,
-                        transaction_id=best_tx[0],
+                        cpf=best_stmt.cpf,
+                        transaction_id=tx_id,
                     )
 
                 automatico.append(item)
             elif best_score >= 70:
-                # Multiple or single match suggestion
-                if len([m for m in matches if m[0] == best_score]) == 1:
+                top = [m for m in matches if m[0] == best_score]
+                if len(top) == 1:
                     recon = Reconciliation(
                         association_id=association_id,
-                        statement_id=stmt.id,
-                        transaction_id=best_tx[0] if best_tx else None,
+                        statement_id=best_stmt.id,
+                        transaction_id=tx_id,
                         score=best_score,
                         status="sugestao",
                     )
@@ -469,10 +421,8 @@ class ReconciliationService:
                     item["status"] = "sugestao"
                     sugestao.append(item)
                 else:
-                    item["status"] = "pendente"
                     pendente.append(item)
             else:
-                item["status"] = "pendente"
                 pendente.append(item)
 
         await self._session.flush()
