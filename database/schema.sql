@@ -380,6 +380,7 @@ CREATE TABLE packages (
     received_by                 UUID            NOT NULL REFERENCES users (id),
     delivered_by                UUID            REFERENCES users (id),
     received_at                 TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    receive_batch_id            UUID            DEFAULT NULL,
     created_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
 

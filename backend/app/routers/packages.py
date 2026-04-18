@@ -30,6 +30,7 @@ class ReceivePackageRequest(BaseModel):
     notes: str | None = None
     deliverer_name: str | None = None
     deliverer_signature_url: str | None = None
+    receive_batch_id: UUID | None = None
 
 
 class AddPackageEventRequest(BaseModel):
@@ -75,6 +76,7 @@ async def receive_package(
         notes=body.notes,
         deliverer_name=body.deliverer_name,
         deliverer_signature_url=body.deliverer_signature_url,
+        receive_batch_id=body.receive_batch_id,
     )
     return {"id": str(pkg.id), "status": pkg.status, "received_at": str(pkg.received_at)}
 
@@ -691,6 +693,77 @@ async def packages_by_resident(
              "received_at": str(r[4]), "delivered_at": str(r[5]) if r[5] else None,
              "has_delivery_fee": r[6], "fee": str(r[7]) if r[7] else None,
              "return_reason": r[8]} for r in result.fetchall()]
+
+
+@router.get("/receive-history", summary="Histórico de recebimentos agrupado por lote ou unitário")
+async def receive_history(
+    limit: int = 50,
+    offset: int = 0,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    result = await session.execute(text("""
+        WITH batches AS (
+            SELECT
+                p.receive_batch_id::text              AS id,
+                TRUE                                  AS is_bulk,
+                MIN(p.received_at)                    AS received_at,
+                u.full_name                           AS received_by_name,
+                COUNT(*)::int                         AS count,
+                (COUNT(*) FILTER (WHERE p.status = 'reversed'))::int AS reversed_count,
+                json_agg(json_build_object(
+                    'resident_name', COALESCE(r.full_name, CONCAT(p.unit, CASE WHEN p.block IS NOT NULL THEN ' Bl.' || p.block ELSE '' END)),
+                    'unit', p.unit,
+                    'block', p.block,
+                    'tracking_code', p.tracking_code,
+                    'carrier_name', p.carrier_name,
+                    'status', p.status
+                ) ORDER BY p.received_at) AS items
+            FROM packages p
+            JOIN users u ON u.id = p.received_by
+            LEFT JOIN residents r ON r.id = p.resident_id
+            WHERE p.association_id = :aid AND p.receive_batch_id IS NOT NULL
+            GROUP BY p.receive_batch_id, u.full_name
+
+            UNION ALL
+
+            SELECT
+                p.id::text                            AS id,
+                FALSE                                 AS is_bulk,
+                p.received_at,
+                u.full_name                           AS received_by_name,
+                1                                     AS count,
+                CASE WHEN p.status = 'reversed' THEN 1 ELSE 0 END AS reversed_count,
+                json_build_array(json_build_object(
+                    'resident_name', COALESCE(r.full_name, CONCAT(p.unit, CASE WHEN p.block IS NOT NULL THEN ' Bl.' || p.block ELSE '' END)),
+                    'unit', p.unit,
+                    'block', p.block,
+                    'tracking_code', p.tracking_code,
+                    'carrier_name', p.carrier_name,
+                    'status', p.status
+                )) AS items
+            FROM packages p
+            JOIN users u ON u.id = p.received_by
+            LEFT JOIN residents r ON r.id = p.resident_id
+            WHERE p.association_id = :aid AND p.receive_batch_id IS NULL
+        )
+        SELECT * FROM batches
+        ORDER BY received_at DESC
+        LIMIT :lim OFFSET :off
+    """), {"aid": str(current.association_id), "lim": limit, "off": offset})
+    rows = result.mappings().all()
+    return [
+        {
+            "id": r["id"],
+            "is_bulk": r["is_bulk"],
+            "received_at": r["received_at"].isoformat() if r["received_at"] else None,
+            "received_by_name": r["received_by_name"],
+            "count": r["count"],
+            "status": "reversed" if r["reversed_count"] == r["count"] else "confirmed",
+            "items": r["items"] if isinstance(r["items"], list) else [],
+        }
+        for r in rows
+    ]
 
 
 @router.get("/cep/{cep}", summary="Consultar endereço por CEP (proxy ViaCEP)")

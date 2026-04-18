@@ -49,6 +49,7 @@ class PackageService:
         notes: str | None = None,
         deliverer_name: str | None = None,
         deliverer_signature_url: str | None = None,
+        receive_batch_id: UUID | None = None,
     ) -> Package:
         if not photo_urls:
             raise UnprocessableError("Ao menos uma foto da etiqueta é obrigatória.")
@@ -66,6 +67,7 @@ class PackageService:
             received_by=received_by,
             deliverer_name=deliverer_name,
             deliverer_signature_url=deliverer_signature_url,
+            receive_batch_id=receive_batch_id,
         )
         self._session.add(package)
         await self._session.flush()

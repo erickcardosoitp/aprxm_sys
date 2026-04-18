@@ -1,6 +1,25 @@
 import api from './api'
 import type { Package } from '../types'
 
+export type ReceiveHistoryItem = {
+  resident_name: string
+  unit: string | null
+  block: string | null
+  tracking_code: string | null
+  carrier_name: string | null
+  status: string
+}
+
+export type ReceiveHistoryEntry = {
+  id: string
+  is_bulk: boolean
+  received_at: string
+  received_by_name: string
+  count: number
+  status: 'confirmed' | 'reversed'
+  items: ReceiveHistoryItem[]
+}
+
 export const packageService = {
   receive: (data: {
     resident_id?: string
@@ -14,6 +33,7 @@ export const packageService = {
     notes?: string
     deliverer_name?: string
     deliverer_signature_url?: string
+    receive_batch_id?: string
   }) => api.post<Package>('/packages', data),
 
   deliver: (
@@ -37,6 +57,9 @@ export const packageService = {
 
   list: (status?: string) =>
     api.get<Package[]>('/packages', { params: status ? { status } : {} }),
+
+  receiveHistory: (params?: { limit?: number; offset?: number }) =>
+    api.get<ReceiveHistoryEntry[]>('/packages/receive-history', { params }),
 
   lookupCep: (cep: string) =>
     api.get<{ street: string; district: string; city: string; state: string }>(

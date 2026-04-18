@@ -79,6 +79,7 @@ class Package(SQLModel, table=True):
     return_reason: str | None = None
 
     notes: str | None = None
+    receive_batch_id: UUID | None = Field(default=None, index=False)
     received_by: UUID = Field(foreign_key="users.id")
     delivered_by: UUID | None = Field(default=None, foreign_key="users.id")
     received_at: datetime = Field(default_factory=datetime.utcnow)

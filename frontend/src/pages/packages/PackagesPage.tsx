@@ -9,6 +9,7 @@ import { SignaturePad } from '../../components/packages/SignaturePad'
 import { PhotoCapture } from '../../components/packages/PhotoCapture'
 import { BarcodeScannerModal } from '../../components/packages/BarcodeScanner'
 import { packageService } from '../../services/packages'
+import type { ReceiveHistoryEntry } from '../../services/packages'
 import { financeService } from '../../services/finance'
 import { maskCpf } from '../../utils'
 import { uploadService } from '../../services/upload'
@@ -576,7 +577,7 @@ function EsteiraStepper({ status }: { status: string }) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
-  const { fullName, role } = useAuthStore()
+  const { fullName, role, associationId } = useAuthStore()
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
   const navigate = useNavigate()
@@ -866,6 +867,19 @@ export default function PackagesPage() {
     api.get<{ id: string; name: string }[]>('/finance/payment-methods').then(r => setPaymentMethods(r.data)).catch(() => {})
   }, [])
 
+  // Receive history
+  const [receiveHistory, setReceiveHistory] = useState<ReceiveHistoryEntry[]>([])
+  const [rxHistoryLoading, setRxHistoryLoading] = useState(false)
+  const [rxHistoryExpanded, setRxHistoryExpanded] = useState<Set<string>>(new Set())
+  const loadReceiveHistory = async () => {
+    setRxHistoryLoading(true)
+    try {
+      const res = await packageService.receiveHistory({ limit: 50 })
+      setReceiveHistory(res.data)
+    } catch { /* silent */ } finally { setRxHistoryLoading(false) }
+  }
+  useEffect(() => { loadReceiveHistory() }, [])
+
   // Bulk delivery flow
   const [showBulkDeliver, setShowBulkDeliver] = useState(false)
   const [bulkStep, setBulkStep] = useState<'select' | 'sign'>('select')
@@ -922,7 +936,14 @@ export default function PackagesPage() {
   const [bulkRxStep, setBulkRxStep] = useState<'add' | 'sign'>('sign')
   type BulkRxItem = { id: string; tracking_code: string; carrier_name: string; resident_id?: string; resident_name: string; resident_type?: string; unit?: string; block?: string; photo_urls: { url: string; label: string; taken_at: string }[] }
   type BrxPending = { resident: Resident; tracking: string }
-  const [bulkRxQueue, setBulkRxQueue] = useState<BulkRxItem[]>([])
+  const brxStorageKey = `brx_queue_${associationId}`
+  const brxBatchStorageKey = `brx_batch_${associationId}`
+  const [bulkRxQueue, setBulkRxQueue] = useState<BulkRxItem[]>(() => {
+    try { return JSON.parse(localStorage.getItem(`brx_queue_${associationId}`) ?? '[]') } catch { return [] }
+  })
+  const [brxBatchId] = useState<string>(() => {
+    return localStorage.getItem(`brx_batch_${associationId}`) ?? crypto.randomUUID()
+  })
   const [brxPending, setBrxPending] = useState<BrxPending | null>(null)
   const [brxDelivererName, setBrxDelivererName] = useState('')
   const [brxDelivererSig, setBrxDelivererSig] = useState('')
@@ -1007,6 +1028,7 @@ export default function PackagesPage() {
           photo_urls: item.photo_urls,
           deliverer_name: brxDelivererName || undefined,
           deliverer_signature_url: brxDelivererSig || undefined,
+          receive_batch_id: brxBatchId,
         })
         received++
       } catch {
@@ -1014,7 +1036,10 @@ export default function PackagesPage() {
       }
     }
     setBrxResult({ received, errors })
+    localStorage.removeItem(brxStorageKey)
+    localStorage.removeItem(brxBatchStorageKey)
     loadPackages()
+    loadReceiveHistory()
     setBrxLoading(false)
   }
 
@@ -1158,6 +1183,15 @@ export default function PackagesPage() {
   }, [filterStatus, filterQ, filterDateFrom, filterDateTo])
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
   useEffect(() => { if (showBulkReceive && bulkRxStep === 'add') setTimeout(() => brxBarcodeRef.current?.focus(), 200) }, [showBulkReceive, bulkRxStep])
+  useEffect(() => {
+    if (bulkRxQueue.length > 0) {
+      localStorage.setItem(brxStorageKey, JSON.stringify(bulkRxQueue))
+      localStorage.setItem(brxBatchStorageKey, brxBatchId)
+    } else {
+      localStorage.removeItem(brxStorageKey)
+      localStorage.removeItem(brxBatchStorageKey)
+    }
+  }, [bulkRxQueue])
 
   const searchResidents = async (q: string) => {
     if (q.length < 2) { setSearchResults([]); setSearchEmpty(false); setShowGuestForm(false); return }
@@ -1396,6 +1430,27 @@ export default function PackagesPage() {
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
+      {/* Bulk receive draft alert */}
+      {bulkRxQueue.length > 0 && !showBulkReceive && (
+        <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-amber-600 text-lg">⚠️</span>
+            <span className="text-sm font-medium text-amber-800 truncate">
+              Recebimento múltiplo em andamento — {bulkRxQueue.length} encomenda(s) na fila
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => { setShowBulkReceive(true); setBulkRxStep('add') }}
+              className="text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-lg transition">
+              Retomar
+            </button>
+            <button onClick={() => setBulkRxQueue([])}
+              className="text-xs font-semibold text-amber-700 hover:text-amber-900 px-2 py-1.5 transition">
+              Descartar
+            </button>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2 min-w-0">
@@ -1732,6 +1787,120 @@ export default function PackagesPage() {
                 <EsteiraStepper status={pkg.status} />
               </div>
             ))
+          )}
+        </div>
+      )}
+
+      {/* ─── Recebimentos ──────────────────────────────────────────────────────── */}
+      {pageTab === 'encomendas' && (
+        <div className="flex flex-col gap-3 mt-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+              <Truck className="w-4 h-4 text-[#26619c]" />
+              Recebimentos
+            </h2>
+            <button onClick={loadReceiveHistory} disabled={rxHistoryLoading}
+              className="text-xs text-[#26619c] hover:underline disabled:opacity-40">
+              {rxHistoryLoading ? 'Carregando…' : 'Atualizar'}
+            </button>
+          </div>
+
+          {/* Draft in-progress from localStorage */}
+          {bulkRxQueue.length > 0 && (
+            <div className="bg-white rounded-xl border border-amber-300 shadow-sm overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="flex flex-col flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Em Andamento</span>
+                    <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Múltiplo</span>
+                    <span className="text-xs text-gray-500">{bulkRxQueue.length} encomenda(s)</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">Rascunho local — não confirmado ainda</p>
+                </div>
+                <button onClick={() => { setShowBulkReceive(true); setBulkRxStep('add') }}
+                  className="shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-lg transition">
+                  Retomar
+                </button>
+              </div>
+              <div className="border-t border-gray-100 divide-y divide-gray-50">
+                {bulkRxQueue.map(item => (
+                  <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-700 truncate">{item.resident_name}</p>
+                      <p className="text-xs text-gray-400">
+                        {item.unit ? `Unid. ${item.unit}${item.block ? `/Bl.${item.block}` : ''}` : ''}
+                        {item.tracking_code ? ` · ${item.tracking_code}` : ''}
+                        {item.carrier_name ? ` · ${item.carrier_name}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* History from backend */}
+          {rxHistoryLoading && receiveHistory.length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-400">Carregando histórico…</div>
+          ) : receiveHistory.length === 0 && bulkRxQueue.length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-400">Nenhum recebimento registrado ainda.</div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {receiveHistory.map(entry => {
+                const isExpanded = rxHistoryExpanded.has(entry.id)
+                const statusBadge =
+                  entry.status === 'reversed'
+                    ? <span className="inline-flex items-center text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Estornado</span>
+                    : <span className="inline-flex items-center text-xs font-semibold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Confirmado</span>
+                const dt = new Date(entry.received_at)
+                const dateStr = dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                const timeStr = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                return (
+                  <div key={entry.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    <button
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition"
+                      onClick={() => setRxHistoryExpanded(prev => {
+                        const next = new Set(prev)
+                        next.has(entry.id) ? next.delete(entry.id) : next.add(entry.id)
+                        return next
+                      })}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          {statusBadge}
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${entry.is_bulk ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                            {entry.is_bulk ? 'Múltiplo' : 'Unitário'}
+                          </span>
+                          <span className="text-xs text-gray-500">{entry.count} encomenda{entry.count !== 1 ? 's' : ''}</span>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          {entry.received_by_name} · {dateStr} às {timeStr}
+                        </p>
+                      </div>
+                      <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t border-gray-100 divide-y divide-gray-50">
+                        {entry.items.map((item, i) => (
+                          <div key={i} className="flex items-center gap-3 px-4 py-2.5">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-gray-700 truncate">{item.resident_name || '—'}</p>
+                              <p className="text-xs text-gray-400">
+                                {item.unit ? `Unid. ${item.unit}${item.block ? `/Bl.${item.block}` : ''}` : ''}
+                                {item.tracking_code ? ` · ${item.tracking_code}` : ''}
+                                {item.carrier_name ? ` · ${item.carrier_name}` : ''}
+                              </p>
+                            </div>
+                            {entry.is_bulk && item.status === 'reversed' && (
+                              <span className="text-xs text-red-500 font-medium shrink-0">Estornado</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       )}
