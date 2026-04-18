@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, FileText, LogOut, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
@@ -49,6 +49,8 @@ export function AppShell() {
   const fullName          = useAuthStore((s) => s.fullName)
   const associationName   = useAuthStore((s) => s.associationName)
   const navigate          = useNavigate()
+  const location          = useLocation()
+  const isMonitoring      = location.pathname === '/superadmin'
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [assocs, setAssocs] = useState<AssocOption[]>([])
@@ -189,12 +191,12 @@ export function AppShell() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom))' }}>
+      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: isMonitoring ? '0' : 'calc(72px + env(safe-area-inset-bottom))' }}>
         <Outlet />
       </main>
 
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
+      {!isMonitoring && <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
         <div className="flex justify-center overflow-x-auto scrollbar-none px-2 gap-3 sm:gap-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
           {navItems.map(({ to, label, icon: Icon }) => (
@@ -214,7 +216,7 @@ export function AppShell() {
             </NavLink>
           ))}
         </div>
-      </nav>
+      </nav>}
     </div>
   )
 }

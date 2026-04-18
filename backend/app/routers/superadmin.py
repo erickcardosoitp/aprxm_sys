@@ -296,7 +296,7 @@ async def it_metrics(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     days: int = 7,
-    association_id: str | None = None,
+    association_ids: str | None = None,
 ) -> dict:
     _require_superadmin(current)
     days = max(1, min(days, 365))
@@ -315,18 +315,33 @@ async def it_metrics(
          LIMIT 12
     """)).fetchall()
 
+    # Parse and validate association IDs (UUID validation prevents SQL injection)
+    from uuid import UUID as _UUID
+    _ids: list[str] = []
+    if association_ids:
+        for s in association_ids.split(','):
+            try: _ids.append(str(_UUID(s.strip())))
+            except ValueError: pass
+    if _ids:
+        _csv = "', '".join(_ids)
+        assoc_filter = f"AND association_id IN ('{_csv}')"
+    else:
+        assoc_filter = ""
+    assoc_params: dict = {}
+
     # ── Package SLA ─────────────────────────────────────────────────────────
-    sla_row = (await _exec_ro(session, """
+    sla_row = (await _exec_ro(session, f"""
         SELECT
             COUNT(*) FILTER (WHERE status = 'delivered') AS total_delivered,
-            ROUND(AVG(
-                EXTRACT(EPOCH FROM (delivered_at - received_at)) / 3600
-            ) FILTER (WHERE status = 'delivered' AND delivered_at IS NOT NULL AND received_at IS NOT NULL), 1)
+            ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - received_at)) / 3600)
+                FILTER (WHERE status = 'delivered' AND delivered_at IS NOT NULL AND received_at IS NOT NULL), 1)
                 AS avg_hours_to_deliver,
+            ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - received_at)))
+                FILTER (WHERE status = 'delivered' AND delivered_at IS NOT NULL AND received_at IS NOT NULL), 0)
+                AS avg_delivery_s,
             COUNT(*) FILTER (
                 WHERE status = 'delivered'
-                  AND delivered_at IS NOT NULL
-                  AND received_at IS NOT NULL
+                  AND delivered_at IS NOT NULL AND received_at IS NOT NULL
                   AND EXTRACT(EPOCH FROM (delivered_at - received_at)) / 3600 <= 48
             ) AS delivered_within_48h,
             COUNT(*) FILTER (
@@ -337,10 +352,8 @@ async def it_metrics(
             COUNT(*) FILTER (WHERE status = 'notified'
                   AND updated_at < NOW() - INTERVAL '72 hours') AS overdue_notified
         FROM packages
+        WHERE 1=1 {assoc_filter}
     """)).fetchone()
-
-    assoc_filter = "AND association_id = :aid" if association_id else ""
-    assoc_params = {"aid": association_id} if association_id else {}
 
     # ── Activity (transactions per day) ────────────────────────────────────
     activity = (await _exec_ro(session, f"""
@@ -356,6 +369,7 @@ async def it_metrics(
         SELECT DATE(last_login_at) AS day, COUNT(*) AS cnt
           FROM users
          WHERE last_login_at > NOW() - INTERVAL '{days} days'
+         {assoc_filter}
          GROUP BY 1 ORDER BY 1
     """)).fetchall()
 
@@ -387,6 +401,51 @@ async def it_metrics(
          GROUP BY 1 ORDER BY 1
     """, assoc_params)).fetchall()
 
+    # ── Packages received per day ────────────────────────────────────────────
+    pkg_daily = (await _exec_ro(session, f"""
+        SELECT DATE(received_at) AS day, COUNT(*) AS cnt
+          FROM packages
+         WHERE received_at > NOW() - INTERVAL '{days} days'
+         {assoc_filter}
+         GROUP BY 1 ORDER BY 1
+    """)).fetchall()
+
+    # ── Revenue per day ──────────────────────────────────────────────────────
+    revenue_daily = (await _exec_ro(session, f"""
+        SELECT DATE(created_at) AS day, ROUND(SUM(amount)::numeric, 2) AS total
+          FROM transactions
+         WHERE created_at > NOW() - INTERVAL '{days} days'
+           AND amount > 0 AND is_reversal = FALSE
+         {assoc_filter}
+         GROUP BY 1 ORDER BY 1
+    """)).fetchall()
+
+    # ── Delivery time trend per day ──────────────────────────────────────────
+    delivery_trend = (await _exec_ro(session, f"""
+        SELECT DATE(delivered_at) AS day,
+               ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - received_at)))::numeric, 0) AS avg_s
+          FROM packages
+         WHERE delivered_at IS NOT NULL
+           AND delivered_at > NOW() - INTERVAL '{days} days'
+         {assoc_filter}
+         GROUP BY 1 ORDER BY 1
+    """)).fetchall()
+
+    # ── Slow queries (pg_stat_statements — fails gracefully if unavailable) ──
+    try:
+        slow_q_rows = (await _exec_ro(session, """
+            SELECT SUBSTR(query, 1, 80) AS q,
+                   calls,
+                   ROUND((total_exec_time / NULLIF(calls, 0))::numeric, 1) AS avg_ms
+              FROM pg_stat_statements
+             WHERE calls > 3
+             ORDER BY avg_ms DESC NULLS LAST
+             LIMIT 5
+        """)).fetchall()
+        slow_queries = [{"query": r[0], "calls": int(r[1]), "avg_ms": float(r[2])} for r in slow_q_rows]
+    except Exception:
+        slow_queries = []
+
     # ── Critical operations count ────────────────────────────────────────────
     critical_ops_row = (await _exec_ro(session, f"""
         SELECT
@@ -401,22 +460,22 @@ async def it_metrics(
     residents_reg_row = (await _exec_ro(session, f"""
         SELECT COUNT(*) FROM residents r
         WHERE r.created_at > NOW() - INTERVAL '{days} days'
-        {'AND r.association_id = :aid' if association_id else ''}
-    """, assoc_params)).fetchone()
+        {assoc_filter.replace('association_id', 'r.association_id')}
+    """)).fetchone()
 
     pkg_ops_row = (await _exec_ro(session, f"""
         SELECT
             COUNT(*) FILTER (WHERE p.received_at > NOW() - INTERVAL '{days} days') AS pkg_received,
             COUNT(*) FILTER (WHERE p.delivered_at IS NOT NULL AND p.delivered_at > NOW() - INTERVAL '{days} days') AS pkg_delivered
         FROM packages p
-        {'WHERE p.association_id = :aid' if association_id else 'WHERE 1=1'}
-    """, assoc_params)).fetchone()
+        WHERE 1=1 {assoc_filter.replace('association_id', 'p.association_id')}
+    """)).fetchone()
 
     os_row = (await _exec_ro(session, f"""
         SELECT COUNT(*) FROM service_orders s
         WHERE s.created_at > NOW() - INTERVAL '{days} days'
-        {'AND s.association_id = :aid' if association_id else ''}
-    """, assoc_params)).fetchone()
+        {assoc_filter.replace('association_id', 's.association_id')}
+    """)).fetchone()
 
     sangria_row = (await _exec_ro(session, f"""
         SELECT COUNT(*) FROM transactions t
@@ -428,8 +487,8 @@ async def it_metrics(
     pix_row = (await _exec_ro(session, f"""
         SELECT COUNT(*) FROM bank_statements bs
         WHERE bs.created_at > NOW() - INTERVAL '{days} days'
-        {'AND bs.association_id = :aid' if association_id else ''}
-    """, assoc_params)).fetchone()
+        {assoc_filter.replace('association_id', 'bs.association_id')}
+    """)).fetchone()
 
     # ── Operational timing ───────────────────────────────────────────────────
     bulk_timing_row = (await _exec_ro(session, """
@@ -489,15 +548,15 @@ async def it_metrics(
         {assoc_filter.replace('association_id', 't.association_id')}
     """, assoc_params)).fetchone()
 
-    sla_score = float(sla_row[2]) / float(sla_row[0]) if sla_row[0] else 1.0
+    sla_score = float(sla_row[3]) / float(sla_row[0]) if sla_row[0] else 1.0
     total_sess = float(total_sessions_row[0]) if total_sessions_row else 0
     closed_sess = float(total_sessions_row[1]) if total_sessions_row else 0
     session_hygiene = closed_sess / total_sess if total_sess > 0 else 1.0
     total_tx = float(total_tx_row[0]) if total_tx_row else 0
     reversal_tx = float(total_tx_row[1]) if total_tx_row else 0
     error_score = 1.0 - min(1.0, reversal_tx / total_tx) if total_tx > 0 else 1.0
-    overdue = float(sla_row[3]) if sla_row else 0
-    pending = float(sla_row[4]) if sla_row else 0
+    overdue = float(sla_row[4]) if sla_row else 0
+    pending = float(sla_row[5]) if sla_row else 0
     overdue_score = 1.0 - min(1.0, overdue / pending) if pending > 0 else 1.0
 
     apdexx = round(sla_score * 0.30 + session_hygiene * 0.20 + error_score * 0.20 + overdue_score * 0.30, 3)
@@ -512,22 +571,25 @@ async def it_metrics(
             ],
         },
         "package_sla": {
-            "total_delivered": int(sla_row[0]),
-            "avg_hours_to_deliver": float(sla_row[1]) if sla_row[1] else None,
-            "delivered_within_48h": int(sla_row[2]),
-            "pct_within_48h": round(int(sla_row[2]) / int(sla_row[0]) * 100, 1) if sla_row[0] else 0,
-            "overdue_packages": int(sla_row[3]),
-            "pending_packages": int(sla_row[4]),
-            "overdue_notified": int(sla_row[5]),
+            "total_delivered": int(sla_row[0]) if sla_row else 0,
+            "avg_hours_to_deliver": float(sla_row[1]) if sla_row and sla_row[1] else None,
+            "avg_delivery_s": float(sla_row[2]) if sla_row and sla_row[2] else None,
+            "delivered_within_48h": int(sla_row[3]) if sla_row else 0,
+            "pct_within_48h": round(int(sla_row[3]) / int(sla_row[0]) * 100, 1) if sla_row and sla_row[0] else 0,
+            "overdue_packages": int(sla_row[4]) if sla_row else 0,
+            "pending_packages": int(sla_row[5]) if sla_row else 0,
+            "overdue_notified": int(sla_row[6]) if sla_row else 0,
         },
         "activity": {
             "transactions_7d": [{"day": str(r[0]), "count": int(r[1])} for r in activity],
             "logins_7d": [{"day": str(r[0]), "count": int(r[1])} for r in logins],
             "sessions_7d": [{"day": str(r[0]), "count": int(r[1])} for r in sessions_daily],
+            "packages_7d": [{"day": str(r[0]), "count": int(r[1])} for r in pkg_daily],
         },
         "audit": {
-            "total_actions_24h": int(audit_row[0]) if audit_row else 0,
-            "reversals_24h": int(audit_row[1]) if audit_row else 0,
+            "total_actions": int(audit_row[0]) if audit_row else 0,
+            "reversals": int(audit_row[1]) if audit_row else 0,
+            "period_days": days,
         },
         "top_orgs_30d": [
             {"name": r[0], "tx_count": int(r[1]), "active_days": int(r[2])}
@@ -565,6 +627,11 @@ async def it_metrics(
             "error_score": round(error_score, 3),
             "overdue_score": round(overdue_score, 3),
         },
+        "trends": {
+            "revenue": [{"day": str(r[0]), "value": float(r[1])} for r in revenue_daily],
+            "delivery_seconds": [{"day": str(r[0]), "value": float(r[1])} for r in delivery_trend],
+        },
+        "slow_queries": slow_queries,
     }
 
 
