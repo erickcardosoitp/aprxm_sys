@@ -559,6 +559,12 @@ async def it_metrics(
             "connections_total": int(db_conn_row[2]) if db_conn_row else 0,
         },
         "apdexx": apdexx,
+        "apdexx_components": {
+            "sla": round(sla_score, 3),
+            "session_hygiene": round(session_hygiene, 3),
+            "error_score": round(error_score, 3),
+            "overdue_score": round(overdue_score, 3),
+        },
     }
 
 
