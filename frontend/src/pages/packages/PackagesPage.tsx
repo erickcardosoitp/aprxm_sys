@@ -582,13 +582,16 @@ export default function PackagesPage() {
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
   const navigate = useNavigate()
   const [upgradedResidentInfo, setUpgradedResidentInfo] = useState<{ id: string; name: string } | null>(null)
-  const [pageTab, setPageTab] = useState<'encomendas' | 'cadastros'>('encomendas')
+  const [pageTab, setPageTab] = useState<'encomendas' | 'recebimentos' | 'cadastros'>('encomendas')
   const [packages, setPackages] = useState<Package[]>([])
   const [showReceive, setShowReceive] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
   const [loading, setLoading] = useState(false)
   const [filterStatus, setFilterStatus] = useState('')
   const [filterOp, setFilterOp] = useState<string | null>(null)
+  const [filterOpSet, setFilterOpSet] = useState<Set<string>>(new Set())
+  const [showOpDropdown, setShowOpDropdown] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'esteira'>('list')
   const [detailPkg, setDetailPkg] = useState<Package | null>(null)
   const [detailDependents, setDetailDependents] = useState<{ id: string; full_name: string; phone_primary?: string }[]>([])
@@ -1353,32 +1356,40 @@ export default function PackagesPage() {
   }
 
   const pendingCount = packages.filter(p => p.status === 'received' || p.status === 'notified').length
-  const clearFilters = () => { setFilterQ(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterStatus(''); setFilterOp(null) }
+  const clearFilters = () => { setFilterQ(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterStatus(''); setFilterOp(null); setFilterOpSet(new Set()) }
   const opNames = [...new Set(packages.map(p => p.received_by_name).filter(Boolean))] as string[]
-  const displayPackages = filterOp ? packages.filter(p => p.received_by_name === filterOp) : packages
+  const displayPackages = filterOpSet.size > 0 ? packages.filter(p => p.received_by_name && filterOpSet.has(p.received_by_name)) : packages
+  const activeFilterCount = [filterQ, filterDateFrom, filterDateTo, filterStatus].filter(Boolean).length + filterOpSet.size
 
   const PackageCard = ({ pkg }: { pkg: Package }) => (
-    <div className="px-4 py-3 hover:bg-gray-50 cursor-pointer transition" onClick={() => setDetailPkg(pkg)}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5 flex-wrap">
-            <span>{pkg.resident_name ?? '—'}{pkg.unit ? ` · Unid. ${pkg.unit}${pkg.block ? `/Bl.${pkg.block}` : ''}` : ''}</span>
-            {pkg.resident_type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-semibold shrink-0">VISITANTE</span>}
-          </p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {pkg.carrier_name ? (pkg.carrier_name.length > 20 ? pkg.carrier_name.slice(0, 20) + '…' : pkg.carrier_name) : '—'}{pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
-          </p>
+    <div className="px-4 py-3 hover:bg-gray-50/80 cursor-pointer transition group" onClick={() => setDetailPkg(pkg)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {/* Row 1: name + badges */}
+          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+            <span className="text-sm font-semibold text-gray-800 truncate">{pkg.resident_name ?? '—'}</span>
+            {pkg.unit && <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-medium shrink-0">Unid. {pkg.unit}{pkg.block ? `/Bl.${pkg.block}` : ''}</span>}
+            {pkg.resident_type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">VISITANTE</span>}
+            {pkg.has_delivery_fee && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">Taxa R${parseFloat(pkg.delivery_fee_amount ?? '2.50').toFixed(2)}</span>}
+          </div>
+          {/* Row 2: carrier + tracking */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {pkg.carrier_name && <span className="text-xs text-gray-500">{pkg.carrier_name}</span>}
+            {pkg.tracking_code && <span className="text-xs text-gray-400 font-mono">{pkg.tracking_code}</span>}
+            {!pkg.carrier_name && !pkg.tracking_code && <span className="text-xs text-gray-300">Sem transportadora</span>}
+          </div>
+          {/* Row 3: received info */}
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span className="text-xs text-gray-400">
+              {new Date(pkg.received_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            </span>
+            {pkg.received_by_name && <span className="text-xs text-gray-400">· <span className="text-gray-500">{pkg.received_by_name}</span></span>}
+            {pkg.delivered_by_name && <span className="text-xs text-gray-400">· Entregue: <span className="text-gray-500">{pkg.delivered_by_name}</span></span>}
+          </div>
           {(pkg.resident_address_street || pkg.resident_cep) && (
-            <p className="text-xs text-gray-400">
-              {pkg.resident_address_street ? `${pkg.resident_address_street}${pkg.resident_address_number ? `, ${pkg.resident_address_number}` : ''}` : `CEP: ${pkg.resident_cep}`}
+            <p className="text-xs text-gray-400 mt-0.5">
+              {pkg.resident_address_street ? `${pkg.resident_address_street}${pkg.resident_address_number ? `, ${pkg.resident_address_number}` : ''}` : `CEP ${pkg.resident_cep}`}
             </p>
-          )}
-          <p className="text-xs text-gray-400">
-            {new Date(pkg.received_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-            {pkg.received_by_name && <span className="ml-1.5">· {pkg.received_by_name}</span>}
-          </p>
-          {pkg.delivered_by_name && (
-            <p className="text-xs text-gray-400">Entregue por: {pkg.delivered_by_name}</p>
           )}
           {/* Reassign resident — only for "received" */}
           {pkg.status === 'received' && (
@@ -1406,23 +1417,20 @@ export default function PackagesPage() {
             </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
-          {pkg.received_by_name && (
-            <span className="text-[10px] text-gray-400 text-right leading-tight">Recebido por:<br /><span className="font-medium text-gray-600">{pkg.received_by_name}</span></span>
-          )}
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
           {(pkg.status === 'received' || pkg.status === 'notified' || pkg.status === 'reversed') && (
-            <button onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? ''); setDeliveryPersonName(fullName ?? '') }} className="text-xs text-[#26619c] hover:underline">
+            <button onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? ''); setDeliveryPersonName(fullName ?? '') }}
+              className="text-xs font-medium text-[#26619c] hover:bg-[#26619c]/10 px-2 py-1 rounded-lg transition">
               Entregar
             </button>
           )}
           {isAdmin && (
             <button onClick={e => { e.stopPropagation(); setEditPkg(pkg); setEditPkgForm({ sender_name: pkg.sender_name ?? '', carrier_name: pkg.carrier_name ?? '', tracking_code: pkg.tracking_code ?? '', object_type: pkg.object_type ?? '', notes: pkg.notes ?? '' }) }}
-              className="text-xs text-gray-400 hover:text-[#26619c] hover:underline">
+              className="text-xs text-gray-400 hover:text-[#26619c] hover:bg-gray-100 px-2 py-1 rounded-lg transition">
               Editar
             </button>
           )}
-          {pkg.has_delivery_fee && <span className="text-xs text-amber-600 font-medium">Taxa R$ {parseFloat(pkg.delivery_fee_amount ?? '2.50').toFixed(2)}</span>}
         </div>
       </div>
     </div>
@@ -1495,11 +1503,18 @@ export default function PackagesPage() {
       </div>
 
       {/* Page tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {(['encomendas', 'cadastros'] as const).map(t => (
-          <button key={t} onClick={() => setPageTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition -mb-px ${pageTab === t ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {t === 'encomendas' ? 'Encomendas' : 'Transportadoras e Entregadores'}
+      <div className="flex gap-0 border-b border-gray-200 -mx-4 sm:mx-0 px-4 sm:px-0 overflow-x-auto scrollbar-none">
+        {([
+          { key: 'encomendas', label: 'Encomendas', badge: pendingCount > 0 ? pendingCount : undefined },
+          { key: 'recebimentos', label: 'Recebimentos', badge: bulkRxQueue.length > 0 ? '!' : undefined },
+          { key: 'cadastros', label: 'Transportadoras' },
+        ] as { key: 'encomendas' | 'recebimentos' | 'cadastros'; label: string; badge?: number | string }[]).map(t => (
+          <button key={t.key} onClick={() => setPageTab(t.key)}
+            className={`whitespace-nowrap flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${pageTab === t.key ? 'border-[#26619c] text-[#26619c]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {t.label}
+            {t.badge !== undefined && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${pageTab === t.key ? 'bg-[#26619c] text-white' : t.key === 'recebimentos' ? 'bg-amber-500 text-white' : 'bg-gray-200 text-gray-600'}`}>{t.badge}</span>
+            )}
           </button>
         ))}
       </div>
@@ -1631,61 +1646,114 @@ export default function PackagesPage() {
 
       {/* Filter bar */}
       {pageTab === 'encomendas' && <div className="flex flex-col gap-2">
+        {/* Search row + filter toggle */}
         <div className="flex gap-2 items-center">
           <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             <input
               value={filterQ}
               onChange={e => setFilterQ(e.target.value)}
-              placeholder="Buscar nome, rastreio…"
-              className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
+              placeholder="Buscar nome, rastreio, unidade…"
+              className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c] bg-white"
             />
           </div>
-          {(filterQ || filterDateFrom || filterDateTo || filterStatus || filterOp) && (
-            <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 shrink-0">
-              <X className="w-3.5 h-3.5" />
+          <button onClick={() => setShowFilters(v => !v)}
+            className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition shrink-0 ${showFilters || activeFilterCount > 0 ? 'border-[#26619c] text-[#26619c] bg-[#26619c]/5' : 'border-gray-200 text-gray-600 bg-white hover:bg-gray-50'}`}>
+            <Layers className="w-4 h-4" />
+            <span className="hidden sm:inline">Filtros</span>
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-[#26619c] text-white text-[10px] font-bold rounded-full flex items-center justify-center">{activeFilterCount}</span>
+            )}
+          </button>
+          {activeFilterCount > 0 && (
+            <button onClick={clearFilters} title="Limpar filtros" className="text-gray-400 hover:text-red-500 transition shrink-0">
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
-        <div className="flex gap-2 items-center">
-          <input
-            type="date"
-            value={filterDateFrom}
-            onChange={e => setFilterDateFrom(e.target.value)}
-            title="Data inicial"
-            className="flex-1 min-w-0 border border-gray-200 rounded-xl px-2 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
-          />
-          <span className="text-gray-400 text-xs shrink-0">até</span>
-          <input
-            type="date"
-            value={filterDateTo}
-            onChange={e => setFilterDateTo(e.target.value)}
-            title="Data final"
-            className="flex-1 min-w-0 border border-gray-200 rounded-xl px-2 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
-          />
-        </div>
 
-        {opNames.length > 0 && (
-          <select value={filterOp ?? ''} onChange={e => setFilterOp(e.target.value || null)}
-            className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-600 bg-white focus:outline-none focus:ring-2 focus:ring-[#26619c]/30">
-            <option value="">Todos — Recebido por</option>
-            {opNames.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
+        {/* Expanded filters */}
+        {showFilters && (
+          <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-col gap-3 shadow-sm">
+            {/* Date range */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-1.5">Período de recebimento</p>
+              <div className="flex gap-2 items-center">
+                <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                  className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]" />
+                <span className="text-gray-400 text-xs shrink-0">—</span>
+                <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                  className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]" />
+              </div>
+            </div>
+
+            {/* Status */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-1.5">Status</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {(['', 'received', 'notified', 'delivered', 'returned', 'reversed'] as const).map(s => {
+                  const cnt = s === '' ? (statusCounts.total ?? 0) : (statusCounts[s] ?? 0)
+                  return (
+                    <button key={s} onClick={() => setFilterStatus(s)}
+                      className={`flex items-center gap-1 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium transition ${filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                      {s === '' ? 'Todos' : STATUS_LABELS[s as keyof typeof STATUS_LABELS]}
+                      {cnt > 0 && <span className={`text-[10px] font-bold px-1 py-0.5 rounded-full ${filterStatus === s ? 'bg-white/25' : 'bg-gray-200 text-gray-500'}`}>{cnt}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Operator multi-select */}
+            {opNames.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1.5">Operador responsável</p>
+                <div className="flex flex-col gap-1">
+                  {opNames.map(name => (
+                    <label key={name} className="flex items-center gap-2 cursor-pointer group/op py-1 px-1 rounded-lg hover:bg-gray-50">
+                      <input type="checkbox" checked={filterOpSet.has(name)}
+                        onChange={() => setFilterOpSet(prev => {
+                          const next = new Set(prev)
+                          next.has(name) ? next.delete(name) : next.add(name)
+                          return next
+                        })}
+                        className="w-3.5 h-3.5 accent-[#26619c]" />
+                      <span className="text-sm text-gray-700 group-hover/op:text-gray-900">{name}</span>
+                      <span className="ml-auto text-xs text-gray-400">{packages.filter(p => p.received_by_name === name).length}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
-        {/* Status pills — only in list view */}
-        {viewMode === 'list' && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {(['', 'received', 'notified', 'delivered', 'returned'] as const).map((s) => {
+        {/* Status pills — always visible in list/esteira */}
+        {!showFilters && (
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+            {(['', 'received', 'notified', 'delivered', 'returned', 'reversed'] as const).map((s) => {
               const cnt = s === '' ? (statusCounts.total ?? 0) : (statusCounts[s] ?? 0)
               return (
                 <button key={s} onClick={() => setFilterStatus(s)}
-                  className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition flex items-center gap-1 ${filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                  {s === '' ? 'Todos' : STATUS_LABELS[s]}
-                  {cnt > 0 && <span className={`text-[10px] font-bold px-1 py-0.5 rounded-full ${filterStatus === s ? 'bg-white/20' : 'bg-gray-200 text-gray-500'}`}>{cnt}</span>}
+                  className={`whitespace-nowrap flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  {s === '' ? 'Todos' : STATUS_LABELS[s as keyof typeof STATUS_LABELS]}
+                  {cnt > 0 && <span className={`text-[10px] font-bold px-1 py-0.5 rounded-full ${filterStatus === s ? 'bg-white/25' : 'bg-gray-200 text-gray-500'}`}>{cnt}</span>}
                 </button>
               )
             })}
+          </div>
+        )}
+
+        {/* Active filter chips */}
+        {activeFilterCount > 0 && !showFilters && (
+          <div className="flex gap-1.5 flex-wrap">
+            {filterDateFrom && <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">De: {filterDateFrom} <button onClick={() => setFilterDateFrom('')} className="hover:text-red-500">×</button></span>}
+            {filterDateTo && <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Até: {filterDateTo} <button onClick={() => setFilterDateTo('')} className="hover:text-red-500">×</button></span>}
+            {[...filterOpSet].map(op => (
+              <span key={op} className="inline-flex items-center gap-1 text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
+                {op} <button onClick={() => setFilterOpSet(prev => { const n = new Set(prev); n.delete(op); return n })} className="hover:text-red-500">×</button>
+              </span>
+            ))}
           </div>
         )}
       </div>}
@@ -1751,14 +1819,6 @@ export default function PackagesPage() {
       {/* Esteira View */}
       {pageTab === 'encomendas' && viewMode === 'esteira' && (
         <div className="flex flex-col gap-3">
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {(['', 'received', 'notified', 'delivered', 'returned'] as const).map((s) => (
-              <button key={s} onClick={() => setFilterStatus(s)}
-                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition ${filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {s === '' ? 'Todos' : STATUS_LABELS[s]}
-              </button>
-            ))}
-          </div>
           {packages.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400 text-sm">Nenhuma encomenda encontrada.</div>
           ) : (
@@ -1791,18 +1851,25 @@ export default function PackagesPage() {
         </div>
       )}
 
-      {/* ─── Recebimentos ──────────────────────────────────────────────────────── */}
-      {pageTab === 'encomendas' && (
-        <div className="flex flex-col gap-3 mt-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
-              <Truck className="w-4 h-4 text-[#26619c]" />
-              Recebimentos
-            </h2>
-            <button onClick={loadReceiveHistory} disabled={rxHistoryLoading}
-              className="text-xs text-[#26619c] hover:underline disabled:opacity-40">
-              {rxHistoryLoading ? 'Carregando…' : 'Atualizar'}
-            </button>
+      {/* ─── Recebimentos tab ──────────────────────────────────────────────────── */}
+      {pageTab === 'recebimentos' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-xs text-gray-400">Histórico de recebimentos — unitários e lotes múltiplos</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button onClick={() => { setShowBulkReceive(true); setBulkRxStep('add') }}
+                className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#26619c] hover:bg-[#1a4f87] px-3 py-1.5 rounded-xl transition">
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Novo lote</span>
+                <span className="sm:hidden">Lote</span>
+              </button>
+              <button onClick={loadReceiveHistory} disabled={rxHistoryLoading}
+                className="text-xs text-gray-500 hover:text-[#26619c] border border-gray-200 hover:border-[#26619c]/40 px-3 py-1.5 rounded-xl transition disabled:opacity-40">
+                {rxHistoryLoading ? '…' : '↺'}
+              </button>
+            </div>
           </div>
 
           {/* Draft in-progress from localStorage */}
