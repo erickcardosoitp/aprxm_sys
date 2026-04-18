@@ -387,6 +387,121 @@ async def it_metrics(
          GROUP BY 1 ORDER BY 1
     """, assoc_params)).fetchall()
 
+    # ── Critical operations count ────────────────────────────────────────────
+    critical_ops_row = (await _exec_ro(session, f"""
+        SELECT
+            COUNT(*) FILTER (WHERE cs.status NOT IN ('cancelled')) AS cash_open,
+            COUNT(*) FILTER (WHERE cs.closed_at IS NOT NULL)       AS cash_close,
+            COUNT(*) FILTER (WHERE cs.status = 'conferido')        AS cash_conference
+        FROM cash_sessions cs
+        WHERE cs.opened_at > NOW() - INTERVAL '{days} days'
+        {assoc_filter.replace('association_id', 'cs.association_id')}
+    """, assoc_params)).fetchone()
+
+    residents_reg_row = (await _exec_ro(session, f"""
+        SELECT COUNT(*) FROM residents r
+        WHERE r.created_at > NOW() - INTERVAL '{days} days'
+        {'AND r.association_id = :aid' if association_id else ''}
+    """, assoc_params)).fetchone()
+
+    pkg_ops_row = (await _exec_ro(session, f"""
+        SELECT
+            COUNT(*) FILTER (WHERE p.received_at > NOW() - INTERVAL '{days} days') AS pkg_received,
+            COUNT(*) FILTER (WHERE p.delivered_at IS NOT NULL AND p.delivered_at > NOW() - INTERVAL '{days} days') AS pkg_delivered
+        FROM packages p
+        {'WHERE p.association_id = :aid' if association_id else 'WHERE 1=1'}
+    """, assoc_params)).fetchone()
+
+    os_row = (await _exec_ro(session, f"""
+        SELECT COUNT(*) FROM service_orders s
+        WHERE s.created_at > NOW() - INTERVAL '{days} days'
+        {'AND s.association_id = :aid' if association_id else ''}
+    """, assoc_params)).fetchone()
+
+    sangria_row = (await _exec_ro(session, f"""
+        SELECT COUNT(*) FROM transactions t
+        WHERE t.type = 'sangria'
+          AND t.created_at > NOW() - INTERVAL '{days} days'
+        {assoc_filter.replace('association_id', 't.association_id')}
+    """, assoc_params)).fetchone()
+
+    pix_row = (await _exec_ro(session, f"""
+        SELECT COUNT(*) FROM bank_statements bs
+        WHERE bs.created_at > NOW() - INTERVAL '{days} days'
+        {'AND bs.association_id = :aid' if association_id else ''}
+    """, assoc_params)).fetchone()
+
+    # ── Operational timing ───────────────────────────────────────────────────
+    bulk_timing_row = (await _exec_ro(session, """
+        SELECT
+            ROUND(AVG(EXTRACT(EPOCH FROM (max_t - min_t))), 1) AS avg_bulk_scan_seconds,
+            ROUND(AVG(cnt)::numeric, 1) AS avg_items_per_batch,
+            COUNT(*) AS total_batches
+        FROM (
+            SELECT receive_batch_id,
+                   MAX(received_at) AS max_t,
+                   MIN(received_at) AS min_t,
+                   COUNT(*)        AS cnt
+            FROM packages
+            WHERE receive_batch_id IS NOT NULL
+            GROUP BY receive_batch_id
+        ) sub
+    """)).fetchone()
+
+    session_timing_row = (await _exec_ro(session, f"""
+        SELECT
+            ROUND(AVG(EXTRACT(EPOCH FROM (closed_at - opened_at))/3600)::numeric, 2) AS avg_session_h,
+            ROUND(MAX(EXTRACT(EPOCH FROM (closed_at - opened_at))/3600)::numeric, 2) AS max_session_h,
+            COUNT(*)::int AS total_closed
+        FROM cash_sessions cs
+        WHERE cs.closed_at IS NOT NULL
+          AND cs.opened_at > NOW() - INTERVAL '{days} days'
+        {assoc_filter.replace('association_id', 'cs.association_id')}
+    """, assoc_params)).fetchone()
+
+    # ── DB health detail ──────────────────────────────────────────────────────
+    db_cache_row = (await _exec_ro(session, """
+        SELECT ROUND(100.0 * SUM(blks_hit) / NULLIF(SUM(blks_hit) + SUM(blks_read), 0), 2)
+        FROM pg_stat_database
+    """)).fetchone()
+
+    db_conn_row = (await _exec_ro(session, """
+        SELECT COUNT(*) FILTER (WHERE state = 'active'),
+               COUNT(*) FILTER (WHERE state = 'idle'),
+               COUNT(*)
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+    """)).fetchone()
+
+    # ── APDEXX Rating ─────────────────────────────────────────────────────────
+    total_sessions_row = (await _exec_ro(session, f"""
+        SELECT COUNT(*), COUNT(*) FILTER (WHERE closed_at IS NOT NULL)
+        FROM cash_sessions cs
+        WHERE cs.opened_at > NOW() - INTERVAL '{days} days'
+        {assoc_filter.replace('association_id', 'cs.association_id')}
+    """, assoc_params)).fetchone()
+
+    total_tx_row = (await _exec_ro(session, f"""
+        SELECT COUNT(*),
+               COUNT(*) FILTER (WHERE is_reversal = TRUE)
+        FROM transactions t
+        WHERE t.created_at > NOW() - INTERVAL '{days} days'
+        {assoc_filter.replace('association_id', 't.association_id')}
+    """, assoc_params)).fetchone()
+
+    sla_score = float(sla_row[2]) / float(sla_row[0]) if sla_row[0] else 1.0
+    total_sess = float(total_sessions_row[0]) if total_sessions_row else 0
+    closed_sess = float(total_sessions_row[1]) if total_sessions_row else 0
+    session_hygiene = closed_sess / total_sess if total_sess > 0 else 1.0
+    total_tx = float(total_tx_row[0]) if total_tx_row else 0
+    reversal_tx = float(total_tx_row[1]) if total_tx_row else 0
+    error_score = 1.0 - min(1.0, reversal_tx / total_tx) if total_tx > 0 else 1.0
+    overdue = float(sla_row[3]) if sla_row else 0
+    pending = float(sla_row[4]) if sla_row else 0
+    overdue_score = 1.0 - min(1.0, overdue / pending) if pending > 0 else 1.0
+
+    apdexx = round(sla_score * 0.30 + session_hygiene * 0.20 + error_score * 0.20 + overdue_score * 0.30, 3)
+
     return {
         "database": {
             "total_bytes": int(db_size_row[0]) if db_size_row else 0,
@@ -418,4 +533,84 @@ async def it_metrics(
             {"name": r[0], "tx_count": int(r[1]), "active_days": int(r[2])}
             for r in top_orgs
         ],
+        "critical_ops": {
+            "cash_open": int(critical_ops_row[0]) if critical_ops_row else 0,
+            "cash_close": int(critical_ops_row[1]) if critical_ops_row else 0,
+            "cash_conference": int(critical_ops_row[2]) if critical_ops_row else 0,
+            "resident_register": int(residents_reg_row[0]) if residents_reg_row else 0,
+            "pkg_received": int(pkg_ops_row[0]) if pkg_ops_row else 0,
+            "pkg_delivered": int(pkg_ops_row[1]) if pkg_ops_row else 0,
+            "os_open": int(os_row[0]) if os_row else 0,
+            "sangria": int(sangria_row[0]) if sangria_row else 0,
+            "pix_conference": int(pix_row[0]) if pix_row else 0,
+        },
+        "operational_timing": {
+            "bulk_receive_avg_scan_s": float(bulk_timing_row[0]) if bulk_timing_row and bulk_timing_row[0] else None,
+            "bulk_receive_avg_items": float(bulk_timing_row[1]) if bulk_timing_row and bulk_timing_row[1] else None,
+            "bulk_receive_total_batches": int(bulk_timing_row[2]) if bulk_timing_row else 0,
+            "cash_session_avg_h": float(session_timing_row[0]) if session_timing_row and session_timing_row[0] else None,
+            "cash_session_max_h": float(session_timing_row[1]) if session_timing_row and session_timing_row[1] else None,
+            "cash_session_total_closed": int(session_timing_row[2]) if session_timing_row else 0,
+        },
+        "db_health": {
+            "cache_hit_rate_pct": float(db_cache_row[0]) if db_cache_row and db_cache_row[0] else None,
+            "connections_active": int(db_conn_row[0]) if db_conn_row else 0,
+            "connections_idle": int(db_conn_row[1]) if db_conn_row else 0,
+            "connections_total": int(db_conn_row[2]) if db_conn_row else 0,
+        },
+        "apdexx": apdexx,
     }
+
+
+@router.get("/all-residents", summary="Todos os moradores — visão superadmin")
+async def all_residents(
+    q: str | None = None,
+    association_id: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    _require_superadmin(current)
+    filters = ["1=1"]
+    params: dict = {"lim": limit, "off": offset}
+    if q:
+        filters.append("(r.full_name ILIKE :q OR r.cpf ILIKE :q OR r.unit ILIKE :q)")
+        params["q"] = f"%{q}%"
+    if association_id:
+        filters.append("r.association_id = :aid")
+        params["aid"] = association_id
+    where = " AND ".join(filters)
+    result = await session.execute(text(f"""
+        SELECT r.id, r.full_name, r.type, r.unit, r.block, r.cpf,
+               r.status, r.phone_primary, r.created_at,
+               a.name AS association_name
+        FROM residents r
+        JOIN associations a ON a.id = r.association_id
+        WHERE {where}
+        ORDER BY a.name, r.full_name
+        LIMIT :lim OFFSET :off
+    """), params)
+    rows = result.mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.get("/all-residents/count", summary="Contagem total de moradores por org")
+async def all_residents_count(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    _require_superadmin(current)
+    result = await session.execute(text("""
+        SELECT a.name AS association_name, a.id AS association_id,
+               COUNT(r.id)::int AS total,
+               COUNT(r.id) FILTER (WHERE r.type = 'member')::int AS members,
+               COUNT(r.id) FILTER (WHERE r.type = 'guest')::int AS guests,
+               COUNT(r.id) FILTER (WHERE r.status = 'active')::int AS active
+        FROM associations a
+        LEFT JOIN residents r ON r.association_id = a.id
+        WHERE a.name NOT ILIKE '%geral%'
+        GROUP BY a.id, a.name
+        ORDER BY a.name
+    """))
+    return [dict(r) for r in result.mappings().all()]
