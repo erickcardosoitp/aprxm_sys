@@ -944,7 +944,7 @@ export default function PackagesPage() {
   const [bulkRxQueue, setBulkRxQueue] = useState<BulkRxItem[]>(() => {
     try { return JSON.parse(localStorage.getItem(`brx_queue_${associationId}`) ?? '[]') } catch { return [] }
   })
-  const [brxBatchId] = useState<string>(() => {
+  const [brxBatchId, setBrxBatchId] = useState<string>(() => {
     return localStorage.getItem(`brx_batch_${associationId}`) ?? crypto.randomUUID()
   })
   const [brxPending, setBrxPending] = useState<BrxPending | null>(null)
@@ -1053,6 +1053,7 @@ export default function PackagesPage() {
     setBrxSelected(null); setBrxLastAdded(null); setShowBrxScanner(false); setBrxPending(null)
     setBrxGuestName(''); setBrxShowGuest(false)
     setBrxGuestCep(''); setBrxGuestNumber(''); setBrxGuestStreet(''); setBrxGuestNeighborhood(''); setBrxGuestCity(''); setBrxGuestState('')
+    setBrxBatchId(crypto.randomUUID())
   }
 
   // Bulk receive — guest creation
