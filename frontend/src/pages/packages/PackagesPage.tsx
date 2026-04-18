@@ -1046,7 +1046,10 @@ export default function PackagesPage() {
     setBrxLoading(false)
   }
 
+  const [brxExitConfirm, setBrxExitConfirm] = useState(false)
+
   const resetBulkRx = () => {
+    setBrxExitConfirm(false)
     setShowBulkReceive(false); setBulkRxStep('sign'); setBulkRxQueue([])
     setBrxDelivererName(''); setBrxDelivererSig(''); setBrxLoading(false); setBrxResult(null)
     setBrxTracking(''); setBrxCarrier(''); setBrxSearch(''); setBrxResults([])
@@ -1054,6 +1057,14 @@ export default function PackagesPage() {
     setBrxGuestName(''); setBrxShowGuest(false)
     setBrxGuestCep(''); setBrxGuestNumber(''); setBrxGuestStreet(''); setBrxGuestNeighborhood(''); setBrxGuestCity(''); setBrxGuestState('')
     setBrxBatchId(crypto.randomUUID())
+  }
+
+  const closeBulkRx = () => {
+    if (bulkRxQueue.length > 0 && !brxResult) {
+      setBrxExitConfirm(true)
+    } else {
+      resetBulkRx()
+    }
   }
 
   // Bulk receive — guest creation
@@ -2904,7 +2915,7 @@ export default function PackagesPage() {
       {/* Bulk Receive Modal */}
       {showBulkReceive && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
-          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
+          <div className="relative w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
 
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
@@ -2919,8 +2930,29 @@ export default function PackagesPage() {
                   </p>
                 </div>
               </div>
-              <button onClick={resetBulkRx}><X className="w-5 h-5 text-gray-400" /></button>
+              <button onClick={closeBulkRx}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
+
+            {/* Exit confirmation */}
+            {brxExitConfirm && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 rounded-t-2xl sm:rounded-2xl">
+                <div className="bg-white rounded-2xl shadow-xl p-5 mx-4 w-full max-w-sm flex flex-col gap-3">
+                  <p className="font-semibold text-gray-900 text-sm">Sair do recebimento múltiplo?</p>
+                  <p className="text-xs text-gray-500">Você tem <span className="font-bold text-amber-600">{bulkRxQueue.length} encomenda(s)</span> na fila. Deseja manter como rascunho ou descartar?</p>
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => { setBrxExitConfirm(false); setShowBulkReceive(false) }}
+                      className="flex-1 bg-amber-500 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-amber-600 transition">
+                      Manter rascunho
+                    </button>
+                    <button onClick={resetBulkRx}
+                      className="flex-1 border border-red-200 text-red-600 rounded-xl py-2.5 text-sm font-semibold hover:bg-red-50 transition">
+                      Descartar
+                    </button>
+                  </div>
+                  <button onClick={() => setBrxExitConfirm(false)} className="text-xs text-gray-400 hover:text-gray-600 text-center">Voltar ao recebimento</button>
+                </div>
+              </div>
+            )}
 
             {/* Step: add */}
             {bulkRxStep === 'add' && !brxResult && (
