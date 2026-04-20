@@ -805,11 +805,10 @@ export default function FinancePage() {
   const todayLabel = new Date().toLocaleDateString('pt-BR')
   const activeTxs = transactions.filter(t => !t.reversed_at && !t.is_reversal)
   const todayTxs = activeTxs.filter(t => new Date(t.transaction_at).toLocaleDateString('pt-BR') === todayLabel)
-  // Saldo usa TODA a sessão; KPIs de entrada/saída só hoje
   const income = todayTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
   const expenses = todayTxs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
-  const sessionIncome = activeTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
-  const sessionExpenses = activeTxs.filter(t => t.type !== 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
+  const sessionIncome = income
+  const sessionExpenses = expenses
   const viewedOpeningBalance = viewedSessionId && viewedSessionId !== session?.id
     ? parseFloat(openSessions.find(s => s.id === viewedSessionId)?.opening_balance ?? '0')
     : (session ? parseFloat(session.opening_balance) : 0)
