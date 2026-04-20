@@ -573,6 +573,7 @@ class FinanceService:
         amount: Decimal,
         resident_address_street: str = "",
         resident_address_number: str = "",
+        resident_address_complement: str = "",
         isento: bool = False,
         payment_method_id: UUID | None = None,
         category_id: UUID | None = None,
@@ -633,6 +634,9 @@ class FinanceService:
             if resident_address_number:
                 update_fields.append("address_number = :number")
                 update_params["number"] = resident_address_number
+            if resident_address_complement:
+                update_fields.append("address_complement = :complement")
+                update_params["complement"] = resident_address_complement
             if resident_neighborhood:
                 update_fields.append("address_neighborhood = :neighborhood")
                 update_params["neighborhood"] = resident_neighborhood
@@ -673,6 +677,7 @@ class FinanceService:
             resident_cep=resident_cep,
             resident_address_street=resident_address_street,
             resident_address_number=resident_address_number,
+            resident_address_complement=resident_address_complement,
             community_name=community_name or "",
             assoc_address=assoc_address or "",
             assoc_cep=assoc_cep or "",
@@ -714,6 +719,7 @@ class FinanceService:
         sig_bytes: bytes,
         resident_address_street: str = "",
         resident_address_number: str = "",
+        resident_address_complement: str = "",
         barcode_code: str = "",
         barcode_bytes: bytes = b"",
     ) -> bytes:
@@ -728,6 +734,7 @@ class FinanceService:
         resident_cep = _safe(resident_cep)
         resident_address_street = _safe(resident_address_street)
         resident_address_number = _safe(resident_address_number)
+        resident_address_complement = _safe(resident_address_complement)
         community_name = _safe(community_name)
         assoc_address = _safe(assoc_address)
         president_name = _safe(president_name)
@@ -781,6 +788,8 @@ class FinanceService:
             addr_parts.append(resident_address_street)
         if resident_address_number:
             addr_parts.append(f"nº {resident_address_number}")
+        if resident_address_complement:
+            addr_parts.append(resident_address_complement)
         if resident_cep:
             addr_parts.append(f"CEP {resident_cep}")
         addr_str = ", ".join(addr_parts) if addr_parts else f"CEP {resident_cep}"

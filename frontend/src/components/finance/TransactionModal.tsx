@@ -156,6 +156,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [proofCep, setProofCep] = useState('')
   const [proofStreet, setProofStreet] = useState('')
   const [proofNumber, setProofNumber] = useState('')
+  const [proofComplement, setProofComplement] = useState('')
 
   // Session picker — loaded proactively for admin/conferente
   const [openSessions, setOpenSessions] = useState<OpenSession[]>([])
@@ -215,6 +216,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       setProofCep(resident.address_cep ?? '')
       setProofStreet(resident.address_street ?? '')
       setProofNumber(resident.address_number ?? '')
+      setProofComplement((resident as any).address_complement ?? '')
     }
   }, [resident, incomeSubtype])
 
@@ -354,6 +356,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           resident_cep: proofCep.trim(),
           resident_address_street: proofStreet.trim(),
           resident_address_number: proofNumber.trim(),
+          resident_address_complement: proofComplement.trim(),
           amount: proofIsento ? 0 : parseFloat(amount),
           isento: proofIsento,
           payment_method_id: paymentMethodId || undefined,
@@ -643,6 +646,12 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                         placeholder="Ex: 12"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Complemento</label>
+                    <input value={proofComplement} onChange={e => setProofComplement(e.target.value)}
+                      placeholder="Apto / Bloco / Casa…"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>

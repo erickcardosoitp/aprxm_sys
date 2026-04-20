@@ -103,6 +103,7 @@ class ProofOfResidenceRequest(BaseModel):
     resident_cep: str
     resident_address_street: str = ""
     resident_address_number: str = ""
+    resident_address_complement: str = ""
     amount: Decimal = Field(ge=0)
     isento: bool = False
     payment_method_id: UUID | None = None
@@ -128,6 +129,7 @@ async def issue_proof_of_residence(
         resident_cep=body.resident_cep,
         resident_address_street=body.resident_address_street,
         resident_address_number=body.resident_address_number,
+        resident_address_complement=body.resident_address_complement,
         amount=body.amount,
         isento=body.isento,
         payment_method_id=body.payment_method_id,
@@ -210,6 +212,7 @@ async def reissue_proof_of_residence(
         resident_cep=body.resident_cep,
         resident_address_street=body.resident_address_street,
         resident_address_number=body.resident_address_number,
+        resident_address_complement=body.resident_address_complement,
         amount=body.amount,
         payment_method_id=body.payment_method_id,
         category_id=body.category_id,
