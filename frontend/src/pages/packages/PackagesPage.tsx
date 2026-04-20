@@ -897,11 +897,14 @@ export default function PackagesPage() {
   const pendingPackages = packages.filter(p => p.status === 'received' || p.status === 'notified' || p.status === 'reversed')
 
   const [bulkPaymentMethodId, setBulkPaymentMethodId] = useState('')
+  const [bulkCashSessionId, setBulkCashSessionId] = useState('')
+  const [bulkSessionPicker, setBulkSessionPicker] = useState<{ id: string; opened_by_name: string; opening_balance: string }[] | null>(null)
 
   const resetBulk = () => {
     setShowBulkDeliver(false); setBulkStep('select'); setBulkSelected(new Set())
     setBulkRecipientName(''); setBulkSig(''); setBulkDeliveryPersonName('')
     setBulkLoading(false); setBulkResult(null); setBulkPaymentMethodId('')
+    setBulkCashSessionId(''); setBulkSessionPicker(null)
   }
 
   const bulkHasGuest = Array.from(bulkSelected).some(id => {
@@ -909,11 +912,9 @@ export default function PackagesPage() {
     return p && (p.resident_type === 'guest' || !p.resident_id)
   })
 
-  const handleBulkDeliver = async () => {
-    if (!bulkRecipientName || !bulkSig) { toast.error('Nome e assinatura obrigatórios.'); return }
-    if (bulkSelected.size === 0) { toast.error('Selecione ao menos uma encomenda.'); return }
-    if (bulkHasGuest && !bulkPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
+  const doBulkDeliver = async (cash_session_id?: string) => {
     setBulkLoading(true)
+    setBulkSessionPicker(null)
     try {
       const res = await api.post<{ delivered: number; errors: { id: string; error: string }[]; items: any[] }>('/packages/bulk-deliver', {
         package_ids: Array.from(bulkSelected),
@@ -921,6 +922,7 @@ export default function PackagesPage() {
         signature_url: bulkSig,
         delivery_person_name: bulkDeliveryPersonName || fullName || undefined,
         payment_method_id: bulkPaymentMethodId || undefined,
+        cash_session_id: cash_session_id || undefined,
       })
       setBulkResult(res.data)
       loadPackages()
@@ -930,6 +932,21 @@ export default function PackagesPage() {
     } finally {
       setBulkLoading(false)
     }
+  }
+
+  const handleBulkDeliver = async () => {
+    if (!bulkRecipientName || !bulkSig) { toast.error('Nome e assinatura obrigatórios.'); return }
+    if (bulkSelected.size === 0) { toast.error('Selecione ao menos uma encomenda.'); return }
+    if (bulkHasGuest && !bulkPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
+    if (bulkHasGuest && !session && !bulkCashSessionId) {
+      try {
+        const sessRes = await financeService.listOpenSessions()
+        if (sessRes.data.length === 0) { toast.error('Nenhum caixa aberto para registrar a taxa.'); return }
+        setBulkSessionPicker(sessRes.data)
+      } catch { toast.error('Erro ao buscar caixas abertos.') }
+      return
+    }
+    await doBulkDeliver(bulkCashSessionId || undefined)
   }
 
   // Receive mode choice
@@ -2415,6 +2432,32 @@ export default function PackagesPage() {
                 <div className="flex flex-col gap-2">
                   {deliverySessionPicker.map(s => (
                     <button key={s.id} onClick={() => doDeliver(s.id)}
+                      className="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 hover:border-[#26619c] hover:bg-blue-50 transition text-left">
+                      <span className="text-sm font-medium text-gray-800">{s.opened_by_name}</span>
+                      <span className="text-xs text-gray-400">Saldo inicial: R$ {parseFloat(s.opening_balance).toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk deliver — session picker */}
+      {bulkSessionPicker && (
+        <div className="fixed inset-0 z-[65] overflow-y-auto bg-black/50">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900 text-sm">Selecionar Caixa</h3>
+                <button onClick={() => setBulkSessionPicker(null)}><X className="w-4 h-4 text-gray-400" /></button>
+              </div>
+              <div className="p-4">
+                <p className="text-xs text-gray-500 mb-3">Selecione o caixa para registrar a taxa de entrega:</p>
+                <div className="flex flex-col gap-2">
+                  {bulkSessionPicker.map(s => (
+                    <button key={s.id} onClick={() => doBulkDeliver(s.id)}
                       className="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 hover:border-[#26619c] hover:bg-blue-50 transition text-left">
                       <span className="text-sm font-medium text-gray-800">{s.opened_by_name}</span>
                       <span className="text-xs text-gray-400">Saldo inicial: R$ {parseFloat(s.opening_balance).toFixed(2)}</span>
