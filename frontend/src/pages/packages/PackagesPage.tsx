@@ -891,7 +891,7 @@ export default function PackagesPage() {
   const [bulkSig, setBulkSig] = useState('')
   const [bulkDeliveryPersonName, setBulkDeliveryPersonName] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
-  const [bulkResult, setBulkResult] = useState<{ delivered: number; errors: string[]; items: any[] } | null>(null)
+  const [bulkResult, setBulkResult] = useState<{ delivered: number; errors: { id: string; error: string }[]; items: any[] } | null>(null)
 
   const pendingPackages = packages.filter(p => p.status === 'received' || p.status === 'notified' || p.status === 'reversed')
 
@@ -914,7 +914,7 @@ export default function PackagesPage() {
     if (bulkHasGuest && !bulkPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
     setBulkLoading(true)
     try {
-      const res = await api.post<{ delivered: number; errors: string[]; items: any[] }>('/packages/bulk-deliver', {
+      const res = await api.post<{ delivered: number; errors: { id: string; error: string }[]; items: any[] }>('/packages/bulk-deliver', {
         package_ids: Array.from(bulkSelected),
         delivered_to_name: bulkRecipientName,
         signature_url: bulkSig,
@@ -2870,7 +2870,7 @@ export default function PackagesPage() {
                   <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
                     <p className="text-xs font-semibold text-red-700 mb-1">{bulkResult.errors.length} erro(s):</p>
                     <ul className="text-xs text-red-600 flex flex-col gap-0.5">
-                      {bulkResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                      {bulkResult.errors.map((e, i) => <li key={i}>{e.error}</li>)}
                     </ul>
                   </div>
                 )}
