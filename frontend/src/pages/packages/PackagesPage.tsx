@@ -599,6 +599,7 @@ export default function PackagesPage() {
   const [editPkg, setEditPkg] = useState<Package | null>(null)
   const [editPkgForm, setEditPkgForm] = useState({ sender_name: '', carrier_name: '', tracking_code: '', object_type: '', notes: '' })
   const [savingEditPkg, setSavingEditPkg] = useState(false)
+  const [photoPreviewUrls, setPhotoPreviewUrls] = useState<{ url: string; label?: string }[] | null>(null)
 
   useEffect(() => {
     if (detailPkg?.resident_id) {
@@ -1430,7 +1431,15 @@ export default function PackagesPage() {
           )}
         </div>
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
+          <div className="flex items-center gap-1.5">
+            {pkg.photo_urls && pkg.photo_urls.length > 0 && (
+              <button onClick={e => { e.stopPropagation(); setPhotoPreviewUrls(pkg.photo_urls.filter((p: any) => !p.url.startsWith('blob:'))) }}
+                className="text-gray-400 hover:text-[#26619c] transition" title="Ver fotos">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              </button>
+            )}
+            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
+          </div>
           {(pkg.status === 'received' || pkg.status === 'notified' || pkg.status === 'reversed') && (
             <button onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? ''); setDeliveryPersonName(fullName ?? '') }}
               className="text-xs font-medium text-[#26619c] hover:bg-[#26619c]/10 px-2 py-1 rounded-lg transition">
@@ -3398,6 +3407,25 @@ export default function PackagesPage() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Photo preview modal */}
+      {photoPreviewUrls && (
+        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4" onClick={() => setPhotoPreviewUrls(null)}>
+          <div className="relative max-w-lg w-full bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setPhotoPreviewUrls(null)} className="absolute top-3 right-3 z-10 bg-black/40 text-white rounded-full p-1">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <div className="flex flex-col gap-2 p-2 max-h-[80vh] overflow-y-auto">
+              {photoPreviewUrls.map((p, i) => (
+                <div key={i} className="flex flex-col gap-1">
+                  {p.label && <p className="text-xs text-gray-500 px-1">{p.label}</p>}
+                  <img src={p.url} alt={p.label ?? `Foto ${i + 1}`} className="w-full rounded-xl object-contain max-h-[60vh]" />
+                </div>
+              ))}
             </div>
           </div>
         </div>
