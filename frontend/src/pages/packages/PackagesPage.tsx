@@ -938,10 +938,12 @@ export default function PackagesPage() {
     if (!bulkRecipientName || !bulkSig) { toast.error('Nome e assinatura obrigatórios.'); return }
     if (bulkSelected.size === 0) { toast.error('Selecione ao menos uma encomenda.'); return }
     if (bulkHasGuest && !bulkPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
-    if (bulkHasGuest && !session && !bulkCashSessionId) {
+    if (bulkHasGuest && !bulkCashSessionId) {
       try {
         const sessRes = await financeService.listOpenSessions()
         if (sessRes.data.length === 0) { toast.error('Nenhum caixa aberto para registrar a taxa.'); return }
+        const mine = sessRes.data.find((s: any) => s.is_mine)
+        if (mine) { await doBulkDeliver(undefined); return }
         setBulkSessionPicker(sessRes.data)
       } catch { toast.error('Erro ao buscar caixas abertos.') }
       return
@@ -1450,7 +1452,7 @@ export default function PackagesPage() {
         <div className="flex flex-col items-end gap-1.5 shrink-0">
           <div className="flex items-center gap-1.5">
             {pkg.photo_urls && pkg.photo_urls.length > 0 && (
-              <button onClick={e => { e.stopPropagation(); setPhotoPreviewUrls(pkg.photo_urls.filter((p: any) => !p.url.startsWith('blob:'))) }}
+              <button onClick={e => { e.stopPropagation(); setPhotoPreviewUrls((pkg.photo_urls ?? []).filter((p: any) => !p.url.startsWith('blob:'))) }}
                 className="text-gray-400 hover:text-[#26619c] transition" title="Ver fotos">
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
               </button>
