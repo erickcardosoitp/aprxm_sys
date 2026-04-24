@@ -954,7 +954,16 @@ async def tesouraria_summary(
 
     conf_rows = (await session.execute(sa_text("""
         SELECT cs.id, cs.opened_at, cs.closing_balance, cs.expected_balance,
-               cs.difference, u.full_name AS operador
+               cs.difference, u.full_name AS operador,
+               COALESCE((
+                   SELECT SUM(t.amount) FROM transactions t
+                    WHERE t.association_id = cs.association_id
+                      AND t.type = 'sangria'
+                      AND t.description LIKE 'Repasse para caixinha%%'
+                      AND t.reversed_at IS NULL AND t.is_reversal = false
+                      AND t.cash_session_id IS NULL
+                      AND t.description LIKE CONCAT('%%conferência ', cs.opened_at::date::text, '%%')
+               ), 0) AS already_transferred
           FROM cash_sessions cs
           LEFT JOIN users u ON u.id = cs.opened_by
          WHERE cs.association_id=:aid AND cs.status='conferido'
@@ -1020,7 +1029,7 @@ async def tesouraria_summary(
         "pap_today": {"total": str(round(float(pap_row[0]),2)), "count": pap_row[1]},
         "caixinhas": [{"id": str(r[0]), "name": r[1], "balance": str(round(float(r[2]),2)),
                        "breakdown": breakdown_by_box.get(str(r[0]), [])} for r in boxes],
-        "total_limbo": str(round(sum(float(r[2] or 0) for r in conf_rows), 2)),
+        "total_limbo": str(round(sum(max(0.0, float(r[2] or 0) - float(r[6] or 0)) for r in conf_rows), 2)),
         "faturamento_hoje": str(faturamento),
     }
 
@@ -1839,96 +1848,107 @@ async def esteira(
     from sqlalchemy import text as t
     aid = str(current.association_id)
 
-    # Stage 1: Caixas abertas
+    # ── 1. FATURAMENTO: base transacional (fonte da verdade para "quanto ganhou") ──
+    fat_row = (await session.execute(t("""
+        SELECT
+            COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0)        AS bruto,
+            COALESCE(SUM(CASE WHEN type IN ('expense','sangria')
+                               AND description NOT LIKE 'Repasse para caixinha%%'
+                               THEN amount ELSE 0 END), 0)                           AS baixas
+          FROM transactions
+         WHERE association_id = :aid AND reversed_at IS NULL AND is_reversal = false
+    """), {"aid": aid})).fetchone()
+    bruto  = round(float(fat_row[0]), 2)
+    baixas = round(float(fat_row[1]), 2)
+    liquido = round(bruto - baixas, 2)
+
+    # ── 2. EM CAIXAS ABERTOS: calculado por transações ──
     open_row = (await session.execute(t("""
         SELECT COUNT(DISTINCT cs.id),
-               COALESCE(SUM(cs.opening_balance), 0) +
-               COALESCE(SUM(CASE WHEN tx.type='income' AND tx.reversed_at IS NULL AND tx.is_reversal=false THEN tx.amount
-                                  WHEN tx.type IN ('expense','sangria') AND tx.reversed_at IS NULL AND tx.is_reversal=false THEN -tx.amount
-                                  ELSE 0 END), 0)
+               COALESCE(SUM(cs.opening_balance), 0)
+               + COALESCE(SUM(CASE WHEN tx.type='income'
+                                    AND tx.reversed_at IS NULL AND tx.is_reversal=false
+                                    THEN tx.amount ELSE 0 END), 0)
+               - COALESCE(SUM(CASE WHEN tx.type IN ('expense','sangria')
+                                    AND tx.reversed_at IS NULL AND tx.is_reversal=false
+                                    THEN tx.amount ELSE 0 END), 0)
           FROM cash_sessions cs
-          LEFT JOIN transactions tx ON tx.cash_session_id = cs.id AND tx.association_id = cs.association_id
+          LEFT JOIN transactions tx ON tx.cash_session_id = cs.id
+                                    AND tx.association_id  = cs.association_id
          WHERE cs.association_id = :aid AND cs.status = 'open'
     """), {"aid": aid})).fetchone()
+    em_abertos = round(float(open_row[1]), 2)
 
-    # Stage 2: Fechado aguardando conferência
+    # ── 3. NO MALOTE: sessões fechadas ainda não conferidas (closing_balance = contagem física) ──
     closed_row = (await session.execute(t("""
         SELECT COUNT(*), COALESCE(SUM(closing_balance), 0)
           FROM cash_sessions
          WHERE association_id = :aid AND status = 'closed'
     """), {"aid": aid})).fetchone()
+    no_malote = round(float(closed_row[1]), 2)
 
-    # Stage 3: Conferido, malote não enviado
-    conf_unsent_row = (await session.execute(t("""
-        SELECT COUNT(*),
-               COALESCE(SUM(closing_balance), 0),
-               COALESCE(SUM(COALESCE(manual_dinheiro,0)), 0),
-               COALESCE(SUM(COALESCE(manual_pix,0)), 0)
+    # ── 4. A REPASSAR: conferido - o que já foi transferido para caixinhas ──
+    # Repasses de sessões conferidas têm cash_session_id = NULL (ver transfer_to_cashbox)
+    conf_closing = (await session.execute(t("""
+        SELECT COALESCE(SUM(closing_balance), 0), COUNT(*)
           FROM cash_sessions
-         WHERE association_id = :aid AND status = 'conferido' AND malote_sent_at IS NULL
+         WHERE association_id = :aid AND status = 'conferido'
     """), {"aid": aid})).fetchone()
-
-    # Stage 4: Malote enviado, aguardando depósito no faturamento
-    conf_sent_row = (await session.execute(t("""
-        SELECT COUNT(*),
-               COALESCE(SUM(closing_balance), 0),
-               COALESCE(SUM(COALESCE(manual_dinheiro,0)), 0),
-               COALESCE(SUM(COALESCE(manual_pix,0)), 0)
-          FROM cash_sessions
-         WHERE association_id = :aid AND status = 'conferido' AND malote_sent_at IS NOT NULL
+    ja_transferido = (await session.execute(t("""
+        SELECT COALESCE(SUM(amount), 0)
+          FROM transactions
+         WHERE association_id = :aid
+           AND type = 'sangria'
+           AND description LIKE 'Repasse para caixinha%%'
+           AND reversed_at IS NULL AND is_reversal = false
+           AND cash_session_id IS NULL
     """), {"aid": aid})).fetchone()
+    a_repassar = round(max(0.0, float(conf_closing[0]) - float(ja_transferido[0])), 2)
+    conf_count = int(conf_closing[1])
 
-    # PIX pendente conciliação (from bank_statements)
-    pix_pending_row = (await session.execute(t("""
-        SELECT COUNT(*), COALESCE(SUM(amount), 0)
-          FROM bank_statements
-         WHERE association_id = :aid AND conciliado = false
-    """), {"aid": aid})).fetchone()
-
-    # PIX conciliado
-    pix_done_row = (await session.execute(t("""
-        SELECT COUNT(*), COALESCE(SUM(amount), 0)
-          FROM bank_statements
-         WHERE association_id = :aid AND conciliado = true
-    """), {"aid": aid})).fetchone()
-
-    # Caixinhas
+    # ── 5. NAS CAIXINHAS: saldo atual de cada caixinha ──
     boxes_rows = (await session.execute(t("""
         SELECT name, balance FROM cash_boxes
          WHERE association_id = :aid AND is_active = true ORDER BY name
     """), {"aid": aid})).fetchall()
+    nas_caixinhas = round(sum(float(r[1]) for r in boxes_rows), 2)
+
+    # ── 6. RECONCILIAÇÃO ──
+    total_localizado = round(em_abertos + no_malote + a_repassar + nas_caixinhas, 2)
+    # Diferença entre base transacional (líquido) e base física (localizado).
+    # Negativo = físico > lançado (operador colocou troco próprio / erro de lançamento).
+    # Positivo = lançado > físico (quebra de caixa: faltou dinheiro).
+    diferenca = round(liquido - total_localizado, 2)
+
+    # ── 7. PIX: status de conciliação bancária (não é localização, é confirmação) ──
+    pix_pend = (await session.execute(t("""
+        SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM bank_statements
+         WHERE association_id = :aid AND conciliado = false
+    """), {"aid": aid})).fetchone()
+    pix_done = (await session.execute(t("""
+        SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM bank_statements
+         WHERE association_id = :aid AND conciliado = true
+    """), {"aid": aid})).fetchone()
 
     return {
-        "caixa_aberto": {
-            "sessoes": int(open_row[0]),
-            "saldo": str(round(float(open_row[1]), 2)),
+        "faturamento": {
+            "bruto": str(bruto),
+            "baixas": str(baixas),
+            "liquido": str(liquido),
         },
-        "aguardando_conferencia": {
-            "sessoes": int(closed_row[0]),
-            "total": str(round(float(closed_row[1]), 2)),
+        "localizacao": {
+            "em_abertos":    {"sessoes": int(open_row[0]),  "total": str(em_abertos)},
+            "no_malote":     {"sessoes": int(closed_row[0]),"total": str(no_malote)},
+            "a_repassar":    {"sessoes": conf_count,         "total": str(a_repassar)},
+            "nas_caixinhas": {
+                "total": str(nas_caixinhas),
+                "boxes": [{"name": r[0], "saldo": str(round(float(r[1]), 2))} for r in boxes_rows],
+            },
+            "total_localizado": str(total_localizado),
+            "diferenca": str(diferenca),
         },
-        "conferido_aguardando_malote": {
-            "sessoes": int(conf_unsent_row[0]),
-            "total": str(round(float(conf_unsent_row[1]), 2)),
-            "dinheiro": str(round(float(conf_unsent_row[2]), 2)),
-            "pix": str(round(float(conf_unsent_row[3]), 2)),
+        "pix": {
+            "pendente":   {"count": int(pix_pend[0]), "total": str(round(float(pix_pend[1]), 2))},
+            "conciliado": {"count": int(pix_done[0]), "total": str(round(float(pix_done[1]), 2))},
         },
-        "malote_enviado": {
-            "sessoes": int(conf_sent_row[0]),
-            "total": str(round(float(conf_sent_row[1]), 2)),
-            "dinheiro": str(round(float(conf_sent_row[2]), 2)),
-            "pix": str(round(float(conf_sent_row[3]), 2)),
-        },
-        "pix_pendente_conciliacao": {
-            "count": int(pix_pending_row[0]),
-            "total": str(round(float(pix_pending_row[1]), 2)),
-        },
-        "pix_conciliado": {
-            "count": int(pix_done_row[0]),
-            "total": str(round(float(pix_done_row[1]), 2)),
-        },
-        "caixinhas": [
-            {"name": r[0], "saldo": str(round(float(r[1]), 2))}
-            for r in boxes_rows
-        ],
     }

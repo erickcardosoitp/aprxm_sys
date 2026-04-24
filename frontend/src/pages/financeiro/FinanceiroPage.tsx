@@ -3503,138 +3503,113 @@ export default function FinanceiroPage() {
           {esteiraLoading && <div className="text-center text-sm text-gray-400 py-10">Carregando…</div>}
 
           {!esteiraLoading && esteiraData && (() => {
-            const stages = [
-              {
-                key: 'caixa_aberto',
-                label: 'Caixa Aberto',
-                sub: `${esteiraData.caixa_aberto.sessoes} sessão(ões)`,
-                amount: parseFloat(esteiraData.caixa_aberto.saldo),
-                color: 'border-green-300 bg-green-50',
-                badge: 'bg-green-100 text-green-700',
-                icon: '🟢',
-                hint: 'Dinheiro nos caixas abertos agora',
-              },
-              {
-                key: 'aguardando_conferencia',
-                label: 'Aguardando Conferência',
-                sub: `${esteiraData.aguardando_conferencia.sessoes} sessão(ões) fechada(s)`,
-                amount: parseFloat(esteiraData.aguardando_conferencia.total),
-                color: 'border-amber-300 bg-amber-50',
-                badge: 'bg-amber-100 text-amber-700',
-                icon: '🟡',
-                hint: 'Caixas fechados ainda não conferidos',
-              },
-              {
-                key: 'conferido_aguardando_malote',
-                label: 'Conferido / Malote',
-                sub: `${esteiraData.conferido_aguardando_malote.sessoes} sessão(ões)`,
-                amount: parseFloat(esteiraData.conferido_aguardando_malote.total),
-                color: 'border-blue-300 bg-blue-50',
-                badge: 'bg-blue-100 text-blue-700',
-                icon: '🔵',
-                hint: 'Conferido, aguardando envio do malote',
-                extra: esteiraData.conferido_aguardando_malote.sessoes > 0 ? [
-                  { label: 'Dinheiro', val: parseFloat(esteiraData.conferido_aguardando_malote.dinheiro) },
-                  { label: 'PIX', val: parseFloat(esteiraData.conferido_aguardando_malote.pix) },
-                ] : undefined,
-              },
-              {
-                key: 'malote_enviado',
-                label: 'Malote Enviado',
-                sub: `${esteiraData.malote_enviado.sessoes} sessão(ões)`,
-                amount: parseFloat(esteiraData.malote_enviado.total),
-                color: 'border-purple-300 bg-purple-50',
-                badge: 'bg-purple-100 text-purple-700',
-                icon: '🟣',
-                hint: 'Malote físico enviado ao faturamento',
-                extra: esteiraData.malote_enviado.sessoes > 0 ? [
-                  { label: 'Dinheiro', val: parseFloat(esteiraData.malote_enviado.dinheiro) },
-                  { label: 'PIX', val: parseFloat(esteiraData.malote_enviado.pix) },
-                ] : undefined,
-              },
-              {
-                key: 'pix_pendente',
-                label: 'PIX a Conciliar',
-                sub: `${esteiraData.pix_pendente_conciliacao.count} lançamento(s)`,
-                amount: parseFloat(esteiraData.pix_pendente_conciliacao.total),
-                color: 'border-orange-300 bg-orange-50',
-                badge: 'bg-orange-100 text-orange-700',
-                icon: '🟠',
-                hint: 'PIX recebido, não confirmado no banco',
-              },
-              {
-                key: 'pix_conciliado',
-                label: 'PIX Conciliado',
-                sub: `${esteiraData.pix_conciliado.count} lançamento(s)`,
-                amount: parseFloat(esteiraData.pix_conciliado.total),
-                color: 'border-teal-300 bg-teal-50',
-                badge: 'bg-teal-100 text-teal-700',
-                icon: '✅',
-                hint: 'PIX confirmado no extrato bancário',
-              },
+            const loc = esteiraData.localizacao
+            const fat = esteiraData.faturamento
+            const pix = esteiraData.pix
+            const bruto     = parseFloat(fat.bruto)
+            const baixas    = parseFloat(fat.baixas)
+            const liquido   = parseFloat(fat.liquido)
+            const localizado = parseFloat(loc.total_localizado)
+            const diferenca  = parseFloat(loc.diferenca)
+
+            const locationRows = [
+              { label: 'Em caixas abertos', sub: `${loc.em_abertos.sessoes} sessão(ões) com operador`, val: parseFloat(loc.em_abertos.total), color: 'text-blue-700', dot: 'bg-blue-400' },
+              { label: 'No malote (aguardando conferência)', sub: `${loc.no_malote.sessoes} sessão(ões) fechada(s)`, val: parseFloat(loc.no_malote.total), color: 'text-amber-700', dot: 'bg-amber-400' },
+              { label: 'Conferido, a repassar', sub: `${loc.a_repassar.sessoes} sessão(ões) — já descontado o repassado`, val: parseFloat(loc.a_repassar.total), color: 'text-orange-700', dot: 'bg-orange-400' },
+              { label: 'Nas caixinhas', sub: loc.nas_caixinhas.boxes.map((b: any) => `${b.name}: ${fmt(parseFloat(b.saldo))}`).join(' · ') || '—', val: parseFloat(loc.nas_caixinhas.total), color: 'text-green-700', dot: 'bg-green-500' },
             ]
-            const totalEmTransito = stages.slice(0, 5).reduce((s, st) => s + st.amount, 0)
+
             return (
               <>
-                {/* Pipeline flow */}
-                <div className="flex flex-col gap-2">
-                  {stages.map((st, i) => (
-                    <div key={st.key} className="flex flex-col gap-0">
-                      <div className={`rounded-xl border ${st.color} px-4 py-3 flex items-center justify-between gap-3`}>
-                        <div className="flex items-center gap-3">
-                          <span className="text-base">{st.icon}</span>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-800">{st.label}</p>
-                            <p className="text-xs text-gray-500">{st.sub} · {st.hint}</p>
-                            {st.extra && (
-                              <div className="flex gap-3 mt-1">
-                                {st.extra.map(e => (
-                                  <span key={e.label} className="text-xs text-gray-500">{e.label}: <b className="text-gray-700">{fmt(e.val)}</b></span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className={`text-base font-bold ${st.amount > 0 ? 'text-gray-900' : 'text-gray-400'}`}>{fmt(st.amount)}</p>
-                          {st.amount > 0 && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.badge}`}>Em trânsito</span>
-                          )}
-                        </div>
-                      </div>
-                      {i < stages.length - 1 && (
-                        <div className="flex justify-center py-0.5">
-                          <div className="w-0.5 h-3 bg-gray-300" />
-                        </div>
-                      )}
+                {/* Bloco 1: Faturamento */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Faturamento (base: transações registradas)</p>
+                  </div>
+                  <div className="p-4 flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Total bruto faturado</span>
+                      <span className="text-sm font-bold text-gray-900">{fmt(bruto)}</span>
                     </div>
-                  ))}
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">(−) Baixas e saídas</span>
+                      <span className="text-sm font-semibold text-red-600">−{fmt(baixas)}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-gray-200 pt-2 mt-1">
+                      <span className="text-sm font-bold text-gray-800">= Líquido total</span>
+                      <span className="text-base font-black text-[#26619c]">{fmt(liquido)}</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">Esse valor deve estar distribuído nos locais abaixo ± quebras de caixa.</p>
+                  </div>
                 </div>
 
-                {/* Total + Caixinhas */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
-                  <div className="bg-gray-900 rounded-xl p-4 text-white">
-                    <p className="text-xs text-gray-400 mb-1">Total em Trânsito</p>
-                    <p className="text-2xl font-black">{fmt(totalEmTransito)}</p>
-                    <p className="text-xs text-gray-400 mt-1">Soma dos estágios ativos</p>
+                {/* Bloco 2: Onde está o dinheiro agora */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Localização atual do dinheiro (base: contagem física)</p>
                   </div>
-                  {esteiraData.caixinhas.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-xl p-4">
-                      <p className="text-xs font-semibold text-gray-600 mb-2">Caixinhas</p>
-                      {esteiraData.caixinhas.map((cx: any) => (
-                        <div key={cx.name} className="flex justify-between text-sm py-1 border-b border-gray-100 last:border-0">
-                          <span className="text-gray-700">{cx.name}</span>
-                          <span className="font-bold text-gray-900">{fmt(parseFloat(cx.saldo))}</span>
+                  <div className="divide-y divide-gray-100">
+                    {locationRows.map(r => (
+                      <div key={r.label} className="px-4 py-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${r.dot}`} />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-800">{r.label}</p>
+                            <p className="text-xs text-gray-400 truncate">{r.sub}</p>
+                          </div>
                         </div>
-                      ))}
-                      <div className="flex justify-between text-sm pt-2 mt-1">
-                        <span className="text-gray-500 text-xs">Total caixinhas</span>
-                        <span className="font-bold text-[#26619c] text-xs">
-                          {fmt(esteiraData.caixinhas.reduce((s: number, cx: any) => s + parseFloat(cx.saldo), 0))}
-                        </span>
+                        <span className={`text-sm font-bold shrink-0 ${r.val > 0 ? r.color : 'text-gray-300'}`}>{fmt(r.val)}</span>
                       </div>
+                    ))}
+                  </div>
+                  <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-gray-700">Total localizado</span>
+                    <span className="text-base font-black text-gray-900">{fmt(localizado)}</span>
+                  </div>
+                </div>
+
+                {/* Bloco 3: Reconciliação */}
+                <div className={`rounded-xl border px-4 py-3 ${Math.abs(diferenca) < 0.01 ? 'bg-green-50 border-green-300' : diferenca > 0 ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        {Math.abs(diferenca) < 0.01 ? '✅ Caixa equilibrado' : diferenca > 0 ? '⚠️ Quebra de caixa (faltou dinheiro)' : '⚠️ Sobra física (mais físico que lançado)'}
+                      </p>
+                      <p className="text-xs text-gray-600 mt-0.5">
+                        Líquido registrado ({fmt(liquido)}) − Localizado fisicamente ({fmt(localizado)}) = {fmt(diferenca)}
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        {diferenca > 0.01
+                          ? 'O sistema registrou mais do que foi contado fisicamente. Verifique quebras de caixa nas sessões.'
+                          : diferenca < -0.01
+                            ? 'Há mais dinheiro físico do que o registrado. Pode ser troco do fundo de caixa ou lançamentos pendentes.'
+                            : 'Os valores coincidem.'}
+                      </p>
                     </div>
-                  )}
+                    <span className={`text-lg font-black shrink-0 ${diferenca > 0.01 ? 'text-red-600' : diferenca < -0.01 ? 'text-amber-600' : 'text-green-600'}`}>
+                      {diferenca > 0 ? '+' : ''}{fmt(diferenca)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bloco 4: PIX bancário (informação separada) */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">PIX — Confirmação bancária</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">O PIX já está contabilizado na localização acima. Isso é apenas o status de confirmação no banco.</p>
+                  </div>
+                  <div className="grid grid-cols-2 divide-x divide-gray-100">
+                    <div className="p-4 text-center">
+                      <p className="text-xs text-gray-500 mb-1">Pendente no banco</p>
+                      <p className="text-base font-bold text-orange-600">{fmt(parseFloat(pix.pendente.total))}</p>
+                      <p className="text-[10px] text-gray-400">{pix.pendente.count} lançamento(s)</p>
+                    </div>
+                    <div className="p-4 text-center">
+                      <p className="text-xs text-gray-500 mb-1">Confirmado no banco</p>
+                      <p className="text-base font-bold text-green-600">{fmt(parseFloat(pix.conciliado.total))}</p>
+                      <p className="text-[10px] text-gray-400">{pix.conciliado.count} lançamento(s)</p>
+                    </div>
+                  </div>
                 </div>
               </>
             )
