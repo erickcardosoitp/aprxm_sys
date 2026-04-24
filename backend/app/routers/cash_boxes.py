@@ -198,7 +198,7 @@ async def update_box(
 ) -> dict:
     await session.execute(text("""
         UPDATE cash_boxes SET name=:name, description=:desc, is_malote=:malote, updated_at=NOW()
-         WHERE id=:id AND association_id=:aid
+         WHERE id=:id::uuid AND association_id=:aid::uuid
     """), {"id": box_id, "aid": str(current.association_id), "name": body.name, "desc": body.description, "malote": body.is_malote})
     await session.commit()
     return {"ok": True}
@@ -212,7 +212,7 @@ async def deactivate_box(
 ) -> dict:
     await session.execute(text("""
         UPDATE cash_boxes SET is_active=false, updated_at=NOW()
-         WHERE id=:id AND association_id=:aid
+         WHERE id=:id::uuid AND association_id=:aid::uuid
     """), {"id": box_id, "aid": str(current.association_id)})
     await session.commit()
     return {"ok": True}

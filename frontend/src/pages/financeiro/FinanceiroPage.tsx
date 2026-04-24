@@ -709,9 +709,13 @@ export default function FinanceiroPage() {
 
   const handleDeactivateBox = async (id: string) => {
     if (!window.confirm('Desativar esta caixinha?')) return
-    await api.delete(`/cash-boxes/${id}`)
-    loadBoxSummary()
-    if (selectedBox?.id === id) setSelectedBox(null)
+    try {
+      await api.delete(`/cash-boxes/${id}`)
+      loadBoxSummary()
+      if (selectedBox?.id === id) setSelectedBox(null)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao desativar caixinha.')
+    }
   }
 
   const handleAddMovement = async () => {
@@ -2499,7 +2503,7 @@ export default function FinanceiroPage() {
                   <select value={transferBoxId} onChange={e => setTransferBoxId(e.target.value)}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
                     <option value="">Selecione…</option>
-                    {cashBoxes.filter(b => !b.is_malote).map(b => (
+                    {cashBoxes.map(b => (
                       <option key={b.id} value={b.id}>{b.name} — R$ {parseFloat(b.balance).toFixed(2)}</option>
                     ))}
                   </select>
@@ -2723,7 +2727,7 @@ export default function FinanceiroPage() {
                   <select value={pixBatchBox} onChange={e => setPixBatchBox(e.target.value)}
                     className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs min-w-[140px]">
                     <option value="">Caixinha destino (conciliados)…</option>
-                    {cashBoxes.filter(b => !b.is_malote).map(b => (
+                    {cashBoxes.map(b => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
