@@ -260,10 +260,10 @@ async def list_packages(
         filters.append("p.status = :status")
         params["status"] = status.value if hasattr(status, "value") else status
     if date_from:
-        filters.append("p.received_at >= :date_from")
+        filters.append("p.received_at >= :date_from::date")
         params["date_from"] = date_from
     if date_to:
-        filters.append("p.received_at <= :date_to")
+        filters.append("p.received_at < (:date_to::date + interval '1 day')")
         params["date_to"] = date_to
     where_clause = " AND ".join(filters)
     result = await session.execute(
@@ -394,6 +394,19 @@ async def return_package(
         {"a": str(current.association_id), "p": str(package_id), "u": str(current.user_id),
          "msg": f"Devolvida: {body.reason}"},
     )
+    # Reverse delivery fee if one was charged
+    if pkg.delivery_fee_tx_id:
+        from app.services.finance_service import FinanceService
+        try:
+            svc = FinanceService(session)
+            await svc.reverse_transaction(
+                transaction_id=pkg.delivery_fee_tx_id,
+                association_id=current.association_id,
+                reversed_by=current.user_id,
+                reason=f"Devolução da encomenda: {body.reason}",
+            )
+        except Exception:
+            pass  # If reversal fails (e.g. no open session), skip silently
     await session.commit()
     return {"id": str(pkg.id), "status": pkg.status, "return_reason": pkg.return_reason}
 
@@ -612,10 +625,10 @@ async def count_packages(
         filters.append("(tracking_code ILIKE :q OR unit ILIKE :q)")
         params["q"] = f"%{q}%"
     if date_from:
-        filters.append("received_at >= :df")
+        filters.append("received_at >= :df::date")
         params["df"] = date_from
     if date_to:
-        filters.append("received_at <= :dt")
+        filters.append("received_at < (:dt::date + interval '1 day')")
         params["dt"] = date_to
     where = " AND ".join(filters)
     result = await session.execute(sa_text(f"""

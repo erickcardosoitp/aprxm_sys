@@ -49,7 +49,7 @@ async def get_summary(
     )
     row = result.fetchone()
     income = float(row[0])
-    expense = float(row[1]) + float(row[2])  # expense + sangria
+    expense = float(row[1])  # sangria = transferência interna, não é despesa
 
     # Income breakdown by subtype
     breakdown_result = await session.execute(
@@ -296,8 +296,7 @@ async def get_dre(
         WHERE t.association_id = :aid
           AND {date_filter}
           AND t.is_reversal = false
-          AND (t.reversed_at IS NULL OR t.reversed_at IS NOT NULL)
-          AND NOT (t.is_reversal = true)
+          AND t.reversed_at IS NULL
         GROUP BY t.type, t.income_subtype, c.name
         ORDER BY t.type, t.income_subtype, c.name
     """), params)
@@ -305,7 +304,6 @@ async def get_dre(
 
     receitas: dict[str, float] = {}
     despesas: dict[str, float] = {}
-    sangrias_total = 0.0
 
     SUBTYPE_MAP = {
         "mensalidade": "Mensalidades",
@@ -319,14 +317,10 @@ async def get_dre(
         if tipo == "income":
             label = SUBTYPE_MAP.get(subtipo or "", "Outras Receitas")
             receitas[label] = receitas.get(label, 0.0) + total
-        elif tipo == "sangria":
-            sangrias_total += total
         elif tipo == "expense":
             label = categoria or "Despesas Gerais"
             despesas[label] = despesas.get(label, 0.0) + total
-
-    if sangrias_total > 0:
-        despesas["Sangrias"] = despesas.get("Sangrias", 0.0) + sangrias_total
+        # sangria = transferência interna (caixa → malote → cofre), não entra no DRE
 
     total_receitas = sum(receitas.values())
     total_despesas = sum(despesas.values())
@@ -342,6 +336,89 @@ async def get_dre(
         "total_despesas": round(total_despesas, 2),
         "resultado": round(resultado, 2),
     }
+
+
+@router.get("/bank-statements", summary="Listar lançamentos do extrato bancário")
+async def list_bank_statements(
+    conciliado: bool | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    filters = ["association_id = :aid"]
+    params: dict = {"aid": str(current.association_id)}
+    if conciliado is not None:
+        filters.append("conciliado = :conc")
+        params["conc"] = conciliado
+    if date_from:
+        filters.append("date >= :df")
+        params["df"] = date_from
+    if date_to:
+        filters.append("date <= :dt")
+        params["dt"] = date_to
+    where = " AND ".join(filters)
+    rows = (await session.execute(text(f"""
+        SELECT id, bank, date, amount, name, description, tipo, conciliado, transaction_id, batched_at
+          FROM bank_statements
+         WHERE {where}
+         ORDER BY date DESC, id DESC
+         LIMIT 500
+    """), params)).fetchall()
+    return [{
+        "id": str(r[0]), "bank": r[1], "date": str(r[2]), "amount": str(r[3]),
+        "name": r[4], "description": r[5], "tipo": r[6], "conciliado": r[7],
+        "transaction_id": str(r[8]) if r[8] else None, "batched_at": str(r[9]) if r[9] else None,
+    } for r in rows]
+
+
+class ManualReconcileRequest(BaseModel):
+    statement_id: UUID | None = None
+    transaction_id: UUID | None = None
+    # For manual entry without a CSV (creates a bank_statement record)
+    amount: Decimal | None = None
+    date: str | None = None
+    payer_name: str | None = None
+    description: str | None = None
+
+
+@router.post("/bank-statements/manual-reconcile", summary="Conciliação PIX manual")
+async def manual_reconcile(
+    body: ManualReconcileRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from app.core.tenant import require_conferente as _rc
+    aid = str(current.association_id)
+
+    if body.statement_id:
+        # Mark existing statement as conciliado and optionally link transaction
+        updates = ["conciliado = true"]
+        params: dict = {"id": str(body.statement_id), "aid": aid}
+        if body.transaction_id:
+            updates.append("transaction_id = :tid")
+            params["tid"] = str(body.transaction_id)
+        await session.execute(text(
+            f"UPDATE bank_statements SET {', '.join(updates)} WHERE id = :id AND association_id = :aid"
+        ), params)
+    elif body.amount and body.date:
+        # Create new bank_statement entry and mark as conciliado
+        await session.execute(text("""
+            INSERT INTO bank_statements (association_id, bank, date, amount, name, description, tipo, conciliado, transaction_id)
+            VALUES (:aid, 'PIX', :date, :amt, :name, :desc, 'entrada', true, :tid)
+        """), {
+            "aid": aid,
+            "date": body.date,
+            "amt": float(body.amount),
+            "name": body.payer_name or "Manual",
+            "desc": body.description or "Conciliação manual",
+            "tid": str(body.transaction_id) if body.transaction_id else None,
+        })
+    else:
+        raise HTTPException(400, "Informe statement_id ou amount+date para conciliação manual.")
+
+    await session.commit()
+    return {"ok": True}
 
 
 @router.post("/reconcile")

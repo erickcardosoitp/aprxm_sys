@@ -109,6 +109,7 @@ class ProofOfResidenceRequest(BaseModel):
     payment_method_id: UUID | None = None
     category_id: UUID | None = None
     resident_id: UUID | None = None
+    cash_session_id: UUID | None = None
 
 
 # ---- Endpoints ----
@@ -135,6 +136,7 @@ async def issue_proof_of_residence(
         payment_method_id=body.payment_method_id,
         category_id=body.category_id,
         resident_id=body.resident_id,
+        cash_session_id=body.cash_session_id,
     )
     barcode = tx.reference_number if tx else ""
     return Response(
@@ -430,6 +432,31 @@ async def list_open_sessions(
             "is_mine": str(r[1]) == str(current.user_id),
         }
         for r in rows
+    ]
+
+
+@router.get("/sessions/open-picker", summary="Sessões abertas para seleção de destino de lançamento")
+async def list_open_sessions_picker(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    result = await session.execute(
+        text(
+            "SELECT cs.id, cs.opened_at, u.full_name, cs.opened_by "
+            "FROM cash_sessions cs LEFT JOIN users u ON u.id = cs.opened_by "
+            "WHERE cs.association_id = :aid AND cs.status = 'open' "
+            "ORDER BY cs.opened_at DESC"
+        ),
+        {"aid": str(current.association_id)},
+    )
+    return [
+        {
+            "id": str(r[0]),
+            "opened_at": str(r[1]),
+            "opened_by_name": r[2] or "—",
+            "is_mine": str(r[3]) == str(current.user_id),
+        }
+        for r in result.fetchall()
     ]
 
 
@@ -756,6 +783,7 @@ async def list_pix_pending(
             u_op.full_name AS operador_name,
             u_rev.full_name AS conferente_name
         FROM transactions t
+        JOIN payment_methods pm ON pm.id = t.payment_method_id
         LEFT JOIN residents r ON r.id = t.resident_id
         LEFT JOIN reconciliations rec ON rec.transaction_id = t.id
         LEFT JOIN bank_statements bs ON bs.id = rec.statement_id
@@ -764,6 +792,7 @@ async def list_pix_pending(
         LEFT JOIN users u_rev ON u_rev.id = cs.reviewed_by
         WHERE t.association_id = :aid
           AND t.type = 'income'
+          AND pm.name ILIKE '%pix%'
         ORDER BY t.transaction_at DESC
         LIMIT 300
     """), {"aid": str(current.association_id)})).fetchall()
@@ -1165,6 +1194,36 @@ async def recalculate_session(
     }
 
 
+@router.post("/sessions/{session_id}/reopen", summary="Reabrir caixa fechado para correção de lançamentos")
+async def reopen_session(
+    session_id: UUID,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlmodel import select as sql_select
+    result = await session.execute(
+        sql_select(CashSession).where(
+            CashSession.id == session_id,
+            CashSession.association_id == current.association_id,
+        )
+    )
+    cash = result.scalar_one_or_none()
+    if not cash:
+        raise HTTPException(404, "Sessão não encontrada.")
+    if cash.status == "open":
+        raise HTTPException(400, "Sessão já está aberta.")
+    cash.status = "open"
+    cash.closed_at = None
+    cash.closing_balance = None
+    cash.expected_balance = None
+    cash.difference = None
+    cash.quebra_caixa = None
+    cash.malote_sent_at = None
+    session.add(cash)
+    await session.commit()
+    return {"ok": True, "session_id": str(cash.id), "status": "open"}
+
+
 @router.post("/sessions/{session_id}/revert-conferencia", summary="Desfazer conferência — volta ao status closed")
 async def revert_conferencia(
     session_id: UUID,
@@ -1282,6 +1341,7 @@ class CorrectTransactionRequest(BaseModel):
     payment_method_id: UUID | None = None
     resident_id: UUID | None = None
     description: str | None = None
+    cash_session_id: UUID | None = None
 
 
 @router.patch("/transactions/{transaction_id}/correct", summary="Corrigir lançamento com senha admin")
@@ -1298,6 +1358,8 @@ async def correct_transaction(
     if not user or not verify_password(body.admin_password, user.hashed_password):
         raise HTTPException(status_code=403, detail="Senha de administrador incorreta.")
 
+    from sqlalchemy import text as sa_text
+
     sets, params = [], {"tid": str(transaction_id), "aid": str(current.association_id)}
     if body.amount is not None:
         sets.append("amount = :amount"); params["amount"] = body.amount
@@ -1307,12 +1369,20 @@ async def correct_transaction(
         sets.append("resident_id = :rid"); params["rid"] = str(body.resident_id)
     if body.description is not None:
         sets.append("description = :desc"); params["desc"] = body.description
+    if body.cash_session_id is not None:
+        # Validate target session belongs to this association
+        cs_row = (await session.execute(
+            sa_text("SELECT id FROM cash_sessions WHERE id = :csid AND association_id = :aid"),
+            {"csid": str(body.cash_session_id), "aid": str(current.association_id)},
+        )).fetchone()
+        if not cs_row:
+            raise HTTPException(404, "Sessão de caixa não encontrada.")
+        sets.append("cash_session_id = :csid"); params["csid"] = str(body.cash_session_id)
     if not sets:
         raise HTTPException(422, "Nenhum campo para atualizar.")
 
-    from sqlalchemy import text as sa_text
     await session.execute(
-        sa_text(f"UPDATE transactions SET {', '.join(sets)} WHERE id = :tid AND association_id = :aid"),
+        sa_text(f"UPDATE transactions SET {', '.join(sets)}, updated_at = NOW() WHERE id = :tid AND association_id = :aid"),
         params,
     )
     await session.commit()

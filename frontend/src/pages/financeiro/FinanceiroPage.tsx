@@ -238,9 +238,18 @@ export default function FinanceiroPage() {
   const [editAmount, setEditAmount] = useState('')
   const [editPmId, setEditPmId] = useState('')
   const [editDesc, setEditDesc] = useState('')
+  const [editCashSessionId, setEditCashSessionId] = useState('')
   const [editPassword, setEditPassword] = useState('')
   const [editing, setEditing] = useState(false)
   const [editPayMethods, setEditPayMethods] = useState<{ id: string; name: string }[]>([])
+  const [editSessions, setEditSessions] = useState<{ id: string; opened_by_name: string; opened_at: string }[]>([])
+
+  const openEditModal = (t: Tx) => {
+    setEditTarget(t); setEditAmount(t.amount); setEditDesc(t.description)
+    setEditPmId(''); setEditPassword(''); setEditCashSessionId('')
+    api.get<{ id: string; opened_by_name: string; opened_at: string }[]>('/finance/sessions/open-picker')
+      .then(r => setEditSessions(r.data)).catch(() => setEditSessions([]))
+  }
 
   const handleEditTx = async () => {
     if (!editTarget || !editPassword.trim()) { toast.error('Senha obrigatória.'); return }
@@ -250,9 +259,10 @@ export default function FinanceiroPage() {
       if (editAmount) body.amount = editAmount
       if (editPmId) body.payment_method_id = editPmId
       if (editDesc) body.description = editDesc
+      if (editCashSessionId) body.cash_session_id = editCashSessionId
       await api.patch(`/finance/transactions/${editTarget.id}/correct`, body)
       toast.success('Lançamento corrigido.')
-      setEditTarget(null); setEditAmount(''); setEditPmId(''); setEditDesc(''); setEditPassword('')
+      setEditTarget(null); setEditAmount(''); setEditPmId(''); setEditDesc(''); setEditPassword(''); setEditCashSessionId('')
       loadTransactions()
       if (reviewSession) {
         const r = await api.get<TxReview[]>(`/finance/sessions/${reviewSession.id}/transactions`)
@@ -387,7 +397,7 @@ export default function FinanceiroPage() {
   const [dreCatFilter, setDreCatFilter] = useState<string>('')
   const dreRef = useRef<HTMLDivElement>(null)
 
-  const [movSubTab, setMovSubTab] = useState<'entradas' | 'saidas'>('entradas')
+  const [movSubTab, setMovSubTab] = useState<'entradas' | 'despesas' | 'estornos' | 'transferencias'>('entradas')
   const [movSubtypeFilter, setMovSubtypeFilter] = useState<string | null>(null)
   const [txFilterOp, setTxFilterOp] = useState<string | null>(null)
 
@@ -495,6 +505,60 @@ export default function FinanceiroPage() {
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao reverter.')
     }
+  }
+
+  const [reopeningSession, setReopeningSession] = useState<string | null>(null)
+  const handleReopenSession = async (sessionId: string) => {
+    if (!confirm('Reabrir este caixa? Os lançamentos poderão ser corrigidos e o caixa deverá ser fechado novamente.')) return
+    setReopeningSession(sessionId)
+    try {
+      await api.post(`/finance/sessions/${sessionId}/reopen`)
+      toast.success('Caixa reaberto. Corrija os lançamentos e feche novamente.')
+      loadSessions()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao reabrir caixa.')
+    } finally { setReopeningSession(null) }
+  }
+
+  const printSessionReport = (s: Session) => {
+    const bruto = parseFloat(s.total_bruto ?? '0')
+    const baixas = parseFloat(s.total_baixas ?? '0')
+    const liquido = bruto - baixas
+    const diff = s.difference != null ? parseFloat(s.difference) : null
+    const fmtR = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    const fmtDT = (d: string) => new Date(d).toLocaleString('pt-BR')
+    const w = window.open('', '_blank')!
+    w.document.write(`<html><head><title>Fechamento de Caixa</title><style>
+      body{font-family:sans-serif;font-size:13px;padding:20px;max-width:420px;margin:auto}
+      h2{text-align:center;font-size:16px;margin-bottom:4px}
+      .sub{text-align:center;color:#555;font-size:11px;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse}
+      tr td{padding:5px 0;border-bottom:1px solid #eee}
+      tr td:last-child{text-align:right;font-weight:bold}
+      .total{font-size:15px;font-weight:bold}
+      .diff{color:${diff === null ? '#666' : diff >= 0 ? '#16a34a' : '#dc2626'}}
+      @media print{button{display:none}}
+    </style></head><body>
+      <h2>2ª Via — Fechamento de Caixa</h2>
+      <div class="sub">Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+      <table>
+        <tr><td>Operador</td><td>${s.operador_name ?? '—'}</td></tr>
+        <tr><td>Abertura</td><td>${fmtDT(s.opened_at)}</td></tr>
+        <tr><td>Fechamento</td><td>${s.closed_at ? fmtDT(s.closed_at) : '—'}</td></tr>
+        <tr><td>Saldo inicial</td><td>${fmtR(parseFloat(s.opening_balance))}</td></tr>
+        <tr><td>Total PIX</td><td>${fmtR(parseFloat(s.total_pix ?? '0'))}</td></tr>
+        <tr><td>Total Dinheiro</td><td>${fmtR(parseFloat(s.total_dinheiro ?? '0'))}</td></tr>
+        <tr><td>Bruto lançado</td><td>${fmtR(bruto)}</td></tr>
+        <tr><td>Sangrias / Repasses</td><td>- ${fmtR(baixas)}</td></tr>
+        <tr><td class="total">Líquido esperado</td><td class="total">${fmtR(liquido)}</td></tr>
+        <tr><td>Conf. cega (contado)</td><td>${s.closing_balance ? fmtR(parseFloat(s.closing_balance)) : '—'}</td></tr>
+        <tr><td class="diff">Sobra / Falta</td><td class="diff">${diff !== null ? (diff >= 0 ? '+' : '') + fmtR(diff) : '—'}</td></tr>
+        ${s.conferido_por ? `<tr><td>Conferido por</td><td>${s.conferido_por}</td></tr>` : ''}
+      </table>
+      <br/><button onclick="window.print()">Imprimir</button>
+    </body></html>`)
+    w.document.close()
+    setTimeout(() => w.print(), 600)
   }
 
   const [tesouraria, setTesouraria] = useState<{
@@ -1265,14 +1329,43 @@ export default function FinanceiroPage() {
 
       {/* ── MOVIMENTAÇÕES ── */}
       {tab === 'movimentacoes' && (() => {
-        const entradas = filterByPeriod(transactions.filter(t => t.type === 'income' && !t.is_reversal))
-        const saidas = filterByPeriod(transactions.filter(t => t.type !== 'income'))
-        const baseRows = movSubTab === 'entradas' ? entradas : saidas
+        // Receitas: entradas reais (sem estornos, sem itens estornados)
+        const entradas = filterByPeriod(transactions.filter(t => t.type === 'income' && !t.is_reversal && !t.reversed_at))
+        // Despesas: saídas reais (sem estornos, sem sangrias)
+        const despesas = filterByPeriod(transactions.filter(t => t.type === 'expense' && !t.is_reversal))
+        // Estornos: cancelamentos de receita (dedução de receita, não despesa)
+        const estornos = filterByPeriod(transactions.filter(t => t.is_reversal))
+        // Transferências internas: sangrias (caixa → malote → cofre)
+        const transferencias = filterByPeriod(transactions.filter(t => t.type === 'sangria'))
+
+        const baseRows =
+          movSubTab === 'entradas' ? entradas :
+          movSubTab === 'despesas' ? despesas :
+          movSubTab === 'estornos' ? estornos :
+          transferencias
         const opRows = txFilterOp ? baseRows.filter(t => t.created_by_name === txFilterOp) : baseRows
-        const rows = movSubtypeFilter ? opRows.filter(t => t.income_subtype === movSubtypeFilter) : opRows
+        const rows = movSubTab === 'entradas' && movSubtypeFilter ? opRows.filter(t => t.income_subtype === movSubtypeFilter) : opRows
         const opNames = [...new Set(baseRows.map(t => t.created_by_name).filter(Boolean))] as string[]
+
         const totalEntradas = entradas.reduce((s, t) => s + parseFloat(t.amount), 0)
-        const totalSaidas = saidas.reduce((s, t) => s + parseFloat(t.amount), 0)
+        const totalDespesas = despesas.reduce((s, t) => s + parseFloat(t.amount), 0)
+        const totalEstornos = estornos.reduce((s, t) => s + parseFloat(t.amount), 0)
+        const totalTransferencias = transferencias.reduce((s, t) => s + parseFloat(t.amount), 0)
+        const resultado = totalEntradas - totalDespesas - totalEstornos
+
+        const tabCfg: { key: typeof movSubTab; label: string; total: number; count: number; active: string; inactive: string; textActive: string; textInactive: string }[] = [
+          { key: 'entradas', label: 'Receitas', total: totalEntradas, count: entradas.length, active: 'bg-green-50 border-green-400', inactive: 'bg-white border-gray-200', textActive: 'text-green-700', textInactive: 'text-green-600' },
+          { key: 'despesas', label: 'Despesas', total: totalDespesas, count: despesas.length, active: 'bg-red-50 border-red-400', inactive: 'bg-white border-gray-200', textActive: 'text-red-700', textInactive: 'text-red-500' },
+          { key: 'estornos', label: 'Estornos', total: totalEstornos, count: estornos.length, active: 'bg-orange-50 border-orange-400', inactive: 'bg-white border-gray-200', textActive: 'text-orange-700', textInactive: 'text-orange-500' },
+          { key: 'transferencias', label: 'Sangrias/Repasses', total: totalTransferencias, count: transferencias.length, active: 'bg-indigo-50 border-indigo-400', inactive: 'bg-white border-gray-200', textActive: 'text-indigo-700', textInactive: 'text-indigo-500' },
+        ]
+
+        const amountColor =
+          movSubTab === 'entradas' ? 'text-green-600' :
+          movSubTab === 'despesas' ? 'text-red-600' :
+          movSubTab === 'estornos' ? 'text-orange-600' :
+          'text-blue-600'
+
         return (
           <div className="flex flex-col gap-3">
             {/* Period filter */}
@@ -1285,29 +1378,28 @@ export default function FinanceiroPage() {
               ))}
             </div>
 
-            {/* Summary cards */}
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => setMovSubTab('entradas')}
-                className={`rounded-xl p-4 text-left border-2 transition ${movSubTab === 'entradas' ? 'bg-green-50 border-green-400' : 'bg-white border-gray-200'}`}>
-                <p className="text-xs text-gray-500 mb-1">Entradas</p>
-                <p className={`text-lg font-bold ${movSubTab === 'entradas' ? 'text-green-700' : 'text-green-600'}`}>{fmt(totalEntradas)}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{entradas.length} transações</p>
-              </button>
-              <button onClick={() => setMovSubTab('saidas')}
-                className={`rounded-xl p-4 text-left border-2 transition ${movSubTab === 'saidas' ? 'bg-red-50 border-red-400' : 'bg-white border-gray-200'}`}>
-                <p className="text-xs text-gray-500 mb-1">Saídas</p>
-                <p className={`text-lg font-bold ${movSubTab === 'saidas' ? 'text-red-700' : 'text-red-600'}`}>{fmt(totalSaidas)}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{saidas.length} transações</p>
-              </button>
+            {/* Resultado líquido */}
+            <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center justify-between">
+              <span className="text-xs text-gray-500 font-medium">Resultado líquido — {PERIOD_LABEL[period]}</span>
+              <span className={`text-base font-black ${resultado >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                {resultado >= 0 ? '+' : ''}{fmt(resultado)}
+              </span>
             </div>
 
-            {/* Sub-tab label + subtype filter */}
+            {/* Cards por categoria */}
+            <div className="grid grid-cols-2 gap-2">
+              {tabCfg.map(c => (
+                <button key={c.key} onClick={() => { setMovSubTab(c.key); setMovSubtypeFilter(null) }}
+                  className={`rounded-xl p-3 text-left border-2 transition ${movSubTab === c.key ? c.active : c.inactive}`}>
+                  <p className="text-[11px] text-gray-500 mb-0.5">{c.label}</p>
+                  <p className={`text-base font-bold leading-tight ${movSubTab === c.key ? c.textActive : c.textInactive}`}>{fmt(c.total)}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{c.count} lançamento{c.count !== 1 ? 's' : ''}</p>
+                </button>
+              ))}
+            </div>
+
+            {/* Filtros */}
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <span className={`text-xs font-semibold px-2 py-1 rounded-lg ${movSubTab === 'entradas' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                  {movSubTab === 'entradas' ? '↑ Entradas' : '↓ Saídas'} — {PERIOD_LABEL[period]}
-                </span>
-              </div>
               {movSubTab === 'entradas' && (
                 <div className="flex gap-1.5 flex-wrap">
                   <button onClick={() => setMovSubtypeFilter(null)}
@@ -1333,16 +1425,16 @@ export default function FinanceiroPage() {
               )}
             </div>
 
-            {/* List */}
+            {/* Lista */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               {loadingTx ? (
                 <div className="p-6 text-center text-gray-400 text-sm">Carregando…</div>
               ) : rows.length === 0 ? (
-                <div className="p-6 text-center text-gray-400 text-sm">Nenhuma transação no período.</div>
+                <div className="p-6 text-center text-gray-400 text-sm">Nenhum lançamento no período.</div>
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {rows.map(t => (
-                    <li key={t.id} className={`px-4 py-3 flex items-center justify-between gap-3 ${t.reversed_at || t.is_reversal ? 'opacity-50' : ''}`}>
+                    <li key={t.id} className="px-4 py-3 flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
                           {t.income_subtype && (
@@ -1355,12 +1447,19 @@ export default function FinanceiroPage() {
                               {t.payment_method_name}
                             </span>
                           )}
-                          {t.reversed_at && (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-red-50 text-red-500 rounded-full font-medium">estornado</span>
+                          {movSubTab === 'transferencias' && (
+                            t.description?.startsWith('Repasse para caixinha') ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">Repasse</span>
+                            ) : (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">Sangria</span>
+                            )
+                          )}
+                          {movSubTab === 'estornos' && (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium">dedução de receita</span>
                           )}
                         </div>
-                        <p className={`text-sm font-medium truncate ${t.reversed_at ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                          {t.is_sangria ? '🔒 ' : ''}{parseTxName(t.description, t.income_subtype)}
+                        <p className="text-sm font-medium truncate text-gray-800">
+                          {parseTxName(t.description, t.income_subtype)}
                         </p>
                         <p className="text-xs text-gray-400 mt-0.5">
                           {fmtDate(t.transaction_at)}
@@ -1368,20 +1467,26 @@ export default function FinanceiroPage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={`text-sm font-bold ${t.reversed_at ? 'line-through text-gray-400' : movSubTab === 'entradas' ? 'text-green-600' : 'text-red-600'}`}>{fmt(t.amount)}</span>
-                        {!t.reversed_at && !t.is_reversal && (
-                          <button onClick={() => { setEditTarget(t); setEditAmount(t.amount); setEditDesc(t.description); setEditPmId(''); setEditPassword('') }} title="Corrigir"
+                        <span className={`text-sm font-bold ${amountColor}`}>{fmt(t.amount)}</span>
+                        {movSubTab === 'entradas' && !t.reversed_at && !t.is_reversal && (
+                          <>
+                            <button onClick={() => { openEditModal(t) }} title="Corrigir"
+                              className="p-1.5 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => { setReversalTarget(t); setReversalReason('') }} title="Estornar"
+                              className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition">
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                        {movSubTab === 'despesas' && !t.is_reversal && (
+                          <button onClick={() => { openEditModal(t) }} title="Corrigir"
                             className="p-1.5 text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition">
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {movSubTab === 'entradas' && !t.reversed_at && !t.is_reversal && (
-                          <button onClick={() => { setReversalTarget(t); setReversalReason('') }} title="Estornar"
-                            className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition">
-                            <RotateCcw className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        {t.income_subtype === 'proof_of_residence' && !t.reversed_at && (
+                        {t.income_subtype === 'proof_of_residence' && (
                           <button onClick={() => handleReprint(t.id)} disabled={reprinting === t.id} title="2ª via"
                             className="p-1.5 text-purple-400 hover:text-purple-600 rounded-lg hover:bg-purple-50 transition">
                             <Printer className="w-3.5 h-3.5" />
@@ -1963,12 +2068,12 @@ export default function FinanceiroPage() {
                   return true
                 })
                 return (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[1100px]">
-                    <thead className="bg-gray-50 border-b border-gray-200">
+                <div className="overflow-x-auto overflow-y-auto max-h-[520px]">
+                  <table className="w-full text-sm min-w-[1200px]">
+                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                       <tr>
-                        {['Status','Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Malote','Origem',''].map(h => (
-                          <th key={h} className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap text-xs">{h}</th>
+                        {['Status','Abertura','Fechamento','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto Lançado','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra de Caixa','Malote','Origem',''].map(h => (
+                          <th key={h} className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap text-xs bg-gray-50">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1993,7 +2098,18 @@ export default function FinanceiroPage() {
                                 return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${st.cls}`}>{st.label}</span>
                               })()}
                             </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-gray-800 font-semibold text-sm">{fmtDate(s.opened_at)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-800 text-xs">
+                              <div className="font-semibold">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</div>
+                              <div className="text-gray-400">{new Date(s.opened_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-700 text-xs">
+                              {s.closed_at ? (
+                                <>
+                                  <div className="font-medium">{new Date(s.closed_at).toLocaleDateString('pt-BR')}</div>
+                                  <div className="text-gray-400">{new Date(s.closed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+                                </>
+                              ) : <span className="text-gray-300">—</span>}
+                            </td>
                             <td className="px-4 py-3 whitespace-nowrap text-gray-700">{s.operador_name ?? '—'}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-blue-700 font-medium">{fmt(s.total_pix ?? '0')}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-gray-700">{fmt(s.total_dinheiro ?? '0')}</td>
@@ -2028,14 +2144,33 @@ export default function FinanceiroPage() {
                               </span>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                              {s.status === 'conferido' && (
-                                <button
-                                  onClick={() => handleRevertConferencia(s.id)}
-                                  title="Desfazer conferência"
-                                  className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-800 hover:bg-amber-50 px-2 py-1 rounded-lg transition">
-                                  <RotateCcw className="w-3 h-3" /> Reverter
-                                </button>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {s.status === 'conferido' && (
+                                  <button
+                                    onClick={() => handleRevertConferencia(s.id)}
+                                    title="Desfazer conferência"
+                                    className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-800 hover:bg-amber-50 px-2 py-1 rounded-lg transition">
+                                    <RotateCcw className="w-3 h-3" /> Reverter
+                                  </button>
+                                )}
+                                {(s.status === 'closed' || s.status === 'conferido') && isAdmin && (
+                                  <button
+                                    onClick={() => handleReopenSession(s.id)}
+                                    disabled={reopeningSession === s.id}
+                                    title="Reabrir caixa para correção"
+                                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded-lg transition disabled:opacity-50">
+                                    <RefreshCw className="w-3 h-3" /> Reabrir
+                                  </button>
+                                )}
+                                {(s.status === 'closed' || s.status === 'conferido') && (
+                                  <button
+                                    onClick={() => printSessionReport(s)}
+                                    title="Imprimir 2ª via do fechamento"
+                                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 px-2 py-1 rounded-lg transition">
+                                    <Printer className="w-3 h-3" /> 2ª via
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         )
@@ -2465,6 +2600,28 @@ export default function FinanceiroPage() {
       {tab === 'conciliacao' && (
         <div className="flex flex-col gap-4">
 
+          {/* Pipeline Financeiro */}
+          <div className="bg-white rounded-xl border border-blue-100 shadow-sm p-4">
+            <h3 className="text-sm font-bold text-gray-800 mb-3">Esteira Financeira — Fluxo do Caixa ao Faturamento</h3>
+            <div className="flex flex-col gap-1.5 text-xs text-gray-600">
+              {[
+                { num: 1, label: 'Operador fecha caixa (conf. cega) e coloca o dinheiro no malote físico', status: 'op' },
+                { num: 2, label: 'Conferente recolhe o dinheiro e verifica se o valor físico bate com o fechamento', status: 'conf' },
+                { num: 3, label: 'Dinheiro (espécie) → lançado no faturamento. PIX → enviado para esteira de conciliação abaixo', status: 'split' },
+                { num: 4, label: 'Conciliação PIX: cada venda PIX deve ser confirmada com o extrato bancário', status: 'pix' },
+                { num: 5, label: 'PIX conciliados → contabilizados no faturamento (caixinha cofre)', status: 'pix' },
+                { num: 6, label: 'Responsável transfere espécie do malote para o cofre no sistema (Caixinhas)', status: 'cofre' },
+              ].map(s => (
+                <div key={s.num} className="flex items-start gap-2 py-1.5 border-b border-gray-50 last:border-0">
+                  <span className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${
+                    s.status === 'op' ? 'bg-amber-400' : s.status === 'conf' ? 'bg-blue-500' : s.status === 'split' ? 'bg-purple-500' : s.status === 'pix' ? 'bg-green-500' : 'bg-gray-400'
+                  }`}>{s.num}</span>
+                  <span>{s.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Conciliação PIX */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="flex items-center justify-between mb-3">
@@ -2481,6 +2638,14 @@ export default function FinanceiroPage() {
                   <table className="w-full text-xs border-collapse">
                     <thead className="sticky top-0 bg-gray-50 z-10">
                       <tr className="text-gray-500 text-left">
+                        <th className="px-2 py-2 w-6">
+                          <input type="checkbox"
+                            checked={pixPending.filter(p => !!p.bank_statement_id).length > 0 && pixPending.filter(p => !!p.bank_statement_id).every(p => pixSelected.has(p.bank_statement_id!))}
+                            onChange={e => {
+                              const batchable = pixPending.filter(p => !!p.bank_statement_id).map(p => p.bank_statement_id!)
+                              setPixSelected(e.target.checked ? new Set(batchable) : new Set())
+                            }} />
+                        </th>
                         <th className="px-2 py-2 font-medium">Status</th>
                         <th className="px-2 py-2 font-medium">Data</th>
                         <th className="px-2 py-2 font-medium">Valor</th>
@@ -2489,6 +2654,7 @@ export default function FinanceiroPage() {
                         <th className="px-2 py-2 font-medium">Pagador PIX</th>
                         <th className="px-2 py-2 font-medium">Operador</th>
                         <th className="px-2 py-2 font-medium">Sessão</th>
+                        <th className="px-2 py-2 font-medium"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2502,7 +2668,19 @@ export default function FinanceiroPage() {
                         const st = statusMap[p.status] ?? statusMap.nao_conciliado
                         const canBatch = !!p.bank_statement_id
                         return (
-                          <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <tr key={p.id} className={`border-b border-gray-100 hover:bg-gray-50 ${canBatch && pixSelected.has(p.bank_statement_id!) ? 'bg-blue-50' : ''}`}>
+                            <td className="px-2 py-2">
+                              <input type="checkbox" disabled={!canBatch}
+                                checked={canBatch && pixSelected.has(p.bank_statement_id!)}
+                                onChange={e => {
+                                  if (!p.bank_statement_id) return
+                                  setPixSelected(prev => {
+                                    const n = new Set(prev)
+                                    e.target.checked ? n.add(p.bank_statement_id!) : n.delete(p.bank_statement_id!)
+                                    return n
+                                  })
+                                }} />
+                            </td>
                             <td className="px-2 py-2 whitespace-nowrap">
                               <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${st.cls}`}>{st.label}</span>
                             </td>
@@ -2516,6 +2694,29 @@ export default function FinanceiroPage() {
                             <td className="px-2 py-2 text-gray-400 whitespace-nowrap">{p.operador_name || '—'}</td>
                             <td className="px-2 py-2 text-gray-400 whitespace-nowrap">
                               {p.session_opened_at ? new Date(p.session_opened_at).toLocaleDateString('pt-BR') : '—'}
+                            </td>
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              {p.status === 'nao_conciliado' && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await api.post('/financeiro/bank-statements/manual-reconcile', {
+                                        transaction_id: p.id,
+                                        amount: parseFloat(p.amount),
+                                        date: p.date,
+                                        payer_name: p.payer_name || p.description || 'Manual',
+                                        description: p.description || 'Conciliação manual',
+                                      })
+                                      toast.success('PIX marcado como conciliado.')
+                                      loadPixPending()
+                                    } catch (e: any) {
+                                      toast.error(e.response?.data?.detail ?? 'Erro ao conciliar.')
+                                    }
+                                  }}
+                                  className="text-[10px] bg-green-600 text-white px-2 py-1 rounded-lg font-semibold hover:bg-green-700 whitespace-nowrap">
+                                  Conciliar
+                                </button>
+                              )}
                             </td>
                           </tr>
                         )
@@ -2733,6 +2934,19 @@ export default function FinanceiroPage() {
                 <select value={editPmId} onChange={e => setEditPmId(e.target.value)} className={inputCls}>
                   <option value="">Manter atual</option>
                   {editPayMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+                </select>
+              </div>
+            )}
+            {editSessions.length > 0 && (
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Mover para caixa</label>
+                <select value={editCashSessionId} onChange={e => setEditCashSessionId(e.target.value)} className={inputCls}>
+                  <option value="">Manter caixa atual</option>
+                  {editSessions.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.opened_by_name} — {new Date(s.opened_at).toLocaleDateString('pt-BR')}
+                    </option>
+                  ))}
                 </select>
               </div>
             )}
