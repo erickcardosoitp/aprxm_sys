@@ -1829,3 +1829,106 @@ async def delete_sangria_destination(
     """), {"id": dest_id, "aid": str(current.association_id)})
     await session.commit()
     return {"ok": True}
+
+
+@router.get("/esteira", summary="Esteira financeira: onde está cada R$ agora")
+async def esteira(
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as t
+    aid = str(current.association_id)
+
+    # Stage 1: Caixas abertas
+    open_row = (await session.execute(t("""
+        SELECT COUNT(DISTINCT cs.id),
+               COALESCE(SUM(cs.opening_balance), 0) +
+               COALESCE(SUM(CASE WHEN tx.type='income' AND tx.reversed_at IS NULL AND tx.is_reversal=false THEN tx.amount
+                                  WHEN tx.type IN ('expense','sangria') AND tx.reversed_at IS NULL AND tx.is_reversal=false THEN -tx.amount
+                                  ELSE 0 END), 0)
+          FROM cash_sessions cs
+          LEFT JOIN transactions tx ON tx.cash_session_id = cs.id AND tx.association_id = cs.association_id
+         WHERE cs.association_id = :aid AND cs.status = 'open'
+    """), {"aid": aid})).fetchone()
+
+    # Stage 2: Fechado aguardando conferência
+    closed_row = (await session.execute(t("""
+        SELECT COUNT(*), COALESCE(SUM(closing_balance), 0)
+          FROM cash_sessions
+         WHERE association_id = :aid AND status = 'closed'
+    """), {"aid": aid})).fetchone()
+
+    # Stage 3: Conferido, malote não enviado
+    conf_unsent_row = (await session.execute(t("""
+        SELECT COUNT(*),
+               COALESCE(SUM(closing_balance), 0),
+               COALESCE(SUM(COALESCE(manual_dinheiro,0)), 0),
+               COALESCE(SUM(COALESCE(manual_pix,0)), 0)
+          FROM cash_sessions
+         WHERE association_id = :aid AND status = 'conferido' AND malote_sent_at IS NULL
+    """), {"aid": aid})).fetchone()
+
+    # Stage 4: Malote enviado, aguardando depósito no faturamento
+    conf_sent_row = (await session.execute(t("""
+        SELECT COUNT(*),
+               COALESCE(SUM(closing_balance), 0),
+               COALESCE(SUM(COALESCE(manual_dinheiro,0)), 0),
+               COALESCE(SUM(COALESCE(manual_pix,0)), 0)
+          FROM cash_sessions
+         WHERE association_id = :aid AND status = 'conferido' AND malote_sent_at IS NOT NULL
+    """), {"aid": aid})).fetchone()
+
+    # PIX pendente conciliação (from bank_statements)
+    pix_pending_row = (await session.execute(t("""
+        SELECT COUNT(*), COALESCE(SUM(amount), 0)
+          FROM bank_statements
+         WHERE association_id = :aid AND conciliado = false
+    """), {"aid": aid})).fetchone()
+
+    # PIX conciliado
+    pix_done_row = (await session.execute(t("""
+        SELECT COUNT(*), COALESCE(SUM(amount), 0)
+          FROM bank_statements
+         WHERE association_id = :aid AND conciliado = true
+    """), {"aid": aid})).fetchone()
+
+    # Caixinhas
+    boxes_rows = (await session.execute(t("""
+        SELECT name, balance FROM cash_boxes
+         WHERE association_id = :aid AND is_active = true ORDER BY name
+    """), {"aid": aid})).fetchall()
+
+    return {
+        "caixa_aberto": {
+            "sessoes": int(open_row[0]),
+            "saldo": str(round(float(open_row[1]), 2)),
+        },
+        "aguardando_conferencia": {
+            "sessoes": int(closed_row[0]),
+            "total": str(round(float(closed_row[1]), 2)),
+        },
+        "conferido_aguardando_malote": {
+            "sessoes": int(conf_unsent_row[0]),
+            "total": str(round(float(conf_unsent_row[1]), 2)),
+            "dinheiro": str(round(float(conf_unsent_row[2]), 2)),
+            "pix": str(round(float(conf_unsent_row[3]), 2)),
+        },
+        "malote_enviado": {
+            "sessoes": int(conf_sent_row[0]),
+            "total": str(round(float(conf_sent_row[1]), 2)),
+            "dinheiro": str(round(float(conf_sent_row[2]), 2)),
+            "pix": str(round(float(conf_sent_row[3]), 2)),
+        },
+        "pix_pendente_conciliacao": {
+            "count": int(pix_pending_row[0]),
+            "total": str(round(float(pix_pending_row[1]), 2)),
+        },
+        "pix_conciliado": {
+            "count": int(pix_done_row[0]),
+            "total": str(round(float(pix_done_row[1]), 2)),
+        },
+        "caixinhas": [
+            {"name": r[0], "saldo": str(round(float(r[1]), 2))}
+            for r in boxes_rows
+        ],
+    }

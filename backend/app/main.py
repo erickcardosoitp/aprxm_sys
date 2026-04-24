@@ -33,6 +33,7 @@ async def _run_migrations() -> None:
                 ADD COLUMN IF NOT EXISTS proof_stock           INTEGER DEFAULT 0
         """))
         await session.execute(text("ALTER TABLE residents ADD COLUMN IF NOT EXISTS has_pests BOOLEAN"))
+        await session.execute(text("ALTER TABLE residents ADD COLUMN IF NOT EXISTS monthly_payment_day INTEGER"))
 
         # admin_master role
         await session.execute(text("""

@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, BarChart2, Upload,
   CheckCircle, AlertCircle, Clock, Plus, Search, X, RotateCcw,
   CreditCard, Users, ArrowLeftRight, Pencil, Trash2, MapPin, FileBarChart, RefreshCw,
-  FileSpreadsheet, Image, Filter, Printer,
+  FileSpreadsheet, Image, Filter, Printer, GitBranch,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
@@ -16,7 +16,7 @@ import { useAuthStore } from '../../store/authStore'
 import { financeService } from '../../services/finance'
 import type { Resident } from '../../types'
 
-type Tab = 'dashboard' | 'movimentacoes' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'transferencias' | 'porta_a_porta' | 'dre'
+type Tab = 'dashboard' | 'movimentacoes' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'transferencias' | 'porta_a_porta' | 'dre' | 'esteira'
 
 interface FinanceSummary {
   total_income: number
@@ -397,6 +397,9 @@ export default function FinanceiroPage() {
   const [dreCatFilter, setDreCatFilter] = useState<string>('')
   const dreRef = useRef<HTMLDivElement>(null)
 
+  const [esteiraData, setEsteiraData] = useState<any>(null)
+  const [esteiraLoading, setEsteiraLoading] = useState(false)
+
   const [movSubTab, setMovSubTab] = useState<'entradas' | 'despesas' | 'estornos' | 'transferencias'>('entradas')
   const [movSubtypeFilter, setMovSubtypeFilter] = useState<string | null>(null)
   const [txFilterOp, setTxFilterOp] = useState<string | null>(null)
@@ -408,6 +411,15 @@ export default function FinanceiroPage() {
     api.get<{ id: string; name: string }[]>('/finance/payment-methods').then(r => setEditPayMethods(r.data)).catch(() => {})
   }, [])
 
+  const loadEsteira = async () => {
+    setEsteiraLoading(true)
+    try {
+      const res = await api.get('/finance/esteira')
+      setEsteiraData(res.data)
+    } catch { toast.error('Erro ao carregar esteira.') }
+    finally { setEsteiraLoading(false) }
+  }
+
   useEffect(() => {
     if (tab === 'dashboard') loadSummary()
     if (tab === 'movimentacoes') loadTransactions()
@@ -416,6 +428,7 @@ export default function FinanceiroPage() {
     if (tab === 'transferencias') loadBoxSummary()
     if (tab === 'conciliacao') { loadPixPending(); if (cashBoxes.length === 0) loadBoxSummary() }
     if (tab === 'porta_a_porta') { loadPap(); loadPapToken(); loadConferentes() }
+    if (tab === 'esteira') loadEsteira()
   }, [tab, period])
 
   // Navigate from PackagesPage after guest upgrade
@@ -1099,6 +1112,7 @@ export default function FinanceiroPage() {
 
   const TABS: { key: Tab; label: string; icon: any }[] = [
     { key: 'dashboard',      label: 'Resumo',        icon: BarChart2 },
+    { key: 'esteira',        label: 'Esteira',       icon: GitBranch },
     { key: 'movimentacoes',  label: 'Movimentações', icon: ArrowLeftRight },
     { key: 'cobrancas',      label: 'Cobranças',     icon: CreditCard },
     { key: 'relatorios',     label: 'Sessões',       icon: DollarSign },
@@ -1977,7 +1991,7 @@ export default function FinanceiroPage() {
                 </p>
               </div>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
               {/* Header */}
               <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2 justify-between">
                 <h3 className="text-sm font-semibold text-gray-800">Histórico de Sessões</h3>
@@ -2276,106 +2290,23 @@ export default function FinanceiroPage() {
             <div className="text-center text-gray-400 text-sm py-8">Carregando…</div>
           ) : (
             <>
-              {/* Saldo Consolidado */}
-              <SaldoConsolidado />
-
-              {/* KPI cards */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
-                  <p className="text-xs text-gray-500 mb-1">Faturamento Hoje</p>
-                  <p className="text-base font-bold text-green-700">{tesouraria ? fmt(tesouraria.faturamento_hoje) : '—'}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">líquido (entradas − saídas)</p>
-                </div>
-                <div className="bg-white rounded-xl border border-amber-100 shadow-sm p-3">
-                  <p className="text-xs text-gray-500 mb-1">Em Limbo</p>
-                  <p className="text-base font-bold text-amber-700">{tesouraria ? fmt(tesouraria.total_limbo) : '—'}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">conferido, aguardando repasse</p>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
-                  <p className="text-xs text-gray-500 mb-1">PAP Hoje</p>
-                  <p className="text-base font-bold text-green-700">{tesouraria ? fmt(tesouraria.pap_today.total) : '—'}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">{tesouraria?.pap_today.count ?? 0} pagamentos</p>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
-                  <p className="text-xs text-gray-500 mb-1">Em Caixinhas</p>
-                  <p className="text-base font-bold text-indigo-700">{boxSummary ? fmt(boxSummary.total_in_boxes) : '—'}</p>
-                </div>
-              </div>
-
-              {/* Caixinhas breakdown */}
-              {tesouraria && tesouraria.caixinhas.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <h3 className="text-sm font-semibold text-gray-800">Saldo por Caixinha</h3>
-                  </div>
-                  <ul className="divide-y divide-gray-100">
-                    {tesouraria.caixinhas.map(box => (
-                      <li key={box.id} className="px-4 py-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-sm font-semibold text-gray-800">{box.name}</p>
-                          <p className="text-sm font-bold text-indigo-700">{fmt(box.balance)}</p>
-                        </div>
-                        {box.breakdown.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mt-1">
-                            {box.breakdown.map(b => (
-                              <span key={b.pm} className="text-[10px] bg-gray-50 border border-gray-200 rounded px-2 py-0.5 text-gray-600">
-                                {b.pm}: {fmt(b.total)}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Caixas abertos */}
-              {tesouraria && tesouraria.open_sessions.length > 0 && (
-                <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
-                  <div className="px-4 py-3 border-b border-blue-100 bg-blue-50">
-                    <h3 className="text-sm font-semibold text-blue-800">Caixas abertos</h3>
-                  </div>
-                  <ul className="divide-y divide-gray-100">
-                    {tesouraria.open_sessions.map(s => (
-                      <li key={s.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</p>
-                          <p className="text-xs text-gray-500">{s.operador}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <p className="text-xs text-gray-400">Saldo esperado</p>
-                            <p className="text-sm font-bold text-blue-700">{fmt(s.expected_balance)}</p>
-                          </div>
-                          {isAdmin && (
-                            <button
-                              onClick={() => { setAdminCloseTarget({ id: s.id, operador: s.operador }); setAdminCloseBalance('') }}
-                              className="text-xs bg-red-50 text-red-600 border border-red-200 rounded-lg px-2 py-1 hover:bg-red-100 whitespace-nowrap"
-                            >
-                              Fechar
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Sessões conferidas aguardando repasse */}
+              {/* 1 — Repasses pendentes (ação mais importante) */}
               {tesouraria && tesouraria.conferido_sessions.length > 0 && (
-                <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
-                  <div className="px-4 py-3 border-b border-amber-100 bg-amber-50">
-                    <h3 className="text-sm font-semibold text-amber-800">Conferidas — aguardando repasse</h3>
-                    <p className="text-xs text-amber-600 mt-0.5">Informe o troco que fica no caixa e transfira o restante.</p>
+                <div className="bg-amber-50 rounded-xl border border-amber-300">
+                  <div className="px-4 py-3 border-b border-amber-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-amber-900">⚡ Repasse Pendente</h3>
+                      <p className="text-xs text-amber-700 mt-0.5">{tesouraria.conferido_sessions.length} sessão(ões) conferida(s) aguardando repasse para caixinha</p>
+                    </div>
+                    <span className="text-sm font-bold text-amber-800">
+                      {fmt(tesouraria.conferido_sessions.reduce((s, c) => s + parseFloat(c.closing_balance ?? '0'), 0))}
+                    </span>
                   </div>
-                  <ul className="divide-y divide-gray-100">
+                  <ul className="divide-y divide-amber-100">
                     {tesouraria.conferido_sessions.map(s => (
                       <li key={s.id} className="px-4 py-3 flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-sm font-medium text-gray-800">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</p>
-                          <p className="text-xs text-gray-500">{s.operador}</p>
+                          <p className="text-sm font-medium text-gray-800">{new Date(s.opened_at).toLocaleDateString('pt-BR')} · {s.operador}</p>
                           <p className="text-xs font-semibold text-amber-700 mt-0.5">
                             Contado: {fmt(s.closing_balance ?? '0')}
                             {s.difference && parseFloat(s.difference) !== 0 && (
@@ -2403,7 +2334,126 @@ export default function FinanceiroPage() {
                 </div>
               )}
 
-              {/* Sangrias por destino */}
+              {/* 2 — Caixas abertos (info) */}
+              {tesouraria && tesouraria.open_sessions.length > 0 && (
+                <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-blue-100 bg-blue-50 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-blue-800">Caixas Abertos</h3>
+                      <p className="text-xs text-blue-600 mt-0.5">{tesouraria.open_sessions.length} caixa(s) com operador agora</p>
+                    </div>
+                    <span className="text-sm font-bold text-blue-800">
+                      {fmt(tesouraria.open_sessions.reduce((s, c) => s + parseFloat(c.expected_balance ?? '0'), 0))}
+                    </span>
+                  </div>
+                  <ul className="divide-y divide-gray-100">
+                    {tesouraria.open_sessions.map(s => (
+                      <li key={s.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{s.operador}</p>
+                          <p className="text-xs text-gray-500">Aberto em {new Date(s.opened_at).toLocaleString('pt-BR')}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-bold text-blue-700">{fmt(s.expected_balance)}</span>
+                          {isAdmin && (
+                            <button
+                              onClick={() => { setAdminCloseTarget({ id: s.id, operador: s.operador }); setAdminCloseBalance('') }}
+                              className="text-xs bg-red-50 text-red-600 border border-red-200 rounded-lg px-2 py-1 hover:bg-red-100 whitespace-nowrap"
+                            >
+                              Fechar
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* 3 — Caixinhas (saldo + gestão) */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-800">Caixinhas</h3>
+                    {boxSummary && <p className="text-xs text-gray-500 mt-0.5">Total: <b className="text-indigo-700">{fmt(boxSummary.total_in_boxes)}</b></p>}
+                  </div>
+                  <button onClick={() => { setEditBox(null); setBoxForm({ name: '', description: '', is_malote: false }); setShowBoxForm(true) }}
+                    className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-medium">+ Nova</button>
+                </div>
+                {cashBoxes.length === 0 ? (
+                  <p className="p-4 text-sm text-gray-400">Nenhuma caixinha cadastrada.</p>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {cashBoxes.map(box => (
+                      <li key={box.id} className="px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-semibold text-gray-800">{box.name}</p>
+                                {box.is_malote && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">Malote</span>}
+                              </div>
+                              {box.description && <p className="text-xs text-gray-400">{box.description}</p>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-base font-bold text-indigo-700">{fmt(box.balance)}</span>
+                            <button onClick={() => { setEditBox(box); setBoxForm({ name: box.name, description: box.description ?? '', is_malote: box.is_malote ?? false }); setShowBoxForm(true) }}
+                              className="text-gray-300 hover:text-gray-500 p-1"><Pencil className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => handleDeactivateBox(box.id)} className="text-red-300 hover:text-red-500 p-1">
+                              <Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-2.5">
+                          <button onClick={() => { setSelectedBox(box); setMoveForm({ amount: '', movement_type: 'credit', description: '' }); setShowMoveForm(true); loadBoxMovements(box.id) }}
+                            className="flex-1 text-xs bg-green-50 text-green-700 border border-green-200 py-1.5 rounded-lg font-medium text-center">+ Entrada</button>
+                          <button onClick={() => { setSelectedBox(box); setMoveForm({ amount: '', movement_type: 'debit', description: '' }); setShowMoveForm(true); loadBoxMovements(box.id) }}
+                            className="flex-1 text-xs bg-red-50 text-red-700 border border-red-200 py-1.5 rounded-lg font-medium text-center">− Saída</button>
+                          <button onClick={() => { setSelectedBox(box); setShowMoveForm(false); loadBoxMovements(box.id) }}
+                            className="flex-1 text-xs bg-gray-100 text-gray-600 py-1.5 rounded-lg font-medium text-center">Histórico</button>
+                        </div>
+                        {selectedBox?.id === box.id && !showMoveForm && boxMovements.length > 0 && (
+                          <div className="mt-2 border-t border-gray-100 pt-2">
+                            <ul className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                              {boxMovements.slice(0, 10).map(m => (
+                                <li key={m.id} className="flex justify-between text-xs text-gray-500">
+                                  <span className="truncate max-w-[60%]">{m.description}</span>
+                                  <span className={m.movement_type === 'credit' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                    {m.movement_type === 'credit' ? '+' : '−'}{fmt(m.amount)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* 4 — KPIs + Sangrias (analytics, secondary) */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+                  <p className="text-[10px] text-gray-500 mb-1">Hoje</p>
+                  <p className="text-sm font-bold text-green-700">{tesouraria ? fmt(tesouraria.faturamento_hoje) : '—'}</p>
+                </div>
+                <div className="bg-white rounded-xl border border-amber-100 p-3 text-center">
+                  <p className="text-[10px] text-gray-500 mb-1">A Repassar</p>
+                  <p className="text-sm font-bold text-amber-700">{tesouraria ? fmt(tesouraria.total_limbo) : '—'}</p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+                  <p className="text-[10px] text-gray-500 mb-1">PAP Hoje</p>
+                  <p className="text-sm font-bold text-green-700">{tesouraria ? fmt(tesouraria.pap_today.total) : '—'}</p>
+                  <p className="text-[10px] text-gray-400">{tesouraria?.pap_today.count ?? 0} pgtos</p>
+                </div>
+              </div>
+
+              {/* 5 — Saldo consolidado (relatório) */}
+              <SaldoConsolidado />
+
+              {/* 6 — Sangrias 30d */}
               {boxSummary && boxSummary.sangria_by_destination.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
                   <p className="text-sm font-semibold text-gray-800 mb-3">Sangrias — últimos 30 dias</p>
@@ -2417,61 +2467,6 @@ export default function FinanceiroPage() {
                   </ul>
                 </div>
               )}
-
-              {/* Caixinhas list */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-800">Caixinhas</h3>
-                  <button onClick={() => { setEditBox(null); setBoxForm({ name: '', description: '', is_malote: false }); setShowBoxForm(true) }}
-                    className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-medium">+ Nova</button>
-                </div>
-                {cashBoxes.length === 0 ? (
-                  <p className="p-4 text-sm text-gray-400">Nenhuma caixinha cadastrada.</p>
-                ) : (
-                  <ul className="divide-y divide-gray-100">
-                    {cashBoxes.map(box => (
-                      <li key={box.id} className="px-4 py-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-sm font-medium text-gray-800">{box.name}</p>
-                              {box.is_malote && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">Malote</span>}
-                            </div>
-                            {box.description && <p className="text-xs text-gray-400">{box.description}</p>}
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-base font-bold text-indigo-700">{fmt(box.balance)}</span>
-                            <button onClick={() => { setEditBox(box); setBoxForm({ name: box.name, description: box.description ?? '', is_malote: box.is_malote ?? false }); setShowBoxForm(true) }}
-                              className="text-gray-400 hover:text-gray-600"><Pencil className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => handleDeactivateBox(box.id)} className="text-red-400 hover:text-red-600">
-                              <Trash2 className="w-3.5 h-3.5" /></button>
-                          </div>
-                        </div>
-                        <div className="flex gap-2 mt-2">
-                          <button onClick={() => { setSelectedBox(box); setMoveForm({ amount: '', movement_type: 'credit', description: '' }); setShowMoveForm(true); loadBoxMovements(box.id) }}
-                            className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-1 rounded font-medium">+ Entrada</button>
-                          <button onClick={() => { setSelectedBox(box); setMoveForm({ amount: '', movement_type: 'debit', description: '' }); setShowMoveForm(true); loadBoxMovements(box.id) }}
-                            className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded font-medium">− Saída</button>
-                          <button onClick={() => { setSelectedBox(box); setShowMoveForm(false); loadBoxMovements(box.id) }}
-                            className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-medium">Histórico</button>
-                        </div>
-                        {selectedBox?.id === box.id && !showMoveForm && boxMovements.length > 0 && (
-                          <ul className="mt-2 flex flex-col gap-1 border-t border-gray-100 pt-2">
-                            {boxMovements.slice(0, 10).map(m => (
-                              <li key={m.id} className="flex justify-between text-xs text-gray-500">
-                                <span>{m.description}</span>
-                                <span className={m.movement_type === 'credit' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                                  {m.movement_type === 'credit' ? '+' : '−'}{fmt(m.amount)}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
             </>
           )}
 
@@ -3491,6 +3486,159 @@ export default function FinanceiroPage() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {tab === 'esteira' && (
+        <div className="flex flex-col gap-4 pb-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-800">Esteira Financeira</h2>
+            <button onClick={loadEsteira} disabled={esteiraLoading}
+              className="flex items-center gap-1.5 text-xs text-[#26619c] border border-[#26619c]/30 px-3 py-1.5 rounded-lg hover:bg-[#26619c]/5 disabled:opacity-40">
+              <RefreshCw size={12} className={esteiraLoading ? 'animate-spin' : ''} />
+              Atualizar
+            </button>
+          </div>
+
+          {esteiraLoading && <div className="text-center text-sm text-gray-400 py-10">Carregando…</div>}
+
+          {!esteiraLoading && esteiraData && (() => {
+            const stages = [
+              {
+                key: 'caixa_aberto',
+                label: 'Caixa Aberto',
+                sub: `${esteiraData.caixa_aberto.sessoes} sessão(ões)`,
+                amount: parseFloat(esteiraData.caixa_aberto.saldo),
+                color: 'border-green-300 bg-green-50',
+                badge: 'bg-green-100 text-green-700',
+                icon: '🟢',
+                hint: 'Dinheiro nos caixas abertos agora',
+              },
+              {
+                key: 'aguardando_conferencia',
+                label: 'Aguardando Conferência',
+                sub: `${esteiraData.aguardando_conferencia.sessoes} sessão(ões) fechada(s)`,
+                amount: parseFloat(esteiraData.aguardando_conferencia.total),
+                color: 'border-amber-300 bg-amber-50',
+                badge: 'bg-amber-100 text-amber-700',
+                icon: '🟡',
+                hint: 'Caixas fechados ainda não conferidos',
+              },
+              {
+                key: 'conferido_aguardando_malote',
+                label: 'Conferido / Malote',
+                sub: `${esteiraData.conferido_aguardando_malote.sessoes} sessão(ões)`,
+                amount: parseFloat(esteiraData.conferido_aguardando_malote.total),
+                color: 'border-blue-300 bg-blue-50',
+                badge: 'bg-blue-100 text-blue-700',
+                icon: '🔵',
+                hint: 'Conferido, aguardando envio do malote',
+                extra: esteiraData.conferido_aguardando_malote.sessoes > 0 ? [
+                  { label: 'Dinheiro', val: parseFloat(esteiraData.conferido_aguardando_malote.dinheiro) },
+                  { label: 'PIX', val: parseFloat(esteiraData.conferido_aguardando_malote.pix) },
+                ] : undefined,
+              },
+              {
+                key: 'malote_enviado',
+                label: 'Malote Enviado',
+                sub: `${esteiraData.malote_enviado.sessoes} sessão(ões)`,
+                amount: parseFloat(esteiraData.malote_enviado.total),
+                color: 'border-purple-300 bg-purple-50',
+                badge: 'bg-purple-100 text-purple-700',
+                icon: '🟣',
+                hint: 'Malote físico enviado ao faturamento',
+                extra: esteiraData.malote_enviado.sessoes > 0 ? [
+                  { label: 'Dinheiro', val: parseFloat(esteiraData.malote_enviado.dinheiro) },
+                  { label: 'PIX', val: parseFloat(esteiraData.malote_enviado.pix) },
+                ] : undefined,
+              },
+              {
+                key: 'pix_pendente',
+                label: 'PIX a Conciliar',
+                sub: `${esteiraData.pix_pendente_conciliacao.count} lançamento(s)`,
+                amount: parseFloat(esteiraData.pix_pendente_conciliacao.total),
+                color: 'border-orange-300 bg-orange-50',
+                badge: 'bg-orange-100 text-orange-700',
+                icon: '🟠',
+                hint: 'PIX recebido, não confirmado no banco',
+              },
+              {
+                key: 'pix_conciliado',
+                label: 'PIX Conciliado',
+                sub: `${esteiraData.pix_conciliado.count} lançamento(s)`,
+                amount: parseFloat(esteiraData.pix_conciliado.total),
+                color: 'border-teal-300 bg-teal-50',
+                badge: 'bg-teal-100 text-teal-700',
+                icon: '✅',
+                hint: 'PIX confirmado no extrato bancário',
+              },
+            ]
+            const totalEmTransito = stages.slice(0, 5).reduce((s, st) => s + st.amount, 0)
+            return (
+              <>
+                {/* Pipeline flow */}
+                <div className="flex flex-col gap-2">
+                  {stages.map((st, i) => (
+                    <div key={st.key} className="flex flex-col gap-0">
+                      <div className={`rounded-xl border ${st.color} px-4 py-3 flex items-center justify-between gap-3`}>
+                        <div className="flex items-center gap-3">
+                          <span className="text-base">{st.icon}</span>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">{st.label}</p>
+                            <p className="text-xs text-gray-500">{st.sub} · {st.hint}</p>
+                            {st.extra && (
+                              <div className="flex gap-3 mt-1">
+                                {st.extra.map(e => (
+                                  <span key={e.label} className="text-xs text-gray-500">{e.label}: <b className="text-gray-700">{fmt(e.val)}</b></span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-base font-bold ${st.amount > 0 ? 'text-gray-900' : 'text-gray-400'}`}>{fmt(st.amount)}</p>
+                          {st.amount > 0 && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.badge}`}>Em trânsito</span>
+                          )}
+                        </div>
+                      </div>
+                      {i < stages.length - 1 && (
+                        <div className="flex justify-center py-0.5">
+                          <div className="w-0.5 h-3 bg-gray-300" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Total + Caixinhas */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                  <div className="bg-gray-900 rounded-xl p-4 text-white">
+                    <p className="text-xs text-gray-400 mb-1">Total em Trânsito</p>
+                    <p className="text-2xl font-black">{fmt(totalEmTransito)}</p>
+                    <p className="text-xs text-gray-400 mt-1">Soma dos estágios ativos</p>
+                  </div>
+                  {esteiraData.caixinhas.length > 0 && (
+                    <div className="bg-white border border-gray-200 rounded-xl p-4">
+                      <p className="text-xs font-semibold text-gray-600 mb-2">Caixinhas</p>
+                      {esteiraData.caixinhas.map((cx: any) => (
+                        <div key={cx.name} className="flex justify-between text-sm py-1 border-b border-gray-100 last:border-0">
+                          <span className="text-gray-700">{cx.name}</span>
+                          <span className="font-bold text-gray-900">{fmt(parseFloat(cx.saldo))}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between text-sm pt-2 mt-1">
+                        <span className="text-gray-500 text-xs">Total caixinhas</span>
+                        <span className="font-bold text-[#26619c] text-xs">
+                          {fmt(esteiraData.caixinhas.reduce((s: number, cx: any) => s + parseFloat(cx.saldo), 0))}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )
+          })()}
         </div>
       )}
 
