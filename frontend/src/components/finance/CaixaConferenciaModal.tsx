@@ -97,9 +97,10 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
     .filter(r => transfersDone.includes(r.boxId))
     .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
   const repasseTotal = repasses.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-  const disponivel = isNaN(contagem) || contagemInput === '' ? dinheiro : contagem
-  const disponivelReal = disponivel - transferredAmount
-  const repasseRestante = disponivel - repasseTotal
+  // Espécie = contagem total − PIX (PIX é eletrônico, não sai fisicamente)
+  const especie = isNaN(contagem) || contagemInput === '' ? dinheiro : Math.max(0, contagem - pix)
+  const disponivelReal = especie - transferredAmount
+  const repasseRestante = especie - repasseTotal
 
   const isAlreadyConferido = session.status === 'conferido' || savedConferencia
 
