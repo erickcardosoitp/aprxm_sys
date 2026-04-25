@@ -589,8 +589,8 @@ export default function FinanceiroPage() {
   const [pixPending, setPixPending] = useState<{
     id: string; amount: string; description: string | null; date: string
     status: string; recon_score: number | null
-    resident_name: string | null; bank_statement_id: string | null
-    bank: string | null; payer_name: string | null
+    resident_name: string | null; resident_id: string | null
+    bank_statement_id: string | null; bank: string | null; payer_name: string | null
     session_opened_at: string | null; session_id: string | null
     operador_name: string | null; conferente_name: string | null
   }[]>([])
@@ -598,6 +598,7 @@ export default function FinanceiroPage() {
   const [pixBatchBox, setPixBatchBox] = useState('')
   const [loadingPixPending, setLoadingPixPending] = useState(false)
   const [editingPayer, setEditingPayer] = useState<{ id: string; value: string } | null>(null)
+  const [editingResident, setEditingResident] = useState<{ txId: string; residentId: string; value: string } | null>(null)
   const [batchingPix, setBatchingPix] = useState(false)
   const [pixShowHistory, setPixShowHistory] = useState(false)
 
@@ -2743,7 +2744,40 @@ export default function FinanceiroPage() {
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap font-semibold text-green-700">{fmt(p.amount)}</td>
                             <td className="px-2 py-2 text-gray-800 max-w-[180px] truncate">{p.description || '—'}</td>
-                            <td className="px-2 py-2 text-gray-600 max-w-[140px] truncate">{p.resident_name || '—'}</td>
+                            <td className="px-2 py-2 max-w-[140px]">
+                              {editingResident?.txId === p.id ? (
+                                <input
+                                  autoFocus
+                                  className="w-full border border-blue-400 rounded px-1.5 py-0.5 text-xs text-gray-800 outline-none"
+                                  value={editingResident.value}
+                                  onChange={e => setEditingResident({ ...editingResident, value: e.target.value })}
+                                  onBlur={async () => {
+                                    const { residentId, value } = editingResident
+                                    const name = value.trim()
+                                    setEditingResident(null)
+                                    if (!name || !residentId) return
+                                    try {
+                                      await api.put(`/residents/${residentId}`, { full_name: name })
+                                      setPixPending(prev => prev.map(x =>
+                                        x.id === p.id ? { ...x, resident_name: name } : x
+                                      ))
+                                    } catch { toast.error('Erro ao salvar nome do morador.') }
+                                  }}
+                                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                                />
+                              ) : (
+                                <span
+                                  className={`block truncate text-xs rounded px-1 py-0.5 ${p.resident_id ? 'text-gray-600 cursor-text hover:bg-gray-100' : 'text-gray-400'}`}
+                                  title={p.resident_id ? 'Clique para editar' : undefined}
+                                  onClick={() => {
+                                    if (!p.resident_id) return
+                                    setEditingResident({ txId: p.id, residentId: p.resident_id, value: p.resident_name ?? '' })
+                                  }}
+                                >
+                                  {p.resident_name || '—'}
+                                </span>
+                              )}
+                            </td>
                             <td className="px-2 py-2 max-w-[160px]">
                               {editingPayer?.id === (p.bank_statement_id ?? p.id) ? (
                                 <input

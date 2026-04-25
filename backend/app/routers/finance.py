@@ -789,7 +789,8 @@ async def list_pix_pending(
             cs.opened_at AS session_opened_at, cs.id AS session_id,
             u_op.full_name AS operador_name,
             u_rev.full_name AS conferente_name,
-            bs.batched_at
+            bs.batched_at,
+            t.resident_id
         FROM transactions t
         JOIN payment_methods pm ON pm.id = t.payment_method_id
         LEFT JOIN residents r ON r.id = t.resident_id
@@ -834,6 +835,7 @@ async def list_pix_pending(
         "operador_name": r[13],
         "conferente_name": r[14],
         "batched_at": str(r[15]) if r[15] else None,
+        "resident_id": str(r[16]) if r[16] else None,
     } for r in rows]
 
 
