@@ -410,7 +410,7 @@ async def manual_reconcile(
             VALUES (:aid, 'PIX', :date, :amt, :name, :desc, 'entrada', true, :tid)
         """), {
             "aid": aid,
-            "date": body.date,
+            "date": __import__('datetime').date.fromisoformat(body.date),
             "amt": float(body.amount),
             "name": body.payer_name or "Manual",
             "desc": body.description or "Conciliação manual",

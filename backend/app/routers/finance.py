@@ -774,7 +774,12 @@ async def list_pix_pending(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    batched_filter = "" if incluir_enviados else "AND (bs.id IS NULL OR bs.batched_at IS NULL)"
+    batched_filter = "" if incluir_enviados else """
+        AND NOT EXISTS (
+            SELECT 1 FROM reconciliations r2
+            JOIN bank_statements bs2 ON bs2.id = r2.statement_id
+            WHERE r2.transaction_id = t.id AND bs2.batched_at IS NOT NULL
+        )"""
     rows = (await session.execute(text(f"""
         SELECT
             t.id, t.amount, t.description, t.transaction_at, t.reversed_at,
