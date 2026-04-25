@@ -738,10 +738,12 @@ async def batch_pix_to_cashbox(
         raise HTTPException(400, "Todos os itens já foram enviados para caixinha.")
 
     new_bal = float(box[1]) + total
+    from uuid import UUID as _UUID
+    stmt_uuid_ids = [_UUID(s) for s in stmt_ids_to_batch]
     await session.execute(text("""
         UPDATE bank_statements SET batched_at=NOW(), conciliado=true
          WHERE id = ANY(:ids) AND association_id = :aid
-    """), {"ids": stmt_ids_to_batch, "aid": aid})
+    """), {"ids": stmt_uuid_ids, "aid": aid})
     await session.execute(text("UPDATE cash_boxes SET balance=:b, updated_at=NOW() WHERE id=:id"),
                           {"b": new_bal, "id": str(body.cash_box_id)})
     await session.execute(text("""
