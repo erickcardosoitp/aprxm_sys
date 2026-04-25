@@ -404,16 +404,23 @@ async def manual_reconcile(
             f"UPDATE bank_statements SET {', '.join(updates)} WHERE id = :id AND association_id = :aid"
         ), params)
         if body.transaction_id:
-            r_params = {"sid": str(body.statement_id), "tid": str(body.transaction_id), "aid": aid}
-            updated = (await session.execute(text("""
-                UPDATE reconciliations SET status = 'manual', statement_id = :sid
+            sid = str(body.statement_id)
+            tid = str(body.transaction_id)
+            existing = (await session.execute(text("""
+                SELECT id FROM reconciliations
                  WHERE transaction_id = :tid AND association_id = :aid
-            """), r_params)).rowcount
-            if updated == 0:
+                 LIMIT 1
+            """), {"tid": tid, "aid": aid})).fetchone()
+            if existing:
+                await session.execute(text("""
+                    UPDATE reconciliations SET status = 'manual', statement_id = :sid
+                     WHERE id = :rid
+                """), {"sid": sid, "rid": str(existing[0])})
+            else:
                 await session.execute(text("""
                     INSERT INTO reconciliations (id, association_id, statement_id, transaction_id, score, status)
                     VALUES (gen_random_uuid(), :aid, :sid, :tid, 100, 'manual')
-                """), r_params)
+                """), {"aid": aid, "sid": sid, "tid": tid})
     elif body.amount and body.date:
         from datetime import date as _date
         stmt_row = (await session.execute(text("""
@@ -429,11 +436,22 @@ async def manual_reconcile(
         })).fetchone()
         new_stmt_id = stmt_row[0]
         if body.transaction_id:
-            await session.execute(text("""
-                INSERT INTO reconciliations (id, association_id, statement_id, transaction_id, score, status)
-                VALUES (gen_random_uuid(), :aid, :sid, :tid, 100, 'manual')
-                ON CONFLICT DO NOTHING
-            """), {"aid": aid, "sid": str(new_stmt_id), "tid": str(body.transaction_id)})
+            tid2 = str(body.transaction_id)
+            existing2 = (await session.execute(text("""
+                SELECT id FROM reconciliations
+                 WHERE transaction_id = :tid AND association_id = :aid
+                 LIMIT 1
+            """), {"tid": tid2, "aid": aid})).fetchone()
+            if existing2:
+                await session.execute(text("""
+                    UPDATE reconciliations SET status = 'manual', statement_id = :sid
+                     WHERE id = :rid
+                """), {"sid": str(new_stmt_id), "rid": str(existing2[0])})
+            else:
+                await session.execute(text("""
+                    INSERT INTO reconciliations (id, association_id, statement_id, transaction_id, score, status)
+                    VALUES (gen_random_uuid(), :aid, :sid, :tid, 100, 'manual')
+                """), {"aid": aid, "sid": str(new_stmt_id), "tid": tid2})
     else:
         raise HTTPException(400, "Informe statement_id ou amount+date para conciliação manual.")
 
