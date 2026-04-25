@@ -599,6 +599,7 @@ export default function FinanceiroPage() {
   const [loadingPixPending, setLoadingPixPending] = useState(false)
   const [editingPayer, setEditingPayer] = useState<{ id: string; value: string } | null>(null)
   const [batchingPix, setBatchingPix] = useState(false)
+  const [pixShowHistory, setPixShowHistory] = useState(false)
 
   // Comprovante reprint
   const [reprinting, setReprinting] = useState<string | null>(null)
@@ -615,10 +616,10 @@ export default function FinanceiroPage() {
     } finally { setSendingMalote(null) }
   }
 
-  const loadPixPending = async () => {
+  const loadPixPending = async (showHistory = pixShowHistory) => {
     setLoadingPixPending(true)
     try {
-      const res = await api.get('/finance/pix/pending')
+      const res = await api.get(`/finance/pix/pending${showHistory ? '?incluir_enviados=true' : ''}`)
       setPixPending(res.data)
     } catch { toast.error('Erro ao carregar PIX pendentes.') } finally { setLoadingPixPending(false) }
   }
@@ -2671,9 +2672,17 @@ export default function FinanceiroPage() {
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-800">Conciliação PIX</h2>
-              <button onClick={loadPixPending} disabled={loadingPixPending} className="text-xs text-[#26619c] hover:underline">
-                {loadingPixPending ? 'Carregando…' : 'Atualizar'}
-              </button>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+                  <input type="checkbox" checked={pixShowHistory}
+                    onChange={e => { setPixShowHistory(e.target.checked); loadPixPending(e.target.checked) }}
+                    className="rounded" />
+                  Ver enviados à caixinha
+                </label>
+                <button onClick={() => loadPixPending()} disabled={loadingPixPending} className="text-xs text-[#26619c] hover:underline">
+                  {loadingPixPending ? 'Carregando…' : 'Atualizar'}
+                </button>
+              </div>
             </div>
             {pixPending.length === 0 ? (
               <p className="text-xs text-gray-400">Nenhuma venda registrada.</p>
@@ -2709,6 +2718,7 @@ export default function FinanceiroPage() {
                           pendente: { label: 'Pendente', cls: 'bg-amber-100 text-amber-700' },
                           conciliado: { label: 'Conciliado', cls: 'bg-green-100 text-green-700' },
                           cancelado: { label: 'Cancelado', cls: 'bg-red-100 text-red-600' },
+                          enviado_caixinha: { label: 'Na Caixinha', cls: 'bg-blue-100 text-blue-700' },
                         }
                         const st = statusMap[p.status] ?? statusMap.nao_conciliado
                         const canBatch = !!p.bank_statement_id

@@ -770,10 +770,12 @@ async def send_to_malote(
 
 @router.get("/pix/pending", summary="Transações de entrada com status de conciliação PIX")
 async def list_pix_pending(
+    incluir_enviados: bool = Query(default=False),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
+    batched_filter = "" if incluir_enviados else "AND (bs.id IS NULL OR bs.batched_at IS NULL)"
+    rows = (await session.execute(text(f"""
         SELECT
             t.id, t.amount, t.description, t.transaction_at, t.reversed_at,
             r.full_name AS resident_name,
@@ -781,7 +783,8 @@ async def list_pix_pending(
             bs.id AS statement_id, bs.bank, bs.name AS payer_name,
             cs.opened_at AS session_opened_at, cs.id AS session_id,
             u_op.full_name AS operador_name,
-            u_rev.full_name AS conferente_name
+            u_rev.full_name AS conferente_name,
+            bs.batched_at
         FROM transactions t
         JOIN payment_methods pm ON pm.id = t.payment_method_id
         LEFT JOIN residents r ON r.id = t.resident_id
@@ -793,6 +796,7 @@ async def list_pix_pending(
         WHERE t.association_id = :aid
           AND t.type = 'income'
           AND pm.name ILIKE '%pix%'
+          {batched_filter}
         ORDER BY t.transaction_at DESC
         LIMIT 300
     """), {"aid": str(current.association_id)})).fetchall()
@@ -800,6 +804,8 @@ async def list_pix_pending(
     def derive_status(r) -> str:
         if r[4]:  # reversed_at
             return "cancelado"
+        if r[15]:  # batched_at — já enviado para caixinha
+            return "enviado_caixinha"
         rs = r[6]  # recon_status
         if rs == "automatico":
             return "conciliado"
@@ -822,6 +828,7 @@ async def list_pix_pending(
         "session_id": str(r[12]) if r[12] else None,
         "operador_name": r[13],
         "conferente_name": r[14],
+        "batched_at": str(r[15]) if r[15] else None,
     } for r in rows]
 
 
