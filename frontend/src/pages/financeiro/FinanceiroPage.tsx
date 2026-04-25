@@ -1106,7 +1106,8 @@ export default function FinanceiroPage() {
     setReconProgress(0)
     setReconLogs([])
     setReconSummary(null)
-    const token = localStorage.getItem('token')
+    const raw = localStorage.getItem('aprxm-auth') ?? sessionStorage.getItem('aprxm-auth')
+    const token = raw ? JSON.parse(raw)?.state?.token : null
     const base = import.meta.env.VITE_API_URL ?? '/api/v1'
     try {
       const resp = await fetch(`${base}/financeiro/reconcile/stream`, {
