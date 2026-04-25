@@ -665,7 +665,7 @@ export default function FinanceiroPage() {
       setBoxSummary(sumR.data)
       setCashBoxes(boxR.data)
       setTesouraria(tesR.data)
-      setConferidoSessions(tesR.data.conferido_sessions.filter((s: any) => s.closing_balance))
+      setConferidoSessions(tesR.data.conferido_sessions.filter((s: any) => parseFloat(s.remaining ?? '0') > 0))
     } catch { /* ignore */ } finally { setLoadingBoxes(false) }
   }
 
