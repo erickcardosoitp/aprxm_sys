@@ -645,15 +645,16 @@ async def update_payer_name(
 
 class BatchToCashboxRequest(BaseModel):
     cash_box_id: UUID
-    statement_ids: List[UUID]
+    transaction_ids: List[UUID]
 
 
-@router.post("/bank-statements/batch-to-cashbox", summary="Enviar PIX conciliados para caixinha")
+@router.post("/bank-statements/batch-to-cashbox", summary="Enviar PIX para caixinha (cria bank_statement se necessário)")
 async def batch_pix_to_cashbox(
     body: BatchToCashboxRequest,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    from datetime import date as _date
     aid = str(current.association_id)
 
     box = (await session.execute(text(
@@ -662,28 +663,75 @@ async def batch_pix_to_cashbox(
     if not box:
         raise HTTPException(404, "Caixinha não encontrada.")
 
-    id_list = [str(s) for s in body.statement_ids]
-    rows = (await session.execute(text("""
-        SELECT id, amount FROM bank_statements
-         WHERE id = ANY(:ids) AND association_id = :aid AND batched_at IS NULL
-    """), {"ids": id_list, "aid": aid})).fetchall()
+    tx_ids = [str(t) for t in body.transaction_ids]
 
-    if not rows:
-        raise HTTPException(400, "Nenhum lançamento válido para enviar.")
+    # Load transactions with their existing bank_statement (if any)
+    tx_rows = (await session.execute(text("""
+        SELECT t.id, t.amount, t.transaction_at, t.description,
+               r.full_name,
+               bs.id AS stmt_id, bs.batched_at
+          FROM transactions t
+          LEFT JOIN residents r ON r.id = t.resident_id
+          LEFT JOIN reconciliations rec ON rec.transaction_id = t.id
+          LEFT JOIN bank_statements bs ON bs.id = rec.statement_id
+         WHERE t.id = ANY(:ids) AND t.association_id = :aid
+    """), {"ids": tx_ids, "aid": aid})).fetchall()
 
-    total = sum(float(r[1]) for r in rows)
+    if not tx_rows:
+        raise HTTPException(400, "Nenhuma transação encontrada.")
+
+    # Deduplicate by tx id (could have multiple reconciliation rows)
+    seen_tx: set[str] = set()
+    stmt_ids_to_batch: list[str] = []
+    total = 0.0
+
+    for row in tx_rows:
+        tx_id, tx_amount, tx_at, tx_desc, res_name, stmt_id, batched_at = row
+        tx_str = str(tx_id)
+        if tx_str in seen_tx:
+            continue
+        seen_tx.add(tx_str)
+
+        if batched_at:
+            continue  # already batched, skip
+
+        if stmt_id:
+            stmt_ids_to_batch.append(str(stmt_id))
+        else:
+            # Create bank_statement + reconciliation on the fly
+            tx_date = tx_at.date() if hasattr(tx_at, "date") else _date.fromisoformat(str(tx_at)[:10])
+            new_stmt = (await session.execute(text("""
+                INSERT INTO bank_statements (id, association_id, bank, date, amount, name, description, tipo, conciliado)
+                VALUES (gen_random_uuid(), :aid, 'PIX', :date, :amt, :name, :desc, 'entrada', true)
+                RETURNING id
+            """), {
+                "aid": aid, "date": tx_date, "amt": float(tx_amount),
+                "name": res_name or "Manual", "desc": tx_desc or "PIX manual",
+            })).fetchone()
+            new_sid = str(new_stmt[0])
+            await session.execute(text("""
+                INSERT INTO reconciliations (id, association_id, statement_id, transaction_id, score, status)
+                VALUES (gen_random_uuid(), :aid, :sid, :tid, 100, 'manual')
+                ON CONFLICT DO NOTHING
+            """), {"aid": aid, "sid": new_sid, "tid": tx_str})
+            stmt_ids_to_batch.append(new_sid)
+
+        total += float(tx_amount)
+
+    if not stmt_ids_to_batch:
+        raise HTTPException(400, "Todos os itens já foram enviados para caixinha.")
+
     new_bal = float(box[1]) + total
-
     await session.execute(text("""
         UPDATE bank_statements SET batched_at=NOW(), conciliado=true
          WHERE id = ANY(:ids) AND association_id = :aid
-    """), {"ids": id_list, "aid": aid})
+    """), {"ids": stmt_ids_to_batch, "aid": aid})
     await session.execute(text("UPDATE cash_boxes SET balance=:b, updated_at=NOW() WHERE id=:id"),
                           {"b": new_bal, "id": str(body.cash_box_id)})
     await session.execute(text("""
         INSERT INTO cash_box_movements (id, association_id, cash_box_id, amount, movement_type, description, created_by)
         VALUES (gen_random_uuid(), :aid, :bid, :amt, 'credit', :desc, :usr)
     """), {"aid": aid, "bid": str(body.cash_box_id), "amt": total,
-           "desc": f"PIX conciliados — lote {len(rows)} lançamentos", "usr": str(current.user_id)})
+           "desc": f"PIX — lote {len(stmt_ids_to_batch)} lançamentos", "usr": str(current.user_id)})
     await session.commit()
     return {"ok": True, "total": str(round(total, 2)), "count": len(rows), "new_balance": str(round(new_bal, 2))}

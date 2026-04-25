@@ -630,7 +630,7 @@ export default function FinanceiroPage() {
     try {
       const res = await api.post('/financeiro/bank-statements/batch-to-cashbox', {
         cash_box_id: pixBatchBox,
-        statement_ids: Array.from(pixSelected),
+        transaction_ids: Array.from(pixSelected),
       })
       toast.success(`${res.data.count} PIX (R$ ${parseFloat(res.data.total).toFixed(2)}) enviados para a caixinha.`)
       setPixSelected(new Set())
@@ -2694,9 +2694,9 @@ export default function FinanceiroPage() {
                       <tr className="text-gray-500 text-left">
                         <th className="px-2 py-2 w-6">
                           <input type="checkbox"
-                            checked={pixPending.filter(p => !!p.bank_statement_id).length > 0 && pixPending.filter(p => !!p.bank_statement_id).every(p => pixSelected.has(p.bank_statement_id!))}
+                            checked={pixPending.filter(p => p.status !== 'cancelado' && p.status !== 'enviado_caixinha').length > 0 && pixPending.filter(p => p.status !== 'cancelado' && p.status !== 'enviado_caixinha').every(p => pixSelected.has(p.id))}
                             onChange={e => {
-                              const batchable = pixPending.filter(p => !!p.bank_statement_id).map(p => p.bank_statement_id!)
+                              const batchable = pixPending.filter(p => p.status !== 'cancelado' && p.status !== 'enviado_caixinha').map(p => p.id)
                               setPixSelected(e.target.checked ? new Set(batchable) : new Set())
                             }} />
                         </th>
@@ -2721,17 +2721,16 @@ export default function FinanceiroPage() {
                           enviado_caixinha: { label: 'Na Caixinha', cls: 'bg-blue-100 text-blue-700' },
                         }
                         const st = statusMap[p.status] ?? statusMap.nao_conciliado
-                        const canBatch = !!p.bank_statement_id
+                        const canBatch = p.status !== 'cancelado' && p.status !== 'enviado_caixinha'
                         return (
-                          <tr key={p.id} className={`border-b border-gray-100 hover:bg-gray-50 ${canBatch && pixSelected.has(p.bank_statement_id!) ? 'bg-blue-50' : ''}`}>
+                          <tr key={p.id} className={`border-b border-gray-100 hover:bg-gray-50 ${canBatch && pixSelected.has(p.id) ? 'bg-blue-50' : ''}`}>
                             <td className="px-2 py-2">
                               <input type="checkbox" disabled={!canBatch}
-                                checked={canBatch && pixSelected.has(p.bank_statement_id!)}
+                                checked={canBatch && pixSelected.has(p.id)}
                                 onChange={e => {
-                                  if (!p.bank_statement_id) return
                                   setPixSelected(prev => {
                                     const n = new Set(prev)
-                                    e.target.checked ? n.add(p.bank_statement_id!) : n.delete(p.bank_statement_id!)
+                                    e.target.checked ? n.add(p.id) : n.delete(p.id)
                                     return n
                                   })
                                 }} />
