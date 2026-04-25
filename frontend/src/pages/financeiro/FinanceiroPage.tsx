@@ -597,6 +597,7 @@ export default function FinanceiroPage() {
   const [pixSelected, setPixSelected] = useState<Set<string>>(new Set())
   const [pixBatchBox, setPixBatchBox] = useState('')
   const [loadingPixPending, setLoadingPixPending] = useState(false)
+  const [editingPayer, setEditingPayer] = useState<{ id: string; value: string } | null>(null)
   const [batchingPix, setBatchingPix] = useState(false)
 
   // Comprovante reprint
@@ -2734,7 +2735,37 @@ export default function FinanceiroPage() {
                             <td className="px-2 py-2 whitespace-nowrap font-semibold text-green-700">{fmt(p.amount)}</td>
                             <td className="px-2 py-2 text-gray-800 max-w-[180px] truncate">{p.description || '—'}</td>
                             <td className="px-2 py-2 text-gray-600 max-w-[140px] truncate">{p.resident_name || '—'}</td>
-                            <td className="px-2 py-2 text-gray-600 max-w-[140px] truncate">{p.payer_name || '—'}</td>
+                            <td className="px-2 py-2 max-w-[160px]">
+                              {editingPayer?.id === (p.bank_statement_id ?? p.id) ? (
+                                <input
+                                  autoFocus
+                                  className="w-full border border-blue-400 rounded px-1.5 py-0.5 text-xs text-gray-800 outline-none"
+                                  value={editingPayer.value}
+                                  onChange={e => setEditingPayer({ id: editingPayer.id, value: e.target.value })}
+                                  onBlur={async () => {
+                                    const sid = editingPayer.id
+                                    const name = editingPayer.value.trim()
+                                    setEditingPayer(null)
+                                    if (!name) return
+                                    try {
+                                      await api.patch(`/financeiro/bank-statements/${sid}/payer`, { name })
+                                      setPixPending(prev => prev.map(x =>
+                                        (x.bank_statement_id ?? x.id) === sid ? { ...x, payer_name: name } : x
+                                      ))
+                                    } catch { toast.error('Erro ao salvar nome.') }
+                                  }}
+                                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                                />
+                              ) : (
+                                <span
+                                  className="block truncate text-gray-600 text-xs cursor-text hover:bg-gray-100 rounded px-1 py-0.5"
+                                  title="Clique para editar"
+                                  onClick={() => setEditingPayer({ id: p.bank_statement_id ?? p.id, value: p.payer_name ?? '' })}
+                                >
+                                  {p.payer_name || <span className="text-gray-300 italic">Clique para digitar</span>}
+                                </span>
+                              )}
+                            </td>
                             <td className="px-2 py-2 text-gray-400 whitespace-nowrap">{p.operador_name || '—'}</td>
                             <td className="px-2 py-2 text-gray-400 whitespace-nowrap">
                               {p.session_opened_at ? new Date(p.session_opened_at).toLocaleDateString('pt-BR') : '—'}

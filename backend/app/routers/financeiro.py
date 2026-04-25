@@ -505,6 +505,18 @@ async def stream_reconciliation(
                 if " - " in d: return d.split(" - ", 1)[1].strip()
                 return ""
 
+            # Load dependents (residents with responsible_id) for all residents in the tx set
+            res_ids = list({str(tx[6]) for tx in tx_rows if tx[6]})
+            dep_map: dict[str, list[str]] = {}
+            if res_ids:
+                dep_rows = (await session.execute(text("""
+                    SELECT responsible_id, full_name FROM residents
+                     WHERE responsible_id = ANY(:ids::uuid[])
+                       AND association_id = :aid
+                """), {"ids": res_ids, "aid": str(aid)})).fetchall()
+                for dr in dep_rows:
+                    dep_map.setdefault(str(dr[0]), []).append(normalize_name(dr[1] or ""))
+
             claimed: set[str] = set()
             matched = 0
             unmatched = 0
@@ -514,6 +526,7 @@ async def stream_reconciliation(
                 tx_date = tx_at.date() if hasattr(tx_at, "date") else date.fromisoformat(str(tx_at)[:10])
                 tx_amount_dec = D(str(tx_amount))
                 tx_primary = normalize_name(res_name or "") or normalize_name(_desc_name(tx_desc or ""))
+                tx_dep_names = dep_map.get(str(tx_res_id), []) if tx_res_id else []
                 label = res_name or _desc_name(tx_desc or "") or str(tx_desc or "")[:40]
 
                 yield sse({
@@ -539,6 +552,11 @@ async def stream_reconciliation(
                         score += 100; ns = 100
 
                     n = _name_score(tx_primary, s_name or "")
+                    # also try matching against dependent names
+                    for dep_name in tx_dep_names:
+                        dn = _name_score(dep_name, s_name or "")
+                        if dn > n:
+                            n = dn
                     score += n; ns = max(ns, n)
 
                     if D(str(s_amount)) == tx_amount_dec: score += 50
@@ -598,6 +616,24 @@ async def stream_reconciliation(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.patch("/bank-statements/{statement_id}/payer", summary="Atualizar nome do pagador PIX")
+async def update_payer_name(
+    statement_id: UUID,
+    body: dict,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Nome obrigatório.")
+    await session.execute(text("""
+        UPDATE bank_statements SET name = :name
+         WHERE id = :id AND association_id = :aid
+    """), {"name": name, "id": str(statement_id), "aid": str(current.association_id)})
+    await session.commit()
+    return {"ok": True}
 
 
 class BatchToCashboxRequest(BaseModel):
