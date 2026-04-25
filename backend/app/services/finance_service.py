@@ -296,26 +296,6 @@ class FinanceService:
                             resident_id=resident_id,
                         ))
 
-        # Auto-create bank statement entry for PIX income transactions
-        if tx_type == TransactionType.income and payment_method_id is not None:
-            from app.models.bank_statement import BankStatement
-            from app.models.finance import PaymentMethod as PM
-            pm_result = await self._session.get(PM, payment_method_id)
-            if pm_result and "pix" in pm_result.name.lower():
-                from datetime import date as dt_date
-                bs = BankStatement(
-                    association_id=association_id,
-                    bank="PIX",
-                    date=dt_date.today(),
-                    amount=amount,
-                    name=description,
-                    description=description,
-                    tipo="entrada",
-                    conciliado=False,
-                    transaction_id=tx.id,
-                )
-                self._session.add(bs)
-
         return tx
 
     async def perform_sangria(
@@ -381,9 +361,9 @@ class FinanceService:
             cs_result = await self._session.execute(select(CashSession).where(CashSession.id == cash_session_id))
             cash_session = cs_result.scalar_one_or_none()
             if not cash_session or cash_session.status != CashSessionStatus.open:
-                cash_session = await self.get_open_session(association_id)
+                cash_session = await self.get_open_session(association_id, preferred_by=reversed_by)
         else:
-            cash_session = await self.get_open_session(association_id)
+            cash_session = await self.get_open_session(association_id, preferred_by=reversed_by)
 
         # Inverse type: income → expense, expense/sangria → income
         inverse_type = (
@@ -578,6 +558,7 @@ class FinanceService:
         payment_method_id: UUID | None = None,
         category_id: UUID | None = None,
         resident_id: UUID | None = None,
+        cash_session_id: UUID | None = None,
     ) -> tuple[Transaction | None, bytes]:
         # Load settings
         row = (await self._session.execute(
@@ -606,8 +587,11 @@ class FinanceService:
         if isento:
             tx = None
         else:
-            # Get open session
-            cash_session = await self.get_open_session(association_id)
+            # Use explicit session if provided, otherwise prefer the issuing user's own
+            if cash_session_id:
+                cash_session = await self.get_open_session(association_id, session_id=cash_session_id)
+            else:
+                cash_session = await self.get_open_session(association_id, preferred_by=issued_by, strict_owner=True)
 
             # Register transaction
             tx = await self.register_transaction(

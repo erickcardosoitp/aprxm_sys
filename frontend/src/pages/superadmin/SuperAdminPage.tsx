@@ -63,6 +63,15 @@ interface PerfSnapshot {
   apiBreakdown: { endpoint: string; ms: number }[]
 }
 
+interface ApdexData {
+  score: number
+  satisfied: number
+  tolerating: number
+  frustrated: number
+  total: number
+  threshold_ms: number
+}
+
 // ─── Utils ──────────────────────────────────────────────────────────────────────
 function fmtSeconds(s: number): string {
   if (s >= 3600) return `${(s / 3600).toFixed(1)}h`
@@ -75,6 +84,20 @@ function fmtMs(ms: number): string {
   if (ms >= 60000) return `${(ms / 60000).toFixed(1)}min`
   if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`
   return `${Math.round(ms)}ms`
+}
+
+function computeBrowserApdex(T: number): ApdexData {
+  const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[]
+  const apiCalls = resources.filter(r => r.name.includes('/api/') || r.name.includes('/superadmin/'))
+  const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+  const samples: number[] = apiCalls.map(r => r.duration)
+  if (nav && nav.loadEventEnd > 0) samples.push(nav.loadEventEnd - nav.startTime)
+  const satisfied = samples.filter(d => d < T).length
+  const tolerating = samples.filter(d => d >= T && d < 4 * T).length
+  const frustrated = samples.filter(d => d >= 4 * T).length
+  const total = samples.length
+  const score = total > 0 ? (satisfied + tolerating / 2) / total : 1
+  return { score, satisfied, tolerating, frustrated, total, threshold_ms: T }
 }
 
 // ─── Sparkline ──────────────────────────────────────────────────────────────────
@@ -132,21 +155,18 @@ function BarChart({ data, days, color = '#26619c', label, valuePrefix = '' }: {
   )
 }
 
-// ─── APDEXX Gauge ────────────────────────────────────────────────────────────────
-function ApdexxGauge({ value, components }: { value: number; components?: ITMetrics['apdexx_components'] }) {
-  const pct = Math.round(value * 100)
-  const color = pct >= 85 ? '#16a34a' : pct >= 65 ? '#d97706' : '#dc2626'
-  const label = pct >= 85 ? 'SAUDÁVEL' : pct >= 65 ? 'ATENÇÃO' : 'CRÍTICO'
+// ─── APDEX Gauge ─────────────────────────────────────────────────────────────────
+function ApdexGauge({ data }: { data: ApdexData }) {
+  const { score, satisfied, tolerating, frustrated, total, threshold_ms } = data
+  const color = score >= 0.94 ? '#16a34a' : score >= 0.85 ? '#65a30d' : score >= 0.70 ? '#d97706' : '#dc2626'
+  const label = score >= 0.94 ? 'EXCELENTE' : score >= 0.85 ? 'BOM' : score >= 0.70 ? 'REGULAR' : 'CRÍTICO'
   const circumference = 2 * Math.PI * 38
-  const offset = circumference * (1 - value)
-
-  const compItems = components ? [
-    { label: 'SLA 48h', v: components.sla, weight: 30, hint: '% encomendas entregues em até 48h' },
-    { label: 'Higiene Caixa', v: components.session_hygiene, weight: 20, hint: '% sessões de caixa fechadas corretamente' },
-    { label: 'Taxa de Erro', v: components.error_score, weight: 20, hint: '% transações sem reversão/estorno' },
-    { label: 'Enc. em Dia', v: components.overdue_score, weight: 30, hint: '% encomendas pendentes ainda dentro do prazo de 48h' },
-  ] : []
-
+  const offset = circumference * (1 - score)
+  const bars = [
+    { label: 'Satisfeito', count: satisfied, color: '#16a34a', hint: `< ${threshold_ms}ms` },
+    { label: 'Tolerando', count: tolerating, color: '#d97706', hint: `${threshold_ms}–${threshold_ms * 4}ms` },
+    { label: 'Frustrado', count: frustrated, color: '#dc2626', hint: `≥ ${threshold_ms * 4}ms` },
+  ]
   return (
     <div className="flex flex-col sm:flex-row items-center gap-4">
       <div className="relative flex-shrink-0">
@@ -158,35 +178,28 @@ function ApdexxGauge({ value, components }: { value: number; components?: ITMetr
             style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-xl font-black" style={{ color }}>{value.toFixed(2)}</span>
+          <span className="text-xl font-black" style={{ color }}>{score.toFixed(2)}</span>
           <span className="text-[9px] font-bold tracking-widest" style={{ color }}>{label}</span>
         </div>
       </div>
-      {compItems.length > 0 && (
-        <div className="flex-1 w-full flex flex-col gap-2">
-          {compItems.map(c => {
-            const p = Math.round(c.v * 100)
-            const bg = p >= 85 ? 'bg-green-500' : p >= 60 ? 'bg-amber-500' : 'bg-red-500'
-            return (
-              <div key={c.label} title={c.hint}>
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="text-[11px] text-gray-500 cursor-help">{c.label} <span className="text-gray-300">?</span></span>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[11px] font-semibold text-gray-700">{p}%</span>
-                    <span className="text-[9px] text-gray-400">×{c.weight}%</span>
-                  </div>
-                </div>
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full ${bg}`} style={{ width: `${p}%` }} />
-                </div>
-              </div>
-            )
-          })}
-          <p className="text-[9px] text-gray-400 leading-tight mt-0.5">
-            APDEXX = SLA×30% + Higiene×20% + Erro×20% + Enc.em Dia×30%
-          </p>
-        </div>
-      )}
+      <div className="flex-1 w-full flex flex-col gap-2">
+        {bars.map(b => (
+          <div key={b.label} title={b.hint}>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[11px] text-gray-500 cursor-help">{b.label}</span>
+              <span className="text-[11px] font-semibold text-gray-700">
+                {b.count}<span className="text-gray-400 font-normal">/{total}</span>
+              </span>
+            </div>
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{ width: `${total > 0 ? (b.count / total) * 100 : 0}%`, backgroundColor: b.color }} />
+            </div>
+          </div>
+        ))}
+        <p className="text-[9px] text-gray-400 leading-tight mt-0.5">
+          (Satisfeito + Tolerando/2) / {total} · T={threshold_ms}ms
+        </p>
+      </div>
     </div>
   )
 }
@@ -264,7 +277,7 @@ export default function SuperAdminPage() {
   const [period, setPeriod] = useState<7 | 30 | 90>(7)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [perf, setPerf] = useState<PerfSnapshot>({ apiLatencyMs: null, navLoadMs: null, apiBreakdown: [] })
-  const [showApdexxCalc, setShowApdexxCalc] = useState(false)
+  const [apdex, setApdex] = useState<ApdexData | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const orgRef = useRef<HTMLDivElement>(null)
 
@@ -319,10 +332,12 @@ export default function SuperAdminPage() {
         const { metrics, apiMs, navMs, apiBreakdown } = await fetchMetrics(newOrgs, realSelected, useDays)
         setData(metrics)
         setPerf({ apiLatencyMs: apiMs, navLoadMs: navMs, apiBreakdown })
+        setApdex(computeBrowserApdex(800))
       } else {
         const { metrics, apiMs, navMs, apiBreakdown } = await fetchMetrics(useOrgs, useSelected, useDays)
         setData(metrics)
         setPerf({ apiLatencyMs: apiMs, navLoadMs: navMs, apiBreakdown })
+        setApdex(computeBrowserApdex(800))
       }
       setLastUpdate(new Date())
     } catch {
@@ -360,8 +375,8 @@ export default function SuperAdminPage() {
   const slaWarn = (data?.package_sla.pct_within_48h ?? 0) >= 65
   const overdueOk = (data?.package_sla.overdue_packages ?? 1) === 0
   const overdueWarn = (data?.package_sla.overdue_packages ?? 0) <= 5
-  const apdexxOk = (data?.apdexx ?? 0) >= 0.85
-  const apdexxWarn = (data?.apdexx ?? 0) >= 0.65
+  const apdexxOk = (apdex?.score ?? 0) >= 0.85
+  const apdexxWarn = (apdex?.score ?? 0) >= 0.70
   const cacheVal = data?.db_health?.cache_hit_rate_pct ?? 0
   const dbCacheOk = cacheVal >= 95
   const dbCacheWarn = cacheVal >= 85
@@ -442,7 +457,7 @@ export default function SuperAdminPage() {
 
       {/* Status strip */}
       <div className="flex flex-wrap gap-2">
-        <StatusPill label={`APDEXX ${data?.apdexx.toFixed(2) ?? '—'}`} ok={apdexxOk} warn={apdexxWarn} />
+        <StatusPill label={`APDEX ${apdex?.score.toFixed(2) ?? '—'}`} ok={apdexxOk} warn={apdexxWarn} />
         <StatusPill label={`SLA ${data?.package_sla.pct_within_48h ?? 0}%`} ok={slaOk} warn={slaWarn} />
         <StatusPill label={`Atraso: ${data?.package_sla.overdue_packages ?? 0} enc.`} ok={overdueOk} warn={overdueWarn} />
         <StatusPill label={`Cache DB: ${data?.db_health?.cache_hit_rate_pct ?? '—'}%`} ok={dbCacheOk} warn={dbCacheWarn} />
@@ -469,21 +484,11 @@ export default function SuperAdminPage() {
           {/* Row 1: APDEXX + SLA + Auditoria */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 
-            <Panel title="APDEXX Score" icon={Zap}>
-              <ApdexxGauge value={data.apdexx} components={data.apdexx_components} />
-              <button onClick={() => setShowApdexxCalc(v => !v)}
-                className="mt-3 flex items-center gap-1 text-[11px] text-[#26619c] hover:underline">
-                <ChevronDown className={`w-3 h-3 transition-transform ${showApdexxCalc ? 'rotate-180' : ''}`} />
-                {showApdexxCalc ? 'Ocultar cálculo' : 'Ver cálculo detalhado'}
-              </button>
-              {showApdexxCalc && (
-                <div className="mt-2 text-[10px] text-gray-500 bg-gray-50 rounded-lg p-2.5 font-mono leading-relaxed space-y-0.5">
-                  <div>SLA 48h: {((data.apdexx_components?.sla ?? 0) * 100).toFixed(0)}% × 0.30 = {((data.apdexx_components?.sla ?? 0) * 0.30).toFixed(3)}</div>
-                  <div>Higiene: {((data.apdexx_components?.session_hygiene ?? 0) * 100).toFixed(0)}% × 0.20 = {((data.apdexx_components?.session_hygiene ?? 0) * 0.20).toFixed(3)}</div>
-                  <div>Erro: {((data.apdexx_components?.error_score ?? 0) * 100).toFixed(0)}% × 0.20 = {((data.apdexx_components?.error_score ?? 0) * 0.20).toFixed(3)}</div>
-                  <div>Enc.em Dia: {((data.apdexx_components?.overdue_score ?? 0) * 100).toFixed(0)}% × 0.30 = {((data.apdexx_components?.overdue_score ?? 0) * 0.30).toFixed(3)}</div>
-                  <div className="border-t border-gray-200 pt-1 font-bold">= {data.apdexx.toFixed(3)}</div>
-                </div>
+            <Panel title="APDEX Score (Browser)" icon={Zap}>
+              {apdex ? (
+                <ApdexGauge data={apdex} />
+              ) : (
+                <p className="text-[11px] text-gray-400 italic">Calculando…</p>
               )}
             </Panel>
 

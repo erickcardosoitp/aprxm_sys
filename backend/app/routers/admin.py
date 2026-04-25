@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.security import hash_password
-from app.core.tenant import CurrentUser, require_admin
+from app.core.tenant import CurrentUser, require_admin, require_diretoria
 from app.database import get_session
 from app.models.user import User, UserRole
 
@@ -422,3 +422,21 @@ async def run_task_now(
     """), {"aid": aid, "status": status, "result": result_msg, "key": task_key})
     await session.commit()
     return {"status": status, "result": result_msg}
+
+
+@router.post("/delivery-exemption-token", summary="Gerar token de isenção de taxa de entrega (30 min, uso único)")
+async def generate_delivery_exemption_token(
+    current: CurrentUser = Depends(require_diretoria),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    import secrets
+    from datetime import datetime, timezone, timedelta
+    token = secrets.token_hex(3).upper()  # 6 hex chars, e.g. "A3F8C1"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+    await session.execute(text("""
+        INSERT INTO delivery_exemption_tokens (id, association_id, token, created_by, expires_at)
+        VALUES (gen_random_uuid(), :aid, :token, :uid, :exp)
+        ON CONFLICT (association_id, token) DO UPDATE SET expires_at = EXCLUDED.expires_at, used_at = NULL, used_by = NULL, package_id = NULL
+    """), {"aid": str(current.association_id), "token": token, "uid": str(current.user_id), "exp": expires_at})
+    await session.commit()
+    return {"token": token, "expires_at": expires_at.isoformat()}

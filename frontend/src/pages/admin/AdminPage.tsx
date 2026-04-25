@@ -146,7 +146,7 @@ interface AuditEntry {
   id: string; acao: string; entidade: string; entidade_id: string; detalhe: string; data: string; autor: string
 }
 
-type AdminTab = 'usuarios' | 'comprovante' | 'tarefas' | 'moradores'
+type AdminTab = 'usuarios' | 'comprovante' | 'tarefas' | 'moradores' | 'isencao'
 
 interface AssocConfig {
   assoc_logo_url?: string
@@ -683,6 +683,67 @@ function MoradoresTab() {
   )
 }
 
+function ExemptionTokenTab() {
+  const [token, setToken] = useState<string | null>(null)
+  const [expiresAt, setExpiresAt] = useState<Date | null>(null)
+  const [secondsLeft, setSecondsLeft] = useState(0)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!expiresAt) return
+    const interval = setInterval(() => {
+      const diff = Math.max(0, Math.round((expiresAt.getTime() - Date.now()) / 1000))
+      setSecondsLeft(diff)
+      if (diff === 0) { setToken(null); setExpiresAt(null) }
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [expiresAt])
+
+  const generate = async () => {
+    setLoading(true)
+    try {
+      const res = await api.post<{ token: string; expires_at: string }>('/admin/delivery-exemption-token')
+      setToken(res.data.token)
+      setExpiresAt(new Date(res.data.expires_at))
+      setSecondsLeft(1800)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao gerar código.')
+    } finally { setLoading(false) }
+  }
+
+  const mins = Math.floor(secondsLeft / 60)
+  const secs = secondsLeft % 60
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col items-center gap-5">
+      <div className="text-center">
+        <h2 className="font-semibold text-gray-800 text-base">Código de Isenção de Taxa</h2>
+        <p className="text-xs text-gray-500 mt-1">Gera um código de uso único, válido por 30 minutos, para isentar a taxa de entrega de R$2,50.</p>
+      </div>
+      {token && secondsLeft > 0 ? (
+        <div className="flex flex-col items-center gap-3">
+          <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl px-8 py-5 text-center">
+            <p className="text-4xl font-mono font-bold tracking-widest text-blue-700">{token}</p>
+          </div>
+          <p className={`text-sm font-medium ${secondsLeft < 120 ? 'text-red-500' : 'text-gray-500'}`}>
+            Expira em {mins}:{secs.toString().padStart(2, '0')}
+          </p>
+          <p className="text-xs text-gray-400">Repasse verbalmente ao operador. Uso único.</p>
+          <button onClick={generate} disabled={loading}
+            className="text-xs text-blue-600 underline mt-1">
+            Gerar novo código
+          </button>
+        </div>
+      ) : (
+        <button onClick={generate} disabled={loading}
+          className="bg-[#26619c] hover:bg-[#1a4f87] text-white px-6 py-3 rounded-xl text-sm font-medium transition disabled:opacity-50">
+          {loading ? 'Gerando…' : 'Gerar código de isenção'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const currentUserId = useAuthStore((s) => s.userId)
   const [tab, setTab] = useState<AdminTab>('usuarios')
@@ -768,6 +829,7 @@ export default function AdminPage() {
           ['comprovante', 'Comprovante'],
           ['tarefas', 'Tarefas Agendadas'],
           ['moradores', 'Moradores'],
+          ['isencao', 'Isenção Taxa'],
         ] as [AdminTab, string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
@@ -830,6 +892,7 @@ export default function AdminPage() {
       {tab === 'comprovante' && <ComprovanteTab />}
       {tab === 'tarefas' && <TarefasAgendadasTab />}
       {tab === 'moradores' && <MoradoresTab />}
+      {tab === 'isencao' && <ExemptionTokenTab />}
 
       {showForm && (
         <UserFormModal

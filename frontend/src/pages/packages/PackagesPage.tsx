@@ -817,6 +817,8 @@ export default function PackagesPage() {
   const [deliverySessionPicker, setDeliverySessionPicker] = useState<{ id: string; opened_by_name: string; opening_balance: string }[] | null>(null)
   type DeliverPayload = Parameters<typeof packageService.deliver>[1]
   const [pendingDeliveryPayload, setPendingDeliveryPayload] = useState<DeliverPayload | null>(null)
+  const [exemptionToken, setExemptionToken] = useState('')
+  const [exemptionTokenError, setExemptionTokenError] = useState('')
 
   // Upgrade guest to member modal
   const [showUpgrade, setShowUpgrade] = useState(false)
@@ -1331,6 +1333,7 @@ export default function PackagesPage() {
       picker_id_photo_url: pickupType === 'other' ? pickerIdPhoto || undefined : undefined,
       picker_phone: pickupType === 'other' ? pickerPhone.trim() || undefined : undefined,
       payment_method_id: deliveryPaymentMethodId || undefined,
+      exemption_token: exemptionToken.trim().toUpperCase() || undefined,
     }
     const payload: DeliverPayload = cash_session_id ? { ...base, cash_session_id } : base
     setLoading(true)
@@ -1353,6 +1356,10 @@ export default function PackagesPage() {
       loadPackages()
     } catch (e: any) {
       const detail = e.response?.data?.detail
+      if (detail === 'TOKEN_INVALID') {
+        setExemptionTokenError('Código inválido, expirado ou já utilizado.')
+        return
+      }
       if (detail === 'NO_SESSION') {
         if (!isConferenteOrAbove) { toast.error('Você não tem caixa aberto. Abra seu caixa antes de registrar.'); return }
         try {
@@ -1373,7 +1380,7 @@ export default function PackagesPage() {
     if (!deliveryTarget) return
     const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
     if (!recipientName || !recipientSig) { toast.error('Nome e assinatura do recebedor obrigatórios.'); return }
-    if (isGuest && !deliveryPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
+    if (isGuest && !deliveryPaymentMethodId && !exemptionToken.trim()) { toast.error('Informe a forma de pagamento ou um código de isenção.'); return }
     if (pickupType === 'dependent' && !selectedDependent) { toast.error('Selecione um dependente.'); return }
     if (pickupType === 'other' && !pickerIdPhoto) { toast.error('Documento de identificação obrigatório para retirada por terceiros.'); return }
     await doDeliver()
@@ -1385,6 +1392,7 @@ export default function PackagesPage() {
     setPickupType('resident'); setDependents([]); setSelectedDependent(null)
     setAddingDependent(false); setNewDepName(''); setNewDepPhone(''); setPickerIdPhoto(''); setPickerPhone('')
     setDeliveryPaymentMethodId(''); setShowUpgrade(false); setUpgradeCpf(''); setUpgradedResidentInfo(null)
+    setExemptionToken(''); setExemptionTokenError('')
   }
 
   const pendingCount = packages.filter(p => p.status === 'received' || p.status === 'notified').length
@@ -2718,17 +2726,35 @@ export default function PackagesPage() {
                 </div>
               )}
 
-              {/* Payment method for fee */}
-              {(!deliveryTarget?.resident_id || deliveryTarget?.resident_type === 'guest') && paymentMethods.length > 0 && (
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa <span className="text-red-500">*</span></label>
-                  <select value={deliveryPaymentMethodId} onChange={e => setDeliveryPaymentMethodId(e.target.value)}
-                    className={inputCls}>
-                    <option value="">Selecione...</option>
-                    {paymentMethods.map(pm => (
-                      <option key={pm.id} value={pm.id}>{pm.name}</option>
-                    ))}
-                  </select>
+              {/* Exemption token + payment method for non-members */}
+              {(!deliveryTarget?.resident_id || deliveryTarget?.resident_type === 'guest') && (
+                <div className="flex flex-col gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Código de isenção (opcional)</label>
+                    <input
+                      value={exemptionToken}
+                      onChange={e => { setExemptionToken(e.target.value.toUpperCase()); setExemptionTokenError('') }}
+                      className={`${inputCls} font-mono tracking-widest uppercase`}
+                      placeholder="Ex: A3F8C1"
+                      maxLength={8}
+                    />
+                    {exemptionTokenError && <p className="text-xs text-red-500 mt-1">{exemptionTokenError}</p>}
+                    {exemptionToken.length >= 6 && !exemptionTokenError && (
+                      <p className="text-xs text-green-600 mt-1">Código informado — taxa será isenta se válido.</p>
+                    )}
+                  </div>
+                  {!exemptionToken.trim() && paymentMethods.length > 0 && (
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa <span className="text-red-500">*</span></label>
+                      <select value={deliveryPaymentMethodId} onChange={e => setDeliveryPaymentMethodId(e.target.value)}
+                        className={inputCls}>
+                        <option value="">Selecione...</option>
+                        {paymentMethods.map(pm => (
+                          <option key={pm.id} value={pm.id}>{pm.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
 

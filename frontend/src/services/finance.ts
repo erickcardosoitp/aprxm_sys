@@ -38,6 +38,9 @@ export const financeService = {
   listOpenSessions: () =>
     api.get<{ id: string; opened_by: string; opened_by_name: string; opening_balance: string; opened_at: string; is_mine: boolean }[]>('/finance/sessions/open'),
 
+  listOpenSessionsPicker: () =>
+    api.get<{ id: string; opened_by_name: string; opened_at: string; is_mine: boolean }[]>('/finance/sessions/open-picker'),
+
   listTransactions: (session_id?: string) =>
     api.get<Transaction[]>('/finance/transactions', { params: { session_id } }),
 

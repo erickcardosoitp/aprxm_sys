@@ -1,9 +1,11 @@
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -430,6 +432,171 @@ async def run_reconciliation(
     result = await svc.run_reconciliation(current.association_id)
     await session.commit()
     return result
+
+
+@router.get("/reconcile/stream")
+async def stream_reconciliation(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    aid = current.association_id
+
+    async def generate():
+        def sse(data: dict) -> str:
+            return f"data: {json.dumps(data)}\n\n"
+
+        try:
+            svc = ReconciliationService(session)
+
+            # Load only PIX income transactions (unreconciled)
+            tx_rows = (await session.execute(text("""
+                SELECT t.id, t.amount, t.description, t.transaction_at,
+                       r.full_name, r.cpf, t.resident_id
+                FROM transactions t
+                JOIN payment_methods pm ON pm.id = t.payment_method_id
+                LEFT JOIN residents r ON r.id = t.resident_id
+                WHERE t.association_id = :aid
+                  AND t.type = 'income'
+                  AND pm.name ILIKE '%pix%'
+                  AND t.reversed_at IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM reconciliations rec WHERE rec.transaction_id = t.id
+                  )
+                ORDER BY t.transaction_at DESC
+            """), {"aid": str(aid)})).fetchall()
+
+            stmt_rows = (await session.execute(text("""
+                SELECT id, amount, name, cpf, date, bank, description
+                FROM bank_statements
+                WHERE association_id = :aid AND conciliado = false
+            """), {"aid": str(aid)})).fetchall()
+
+            total = len(tx_rows)
+            yield sse({"type": "start", "total": total, "statements": len(stmt_rows)})
+
+            if total == 0:
+                yield sse({"type": "done", "matched": 0, "unmatched": 0, "total": 0})
+                return
+
+            from app.services.reconciliation_service import normalize_name, clean_cpf
+            from difflib import SequenceMatcher as _SM
+            from decimal import Decimal as D
+            from datetime import date
+
+            def _words_match(a: str, b: str) -> bool:
+                if a == b: return True
+                if len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5]: return True
+                if len(a) >= 4 and len(b) >= 4 and _SM(None, a, b).ratio() >= 0.8: return True
+                return False
+
+            def _name_score(a: str, b: str) -> int:
+                if not a or not b: return 0
+                stop = {"DE","DA","DO","DOS","DAS","E"}
+                tw = set(normalize_name(a).split()) - stop
+                sw = set(normalize_name(b).split()) - stop
+                if not tw or not sw: return 0
+                overlap = sum(1 for w in tw if any(_words_match(w, s) for s in sw))
+                ratio = overlap / max(len(tw), len(sw))
+                return int(60 * ratio) if ratio >= 0.4 else 0
+
+            def _desc_name(d: str) -> str:
+                if not d: return ""
+                if " — " in d: return d.split(" — ", 1)[1].strip()
+                if " - " in d: return d.split(" - ", 1)[1].strip()
+                return ""
+
+            claimed: set[str] = set()
+            matched = 0
+            unmatched = 0
+
+            for idx, tx in enumerate(tx_rows):
+                tx_id, tx_amount, tx_desc, tx_at, res_name, res_cpf, tx_res_id = tx
+                tx_date = tx_at.date() if hasattr(tx_at, "date") else date.fromisoformat(str(tx_at)[:10])
+                tx_amount_dec = D(str(tx_amount))
+                tx_primary = normalize_name(res_name or "") or normalize_name(_desc_name(tx_desc or ""))
+                label = res_name or _desc_name(tx_desc or "") or str(tx_desc or "")[:40]
+
+                yield sse({
+                    "type": "processing",
+                    "current": idx + 1,
+                    "total": total,
+                    "pct": round((idx / total) * 100),
+                    "desc": label,
+                    "amount": float(tx_amount),
+                    "date": str(tx_date),
+                })
+
+                best_score = 0
+                best_stmt = None
+
+                for stmt in stmt_rows:
+                    sid, s_amount, s_name, s_cpf, s_date, s_bank, s_desc = stmt
+                    if str(sid) in claimed: continue
+                    score = 0; ns = 0
+
+                    if res_cpf and s_cpf and clean_cpf(res_cpf) == s_cpf:
+                        score += 100; ns = 100
+
+                    n = _name_score(tx_primary, s_name or "")
+                    score += n; ns = max(ns, n)
+
+                    if D(str(s_amount)) == tx_amount_dec: score += 50
+                    if abs((tx_date - s_date).days) <= 1: score += 20
+
+                    if score > 0 and ns > 0 and score > best_score:
+                        best_score = score
+                        best_stmt = stmt
+
+                if best_stmt and best_score >= 100:
+                    sid = best_stmt[0]
+                    from app.models.reconciliation import Reconciliation
+                    recon = Reconciliation(
+                        association_id=aid,
+                        statement_id=sid,
+                        transaction_id=tx_id,
+                        score=best_score,
+                        status="automatico",
+                    )
+                    session.add(recon)
+                    await session.execute(text(
+                        "UPDATE bank_statements SET conciliado=true WHERE id=:id"
+                    ), {"id": str(sid)})
+                    claimed.add(str(sid))
+                    matched += 1
+                    yield sse({
+                        "type": "matched",
+                        "current": idx + 1,
+                        "total": total,
+                        "pct": round(((idx + 1) / total) * 100),
+                        "desc": label,
+                        "amount": float(tx_amount),
+                        "date": str(tx_date),
+                        "score": best_score,
+                        "payer": best_stmt[2],
+                    })
+                else:
+                    unmatched += 1
+                    yield sse({
+                        "type": "unmatched",
+                        "current": idx + 1,
+                        "total": total,
+                        "pct": round(((idx + 1) / total) * 100),
+                        "desc": label,
+                        "amount": float(tx_amount),
+                        "date": str(tx_date),
+                    })
+
+            await session.commit()
+            yield sse({"type": "done", "matched": matched, "unmatched": unmatched, "total": total, "pct": 100})
+
+        except Exception as e:
+            yield sse({"type": "error", "message": str(e)})
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 class BatchToCashboxRequest(BaseModel):

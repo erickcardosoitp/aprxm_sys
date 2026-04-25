@@ -300,6 +300,24 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_res_upd_req_assoc ON resident_update_requests(association_id, status)"
         ))
 
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS delivery_exemption_tokens (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                token VARCHAR(8) NOT NULL,
+                created_by UUID NOT NULL REFERENCES users(id),
+                expires_at TIMESTAMPTZ NOT NULL,
+                used_at TIMESTAMPTZ,
+                used_by UUID REFERENCES users(id),
+                package_id UUID REFERENCES packages(id),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(association_id, token)
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_det_assoc ON delivery_exemption_tokens(association_id, token)"
+        ))
+
         await session.commit()
 
 

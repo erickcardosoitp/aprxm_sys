@@ -56,17 +56,17 @@ class ReconciliationService:
         bank: str,
         content: bytes,
     ) -> list[BankStatement]:
-        text_content = content.decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text_content))
-        rows = list(reader)
-
         statements = []
-        if bank == "itau":
-            statements = self._parse_itau(rows, association_id)
-        elif bank == "cora":
-            statements = self._parse_cora(rows, association_id)
-        elif bank == "infinitypay":
-            statements = self._parse_infinitypay(rows, association_id)
+        if bank == "infinitypay":
+            statements = self._parse_infinitypay_raw(content, association_id)
+        else:
+            text_content = content.decode("utf-8-sig", errors="replace")
+            reader = csv.DictReader(io.StringIO(text_content))
+            rows = list(reader)
+            if bank == "itau":
+                statements = self._parse_itau(rows, association_id)
+            elif bank == "cora":
+                statements = self._parse_cora(rows, association_id)
 
         # Dedup: skip entries already in DB (same association+bank+date+name+amount)
         existing_q = await self._session.execute(
@@ -190,60 +190,109 @@ class ReconciliationService:
             ))
         return result
 
-    def _parse_infinitypay(self, rows: list[dict], association_id: UUID) -> list[BankStatement]:
+    def _parse_infinitypay_raw(self, content: bytes, association_id: UUID) -> list[BankStatement]:
         """
-        Formato InfinityPay:
-        Data,Hora,Tipo,Nome,Detalhe,[Valor]
-        - Data: YYYY-MM-DD
-        - Tipo: Pix (só importa entradas do tipo Pix)
-        - Nome: nome do pagador
-        - Detalhe: descrição adicional
-        - Valor: positivo = entrada
+        Parses InfinityPay exported CSV (report-style, not standard CSV).
+        Format: multi-line header, Portuguese dates ("14 Abr, 2026"), blank date = carry forward,
+        values like "+2,50"/"-40,00", "Recebido"=incoming "Enviado"=outgoing.
         """
         import re
+        from datetime import datetime as _dt
 
-        def _get(row: dict, *keys: str) -> str:
-            for k in keys:
-                v = row.get(k) or row.get(k.lower()) or row.get(k.upper()) or ""
-                if v.strip():
-                    return v.strip()
-            return ""
+        PT_MONTHS = {
+            "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
+            "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+        }
 
+        def parse_pt_date(s: str):
+            m = re.match(r'(\d{1,2})\s+(\w{3}),?\s+(\d{4})', s.strip())
+            if not m:
+                return None
+            month = PT_MONTHS.get(m.group(2).lower())
+            if not month:
+                return None
+            return _dt(int(m.group(3)), month, int(m.group(1))).date()
+
+        # Try UTF-8 first, fall back to latin-1
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+
+        lines = text.splitlines()
         result = []
-        for row in rows:
-            tipo = _get(row, "Tipo", "tipo", "Categoria", "Transação", "Transacao").lower()
-            if "pix" not in tipo:
+        last_date = None
+
+        for line in lines:
+            line = line.strip()
+            if not line:
                 continue
 
-            raw_date = _get(row, "Data", "data", "Date")
-            nome = _get(row, "Nome", "nome", "Pagador", "Sacado", "Name")
-            detalhe = _get(row, "Detalhe", "detalhe", "Descrição", "Descricao", "Detail")
-            # InfinityPay may have "Valor Bruto", "Valor Líquido", "Valor"
-            valor_raw = _get(row, "Valor Bruto", "Valor Líquido", "Valor Liquido", "Valor", "valor", "Amount") or "0"
-
+            # Parse with csv reader to handle quoted fields
             try:
-                from datetime import datetime
-                dt = datetime.strptime(raw_date, "%Y-%m-%d").date()
+                cols = next(csv.reader([line]))
             except Exception:
                 continue
 
+            cols = [c.strip() for c in cols]
+            if len(cols) < 3:
+                continue
+
+            # Detect type column: "Recebido" or "Enviado"
+            # InfinityPay rows: [date_or_blank, hora, tipo, nome, detalhe, valor, ...]
+            # Find which col has Recebido/Enviado
+            tipo_idx = next((i for i, c in enumerate(cols) if c.lower() in ("recebido", "enviado")), None)
+            if tipo_idx is None:
+                # Could be a date-only continuation line; try updating last_date
+                candidate = parse_pt_date(cols[0])
+                if candidate:
+                    last_date = candidate
+                continue
+
+            tipo_val = cols[tipo_idx].lower()
+            if tipo_val != "recebido":
+                continue  # skip Enviado
+
+            # Date is in col 0 (may be blank → carry forward)
+            if cols[0]:
+                d = parse_pt_date(cols[0])
+                if d:
+                    last_date = d
+            if not last_date:
+                continue
+
+            # After tipo_idx: nome, detalhe, valor
+            # Typical order: [date, hora, tipo, nome, detalhe, valor]
+            nome = cols[tipo_idx + 1] if tipo_idx + 1 < len(cols) else ""
+            detalhe = cols[tipo_idx + 2] if tipo_idx + 2 < len(cols) else ""
+            valor_raw = cols[tipo_idx + 3] if tipo_idx + 3 < len(cols) else ""
+
+            # Also try last non-empty col as valor if it looks like a number
+            if not valor_raw or not re.search(r'\d', valor_raw):
+                for c in reversed(cols):
+                    if re.match(r'^[+\-]?\d', c):
+                        valor_raw = c
+                        break
+
             try:
-                valor_dec = parse_amount(valor_raw)
-                if valor_dec <= 0:
+                # Strip leading +/- sign for parse_amount, then check sign
+                sign = -1 if valor_raw.strip().startswith("-") else 1
+                valor_dec = parse_amount(valor_raw.lstrip("+-"))
+                if valor_dec <= 0 or sign < 0:
                     continue
             except Exception:
                 continue
 
             cpf_found = None
-            cpf_match = re.search(r'\b(\d{11})\b', nome + " " + detalhe)
-            if cpf_match:
-                cpf_found = cpf_match.group(1)
-                nome = nome.replace(cpf_match.group(0), "").strip()
+            cpf_m = re.search(r'\b(\d{11})\b', nome + " " + detalhe)
+            if cpf_m:
+                cpf_found = cpf_m.group(1)
+                nome = nome.replace(cpf_m.group(0), "").strip()
 
             result.append(BankStatement(
                 association_id=association_id,
                 bank="infinitypay",
-                date=dt,
+                date=last_date,
                 amount=valor_dec,
                 name=normalize_name(nome) if nome else None,
                 cpf=cpf_found,

@@ -358,13 +358,10 @@ export default function FinanceiroPage() {
   const [bankFile, setBankFile] = useState<File | null>(null)
   const [bankType, setBankType] = useState<'itau' | 'cora' | 'infinitypay'>('infinitypay')
   const [importing, setImporting] = useState(false)
-  const [reconciling, setReconciling] = useState(false)
-  const [reconciliationResults, setReconciliationResults] = useState<{
-    automatico: ReconciliationItem[]
-    sugestao: ReconciliationItem[]
-    pendente: ReconciliationItem[]
-    identificado: ReconciliationItem[]
-  } | null>(null)
+  const [reconRunning, setReconRunning] = useState(false)
+  const [reconProgress, setReconProgress] = useState(0)
+  const [reconLogs, setReconLogs] = useState<{ type: string; desc: string; amount: number; date: string; payer?: string; score?: number }[]>([])
+  const [reconSummary, setReconSummary] = useState<{ matched: number; unmatched: number; total: number } | null>(null)
 
   // Porta a Porta
   const [papLeads, setPapLeads] = useState<any[]>([])
@@ -576,7 +573,7 @@ export default function FinanceiroPage() {
 
   const [tesouraria, setTesouraria] = useState<{
     open_sessions: { id: string; opened_at: string; opening_balance: string; operador: string; expected_balance: string }[]
-    conferido_sessions: { id: string; opened_at: string; closing_balance: string | null; expected_balance: string | null; difference: string | null; operador: string }[]
+    conferido_sessions: { id: string; opened_at: string; closing_balance: string | null; expected_balance: string | null; difference: string | null; operador: string; already_transferred: string; remaining: string }[]
     pap_today: { total: string; count: number }
     caixinhas: { id: string; name: string; balance: string; breakdown: { pm: string; total: string }[] }[]
     total_limbo: string
@@ -1105,13 +1102,56 @@ export default function FinanceiroPage() {
   }
 
   const handleReconcile = async () => {
-    setReconciling(true)
+    setReconRunning(true)
+    setReconProgress(0)
+    setReconLogs([])
+    setReconSummary(null)
+    const token = localStorage.getItem('token')
+    const base = import.meta.env.VITE_API_URL ?? '/api/v1'
     try {
-      const res = await api.post<typeof reconciliationResults>('/financeiro/reconcile')
-      setReconciliationResults(res.data)
+      const resp = await fetch(`${base}/financeiro/reconcile/stream`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!resp.ok || !resp.body) { toast.error('Erro ao iniciar conciliação.'); setReconRunning(false); return }
+      const reader = resp.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const ev = JSON.parse(line.slice(6))
+            if (ev.type === 'start') {
+              setReconProgress(0)
+            } else if (ev.type === 'processing') {
+              setReconProgress(ev.pct)
+            } else if (ev.type === 'matched') {
+              setReconProgress(ev.pct)
+              setReconLogs(p => [...p, ev])
+            } else if (ev.type === 'unmatched') {
+              setReconProgress(ev.pct)
+              setReconLogs(p => [...p, ev])
+            } else if (ev.type === 'done') {
+              setReconProgress(100)
+              setReconSummary({ matched: ev.matched, unmatched: ev.unmatched, total: ev.total })
+              setReconRunning(false)
+              loadPixPending()
+            } else if (ev.type === 'error') {
+              toast.error(ev.message)
+              setReconRunning(false)
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro na conciliação.')
-    } finally { setReconciling(false) }
+      toast.error('Erro na conciliação.')
+      setReconRunning(false)
+    }
   }
 
   const TABS: { key: Tab; label: string; icon: any }[] = [
@@ -2303,7 +2343,7 @@ export default function FinanceiroPage() {
                       <p className="text-xs text-amber-700 mt-0.5">{tesouraria.conferido_sessions.length} sessão(ões) conferida(s) aguardando repasse para caixinha</p>
                     </div>
                     <span className="text-sm font-bold text-amber-800">
-                      {fmt(tesouraria.conferido_sessions.reduce((s, c) => s + parseFloat(c.closing_balance ?? '0'), 0))}
+                      {fmt(tesouraria.conferido_sessions.reduce((s, c) => s + parseFloat(c.remaining ?? '0'), 0))}
                     </span>
                   </div>
                   <ul className="divide-y divide-amber-100">
@@ -2313,17 +2353,21 @@ export default function FinanceiroPage() {
                           <p className="text-sm font-medium text-gray-800">{new Date(s.opened_at).toLocaleDateString('pt-BR')} · {s.operador}</p>
                           <p className="text-xs font-semibold text-amber-700 mt-0.5">
                             Contado: {fmt(s.closing_balance ?? '0')}
+                            {parseFloat(s.already_transferred) > 0 && (
+                              <span className="ml-2 text-gray-500">· já repassado: {fmt(s.already_transferred)}</span>
+                            )}
                             {s.difference && parseFloat(s.difference) !== 0 && (
                               <span className={`ml-2 ${parseFloat(s.difference) < 0 ? 'text-red-600' : 'text-green-600'}`}>
                                 ({parseFloat(s.difference) > 0 ? '+' : ''}{fmt(s.difference)})
                               </span>
                             )}
                           </p>
+                          <p className="text-xs font-bold text-amber-900 mt-0.5">A repassar: {fmt(s.remaining)}</p>
                         </div>
                         <button
                           onClick={() => {
                             setTransferTarget({ id: s.id, opened_at: s.opened_at, operador_name: s.operador, closing_balance: s.closing_balance ?? undefined })
-                            setTransferAmt(s.closing_balance ?? '')
+                            setTransferAmt(s.remaining)
                             setTransferTroco('0')
                             setTransferClose(true)
                             setTransferBoxId('')
@@ -2763,118 +2807,47 @@ export default function FinanceiroPage() {
                 <Upload className="w-4 h-4" />
                 {importing ? 'Importando…' : 'Importar e Conciliar'}
               </button>
-              <button onClick={handleReconcile} disabled={reconciling}
+              <button onClick={handleReconcile} disabled={reconRunning}
                 className="flex items-center justify-center gap-2 border border-[#26619c] text-[#26619c] py-2 rounded-xl text-sm font-medium transition hover:bg-blue-50 disabled:opacity-50">
-                {reconciling ? 'Conciliando…' : 'Re-executar Conciliação'}
+                {reconRunning ? 'Conciliando…' : 'Re-executar Conciliação'}
               </button>
             </div>
           </div>
 
-          {reconciliationResults && (
-            <div className="flex flex-col gap-3">
-              <div className="bg-white rounded-xl border border-green-200 shadow-sm p-4">
-                <h3 className="font-semibold text-green-700 mb-3 flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4" />
-                  Conciliados automaticamente ({reconciliationResults.automatico.length})
-                </h3>
-                {reconciliationResults.automatico.length === 0 ? (
-                  <p className="text-xs text-gray-400">Nenhum.</p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {reconciliationResults.automatico.map(item => (
-                      <li key={item.id} className="text-sm bg-green-50 rounded-lg px-3 py-2">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-gray-800">{item.name}</p>
-                            {item.resident && item.resident !== item.name && (
-                              <p className="text-xs text-gray-500">Morador: {item.resident}</p>
-                            )}
-                            {item.sale_description && (
-                              <p className="text-xs text-gray-500">→ {item.sale_description}</p>
-                            )}
-                            <p className="text-xs text-gray-400">{item.date} · {item.bank}</p>
-                          </div>
-                          <span className="font-bold text-green-700 ml-3">R$ {item.amount.toFixed(2)}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+          {/* Progress + log */}
+          {(reconRunning || reconSummary || reconLogs.length > 0) && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-gray-700">
+                  {reconRunning ? `Conciliando… ${reconProgress}%` : reconSummary ? `Concluído — ${reconSummary.matched} conciliados / ${reconSummary.unmatched} sem match` : ''}
+                </span>
+                {!reconRunning && reconLogs.length > 0 && (
+                  <button onClick={() => { setReconLogs([]); setReconSummary(null); setReconProgress(0) }}
+                    className="text-xs text-gray-400 hover:text-gray-600">Limpar</button>
                 )}
               </div>
-              <div className="bg-white rounded-xl border border-yellow-200 shadow-sm p-4">
-                <h3 className="font-semibold text-yellow-700 mb-3 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  Sugestões ({reconciliationResults.sugestao.length})
-                </h3>
-                {reconciliationResults.sugestao.length === 0 ? (
-                  <p className="text-xs text-gray-400">Nenhuma sugestão.</p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {reconciliationResults.sugestao.map(item => (
-                      <li key={item.id} className="text-sm bg-yellow-50 rounded-lg px-3 py-2">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-gray-800">{item.name}</p>
-                            {item.resident && item.resident !== item.name && (
-                              <p className="text-xs text-gray-500">Morador: {item.resident}</p>
-                            )}
-                            {item.sale_description && <p className="text-xs text-gray-500">→ {item.sale_description}</p>}
-                            <p className="text-xs text-gray-400">{item.date} · Score: {item.score}</p>
-                          </div>
-                          <span className="font-bold text-yellow-700 ml-3">R$ {item.amount.toFixed(2)}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div className="h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${reconProgress}%`, background: reconRunning ? '#26619c' : reconSummary ? '#16a34a' : '#26619c' }} />
               </div>
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                <h3 className="font-semibold text-gray-600 mb-3 flex items-center gap-2">
-                  <Clock className="w-4 h-4" />
-                  Sem lançamento correspondente ({reconciliationResults.pendente.length})
-                </h3>
-                {reconciliationResults.pendente.length === 0 ? (
-                  <p className="text-xs text-gray-400">Nenhum pendente.</p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {reconciliationResults.pendente.map(item => (
-                      <li key={item.id} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2">
-                        <div>
-                          <p className="font-medium text-gray-800">{item.sale_description || item.name}</p>
-                          {item.resident && <p className="text-xs text-gray-500">Morador: {item.resident}</p>}
-                          <p className="text-xs text-gray-400">{item.date}</p>
-                        </div>
-                        <span className="font-bold text-gray-600">R$ {item.amount.toFixed(2)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              {reconciliationResults.identificado?.length > 0 && (
-                <div className="bg-white rounded-xl border border-purple-200 shadow-sm p-4">
-                  <h3 className="font-semibold text-purple-700 mb-1 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" />
-                    PIX de associados sem lançamento ({reconciliationResults.identificado.length})
-                  </h3>
-                  <p className="text-xs text-gray-500 mb-3">Pagadores identificados na base, mas sem transação registrada no sistema.</p>
-                  <ul className="flex flex-col gap-2">
-                    {reconciliationResults.identificado.map(item => (
-                      <li key={item.id} className="text-sm bg-purple-50 rounded-lg px-3 py-2">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-gray-800">{item.name}</p>
-                            <p className="text-xs text-purple-600">→ {item.resident}</p>
-                            <p className="text-xs text-gray-400">{item.date} · {item.bank}</p>
-                          </div>
-                          <span className="font-bold text-purple-700 ml-3">R$ {item.amount.toFixed(2)}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+              {reconLogs.length > 0 && (
+                <div className="max-h-64 overflow-y-auto flex flex-col gap-1 text-xs font-mono">
+                  {reconLogs.map((log, i) => (
+                    <div key={i} className={`flex items-start gap-2 px-2 py-1 rounded ${log.type === 'matched' ? 'bg-green-50 text-green-800' : 'bg-gray-50 text-gray-500'}`}>
+                      <span className="shrink-0">{log.type === 'matched' ? '✓' : '—'}</span>
+                      <span className="flex-1 truncate">{log.desc}</span>
+                      <span className="shrink-0">R$ {log.amount?.toFixed(2)}</span>
+                      <span className="shrink-0 text-gray-400">{log.date}</span>
+                      {log.type === 'matched' && log.payer && (
+                        <span className="shrink-0 text-green-600 truncate max-w-[120px]">← {log.payer}</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           )}
+
         </div>
       )}
 

@@ -52,6 +52,7 @@ export const packageService = {
       picker_phone?: string
       payment_method_id?: string
       cash_session_id?: string
+      exemption_token?: string
     },
   ) => api.post<Package>(`/packages/${packageId}/deliver`, data),
 

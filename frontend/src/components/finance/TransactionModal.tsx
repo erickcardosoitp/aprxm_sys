@@ -175,13 +175,12 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   useEffect(() => {
     settingsService.get().then(r => setSettings(r.data)).catch(() => {})
     api.get<{ association_name?: string; assoc_logo_url?: string }>('/settings/association').then(r => setAssocInfo(r.data)).catch(() => {})
-    if (canPickSession) {
-      financeService.listOpenSessions().then(r => {
-        setOpenSessions(r.data)
-        const mine = r.data.find(s => s.is_mine)
-        setSelectedSessionId(mine?.id ?? r.data[0]?.id ?? '')
-      }).catch(() => {})
-    }
+    financeService.listOpenSessionsPicker().then(r => {
+      setOpenSessions(r.data as any)
+      const mine = r.data.find(s => s.is_mine)
+      if (mine) setSelectedSessionId(mine.id)
+      // no auto-fallback: if no own session, user must pick explicitly
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -348,6 +347,17 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     setSaving(true)
     try {
       if (isProof) {
+        // If user has no own session and hasn't picked one, show picker
+        if (!proofIsento && !selectedSessionId) {
+          const noOwn = openSessions.length > 0 && !openSessions.some(s => s.is_mine)
+          if (noOwn) {
+            setSaving(false)
+            setShowSessionPicker(true)
+            setPendingPayload({ _isProof: true })
+            return
+          }
+        }
+
         // Issue proof of residence — returns PDF blob
         const res = await api.post('/finance/proof-of-residence/issue', {
           resident_name: proofName.trim(),
@@ -362,6 +372,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           payment_method_id: paymentMethodId || undefined,
           category_id: categoryId || undefined,
           resident_id: resident?.id || undefined,
+          cash_session_id: selectedSessionId || undefined,
         }, { responseType: 'blob' })
 
         const barcodeCode: string = (res as any).headers?.['x-barcode-code'] || ''
@@ -398,7 +409,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         category_id: categoryId || undefined,
         payment_method_id: paymentMethodId || undefined,
         resident_id: resident?.id || undefined,
-        cash_session_id: (canPickSession && selectedSessionId) ? selectedSessionId : undefined,
+        cash_session_id: selectedSessionId || undefined,
         is_acordo: isAcordo || undefined,
         acordo_installments: isAcordo ? acordoInstallments : undefined,
       }
@@ -407,17 +418,13 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       } catch (e: any) {
         if (e.response?.data?.detail === 'NO_SESSION') {
           setSaving(false)
-          if (!canPickSession) {
-            toast.error('Você não tem caixa aberto. Abra seu caixa antes de registrar.')
-            return
-          }
           try {
-            const res = await financeService.listOpenSessions()
+            const res = await financeService.listOpenSessionsPicker()
             if (res.data.length === 0) {
               toast.error('Nenhum caixa aberto. Abra um caixa antes de registrar.')
               return
             }
-            setOpenSessions(res.data)
+            setOpenSessions(res.data as any)
             setPendingPayload(txPayload as Record<string, unknown>)
             setShowSessionPicker(true)
           } catch {
@@ -482,11 +489,57 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
   const handleSessionPick = async (sessionId: string) => {
     if (!pendingPayload) return
+    setSelectedSessionId(sessionId)
+    setShowSessionPicker(false)
+
+    // If triggered from proof of residence flow, re-submit handleSubmit
+    if ((pendingPayload as any)._isProof) {
+      setPendingPayload(null)
+      // selectedSessionId update is async; call handleSubmit after state settles via flag
+      setTimeout(() => {
+        setSaving(true)
+        api.post('/finance/proof-of-residence/issue', {
+          resident_name: proofName.trim(),
+          resident_cpf: proofCpf.trim(),
+          resident_neighborhood: proofNeighborhood.trim(),
+          resident_cep: proofCep.trim(),
+          resident_address_street: proofStreet.trim(),
+          resident_address_number: proofNumber.trim(),
+          resident_address_complement: proofComplement.trim(),
+          amount: proofIsento ? 0 : parseFloat(amount),
+          isento: proofIsento,
+          payment_method_id: paymentMethodId || undefined,
+          category_id: categoryId || undefined,
+          resident_id: resident?.id || undefined,
+          cash_session_id: sessionId,
+        }, { responseType: 'blob' }).then((res: any) => {
+          const barcodeCode: string = res.headers?.['x-barcode-code'] || ''
+          const blob = new Blob([res.data], { type: 'application/pdf' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url; a.download = 'comprovante.pdf'; a.click()
+          const win = window.open(url, '_blank')
+          if (win) setTimeout(() => win.print(), 800)
+          URL.revokeObjectURL(url)
+          if (barcodeCode) {
+            setPendingBarcodeCode(barcodeCode)
+            setBarcodeInput('')
+            setStep(3)
+          } else {
+            toast.success('Comprovante emitido!')
+            onSuccess(); onClose()
+          }
+        }).catch((e: any) => {
+          toast.error(e.response?.data?.detail ?? 'Erro ao emitir comprovante.')
+        }).finally(() => setSaving(false))
+      }, 0)
+      return
+    }
+
     setSaving(true)
     try {
       await financeService.registerTransaction({ ...pendingPayload as any, cash_session_id: sessionId })
       toast.success('Transação registrada!')
-      setShowSessionPicker(false)
       onSuccess()
       onClose()
     } catch (e: any) {
@@ -494,6 +547,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     } finally {
       setSaving(false)
     }
+    setPendingPayload(null)
   }
 
   if (showSessionPicker) {
@@ -1004,9 +1058,12 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           {/* ── Step 2: Confirmação ── */}
           {step === 2 && (
             <div className="flex flex-col gap-3">
-              {canPickSession && openSessions.length > 0 && (
+              {openSessions.length > 0 && (openSessions.length > 1 || !openSessions.some(s => s.is_mine)) && (
                 <div>
-                  <p className="text-xs font-medium text-gray-600 mb-1.5">Caixa de destino <span className="text-red-500">*</span></p>
+                  <p className="text-xs font-medium text-gray-600 mb-1">Caixa de destino <span className="text-red-500">*</span></p>
+                  {!openSessions.some(s => s.is_mine) && (
+                    <p className="text-[11px] text-amber-600 mb-1.5">Você não tem caixa aberto. Selecione o caixa destino:</p>
+                  )}
                   <div className="flex flex-col gap-1.5">
                     {openSessions.map(s => (
                       <button key={s.id} type="button" onClick={() => setSelectedSessionId(s.id)}

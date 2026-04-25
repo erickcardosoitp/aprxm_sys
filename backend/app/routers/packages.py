@@ -54,6 +54,7 @@ class DeliverPackageRequest(BaseModel):
     picker_phone: str | None = None
     payment_method_id: UUID | None = None
     cash_session_id: UUID | None = None
+    exemption_token: str | None = None
 
 
 @router.post("", summary="Registrar recebimento de encomenda")
@@ -88,6 +89,19 @@ async def deliver_package(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    # Validate exemption token if provided
+    skip_fee = False
+    if body.exemption_token:
+        from datetime import datetime, timezone
+        token_row = (await session.execute(text("""
+            SELECT id FROM delivery_exemption_tokens
+             WHERE association_id = :aid AND token = :tok
+               AND used_at IS NULL AND expires_at > NOW()
+        """), {"aid": str(current.association_id), "tok": body.exemption_token.upper()})).fetchone()
+        if not token_row:
+            raise HTTPException(status_code=422, detail="TOKEN_INVALID")
+        skip_fee = True
+
     svc = PackageService(session)
     try:
         pkg = await svc.deliver_package(
@@ -107,15 +121,26 @@ async def deliver_package(
             picker_phone=body.picker_phone,
             payment_method_id=body.payment_method_id,
             cash_session_id=body.cash_session_id,
+            skip_fee=skip_fee,
         )
     except CashSessionError:
         raise HTTPException(status_code=422, detail="NO_SESSION")
+
+    if body.exemption_token and skip_fee and token_row:
+        await session.execute(text("""
+            UPDATE delivery_exemption_tokens
+               SET used_at = NOW(), used_by = :uid, package_id = :pid
+             WHERE id = :id
+        """), {"uid": str(current.user_id), "pid": str(pkg.id), "id": str(token_row[0])})
+    await session.commit()
+
     return {
         "id": str(pkg.id),
         "status": pkg.status,
         "has_delivery_fee": pkg.has_delivery_fee,
         "delivery_fee_amount": str(pkg.delivery_fee_amount) if pkg.delivery_fee_amount else None,
         "delivered_at": str(pkg.delivered_at),
+        "fee_exempted": skip_fee,
     }
 
 
