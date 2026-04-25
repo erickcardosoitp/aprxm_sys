@@ -467,6 +467,9 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
           {/* ── Step 4: Repasse ── */}
           {step === 4 && (
             <div className="flex flex-col gap-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800">
+                Envie o dinheiro para o <b>Malote</b>. O responsável pelo malote verificará e transferirá para o Cofre.
+              </div>
               <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-1.5 text-xs">
                 <div className="flex justify-between text-sm font-semibold">
                   <span className="text-gray-700">Espécie disponível para repasse</span>
@@ -524,7 +527,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                                 onChange={e => setRepasses(prev => prev.map((r, j) => j === i ? { ...r, boxId: e.target.value } : r))}
                                 className="flex-1 border border-gray-300 rounded-lg px-2 py-2 text-xs bg-white focus:outline-none">
                                 <option value="">Selecionar caixinha…</option>
-                                {cashBoxes.map(b => (
+                                {cashBoxes.filter(b => b.is_malote).map(b => (
                                   <option key={b.id} value={b.id}>{b.name} ({fmt(b.balance)})</option>
                                 ))}
                               </select>

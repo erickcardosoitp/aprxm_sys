@@ -196,10 +196,11 @@ async def update_box(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    from uuid import UUID as _UUID
     await session.execute(text("""
         UPDATE cash_boxes SET name=:name, description=:desc, is_malote=:malote, updated_at=NOW()
-         WHERE id=CAST(:id AS UUID) AND association_id=CAST(:aid AS UUID)
-    """), {"id": box_id, "aid": str(current.association_id), "name": body.name, "desc": body.description, "malote": body.is_malote})
+         WHERE id=:id AND association_id=:aid
+    """), {"id": _UUID(box_id), "aid": current.association_id, "name": body.name, "desc": body.description, "malote": body.is_malote})
     await session.commit()
     return {"ok": True}
 
@@ -210,10 +211,11 @@ async def deactivate_box(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    from uuid import UUID as _UUID
     await session.execute(text("""
         UPDATE cash_boxes SET is_active=false, updated_at=NOW()
-         WHERE id=CAST(:id AS UUID) AND association_id=CAST(:aid AS UUID)
-    """), {"id": box_id, "aid": str(current.association_id)})
+         WHERE id=:id AND association_id=:aid
+    """), {"id": _UUID(box_id), "aid": current.association_id})
     await session.commit()
     return {"ok": True}
 
