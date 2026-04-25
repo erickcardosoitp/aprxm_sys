@@ -639,7 +639,7 @@ async def registrar_quebra(
 
 class TransferToCashboxRequest(BaseModel):
     cash_box_id: UUID
-    amount: Decimal = Field(gt=0)
+    amount: Decimal = Field(ge=0)
     troco: Decimal = Field(default=Decimal("0"), ge=0)
     close_session: bool = False
 
@@ -666,34 +666,32 @@ async def transfer_to_cashbox(
     if not box:
         raise HTTPException(404, "Caixinha não encontrada.")
 
-    # Validate: total repasses cannot exceed closing_balance
+    if body.amount == 0:
+        await session.commit()
+        return {"ok": True, "transaction_id": None, "new_cashbox_balance": str(box[1]), "troco": "0", "closed": False}
+
+    sid_str = str(session_id)
+    desc = f"Repasse para caixinha — sessão {sid_str}"
+
+    # Validate: total repasses cannot exceed dinheiro available (PIX excluded)
     if row[1] == "conferido":
         closing_bal = (await session.execute(sa_text(
             "SELECT closing_balance FROM cash_sessions WHERE id=:id"
-        ), {"id": str(session_id)})).scalar()
+        ), {"id": sid_str})).scalar()
         already_transferred = (await session.execute(sa_text("""
             SELECT COALESCE(SUM(amount),0) FROM transactions
             WHERE association_id=:aid AND type='sangria'
-              AND description LIKE :desc_pattern
+              AND description = :desc_pattern
               AND reversed_at IS NULL
-              AND (cash_session_id=:sid OR (cash_session_id IS NULL
-                   AND description LIKE :sess_date_pattern))
         """), {
             "aid": str(current.association_id),
-            "sid": str(session_id),
-            "desc_pattern": "Repasse para caixinha%",
-            "sess_date_pattern": f"%conferência {str(row[2])[:10]}%",
+            "desc_pattern": desc,
         })).scalar()
         if closing_bal is not None:
             available = float(closing_bal) - float(already_transferred or 0)
             if float(body.amount) > round(available + 0.005, 2):
                 raise HTTPException(400, f"Valor excede o disponível para repasse (R$ {available:.2f}).")
-
     svc = FinanceService(session)
-    sess_date = str(row[2])[:10]
-    desc = f"Repasse para caixinha — conferência {sess_date}"
-    # Sessão já conferida: não vincular a sangria à sessão para não alterar o saldo conferido.
-    # A transação fica como registro de auditoria sem cash_session_id.
     tx_session_id = None if row[1] == "conferido" else session_id
     tx = await svc.register_transaction(
         association_id=current.association_id,
@@ -790,7 +788,8 @@ async def list_pix_pending(
             u_op.full_name AS operador_name,
             u_rev.full_name AS conferente_name,
             bs.batched_at,
-            t.resident_id
+            t.resident_id,
+            pkg.delivered_to_name
         FROM transactions t
         JOIN payment_methods pm ON pm.id = t.payment_method_id
         LEFT JOIN residents r ON r.id = t.resident_id
@@ -799,6 +798,7 @@ async def list_pix_pending(
         LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
         LEFT JOIN users u_op ON u_op.id = cs.opened_by
         LEFT JOIN users u_rev ON u_rev.id = cs.reviewed_by
+        LEFT JOIN packages pkg ON pkg.id = t.package_id
         WHERE t.association_id = :aid
           AND t.type = 'income'
           AND pm.name ILIKE '%pix%'
@@ -836,6 +836,7 @@ async def list_pix_pending(
         "conferente_name": r[14],
         "batched_at": str(r[15]) if r[15] else None,
         "resident_id": str(r[16]) if r[16] else None,
+        "delivered_to_name": r[17],
     } for r in rows]
 
 
@@ -973,11 +974,16 @@ async def tesouraria_summary(
                    SELECT SUM(t.amount) FROM transactions t
                     WHERE t.association_id = cs.association_id
                       AND t.type = 'sangria'
-                      AND t.description LIKE 'Repasse para caixinha%%'
+                      AND t.description = CONCAT('Repasse para caixinha — sessão ', cs.id::text)
                       AND t.reversed_at IS NULL AND t.is_reversal = false
-                      AND t.cash_session_id IS NULL
-                      AND t.description LIKE CONCAT('%%conferência ', cs.opened_at::date::text, '%%')
-               ), 0) AS already_transferred
+               ), 0) AS already_transferred,
+               COALESCE((
+                   SELECT SUM(t.amount) FROM transactions t
+                   JOIN payment_methods pm ON pm.id = t.payment_method_id
+                    WHERE t.cash_session_id = cs.id AND t.type = 'income'
+                      AND pm.name ILIKE '%%pix%%'
+                      AND t.reversed_at IS NULL AND t.is_reversal = false
+               ), 0) AS total_pix_income
           FROM cash_sessions cs
           LEFT JOIN users u ON u.id = cs.opened_by
          WHERE cs.association_id=:aid AND cs.status='conferido'
@@ -1041,11 +1047,11 @@ async def tesouraria_summary(
                                   "difference": str(r[4]) if r[4] else None,
                                   "operador": r[5],
                                   "already_transferred": str(round(float(r[6] or 0), 2)),
-                                  "remaining": str(round(max(0.0, float(r[2] or 0) - float(r[6] or 0)), 2))} for r in conf_rows],
+                                  "remaining": str(round(max(0.0, float(r[2] or 0) - float(r[7] or 0) - float(r[6] or 0)), 2))} for r in conf_rows],
         "pap_today": {"total": str(round(float(pap_row[0]),2)), "count": pap_row[1]},
         "caixinhas": [{"id": str(r[0]), "name": r[1], "balance": str(round(float(r[2]),2)),
                        "breakdown": breakdown_by_box.get(str(r[0]), [])} for r in boxes],
-        "total_limbo": str(round(sum(max(0.0, float(r[2] or 0) - float(r[6] or 0)) for r in conf_rows), 2)),
+        "total_limbo": str(round(sum(max(0.0, float(r[2] or 0) - float(r[7] or 0) - float(r[6] or 0)) for r in conf_rows), 2)),
         "faturamento_hoje": str(faturamento),
     }
 

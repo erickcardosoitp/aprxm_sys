@@ -593,6 +593,7 @@ export default function FinanceiroPage() {
     bank_statement_id: string | null; bank: string | null; payer_name: string | null
     session_opened_at: string | null; session_id: string | null
     operador_name: string | null; conferente_name: string | null
+    delivered_to_name: string | null
   }[]>([])
   const [pixSelected, setPixSelected] = useState<Set<string>>(new Set())
   const [pixBatchBox, setPixBatchBox] = useState('')
@@ -2706,6 +2707,7 @@ export default function FinanceiroPage() {
                         <th className="px-2 py-2 font-medium">Valor</th>
                         <th className="px-2 py-2 font-medium">Descrição</th>
                         <th className="px-2 py-2 font-medium">Morador</th>
+                        <th className="px-2 py-2 font-medium">Retirado por</th>
                         <th className="px-2 py-2 font-medium">Pagador PIX</th>
                         <th className="px-2 py-2 font-medium">Operador</th>
                         <th className="px-2 py-2 font-medium">Sessão</th>
@@ -2777,6 +2779,9 @@ export default function FinanceiroPage() {
                                   {p.resident_name || '—'}
                                 </span>
                               )}
+                            </td>
+                            <td className="px-2 py-2 text-gray-500 max-w-[130px] truncate text-xs">
+                              {p.delivered_to_name || '—'}
                             </td>
                             <td className="px-2 py-2 max-w-[160px]">
                               {editingPayer?.id === (p.bank_statement_id ?? p.id) ? (
