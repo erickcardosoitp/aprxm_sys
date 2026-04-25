@@ -549,7 +549,7 @@ async def stream_reconciliation(
 
                 if best_stmt and best_score >= 100:
                     sid = best_stmt[0]
-                    from app.models.reconciliation import Reconciliation
+                    from app.models.bank_statement import Reconciliation
                     recon = Reconciliation(
                         association_id=aid,
                         statement_id=sid,
