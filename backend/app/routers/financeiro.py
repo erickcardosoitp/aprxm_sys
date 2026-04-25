@@ -532,6 +532,7 @@ async def stream_reconciliation(
                 for stmt in stmt_rows:
                     sid, s_amount, s_name, s_cpf, s_date, s_bank, s_desc = stmt
                     if str(sid) in claimed: continue
+                    s_date = s_date.date() if hasattr(s_date, "date") else s_date
                     score = 0; ns = 0
 
                     if res_cpf and s_cpf and clean_cpf(res_cpf) == s_cpf:
