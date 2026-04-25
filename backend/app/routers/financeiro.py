@@ -404,18 +404,25 @@ async def manual_reconcile(
             f"UPDATE bank_statements SET {', '.join(updates)} WHERE id = :id AND association_id = :aid"
         ), params)
     elif body.amount and body.date:
-        # Create new bank_statement entry and mark as conciliado
-        await session.execute(text("""
-            INSERT INTO bank_statements (association_id, bank, date, amount, name, description, tipo, conciliado, transaction_id)
-            VALUES (:aid, 'PIX', :date, :amt, :name, :desc, 'entrada', true, :tid)
+        from datetime import date as _date
+        stmt_row = (await session.execute(text("""
+            INSERT INTO bank_statements (id, association_id, bank, date, amount, name, description, tipo, conciliado)
+            VALUES (gen_random_uuid(), :aid, 'PIX', :date, :amt, :name, :desc, 'entrada', true)
+            RETURNING id
         """), {
             "aid": aid,
-            "date": __import__('datetime').date.fromisoformat(body.date),
+            "date": _date.fromisoformat(body.date),
             "amt": float(body.amount),
             "name": body.payer_name or "Manual",
             "desc": body.description or "Conciliação manual",
-            "tid": str(body.transaction_id) if body.transaction_id else None,
-        })
+        })).fetchone()
+        new_stmt_id = stmt_row[0]
+        if body.transaction_id:
+            await session.execute(text("""
+                INSERT INTO reconciliations (id, association_id, statement_id, transaction_id, score, status)
+                VALUES (gen_random_uuid(), :aid, :sid, :tid, 100, 'manual')
+                ON CONFLICT DO NOTHING
+            """), {"aid": aid, "sid": str(new_stmt_id), "tid": str(body.transaction_id)})
     else:
         raise HTTPException(400, "Informe statement_id ou amount+date para conciliação manual.")
 
