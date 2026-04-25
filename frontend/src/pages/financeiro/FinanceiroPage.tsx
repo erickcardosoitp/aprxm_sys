@@ -2819,17 +2819,14 @@ export default function FinanceiroPage() {
                               {p.session_opened_at ? new Date(p.session_opened_at).toLocaleDateString('pt-BR') : '—'}
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap">
-                              {p.status === 'nao_conciliado' && (
+                              {(p.status === 'nao_conciliado' || p.status === 'pendente') && (
                                 <button
                                   onClick={async () => {
                                     try {
-                                      await api.post('/financeiro/bank-statements/manual-reconcile', {
-                                        transaction_id: p.id,
-                                        amount: parseFloat(p.amount),
-                                        date: p.date,
-                                        payer_name: p.payer_name || p.description || 'Manual',
-                                        description: p.description || 'Conciliação manual',
-                                      })
+                                      const payload = p.bank_statement_id
+                                        ? { statement_id: p.bank_statement_id, transaction_id: p.id }
+                                        : { transaction_id: p.id, amount: parseFloat(p.amount), date: p.date, payer_name: p.payer_name || p.description || 'Manual', description: p.description || 'Conciliação manual' }
+                                      await api.post('/financeiro/bank-statements/manual-reconcile', payload)
                                       toast.success('PIX marcado como conciliado.')
                                       loadPixPending()
                                     } catch (e: any) {
