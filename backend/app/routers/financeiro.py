@@ -513,12 +513,14 @@ async def stream_reconciliation(
                 return ""
 
             # Load dependents (residents with responsible_id) for all residents in the tx set
-            res_ids = list({str(tx[6]) for tx in tx_rows if tx[6]})
+            from uuid import UUID as _UUID
+            res_ids = [_UUID(str(tx[6])) for tx in tx_rows if tx[6]]
+            res_ids = list({r for r in res_ids})
             dep_map: dict[str, list[str]] = {}
             if res_ids:
                 dep_rows = (await session.execute(text("""
                     SELECT responsible_id, full_name FROM residents
-                     WHERE responsible_id = ANY(:ids::uuid[])
+                     WHERE responsible_id = ANY(:ids)
                        AND association_id = :aid
                 """), {"ids": res_ids, "aid": str(aid)})).fetchall()
                 for dr in dep_rows:
@@ -663,7 +665,8 @@ async def batch_pix_to_cashbox(
     if not box:
         raise HTTPException(404, "Caixinha não encontrada.")
 
-    tx_ids = [str(t) for t in body.transaction_ids]
+    from uuid import UUID as _UUID
+    tx_ids = [_UUID(str(t)) for t in body.transaction_ids]
 
     # Load transactions with their existing bank_statement (prefer unbatched)
     tx_rows = (await session.execute(text("""
@@ -675,7 +678,7 @@ async def batch_pix_to_cashbox(
           LEFT JOIN residents r ON r.id = t.resident_id
           LEFT JOIN reconciliations rec ON rec.transaction_id = t.id
           LEFT JOIN bank_statements bs ON bs.id = rec.statement_id
-         WHERE t.id = ANY(:ids::uuid[]) AND t.association_id = :aid
+         WHERE t.id = ANY(:ids) AND t.association_id = :aid
          ORDER BY t.id, bs.batched_at NULLS FIRST
     """), {"ids": tx_ids, "aid": aid})).fetchall()
 
