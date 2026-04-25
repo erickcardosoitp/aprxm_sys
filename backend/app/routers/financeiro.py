@@ -665,16 +665,18 @@ async def batch_pix_to_cashbox(
 
     tx_ids = [str(t) for t in body.transaction_ids]
 
-    # Load transactions with their existing bank_statement (if any)
+    # Load transactions with their existing bank_statement (prefer unbatched)
     tx_rows = (await session.execute(text("""
-        SELECT t.id, t.amount, t.transaction_at, t.description,
+        SELECT DISTINCT ON (t.id)
+               t.id, t.amount, t.transaction_at, t.description,
                r.full_name,
                bs.id AS stmt_id, bs.batched_at
           FROM transactions t
           LEFT JOIN residents r ON r.id = t.resident_id
           LEFT JOIN reconciliations rec ON rec.transaction_id = t.id
           LEFT JOIN bank_statements bs ON bs.id = rec.statement_id
-         WHERE t.id = ANY(:ids) AND t.association_id = :aid
+         WHERE t.id = ANY(:ids::uuid[]) AND t.association_id = :aid
+         ORDER BY t.id, bs.batched_at NULLS FIRST
     """), {"ids": tx_ids, "aid": aid})).fetchall()
 
     if not tx_rows:
@@ -734,4 +736,4 @@ async def batch_pix_to_cashbox(
     """), {"aid": aid, "bid": str(body.cash_box_id), "amt": total,
            "desc": f"PIX — lote {len(stmt_ids_to_batch)} lançamentos", "usr": str(current.user_id)})
     await session.commit()
-    return {"ok": True, "total": str(round(total, 2)), "count": len(rows), "new_balance": str(round(new_bal, 2))}
+    return {"ok": True, "total": str(round(total, 2)), "count": len(stmt_ids_to_batch), "new_balance": str(round(new_bal, 2))}
