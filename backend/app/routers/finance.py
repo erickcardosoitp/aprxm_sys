@@ -779,31 +779,34 @@ async def list_pix_pending(
             WHERE r2.transaction_id = t.id AND bs2.batched_at IS NOT NULL
         )"""
     rows = (await session.execute(text(f"""
-        SELECT
-            t.id, t.amount, t.description, t.transaction_at, t.reversed_at,
-            r.full_name AS resident_name,
-            rec.status AS recon_status, rec.score,
-            bs.id AS statement_id, bs.bank, bs.name AS payer_name,
-            cs.opened_at AS session_opened_at, cs.id AS session_id,
-            u_op.full_name AS operador_name,
-            u_rev.full_name AS conferente_name,
-            bs.batched_at,
-            t.resident_id,
-            pkg.delivered_to_name
-        FROM transactions t
-        JOIN payment_methods pm ON pm.id = t.payment_method_id
-        LEFT JOIN residents r ON r.id = t.resident_id
-        LEFT JOIN reconciliations rec ON rec.transaction_id = t.id
-        LEFT JOIN bank_statements bs ON bs.id = rec.statement_id
-        LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
-        LEFT JOIN users u_op ON u_op.id = cs.opened_by
-        LEFT JOIN users u_rev ON u_rev.id = cs.reviewed_by
-        LEFT JOIN packages pkg ON pkg.id = t.package_id
-        WHERE t.association_id = :aid
-          AND t.type = 'income'
-          AND pm.name ILIKE '%pix%'
-          {batched_filter}
-        ORDER BY t.transaction_at DESC
+        SELECT * FROM (
+            SELECT DISTINCT ON (t.id)
+                t.id, t.amount, t.description, t.transaction_at, t.reversed_at,
+                r.full_name AS resident_name,
+                rec.status AS recon_status, rec.score,
+                bs.id AS statement_id, bs.bank, bs.name AS payer_name,
+                cs.opened_at AS session_opened_at, cs.id AS session_id,
+                u_op.full_name AS operador_name,
+                u_rev.full_name AS conferente_name,
+                bs.batched_at,
+                t.resident_id,
+                pkg.delivered_to_name
+            FROM transactions t
+            JOIN payment_methods pm ON pm.id = t.payment_method_id
+            LEFT JOIN residents r ON r.id = t.resident_id
+            LEFT JOIN reconciliations rec ON rec.transaction_id = t.id
+            LEFT JOIN bank_statements bs ON bs.id = rec.statement_id
+            LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
+            LEFT JOIN users u_op ON u_op.id = cs.opened_by
+            LEFT JOIN users u_rev ON u_rev.id = cs.reviewed_by
+            LEFT JOIN packages pkg ON pkg.id = t.package_id
+            WHERE t.association_id = :aid
+              AND t.type = 'income'
+              AND pm.name ILIKE '%pix%%'
+              {batched_filter}
+            ORDER BY t.id, rec.status NULLS LAST, bs.batched_at NULLS FIRST
+        ) sub
+        ORDER BY sub.transaction_at DESC
         LIMIT 300
     """), {"aid": str(current.association_id)})).fetchall()
 
