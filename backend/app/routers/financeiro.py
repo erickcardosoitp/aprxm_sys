@@ -403,6 +403,17 @@ async def manual_reconcile(
         await session.execute(text(
             f"UPDATE bank_statements SET {', '.join(updates)} WHERE id = :id AND association_id = :aid"
         ), params)
+        if body.transaction_id:
+            r_params = {"sid": str(body.statement_id), "tid": str(body.transaction_id), "aid": aid}
+            updated = (await session.execute(text("""
+                UPDATE reconciliations SET status = 'manual', statement_id = :sid
+                 WHERE transaction_id = :tid AND association_id = :aid
+            """), r_params)).rowcount
+            if updated == 0:
+                await session.execute(text("""
+                    INSERT INTO reconciliations (id, association_id, statement_id, transaction_id, score, status)
+                    VALUES (gen_random_uuid(), :aid, :sid, :tid, 100, 'manual')
+                """), r_params)
     elif body.amount and body.date:
         from datetime import date as _date
         stmt_row = (await session.execute(text("""
