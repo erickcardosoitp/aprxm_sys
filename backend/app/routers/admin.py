@@ -390,20 +390,24 @@ async def run_task_now(
             from datetime import date
             ref_month = date.today().strftime("%Y-%m")
             due = date(date.today().year, date.today().month, 10)
+            # resolve created_by: any admin-level user in the association
+            cb_row = (await session.execute(text(
+                "SELECT id FROM users WHERE association_id = :aid AND role IN ('admin','superadmin','admin_master','diretoria') LIMIT 1"
+            ), {"aid": aid})).fetchone()
+            created_by = str(cb_row[0]) if cb_row else None
             created = 0
             for res in residents:
                 try:
                     async with session.begin_nested():
-                        await session.execute(text("""
+                        ins = await session.execute(text("""
                             INSERT INTO mensalidades (association_id, resident_id, reference_month, due_date, amount, status, created_by)
-                            SELECT :aid, :rid, :month, :due, :amount, 'pending',
-                                   (SELECT id FROM users WHERE association_id = :aid AND role = 'admin' LIMIT 1)
+                            SELECT :aid, :rid, :month, :due, :amount, 'pending', :cb
                             WHERE NOT EXISTS (
                                 SELECT 1 FROM mensalidades m2 WHERE m2.association_id = :aid
                                   AND m2.resident_id = :rid AND m2.reference_month = :month
                             )
-                        """), {"aid": aid, "rid": str(res[0]), "month": ref_month, "due": due, "amount": str(res[2])})
-                    created += 1
+                        """), {"aid": aid, "rid": str(res[0]), "month": ref_month, "due": due, "amount": str(res[2]), "cb": created_by})
+                    created += ins.rowcount
                 except Exception:
                     pass
             result_msg = f"{created} mensalidade(s) gerada(s) para {ref_month}."
