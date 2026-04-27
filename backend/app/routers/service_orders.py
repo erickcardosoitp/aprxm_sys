@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response
@@ -184,6 +184,8 @@ async def service_orders_report(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    df = date.fromisoformat(date_from)
+    dt = date.fromisoformat(date_to)
     from sqlalchemy import text as sa_text
     result = await session.execute(
         sa_text("""
@@ -197,7 +199,7 @@ async def service_orders_report(
             WHERE association_id = :aid
               AND created_at::date BETWEEN :df AND :dt
         """),
-        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+        {"aid": str(current.association_id), "df": df, "dt": dt},
     )
     r = result.fetchone()
     by_area = await session.execute(
@@ -207,7 +209,7 @@ async def service_orders_report(
               AND area IS NOT NULL
             GROUP BY area ORDER BY 2 DESC LIMIT 10
         """),
-        {"aid": str(current.association_id), "df": date_from, "dt": date_to},
+        {"aid": str(current.association_id), "df": df, "dt": dt},
     )
     return {
         "period": {"from": date_from, "to": date_to},

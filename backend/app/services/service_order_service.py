@@ -47,6 +47,10 @@ class ServiceOrderService:
     ) -> ServiceOrder:
         number = await self._next_number(association_id)
 
+        now = datetime.utcnow()
+        resolved_at = now if status == ServiceOrderStatus.resolved else None
+        cancelled_at = now if status == ServiceOrderStatus.cancelled else None
+
         so = ServiceOrder(
             association_id=association_id,
             number=number,
@@ -54,6 +58,8 @@ class ServiceOrderService:
             description=description,
             priority=priority,
             status=status,
+            resolved_at=resolved_at,
+            cancelled_at=cancelled_at,
             area=area,
             unit=unit,
             block=block,
