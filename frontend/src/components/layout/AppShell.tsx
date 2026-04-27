@@ -1,6 +1,6 @@
 import { type ComponentType, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, FileText, LogOut, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
+import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, Download, FileText, LogOut, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
@@ -17,6 +17,7 @@ const MODULE_NAV: { module: string; item: NavItem }[] = [
   { module: 'residents',      item: { to: '/residents',      label: 'Moradores',  icon: Users } },
 ]
 
+const REPORTS_NAV    = { to: '/reports',    label: 'Relatórios', icon: Download }
 const ADMIN_NAV      = { to: '/admin',      label: 'Admin',  icon: ShieldCheck }
 const LOGS_NAV       = { to: '/logs',       label: 'Logs',   icon: RotateCcw }
 const SETTINGS_NAV   = { to: '/settings',   label: 'Config', icon: Settings }
@@ -65,6 +66,7 @@ export function AppShell() {
   for (const { module, item } of MODULE_NAV) {
     if (canView(module)) navItems.push(item)
   }
+  navItems.push(REPORTS_NAV)
   if (permissions?.settings?.can_view || isSuperAdmin) navItems.push(SETTINGS_NAV)
   if (isAdmin) { navItems.push(ADMIN_NAV); navItems.push(LOGS_NAV) }
   if (isSuperAdmin) navItems.push(SUPERADMIN_NAV)

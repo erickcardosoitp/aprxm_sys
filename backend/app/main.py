@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, cash_boxes, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, residents, senso, service_orders, superadmin, uploads, transfers
+from app.routers import admin, agent, auth, carriers, cash_boxes, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -321,6 +321,32 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_det_assoc ON delivery_exemption_tokens(association_id, token)"
         ))
 
+        # service_order_tasks: daily records / task board per OS
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS service_order_tasks (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                service_order_id UUID NOT NULL REFERENCES service_orders(id) ON DELETE CASCADE,
+                created_by UUID NOT NULL REFERENCES users(id),
+                assigned_to UUID REFERENCES users(id),
+                assigned_to_name VARCHAR(255),
+                title VARCHAR(255) NOT NULL,
+                notes TEXT,
+                priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+                status VARCHAR(30) NOT NULL DEFAULT 'open',
+                due_date DATE,
+                checklist JSONB NOT NULL DEFAULT '[]',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_so_tasks_so_id ON service_order_tasks(service_order_id)"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_so_tasks_assoc ON service_order_tasks(association_id)"
+        ))
+
         # role_permissions: per-association configurable module access
         await session.execute(text("""
             CREATE TABLE IF NOT EXISTS role_permissions (
@@ -378,6 +404,7 @@ app.include_router(geral.router, prefix=PREFIX)
 app.include_router(superadmin.router, prefix=PREFIX)
 app.include_router(uploads.router, prefix=PREFIX)
 app.include_router(transfers.router, prefix=PREFIX)
+app.include_router(reports.router, prefix=PREFIX)
 app.include_router(public.router, prefix=PREFIX)
 app.include_router(senso.router, prefix=PREFIX)
 app.include_router(agent.router, prefix=PREFIX)

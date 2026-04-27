@@ -33,6 +33,31 @@ interface SOComment {
   created_at: string; author_name: string
 }
 
+interface SOTask {
+  id: string
+  title: string
+  notes?: string
+  priority: ServiceOrderPriority
+  status: 'open' | 'pending' | 'waiting_third_party' | 'done'
+  due_date?: string
+  checklist: { text: string; done: boolean }[]
+  assigned_to_name?: string
+  created_by_name?: string
+  created_at: string
+}
+
+const TASK_STATUS_LABELS: Record<string, string> = {
+  open: 'Aberto', pending: 'Pendente',
+  waiting_third_party: 'Ag. Terceiros', done: 'Concluído',
+}
+
+const TASK_STATUS_COLORS: Record<string, string> = {
+  open: 'bg-blue-100 text-blue-700',
+  pending: 'bg-yellow-100 text-yellow-700',
+  waiting_third_party: 'bg-orange-100 text-orange-700',
+  done: 'bg-green-100 text-green-700',
+}
+
 interface ResidentResult {
   id: string; full_name: string; cpf?: string; phone_primary?: string; email?: string; address_cep?: string; unit?: string
 }
@@ -617,6 +642,377 @@ function StatusUpdateModal({ current, onConfirm, onClose }: StatusUpdateModalPro
   )
 }
 
+// ─── DailyRecordsTab ──────────────────────────────────────────────────────────
+
+function DailyRecordsTab({ soId, canWrite }: { soId: string; canWrite: boolean }) {
+  const [tasks, setTasks] = useState<SOTask[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  const [fTitle, setFTitle] = useState('')
+  const [fNotes, setFNotes] = useState('')
+  const [fPriority, setFPriority] = useState<ServiceOrderPriority>('medium')
+  const [fStatus, setFStatus] = useState('open')
+  const [fDueDate, setFDueDate] = useState('')
+  const [fChecklist, setFChecklist] = useState<{ text: string; done: boolean }[]>([])
+  const [fCheckInput, setFCheckInput] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = async () => {
+    try {
+      const res = await api.get<SOTask[]>(`/service-orders/${soId}/tasks`)
+      setTasks(res.data)
+    } catch { /* silent */ } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [soId])
+
+  const resetForm = () => {
+    setFTitle(''); setFNotes(''); setFPriority('medium'); setFStatus('open')
+    setFDueDate(''); setFChecklist([]); setFCheckInput(''); setShowForm(false); setEditingId(null)
+  }
+
+  const startEdit = (t: SOTask) => {
+    setFTitle(t.title); setFNotes(t.notes ?? ''); setFPriority(t.priority)
+    setFStatus(t.status); setFDueDate(t.due_date ?? ''); setFChecklist(t.checklist)
+    setEditingId(t.id); setShowForm(true); setExpandedId(null)
+  }
+
+  const handleSubmit = async () => {
+    if (!fTitle.trim()) { toast.error('Título obrigatório.'); return }
+    setSaving(true)
+    try {
+      const body = { title: fTitle.trim(), notes: fNotes || undefined, priority: fPriority,
+        status: fStatus, due_date: fDueDate || undefined, checklist: fChecklist }
+      if (editingId) {
+        await api.patch(`/service-orders/${soId}/tasks/${editingId}`, body)
+        toast.success('Registro atualizado.')
+      } else {
+        await api.post(`/service-orders/${soId}/tasks`, body)
+        toast.success('Registro criado.')
+      }
+      resetForm(); load()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
+    } finally { setSaving(false) }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Excluir este registro?')) return
+    try {
+      await api.delete(`/service-orders/${soId}/tasks/${id}`)
+      setTasks(prev => prev.filter(t => t.id !== id))
+    } catch { toast.error('Erro ao excluir.') }
+  }
+
+  const toggleChecklist = async (task: SOTask, idx: number) => {
+    const checklist = task.checklist.map((item, i) => i === idx ? { ...item, done: !item.done } : item)
+    try {
+      await api.patch(`/service-orders/${soId}/tasks/${task.id}`, { checklist })
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, checklist } : t))
+    } catch { toast.error('Erro ao atualizar checklist.') }
+  }
+
+  const addCheckItem = () => {
+    if (!fCheckInput.trim()) return
+    setFChecklist(prev => [...prev, { text: fCheckInput.trim(), done: false }])
+    setFCheckInput('')
+  }
+
+  const today = new Date().toISOString().split('T')[0]
+
+  const taskForm = (
+    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-3">
+      <p className="text-xs font-semibold text-blue-800">{editingId ? 'Editar Registro' : 'Novo Registro'}</p>
+      <input value={fTitle} onChange={e => setFTitle(e.target.value)} placeholder="Título do registro *"
+        className={inputCls} />
+      <textarea rows={2} value={fNotes} onChange={e => setFNotes(e.target.value)} placeholder="Notas / observações"
+        className={`${inputCls} resize-none`} />
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Prioridade</label>
+          <select value={fPriority} onChange={e => setFPriority(e.target.value as ServiceOrderPriority)} className={inputCls}>
+            {(['low','medium','high','critical'] as ServiceOrderPriority[]).map(p => (
+              <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Status</label>
+          <select value={fStatus} onChange={e => setFStatus(e.target.value)} className={inputCls}>
+            {Object.entries(TASK_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-600 mb-1">Data de entrega</label>
+        <input type="date" value={fDueDate} onChange={e => setFDueDate(e.target.value)} className={inputCls} />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-600 mb-1">Checklist</label>
+        <div className="flex gap-2 mb-2">
+          <input value={fCheckInput} onChange={e => setFCheckInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCheckItem())}
+            placeholder="Adicionar item…" className={inputCls} />
+          <button type="button" onClick={addCheckItem}
+            className="px-3 py-2 bg-[#26619c] text-white rounded-lg text-xs shrink-0">+</button>
+        </div>
+        {fChecklist.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {fChecklist.map((item, i) => (
+              <li key={i} className="flex items-center gap-2 text-sm bg-white rounded-lg px-3 py-1.5 border border-gray-200">
+                <span className="flex-1">{item.text}</span>
+                <button onClick={() => setFChecklist(prev => prev.filter((_, j) => j !== i))}
+                  className="text-gray-400 hover:text-red-500 text-xs">✕</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={resetForm} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+        <button onClick={handleSubmit} disabled={saving}
+          className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+          {saving ? 'Salvando…' : editingId ? 'Atualizar' : 'Criar'}
+        </button>
+      </div>
+    </div>
+  )
+
+  if (loading) return <p className="text-sm text-gray-400 text-center py-6">Carregando…</p>
+
+  return (
+    <div className="flex flex-col gap-3">
+      {canWrite && !showForm && (
+        <button onClick={() => setShowForm(true)}
+          className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-[#26619c]/30 rounded-xl text-[#26619c] text-sm font-medium hover:bg-blue-50 transition w-full justify-center">
+          + Novo Registro Diário
+        </button>
+      )}
+      {showForm && taskForm}
+      {tasks.length === 0 && !showForm && (
+        <p className="text-sm text-gray-400 text-center py-6">Nenhum registro ainda.</p>
+      )}
+      {tasks.map(task => {
+        const isExpanded = expandedId === task.id
+        const doneCount = task.checklist.filter(i => i.done).length
+        const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
+        return (
+          <div key={task.id} className={`rounded-xl border shadow-sm overflow-hidden ${task.status === 'done' ? 'border-gray-200 bg-gray-50 opacity-75' : 'border-gray-200 bg-white'}`}>
+            <div className="p-3 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : task.id)}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${TASK_STATUS_COLORS[task.status]}`}>
+                      {TASK_STATUS_LABELS[task.status]}
+                    </span>
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                      task.priority === 'critical' ? 'bg-red-100 text-red-700' :
+                      task.priority === 'high' ? 'bg-orange-100 text-orange-700' :
+                      task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
+                    }`}>{PRIORITY_LABELS[task.priority]}</span>
+                    {task.due_date && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                        {isOverdue ? '⚠ ' : ''}Entrega: {new Date(task.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-sm font-semibold text-gray-800 ${task.status === 'done' ? 'line-through text-gray-500' : ''}`}>{task.title}</p>
+                  {task.checklist.length > 0 && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex-1 bg-gray-200 rounded-full h-1.5 max-w-[80px]">
+                        <div className="bg-[#26619c] h-1.5 rounded-full" style={{ width: `${task.checklist.length ? (doneCount / task.checklist.length) * 100 : 0}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500">{doneCount}/{task.checklist.length}</span>
+                    </div>
+                  )}
+                  {task.assigned_to_name && (
+                    <p className="text-xs text-gray-400 mt-1">Responsável: {task.assigned_to_name}</p>
+                  )}
+                </div>
+                <span className="text-gray-300 text-xs mt-1">{isExpanded ? '▲' : '▼'}</span>
+              </div>
+            </div>
+            {isExpanded && (
+              <div className="border-t border-gray-100 p-3 flex flex-col gap-3">
+                {task.notes && <p className="text-sm text-gray-600 whitespace-pre-wrap">{task.notes}</p>}
+                {task.checklist.length > 0 && (
+                  <ul className="flex flex-col gap-1.5">
+                    {task.checklist.map((item, i) => (
+                      <li key={i} className="flex items-center gap-2 cursor-pointer" onClick={() => toggleChecklist(task, i)}>
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${item.done ? 'bg-[#26619c] border-[#26619c]' : 'border-gray-400'}`}>
+                          {item.done && <span className="text-white text-[10px]">✓</span>}
+                        </div>
+                        <span className={`text-sm ${item.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {canWrite && (
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => startEdit(task)}
+                      className="text-xs text-[#26619c] hover:underline flex items-center gap-0.5">
+                      ✏ Editar
+                    </button>
+                    <button onClick={() => handleDelete(task.id)}
+                      className="text-xs text-red-500 hover:underline flex items-center gap-0.5">
+                      🗑 Excluir
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── SOPrintModal ─────────────────────────────────────────────────────────────
+
+function SOPrintModal({ so, onClose }: { so: ServiceOrder; onClose: () => void }) {
+  const associationName = useAuthStore(s => s.associationName)
+  const fmt = (v?: string) => v ? new Date(v).toLocaleDateString('pt-BR') : '—'
+
+  const handleCopy = () => {
+    const lines = [
+      `ORDEM DE SERVIÇO Nº ${String(so.number).padStart(4, '0')}`,
+      associationName ? `Associação: ${associationName}` : '',
+      '',
+      `Título: ${so.title}`,
+      `Status: ${STATUS_LABELS[so.status]}`,
+      `Prioridade: ${PRIORITY_LABELS[so.priority]}`,
+      so.category_name ? `Categoria: ${so.category_name}` : '',
+      so.service_impacted ? `Serviço afetado: ${so.service_impacted}` : '',
+      so.org_responsible ? `Org. responsável: ${so.org_responsible}` : '',
+      '',
+      'SOLICITANTE',
+      so.requester_name ? `Nome: ${so.requester_name}` : '',
+      so.requester_phone ? `Telefone: ${so.requester_phone}` : '',
+      so.requester_email ? `E-mail: ${so.requester_email}` : '',
+      so.request_date ? `Data da solicitação: ${fmt(so.request_date)}` : '',
+      '',
+      'LOCALIZAÇÃO',
+      so.address_cep ? `CEP: ${so.address_cep}` : '',
+      so.reference_point ? `Ponto de referência: ${so.reference_point}` : '',
+      '',
+      'DESCRIÇÃO',
+      so.description,
+      '',
+      so.resolution_notes ? `RESOLUÇÃO: ${so.resolution_notes}` : '',
+      `Criado em: ${fmt(so.created_at)}`,
+    ].filter(Boolean).join('\n')
+    navigator.clipboard.writeText(lines).then(() => toast.success('Copiado!')).catch(() => toast.error('Erro ao copiar.'))
+  }
+
+  const PField = ({ label, value }: { label: string; value?: string }) =>
+    value ? <div className="mb-2"><span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">{label}</span><p className="text-sm text-gray-800">{value}</p></div> : null
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-white overflow-y-auto">
+      <div className="print:hidden sticky top-0 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between z-10">
+        <h3 className="font-bold text-gray-900 text-sm">OS #{String(so.number).padStart(4, '0')}</h3>
+        <div className="flex items-center gap-2">
+          <button onClick={handleCopy}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs hover:bg-gray-50">
+            📋 Copiar texto
+          </button>
+          <button onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-[#26619c] text-white rounded-lg text-xs font-medium hover:bg-[#1a4f87]">
+            🖨 Imprimir
+          </button>
+          <button onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 ml-2">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      <div id="os-print-overlay" className="max-w-2xl mx-auto px-8 py-8 print:py-0 print:px-0">
+        <div className="text-center mb-8 border-b-2 border-gray-800 pb-4">
+          {associationName && <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">{associationName}</p>}
+          <h1 className="text-2xl font-black text-gray-900 uppercase tracking-wide">Ordem de Serviço</h1>
+          <p className="text-4xl font-mono font-bold text-[#1a3f6f] mt-1">#{String(so.number).padStart(4, '0')}</p>
+        </div>
+
+        <div className="flex gap-3 mb-6 justify-center flex-wrap">
+          <span className={`px-4 py-1.5 rounded-full text-sm font-semibold ${STATUS_COLORS[so.status]}`}>
+            {STATUS_LABELS[so.status]}
+          </span>
+          <span className={`px-4 py-1.5 rounded-full text-sm font-semibold ${
+            so.priority === 'critical' ? 'bg-red-100 text-red-700' :
+            so.priority === 'high' ? 'bg-orange-100 text-orange-700' :
+            so.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
+          }`}>
+            {PRIORITY_LABELS[so.priority]}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-x-8 gap-y-1 mb-6">
+          <PField label="Categoria" value={so.category_name} />
+          <PField label="Serviço Afetado" value={so.service_impacted} />
+          <PField label="Org. Responsável" value={so.org_responsible} />
+          <PField label="Data de Abertura" value={fmt(so.request_date ?? so.created_at)} />
+        </div>
+
+        <div className="border-t border-gray-200 pt-4 mb-6">
+          <h2 className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-3">Solicitante</h2>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+            <PField label="Nome" value={so.requester_name} />
+            <PField label="Telefone" value={so.requester_phone} />
+            <PField label="E-mail" value={so.requester_email} />
+          </div>
+        </div>
+
+        <div className="border-t border-gray-200 pt-4 mb-6">
+          <h2 className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-3">Localização</h2>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+            <PField label="CEP" value={so.address_cep} />
+            <PField label="Ponto de Referência" value={so.reference_point} />
+          </div>
+        </div>
+
+        <div className="border-t border-gray-200 pt-4 mb-6">
+          <h2 className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-3">Descrição</h2>
+          <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{so.description}</p>
+        </div>
+
+        {so.impacted_residents && so.impacted_residents.length > 0 && (
+          <div className="border-t border-gray-200 pt-4 mb-6">
+            <h2 className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-3">Moradores Impactados</h2>
+            <ul className="flex flex-col gap-1">
+              {so.impacted_residents.map(r => (
+                <li key={r.id} className="text-sm text-gray-800">• {r.name}{r.unit ? ` — Ap. ${r.unit}` : ''}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {so.resolution_notes && (
+          <div className="border-t border-gray-200 pt-4 mb-6">
+            <h2 className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-3">Resolução</h2>
+            <p className="text-sm text-gray-800 whitespace-pre-wrap">{so.resolution_notes}</p>
+          </div>
+        )}
+
+        {so.cancellation_reason && (
+          <div className="border-t border-gray-200 pt-4 mb-6">
+            <h2 className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-3">Motivo do Cancelamento</h2>
+            <p className="text-sm text-gray-800">{so.cancellation_reason}</p>
+          </div>
+        )}
+
+        <div className="border-t-2 border-gray-300 pt-4 mt-8 text-center text-[10px] text-gray-400">
+          Gerado em {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Detail Panel ─────────────────────────────────────────────────────────────
 
 interface DetailPanelProps {
@@ -627,7 +1023,8 @@ interface DetailPanelProps {
 }
 
 function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'comments'>('details')
+  const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'tasks'>('details')
+  const [showPrint, setShowPrint] = useState(false)
   const [comments, setComments] = useState<SOComment[]>([])
   const [commentText, setCommentText] = useState('')
   const [loadingComments, setLoadingComments] = useState(false)
@@ -741,7 +1138,13 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
               {STATUS_LABELS[d.status]}
             </span>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 shrink-0 ml-3"><X className="w-5 h-5" /></button>
+          <div className="flex items-center shrink-0 ml-3">
+            <button onClick={() => setShowPrint(true)} title="Visualizar OS"
+              className="text-gray-400 hover:text-[#26619c] mr-1">
+              <FileText className="w-4 h-4" />
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          </div>
         </div>
         <div className="px-5 pt-3 pb-1 shrink-0">
           <h2 className="font-bold text-gray-900 text-base leading-tight">{d.title}</h2>
@@ -757,9 +1160,15 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
           </button>
           <button
             onClick={() => setActiveTab('comments')}
-            className={`py-2.5 text-sm font-medium border-b-2 flex items-center gap-1.5 transition ${activeTab === 'comments' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent'}`}
+            className={`py-2.5 text-sm font-medium border-b-2 flex items-center gap-1.5 transition mr-4 ${activeTab === 'comments' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent'}`}
           >
             <MessageSquare className="w-3.5 h-3.5" /> Comentários
+          </button>
+          <button
+            onClick={() => setActiveTab('tasks')}
+            className={`py-2.5 text-sm font-medium border-b-2 flex items-center gap-1.5 transition ${activeTab === 'tasks' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent'}`}
+          >
+            📋 Registros
           </button>
         </div>
 
@@ -1053,6 +1462,10 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
               </div>
             </div>
           )}
+
+          {activeTab === 'tasks' && (
+            <DailyRecordsTab soId={so.id} canWrite={canWrite} />
+          )}
         </div>
       </div>
 
@@ -1063,6 +1476,7 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
           onClose={() => setShowStatusModal(false)}
         />
       )}
+      {showPrint && <SOPrintModal so={detail} onClose={() => setShowPrint(false)} />}
     </div>
   )
 }

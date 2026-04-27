@@ -11,6 +11,7 @@ import AdminPage from './pages/admin/AdminPage'
 import SettingsPage from './pages/settings/SettingsPage'
 import FinanceiroPage from './pages/financeiro/FinanceiroPage'
 import GeralPage from './pages/geral/GeralPage'
+import ReportsPage from './pages/reports/ReportsPage'
 import SuperAdminPage from './pages/superadmin/SuperAdminPage'
 import LogsPage from './pages/logs/LogsPage'
 import { useAuthStore } from './store/authStore'
@@ -84,6 +85,7 @@ export default function App() {
           <Route path="admin"          element={<RequireAdmin><AdminPage /></RequireAdmin>} />
           <Route path="settings"       element={<RequireModule module="settings"><SettingsPage /></RequireModule>} />
           <Route path="financeiro"     element={<RequireModule module="settings"><FinanceiroPage /></RequireModule>} />
+          <Route path="reports"        element={<ReportsPage />} />
           <Route path="geral"          element={<RequireAggregator><GeralPage /></RequireAggregator>} />
           <Route path="superadmin"     element={<RequireSuperAdmin><SuperAdminPage /></RequireSuperAdmin>} />
           <Route path="logs"           element={<RequireAdmin><LogsPage /></RequireAdmin>} />

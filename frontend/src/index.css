@@ -34,3 +34,17 @@
     }
   }
 }
+
+@media print {
+  /* Hide everything except the print overlay */
+  body > * { visibility: hidden !important; }
+  #os-print-overlay, #os-print-overlay * { visibility: visible !important; }
+  #os-print-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    background: white !important;
+    z-index: 9999 !important;
+    padding: 12mm 14mm !important;
+    overflow: visible !important;
+  }
+}

@@ -292,6 +292,119 @@ async def generate_pdf(
     )
 
 
+# ── Registros Diários (Tasks) ─────────────────────────────────────────────────
+
+class CreateTaskRequest(BaseModel):
+    title: str
+    notes: str | None = None
+    priority: str = 'medium'
+    status: str = 'open'
+    due_date: str | None = None
+    checklist: list[dict] = []
+    assigned_to: UUID | None = None
+    assigned_to_name: str | None = None
+
+
+class UpdateTaskRequest(BaseModel):
+    title: str | None = None
+    notes: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    due_date: str | None = None
+    checklist: list[dict] | None = None
+    assigned_to: UUID | None = None
+    assigned_to_name: str | None = None
+
+
+@router.get("/{so_id}/tasks", summary="Listar Registros Diários da OS")
+async def list_tasks(
+    so_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    result = await session.execute(text("""
+        SELECT t.id, t.title, t.notes, t.priority, t.status, t.due_date,
+               t.checklist, t.assigned_to, t.assigned_to_name,
+               t.created_at, u.full_name AS created_by_name, t.updated_at
+        FROM service_order_tasks t
+        JOIN users u ON u.id = t.created_by
+        WHERE t.service_order_id = :so_id AND t.association_id = :aid
+        ORDER BY t.due_date ASC NULLS LAST, t.created_at ASC
+    """), {"so_id": str(so_id), "aid": str(current.association_id)})
+    return [{
+        "id": str(r[0]), "title": r[1], "notes": r[2], "priority": r[3],
+        "status": r[4], "due_date": str(r[5]) if r[5] else None,
+        "checklist": r[6] or [], "assigned_to": str(r[7]) if r[7] else None,
+        "assigned_to_name": r[8], "created_at": str(r[9]),
+        "created_by_name": r[10], "updated_at": str(r[11]),
+    } for r in result.fetchall()]
+
+
+@router.post("/{so_id}/tasks", summary="Criar Registro Diário")
+async def create_task(
+    so_id: UUID,
+    body: CreateTaskRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    import json as _json
+    result = await session.execute(text("""
+        INSERT INTO service_order_tasks
+          (association_id, service_order_id, created_by, assigned_to, assigned_to_name,
+           title, notes, priority, status, due_date, checklist)
+        VALUES (:aid, :so_id, :uid, :at, :atn, :title, :notes, :priority, :status, :due, CAST(:checklist AS jsonb))
+        RETURNING id, created_at
+    """), {
+        "aid": str(current.association_id), "so_id": str(so_id), "uid": str(current.user_id),
+        "at": str(body.assigned_to) if body.assigned_to else None,
+        "atn": body.assigned_to_name, "title": body.title, "notes": body.notes,
+        "priority": body.priority, "status": body.status, "due": body.due_date,
+        "checklist": _json.dumps(body.checklist),
+    })
+    row = result.fetchone()
+    await session.commit()
+    return {"id": str(row[0]), "created_at": str(row[1])}
+
+
+@router.patch("/{so_id}/tasks/{task_id}", summary="Atualizar Registro Diário")
+async def update_task(
+    so_id: UUID,
+    task_id: UUID,
+    body: UpdateTaskRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    import json as _json
+    sets, params = [], {"task_id": str(task_id), "so_id": str(so_id), "aid": str(current.association_id)}
+    if body.title is not None: sets.append("title = :title"); params["title"] = body.title
+    if body.notes is not None: sets.append("notes = :notes"); params["notes"] = body.notes
+    if body.priority is not None: sets.append("priority = :priority"); params["priority"] = body.priority
+    if body.status is not None: sets.append("status = :status"); params["status"] = body.status
+    if body.due_date is not None: sets.append("due_date = :due"); params["due"] = body.due_date
+    if body.checklist is not None: sets.append("checklist = CAST(:checklist AS jsonb)"); params["checklist"] = _json.dumps(body.checklist)
+    if body.assigned_to_name is not None: sets.append("assigned_to_name = :atn"); params["atn"] = body.assigned_to_name
+    if body.assigned_to is not None: sets.append("assigned_to = :at"); params["at"] = str(body.assigned_to)
+    if not sets: return {"ok": True}
+    sets.append("updated_at = NOW()")
+    await session.execute(text(f"UPDATE service_order_tasks SET {', '.join(sets)} WHERE id = :task_id AND service_order_id = :so_id AND association_id = :aid"), params)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.delete("/{so_id}/tasks/{task_id}", summary="Excluir Registro Diário")
+async def delete_task(
+    so_id: UUID,
+    task_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await session.execute(text(
+        "DELETE FROM service_order_tasks WHERE id = :task_id AND service_order_id = :so_id AND association_id = :aid"
+    ), {"task_id": str(task_id), "so_id": str(so_id), "aid": str(current.association_id)})
+    await session.commit()
+    return {"ok": True}
+
+
 @router.get("", summary="Listar Ordens de Serviço")
 async def list_sos(
     status: ServiceOrderStatus | None = None,
