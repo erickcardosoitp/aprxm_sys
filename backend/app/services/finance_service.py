@@ -573,6 +573,7 @@ class FinanceService:
         if not row:
             raise UnprocessableError("Configurações da associação não encontradas. Configure no módulo Admin.")
         logo_url, sig_url, president_name, community_name, proof_stock, assoc_address, assoc_cep = row
+        print(f"[proof] aid={association_id} logo={bool(logo_url)} sig={bool(sig_url)} stock={proof_stock}", flush=True)
 
         if not logo_url:
             raise UnprocessableError("Logo da associação não cadastrado. Configure no módulo Admin.")
