@@ -37,6 +37,10 @@ interface ResidentResult {
   id: string; full_name: string; cpf?: string; phone_primary?: string; email?: string; address_cep?: string; unit?: string
 }
 
+interface UserResult {
+  id: string; full_name: string; role?: string
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<ServiceOrderStatus, string> = {
@@ -150,10 +154,33 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
   const [referencePoint, setReferencePoint] = useState('')
   const [description, setDescription] = useState('')
 
+  const [assignedToId, setAssignedToId] = useState<string | null>(null)
   const [assignedToName, setAssignedToName] = useState('')
+  const [assignedQuery, setAssignedQuery] = useState('')
+  const [assignedResults, setAssignedResults] = useState<UserResult[]>([])
   const [energiaData, setEnergiaData] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [allUsers, setAllUsers] = useState<UserResult[]>([])
+  useEffect(() => {
+    api.get('/admin/users').then(r => setAllUsers(r.data)).catch(() => {})
+  }, [])
+
+  const searchAssigned = (q: string) => {
+    setAssignedQuery(q)
+    if (!q) { setAssignedToId(null); setAssignedToName(''); setAssignedResults([]); return }
+    if (q.length < 2) { setAssignedResults([]); return }
+    const ql = q.toLowerCase()
+    setAssignedResults(allUsers.filter(u => u.full_name.toLowerCase().includes(ql)).slice(0, 5))
+  }
+
+  const pickAssigned = (u: UserResult) => {
+    setAssignedToId(u.id)
+    setAssignedToName(u.full_name)
+    setAssignedQuery(u.full_name)
+    setAssignedResults([])
+  }
 
   // Moradores impactados
   const [impactedResidents, setImpactedResidents] = useState<{id: string; name: string; unit?: string}[]>([])
@@ -228,6 +255,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
         requester_phone: requesterPhone || undefined,
         requester_email: requesterEmail || undefined,
         request_date: requestDate || undefined,
+        assigned_to: assignedToId || undefined,
         assigned_to_name: assignedToName || undefined,
         energia_eletrica_data: isEnergiaEletrica && Object.keys(energiaData).length ? energiaData : undefined,
         impacted_residents: impactedResidents,
@@ -411,8 +439,31 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Atribuído a (nome)</label>
-                <input value={assignedToName} onChange={e => setAssignedToName(e.target.value)} className={inputCls} placeholder="Nome do responsável pela OS" />
+                <label className="block text-xs text-gray-600 mb-1">Atribuído a</label>
+                <div className="relative">
+                  <input
+                    value={assignedQuery}
+                    onChange={e => searchAssigned(e.target.value)}
+                    className={inputCls}
+                    placeholder="Buscar usuário por nome…"
+                  />
+                  {assignedResults.length > 0 && (
+                    <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-40 overflow-y-auto">
+                      {assignedResults.map(u => (
+                        <li key={u.id} onMouseDown={() => pickAssigned(u)}
+                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm">
+                          <span className="font-medium">{u.full_name}</span>
+                          {u.role && <span className="ml-2 text-xs text-gray-400">{u.role}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                {assignedToId && (
+                  <p className="text-xs text-green-700 mt-1 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" /> {assignedToName}
+                  </p>
+                )}
               </div>
 
               {isEnergiaEletrica && (
@@ -1274,9 +1325,9 @@ export default function ServiceOrdersPage() {
                       </ul>
                     </div>
                   )}
-                  {reportData.by_day?.length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-gray-600 mb-2">Atividade Diária</p>
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 mb-2">Atividade Diária</p>
+                    {reportData.by_day?.length > 0 ? (
                       <div className="overflow-x-auto rounded-lg border border-gray-100">
                         <table className="w-full text-xs">
                           <thead>
@@ -1299,8 +1350,10 @@ export default function ServiceOrdersPage() {
                           </tbody>
                         </table>
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <p className="text-xs text-gray-400">Nenhuma OS registrada no período.</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
