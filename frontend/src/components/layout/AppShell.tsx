@@ -57,10 +57,10 @@ export function AppShell() {
   const [switching, setSwitching] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const isAdmin      = role === 'admin' || role === 'superadmin'
+  const isAdmin      = role === 'admin' || role === 'superadmin' || role === 'diretoria'
   const isSuperAdmin = role === 'superadmin'
   const isConferente = role === 'conferente'
-  const isDiretoria  = role === 'diretoria_adjunta'
+  const isDiretoria  = role === 'diretoria_adjunta' || role === 'diretoria'
   const isOperator   = role === 'operator'
   const isViewer     = role === 'viewer'
 

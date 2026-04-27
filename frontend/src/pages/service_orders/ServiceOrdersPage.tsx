@@ -115,7 +115,7 @@ const ALL_STATUSES: ServiceOrderStatus[] = [
   'pending', 'open', 'in_progress', 'waiting_third_party', 'resolved', 'archived', 'cancelled',
 ]
 
-const CAN_WRITE_ROLES = ['admin', 'conferente', 'diretoria_adjunta', 'superadmin']
+const CAN_WRITE_ROLES = ['admin', 'conferente', 'diretoria_adjunta', 'diretoria', 'superadmin']
 
 // ─── Input helper ─────────────────────────────────────────────────────────────
 

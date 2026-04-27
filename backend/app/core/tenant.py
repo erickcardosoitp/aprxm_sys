@@ -37,15 +37,15 @@ class CurrentUser:
 
     @property
     def is_admin(self) -> bool:
-        return self.role in ("admin", "admin_master", "superadmin")
+        return self.role in ("admin", "admin_master", "superadmin", "diretoria")
 
     @property
     def is_conferente(self) -> bool:
-        return self.role in ("conferente", "admin", "superadmin")
+        return self.role in ("conferente", "admin", "superadmin", "diretoria")
 
     @property
     def is_diretoria(self) -> bool:
-        return self.role in ("diretoria_adjunta", "admin", "superadmin")
+        return self.role in ("diretoria_adjunta", "diretoria", "admin", "superadmin")
 
     @property
     def is_superadmin(self) -> bool:

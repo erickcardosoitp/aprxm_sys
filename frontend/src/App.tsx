@@ -25,7 +25,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const role = useAuthStore((s) => s.role)
-  if (role !== 'admin' && role !== 'superadmin') return <Navigate to="/overview" replace />
+  if (role !== 'admin' && role !== 'superadmin' && role !== 'diretoria') return <Navigate to="/overview" replace />
   return <>{children}</>
 }
 
@@ -51,7 +51,7 @@ function RequireAggregator({ children }: { children: React.ReactNode }) {
 
 function RequireConferente({ children }: { children: React.ReactNode }) {
   const role = useAuthStore((s) => s.role)
-  if (role !== 'admin' && role !== 'superadmin' && role !== 'conferente' && role !== 'diretoria_adjunta')
+  if (role !== 'admin' && role !== 'superadmin' && role !== 'conferente' && role !== 'diretoria_adjunta' && role !== 'diretoria')
     return <Navigate to="/overview" replace />
   return <>{children}</>
 }
