@@ -217,7 +217,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
     const count = defaultAmt > 0 && amount ? Math.max(1, Math.round(parseFloat(amount) / defaultAmt)) : 1
     const now = new Date()
     setMensalidadeMonths(Array.from({ length: count }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     }))
   }, [amount, incomeSubtype, txType, settings?.default_mensalidade_amount])
@@ -1019,8 +1019,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                           Meses referentes <span className="text-[#26619c] font-normal">({mensalidadeMonths.length}x)</span>
                         </label>
                         <div className="flex flex-wrap gap-2">
-                          {Array.from({ length: 12 }, (_, i) => {
-                            const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+                          {Array.from({ length: 14 }, (_, i) => {
+                            const d = new Date(now.getFullYear(), now.getMonth() - 2 + i, 1)
                             const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
                             const selected = mensalidadeMonths.includes(ym)
                             return (
