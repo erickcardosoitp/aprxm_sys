@@ -34,7 +34,7 @@ interface SOComment {
 }
 
 interface ResidentResult {
-  id: string; full_name: string; cpf?: string; phone_primary?: string; email?: string; address_cep?: string
+  id: string; full_name: string; cpf?: string; phone_primary?: string; email?: string; address_cep?: string; unit?: string
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
