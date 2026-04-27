@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ShieldCheck, Plus, X, Pencil, UserX, UserCheck, Upload, FileText, Package } from 'lucide-react'
+import { ShieldCheck, Plus, X, Pencil, UserX, UserCheck, Upload, FileText, Package, Eye, EyeOff, Lock, Unlock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { uploadService } from '../../services/upload'
@@ -146,7 +146,7 @@ interface AuditEntry {
   id: string; acao: string; entidade: string; entidade_id: string; detalhe: string; data: string; autor: string
 }
 
-type AdminTab = 'usuarios' | 'comprovante' | 'tarefas' | 'moradores' | 'isencao'
+type AdminTab = 'usuarios' | 'comprovante' | 'tarefas' | 'moradores' | 'isencao' | 'permissoes'
 
 interface AssocConfig {
   assoc_logo_url?: string
@@ -744,6 +744,116 @@ function ExemptionTokenTab() {
   )
 }
 
+const MODULES_LABELS: Record<string, string> = {
+  finance: 'Caixa / Financeiro',
+  service_orders: 'Ordens de Serviço',
+  residents: 'Moradores',
+  packages: 'Encomendas',
+  settings: 'Configurações',
+}
+
+const ROLE_COLS: { role: string; label: string }[] = [
+  { role: 'admin', label: 'Admin' },
+  { role: 'conferente', label: 'Conferente' },
+  { role: 'diretoria', label: 'Diretoria' },
+  { role: 'diretoria_adjunta', label: 'Dir. Adjunta' },
+  { role: 'operator', label: 'Operador' },
+  { role: 'viewer', label: 'Visualizador' },
+]
+
+type PermMatrix = Record<string, Record<string, { can_view: boolean; can_write: boolean }>>
+
+function PermissoesTab() {
+  const [matrix, setMatrix] = useState<PermMatrix | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.get<PermMatrix>('/admin/role-permissions')
+      .then(r => setMatrix(r.data))
+      .catch(() => toast.error('Erro ao carregar permissões.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const toggle = async (role: string, module: string, field: 'can_view' | 'can_write') => {
+    if (!matrix) return
+    const current = matrix[role][module]
+    const next = { ...current, [field]: !current[field] }
+    if (field === 'can_view' && !next.can_view) next.can_write = false
+    if (field === 'can_write' && next.can_write) next.can_view = true
+
+    const key = `${role}.${module}.${field}`
+    setSaving(key)
+    try {
+      await api.put(`/admin/role-permissions/${role}/${module}`, next)
+      setMatrix(m => m ? { ...m, [role]: { ...m[role], [module]: next } } : m)
+    } catch { toast.error('Erro ao salvar permissão.') }
+    finally { setSaving(null) }
+  }
+
+  if (loading) return <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+  if (!matrix) return null
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-800">
+        Controla quais módulos cada perfil pode <strong>ver</strong> (👁) e <strong>editar</strong> (✏) na interface.
+        Superadmin sempre tem acesso total. Alterações aplicam-se imediatamente no próximo login.
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+        <table className="w-full text-xs min-w-[600px]">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="text-left px-4 py-3 text-gray-500 font-semibold uppercase tracking-wide w-44">Módulo</th>
+              {ROLE_COLS.map(({ role, label }) => (
+                <th key={role} className="text-center px-3 py-3 text-gray-500 font-semibold uppercase tracking-wide">{label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {Object.entries(MODULES_LABELS).map(([module, label]) => (
+              <tr key={module} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-800">{label}</td>
+                {ROLE_COLS.map(({ role }) => {
+                  const perm = matrix[role]?.[module]
+                  if (!perm) return <td key={role} />
+                  const vKey = `${role}.${module}.can_view`
+                  const wKey = `${role}.${module}.can_write`
+                  return (
+                    <td key={role} className="px-3 py-3">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => toggle(role, module, 'can_view')}
+                          disabled={saving === vKey}
+                          title={perm.can_view ? 'Ver: ativo' : 'Ver: bloqueado'}
+                          className={`p-1.5 rounded-lg border transition ${perm.can_view ? 'bg-blue-50 border-blue-300 text-blue-600' : 'bg-gray-50 border-gray-200 text-gray-300'} disabled:opacity-40`}
+                        >
+                          {perm.can_view ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          onClick={() => toggle(role, module, 'can_write')}
+                          disabled={saving === wKey}
+                          title={perm.can_write ? 'Editar: ativo' : 'Editar: bloqueado'}
+                          className={`p-1.5 rounded-lg border transition ${perm.can_write ? 'bg-green-50 border-green-300 text-green-600' : 'bg-gray-50 border-gray-200 text-gray-300'} disabled:opacity-40`}
+                        >
+                          {perm.can_write ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-gray-400 text-center">
+        👁 Ver módulo &nbsp;·&nbsp; ✏ Criar/editar dentro do módulo
+      </p>
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const currentUserId = useAuthStore((s) => s.userId)
   const [tab, setTab] = useState<AdminTab>('usuarios')
@@ -823,11 +933,12 @@ export default function AdminPage() {
         )}
       </div>
 
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl overflow-x-auto">
         {([
           ['usuarios', 'Usuários'],
+          ['permissoes', 'Permissões'],
           ['comprovante', 'Comprovante'],
-          ['tarefas', 'Tarefas Agendadas'],
+          ['tarefas', 'Tarefas'],
           ['moradores', 'Moradores'],
           ['isencao', 'Isenção Taxa'],
         ] as [AdminTab, string][]).map(([t, label]) => (
@@ -889,6 +1000,7 @@ export default function AdminPage() {
         </div>
       )}
 
+      {tab === 'permissoes' && <PermissoesTab />}
       {tab === 'comprovante' && <ComprovanteTab />}
       {tab === 'tarefas' && <TarefasAgendadasTab />}
       {tab === 'moradores' && <MoradoresTab />}

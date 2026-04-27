@@ -321,6 +321,23 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_det_assoc ON delivery_exemption_tokens(association_id, token)"
         ))
 
+        # role_permissions: per-association configurable module access
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS role_permissions (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                role VARCHAR(30) NOT NULL,
+                module VARCHAR(50) NOT NULL,
+                can_view BOOLEAN NOT NULL DEFAULT true,
+                can_write BOOLEAN NOT NULL DEFAULT false,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(association_id, role, module)
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_role_permissions_assoc ON role_permissions(association_id, role)"
+        ))
+
         await session.commit()
 
 

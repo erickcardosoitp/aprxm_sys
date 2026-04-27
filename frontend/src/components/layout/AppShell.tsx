@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { type ComponentType, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, FileText, LogOut, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -7,26 +7,14 @@ import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import type { UserRole } from '../../types'
 
-const FULL_NAV = [
-  { to: '/overview',       label: 'Visão',       icon: BarChart2 },
-  { to: '/finance',        label: 'Caixa',       icon: DollarSign },
-  { to: '/financeiro',     label: 'Financeiro',  icon: TrendingUp },
-  { to: '/packages',       label: 'Encomendas',  icon: Package },
-  { to: '/service-orders', label: 'Ordens',      icon: FileText },
-  { to: '/residents',      label: 'Moradores',   icon: Users },
-]
+type NavItem = { to: string; label: string; icon: ComponentType<{ className?: string }> }
 
-const OPERATOR_NAV = [
-  { to: '/finance',        label: 'Caixa',      icon: DollarSign },
-  { to: '/packages',       label: 'Encomendas', icon: Package },
-  { to: '/service-orders', label: 'Ordens',     icon: FileText },
-  { to: '/residents',      label: 'Moradores',  icon: Users },
-]
-
-const VIEWER_NAV = [
-  { to: '/packages',       label: 'Encomendas', icon: Package },
-  { to: '/service-orders', label: 'Ordens',     icon: FileText },
-  { to: '/residents',      label: 'Moradores',  icon: Users },
+const MODULE_NAV: { module: string; item: NavItem }[] = [
+  { module: 'finance',        item: { to: '/finance',        label: 'Caixa',      icon: DollarSign } },
+  { module: 'finance',        item: { to: '/financeiro',     label: 'Financeiro', icon: TrendingUp } },
+  { module: 'packages',       item: { to: '/packages',       label: 'Encomendas', icon: Package } },
+  { module: 'service_orders', item: { to: '/service-orders', label: 'Ordens',     icon: FileText } },
+  { module: 'residents',      item: { to: '/residents',      label: 'Moradores',  icon: Users } },
 ]
 
 const ADMIN_NAV      = { to: '/admin',      label: 'Admin',  icon: ShieldCheck }
@@ -45,7 +33,9 @@ interface AssocOption {
 export function AppShell() {
   const clearAuth         = useAuthStore((s) => s.clearAuth)
   const setAuth           = useAuthStore((s) => s.setAuth)
+  const setPermissions    = useAuthStore((s) => s.setPermissions)
   const role              = useAuthStore((s) => s.role)
+  const permissions       = useAuthStore((s) => s.permissions)
   const fullName          = useAuthStore((s) => s.fullName)
   const associationName   = useAuthStore((s) => s.associationName)
   const navigate          = useNavigate()
@@ -57,20 +47,27 @@ export function AppShell() {
   const [switching, setSwitching] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const isAdmin      = role === 'admin' || role === 'superadmin' || role === 'diretoria'
-  const isSuperAdmin = role === 'superadmin'
-  const isConferente = role === 'conferente'
-  const isDiretoria  = role === 'diretoria_adjunta' || role === 'diretoria'
-  const isOperator   = role === 'operator'
-  const isViewer     = role === 'viewer'
+  const isSuperAdmin = role === 'superadmin' || role === 'admin_master'
+  const isAdmin      = role === 'admin' || role === 'diretoria' || isSuperAdmin
 
-  let navItems = [...FULL_NAV]
-  if (isSuperAdmin) navItems = [...FULL_NAV, ADMIN_NAV, LOGS_NAV, SETTINGS_NAV, SUPERADMIN_NAV]
-  else if (isAdmin) navItems = [...FULL_NAV, ADMIN_NAV, LOGS_NAV, SETTINGS_NAV]
-  else if (isConferente) navItems = [...FULL_NAV, SETTINGS_NAV]
-  else if (isDiretoria) navItems = [...FULL_NAV, SETTINGS_NAV]
-  else if (isOperator) navItems = [...OPERATOR_NAV]
-  else if (isViewer) navItems = [...VIEWER_NAV]
+  useEffect(() => {
+    if (!role || isSuperAdmin) return
+    api.get('/admin/my-permissions').then(r => setPermissions(r.data)).catch(() => {})
+  }, [role])
+
+  const canView = (module: string) => {
+    if (isSuperAdmin) return true
+    if (!permissions) return true  // loading — show all until resolved
+    return permissions[module]?.can_view ?? false
+  }
+
+  const navItems: NavItem[] = [{ to: '/overview', label: 'Visão', icon: BarChart2 }]
+  for (const { module, item } of MODULE_NAV) {
+    if (canView(module)) navItems.push(item)
+  }
+  if (permissions?.settings?.can_view || isSuperAdmin) navItems.push(SETTINGS_NAV)
+  if (isAdmin) { navItems.push(ADMIN_NAV); navItems.push(LOGS_NAV) }
+  if (isSuperAdmin) navItems.push(SUPERADMIN_NAV)
 
   const handleLogout = () => { clearAuth(); navigate('/login') }
 

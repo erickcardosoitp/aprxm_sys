@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.security import hash_password
-from app.core.tenant import CurrentUser, require_admin, require_diretoria
+from app.core.tenant import CurrentUser, get_current_user, require_admin, require_diretoria
 from app.database import get_session
 from app.models.user import User, UserRole
 
@@ -422,6 +422,101 @@ async def run_task_now(
     """), {"aid": aid, "status": status, "result": result_msg, "key": task_key})
     await session.commit()
     return {"status": status, "result": result_msg}
+
+
+# ── Role Permissions ─────────────────────────────────────────────────────────
+
+MODULES = ['finance', 'service_orders', 'residents', 'packages', 'settings']
+CONFIGURABLE_ROLES = ['admin', 'conferente', 'diretoria', 'diretoria_adjunta', 'operator', 'viewer']
+
+_T, _F = True, False
+DEFAULT_PERMISSIONS: dict[str, dict[str, tuple[bool, bool]]] = {
+    'admin':            {'finance': (_T,_T), 'service_orders': (_T,_T), 'residents': (_T,_T), 'packages': (_T,_T), 'settings': (_T,_T)},
+    'conferente':       {'finance': (_T,_T), 'service_orders': (_T,_T), 'residents': (_T,_T), 'packages': (_T,_T), 'settings': (_T,_T)},
+    'diretoria':        {'finance': (_T,_T), 'service_orders': (_T,_T), 'residents': (_T,_T), 'packages': (_T,_T), 'settings': (_T,_F)},
+    'diretoria_adjunta':{'finance': (_T,_F), 'service_orders': (_T,_T), 'residents': (_T,_F), 'packages': (_T,_F), 'settings': (_F,_F)},
+    'operator':         {'finance': (_T,_F), 'service_orders': (_T,_F), 'residents': (_T,_F), 'packages': (_T,_T), 'settings': (_F,_F)},
+    'viewer':           {'finance': (_T,_F), 'service_orders': (_T,_F), 'residents': (_T,_F), 'packages': (_T,_F), 'settings': (_F,_F)},
+}
+
+
+def _resolve_permissions(role: str, db_rows: dict) -> dict:
+    role_defaults = DEFAULT_PERMISSIONS.get(role, {})
+    result = {}
+    for module in MODULES:
+        key = (role, module)
+        if key in db_rows:
+            result[module] = {'can_view': db_rows[key][0], 'can_write': db_rows[key][1]}
+        else:
+            cv, cw = role_defaults.get(module, (False, False))
+            result[module] = {'can_view': cv, 'can_write': cw}
+    return result
+
+
+@router.get("/role-permissions", summary="Matriz de permissões por role")
+async def get_role_permissions(
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    result = await session.execute(
+        text("SELECT role, module, can_view, can_write FROM role_permissions WHERE association_id = :aid"),
+        {"aid": str(current.association_id)},
+    )
+    db_rows = {(r[0], r[1]): (r[2], r[3]) for r in result.fetchall()}
+    return {role: _resolve_permissions(role, db_rows) for role in CONFIGURABLE_ROLES}
+
+
+class UpdatePermissionRequest(BaseModel):
+    can_view: bool
+    can_write: bool
+
+
+@router.put("/role-permissions/{role}/{module}", summary="Atualizar permissão de role/módulo")
+async def update_role_permission(
+    role: str,
+    module: str,
+    body: UpdatePermissionRequest,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if role not in CONFIGURABLE_ROLES:
+        raise HTTPException(400, "Role inválida.")
+    if module not in MODULES:
+        raise HTTPException(400, "Módulo inválido.")
+    await session.execute(
+        text("""
+            INSERT INTO role_permissions (association_id, role, module, can_view, can_write)
+            VALUES (:aid, :role, :module, :cv, :cw)
+            ON CONFLICT (association_id, role, module)
+            DO UPDATE SET can_view = :cv, can_write = :cw, updated_at = NOW()
+        """),
+        {"aid": str(current.association_id), "role": role, "module": module, "cv": body.can_view, "cw": body.can_write},
+    )
+    await session.commit()
+    return {"role": role, "module": module, "can_view": body.can_view, "can_write": body.can_write}
+
+
+@router.get("/my-permissions", summary="Permissões do usuário logado")
+async def get_my_permissions(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if current.role in ('superadmin', 'admin_master'):
+        return {m: {'can_view': True, 'can_write': True} for m in MODULES}
+    result = await session.execute(
+        text("SELECT module, can_view, can_write FROM role_permissions WHERE association_id = :aid AND role = :role"),
+        {"aid": str(current.association_id), "role": current.role},
+    )
+    db_rows: dict[str, tuple[bool, bool]] = {r[0]: (r[1], r[2]) for r in result.fetchall()}
+    role_defaults = DEFAULT_PERMISSIONS.get(current.role, {})
+    perms = {}
+    for module in MODULES:
+        if module in db_rows:
+            perms[module] = {'can_view': db_rows[module][0], 'can_write': db_rows[module][1]}
+        else:
+            cv, cw = role_defaults.get(module, (False, False))
+            perms[module] = {'can_view': cv, 'can_write': cw}
+    return perms
 
 
 @router.post("/delivery-exemption-token", summary="Gerar token de isenção de taxa de entrega (30 min, uso único)")

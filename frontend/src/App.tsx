@@ -49,10 +49,12 @@ function RequireAggregator({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function RequireConferente({ children }: { children: React.ReactNode }) {
+function RequireModule({ module, children }: { module: string; children: React.ReactNode }) {
   const role = useAuthStore((s) => s.role)
-  if (role !== 'admin' && role !== 'superadmin' && role !== 'conferente' && role !== 'diretoria_adjunta' && role !== 'diretoria')
-    return <Navigate to="/overview" replace />
+  const permissions = useAuthStore((s) => s.permissions)
+  if (role === 'superadmin' || role === 'admin_master') return <>{children}</>
+  if (!permissions) return <>{children}</>  // loading
+  if (!permissions[module]?.can_view) return <Navigate to="/overview" replace />
   return <>{children}</>
 }
 
@@ -75,13 +77,13 @@ export default function App() {
         >
           <Route index element={<RedirectByRole />} />
           <Route path="overview"       element={<OverviewPage />} />
-          <Route path="finance"        element={<FinancePage />} />
-          <Route path="packages"       element={<PackagesPage />} />
-          <Route path="service-orders" element={<ServiceOrdersPage />} />
-          <Route path="residents"      element={<ResidentsPage />} />
+          <Route path="finance"        element={<RequireModule module="finance"><FinancePage /></RequireModule>} />
+          <Route path="packages"       element={<RequireModule module="packages"><PackagesPage /></RequireModule>} />
+          <Route path="service-orders" element={<RequireModule module="service_orders"><ServiceOrdersPage /></RequireModule>} />
+          <Route path="residents"      element={<RequireModule module="residents"><ResidentsPage /></RequireModule>} />
           <Route path="admin"          element={<RequireAdmin><AdminPage /></RequireAdmin>} />
-          <Route path="settings"       element={<RequireConferente><SettingsPage /></RequireConferente>} />
-          <Route path="financeiro"     element={<RequireConferente><FinanceiroPage /></RequireConferente>} />
+          <Route path="settings"       element={<RequireModule module="settings"><SettingsPage /></RequireModule>} />
+          <Route path="financeiro"     element={<RequireModule module="settings"><FinanceiroPage /></RequireModule>} />
           <Route path="geral"          element={<RequireAggregator><GeralPage /></RequireAggregator>} />
           <Route path="superadmin"     element={<RequireSuperAdmin><SuperAdminPage /></RequireSuperAdmin>} />
           <Route path="logs"           element={<RequireAdmin><LogsPage /></RequireAdmin>} />
