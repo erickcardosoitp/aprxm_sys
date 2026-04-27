@@ -4,8 +4,10 @@
 
 export type UserRole =
   | 'superadmin'
+  | 'admin_master'
   | 'admin'
   | 'conferente'
+  | 'diretoria'
   | 'diretoria_adjunta'
   | 'operator'
   | 'viewer'
