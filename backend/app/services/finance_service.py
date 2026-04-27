@@ -573,7 +573,6 @@ class FinanceService:
         if not row:
             raise UnprocessableError("Configurações da associação não encontradas. Configure no módulo Admin.")
         logo_url, sig_url, president_name, community_name, proof_stock, assoc_address, assoc_cep = row
-        print(f"[proof] aid={association_id} logo={bool(logo_url)} sig={bool(sig_url)} stock={proof_stock}", flush=True)
 
         if not logo_url:
             raise UnprocessableError("Logo da associação não cadastrado. Configure no módulo Admin.")
@@ -677,6 +676,7 @@ class FinanceService:
 
     @staticmethod
     def _build_barcode_image(code: str) -> bytes:
+        import re
         from barcode import Code128  # type: ignore
         from barcode.writer import SVGWriter  # type: ignore
 
@@ -687,8 +687,14 @@ class FinanceService:
             "quiet_zone": 2.0,
             "write_text": False,
         })
-        buf.seek(0)
-        return buf.read()
+        svg = buf.getvalue().decode("utf-8")
+        # Inject viewBox if missing so fpdf2 renders without warnings/errors
+        if "viewBox" not in svg:
+            w = re.search(r'width="([\d.]+)', svg)
+            h = re.search(r'height="([\d.]+)', svg)
+            if w and h:
+                svg = svg.replace("<svg ", f'<svg viewBox="0 0 {w.group(1)} {h.group(1)}" ', 1)
+        return svg.encode("utf-8")
 
     @staticmethod
     def _build_proof_pdf(
