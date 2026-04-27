@@ -535,7 +535,7 @@ async def register_transaction(
         cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
         if not can_pick_session and cash.opened_by != current.user_id:
             raise HTTPException(status_code=403, detail="Você não pode lançar em sessão de outro operador.")
-        if cash.device_token and x_device_token and cash.device_token != x_device_token:
+        if not current.is_admin and cash.device_token and x_device_token and cash.device_token != x_device_token:
             raise HTTPException(status_code=403, detail="Dispositivo não autorizado para esta sessão.")
     else:
         try:
@@ -813,10 +813,10 @@ async def list_pix_pending(
     def derive_status(r) -> str:
         if r[4]:  # reversed_at
             return "cancelado"
-        if r[15]:  # batched_at — já enviado para caixinha
+        if r[15]:  # batched_at
             return "enviado_caixinha"
         rs = r[6]  # recon_status
-        if rs == "automatico":
+        if rs in ("automatico", "manual"):
             return "conciliado"
         if rs == "sugestao":
             return "pendente"
