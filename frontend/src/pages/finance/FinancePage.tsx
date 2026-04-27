@@ -192,8 +192,8 @@ function SessionDetailModal({
 }) {
   const role = useAuthStore((s) => s.role)
   const userId = useAuthStore((s) => s.userId)
-  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
-  const isAdminRole = role === 'admin' || role === 'superadmin'
+  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin' || role === 'diretoria'
+  const isAdminRole = role === 'admin' || role === 'superadmin' || role === 'diretoria'
   const [transactions, setTransactions] = useState<SessionTx[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([])
   const [loading, setLoading] = useState(false)
@@ -597,8 +597,8 @@ function SessionDetailModal({
 export default function FinancePage() {
   const role = useAuthStore((s) => s.role)
   const canSeeTotals = role !== 'operator' && role !== 'viewer'
-  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
-  const isAdminRole = role === 'admin' || role === 'superadmin'
+  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin' || role === 'diretoria'
+  const isAdminRole = role === 'admin' || role === 'superadmin' || role === 'diretoria'
 
   const [tab, setTab] = useState<Tab>('caixa')
   const [session, setSession] = useState<CashSession | null>(null)
