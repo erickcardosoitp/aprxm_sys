@@ -113,6 +113,9 @@ async def _run_migrations() -> None:
         await session.execute(text(
             "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS energia_eletrica_data JSONB"
         ))
+        await session.execute(text(
+            "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS impacted_residents JSONB DEFAULT '[]'"
+        ))
 
         # user_role: diretoria
         await session.execute(text("""

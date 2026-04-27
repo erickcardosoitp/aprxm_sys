@@ -89,6 +89,9 @@ class ServiceOrder(SQLModel, table=True):
     # attachments: list of {url, filename, uploaded_at}
     attachments: list[dict[str, Any]] = Field(default=[], sa_column=Column(_json_type))
 
+    # impacted residents: list of {id, name, unit}
+    impacted_residents: list[dict[str, Any]] = Field(default=[], sa_column=Column(_json_type))
+
     created_by: UUID = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

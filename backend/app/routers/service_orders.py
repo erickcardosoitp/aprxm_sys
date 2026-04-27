@@ -38,6 +38,7 @@ class CreateSORequest(BaseModel):
     assigned_to: UUID | None = None
     assigned_to_name: str | None = None
     energia_eletrica_data: dict | None = None
+    impacted_residents: list[dict] = []
 
 
 class UpdateSORequest(BaseModel):
@@ -57,6 +58,7 @@ class UpdateSORequest(BaseModel):
     requester_phone: str | None = None
     requester_email: str | None = None
     energia_eletrica_data: dict | None = None
+    impacted_residents: list[dict] | None = None
 
 
 class UpdateStatusRequest(BaseModel):
@@ -211,11 +213,25 @@ async def service_orders_report(
         """),
         {"aid": str(current.association_id), "df": df, "dt": dt},
     )
+    by_day = await session.execute(
+        sa_text("""
+            SELECT
+              created_at::date AS dia,
+              COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE status = 'resolved') AS resolvidas,
+              COUNT(*) FILTER (WHERE status NOT IN ('resolved','cancelled','archived')) AS abertas
+            FROM service_orders
+            WHERE association_id = :aid AND created_at::date BETWEEN :df AND :dt
+            GROUP BY dia ORDER BY dia
+        """),
+        {"aid": str(current.association_id), "df": df, "dt": dt},
+    )
     return {
         "period": {"from": date_from, "to": date_to},
         "total": r[0], "resolvidas": r[1], "canceladas": r[2],
         "abertas": r[3], "criticas": r[4],
         "by_area": [{"area": a[0], "count": a[1]} for a in by_area.fetchall()],
+        "by_day": [{"dia": str(d[0]), "total": d[1], "resolvidas": d[2], "abertas": d[3]} for d in by_day.fetchall()],
     }
 
 
@@ -253,6 +269,7 @@ async def get_so(
         "resolution_notes": so.resolution_notes, "resolved_at": str(so.resolved_at) if so.resolved_at else None,
         "cancellation_reason": so.cancellation_reason,
         "attachments": so.attachments or [],
+        "impacted_residents": so.impacted_residents or [],
         "created_at": str(so.created_at), "updated_at": str(so.updated_at),
         "assigned_to": str(so.assigned_to) if so.assigned_to else None,
         "requester_resident_id": str(so.requester_resident_id) if so.requester_resident_id else None,

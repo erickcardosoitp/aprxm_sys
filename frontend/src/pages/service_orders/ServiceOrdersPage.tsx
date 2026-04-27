@@ -24,6 +24,7 @@ interface ServiceOrder {
   reference_point?: string; address_cep?: string; assigned_to?: string
   requester_resident_id?: string; resolution_notes?: string; resolved_at?: string
   cancellation_reason?: string; request_date?: string
+  impacted_residents?: {id: string; name: string; unit?: string}[]
   created_at: string; updated_at?: string
 }
 
@@ -154,6 +155,31 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
   const [saving, setSaving] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Moradores impactados
+  const [impactedResidents, setImpactedResidents] = useState<{id: string; name: string; unit?: string}[]>([])
+  const [impactedQuery, setImpactedQuery] = useState('')
+  const [impactedResults, setImpactedResults] = useState<ResidentResult[]>([])
+  const impactedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const searchImpacted = (q: string) => {
+    if (impactedTimer.current) clearTimeout(impactedTimer.current)
+    if (q.length < 2) { setImpactedResults([]); return }
+    impactedTimer.current = setTimeout(async () => {
+      try {
+        const res = await api.get('/residents', { params: { q, limit: 5 } })
+        setImpactedResults(res.data)
+      } catch { setImpactedResults([]) }
+    }, 300)
+  }
+
+  const addImpacted = (r: ResidentResult) => {
+    if (!impactedResidents.find(x => x.id === r.id)) {
+      setImpactedResidents(prev => [...prev, { id: r.id, name: r.full_name, unit: r.unit ?? undefined }])
+    }
+    setImpactedQuery('')
+    setImpactedResults([])
+  }
+
   const orgOptions = category ? (ORG_BY_CATEGORY[category] ?? []) : []
   const isEnergiaEletrica = serviceImpacted === 'Distribuição de Energia Elétrica'
 
@@ -204,6 +230,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
         request_date: requestDate || undefined,
         assigned_to_name: assignedToName || undefined,
         energia_eletrica_data: isEnergiaEletrica && Object.keys(energiaData).length ? energiaData : undefined,
+        impacted_residents: impactedResidents,
       })
       toast.success('Ordem de serviço criada!')
       onCreated()
@@ -413,6 +440,39 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                   ))}
                 </div>
               )}
+
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Moradores impactados</label>
+                <div className="relative">
+                  <input
+                    value={impactedQuery}
+                    onChange={e => { setImpactedQuery(e.target.value); searchImpacted(e.target.value) }}
+                    className={inputCls}
+                    placeholder="Buscar morador por nome ou CPF…"
+                  />
+                  {impactedResults.length > 0 && (
+                    <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-40 overflow-y-auto">
+                      {impactedResults.map(r => (
+                        <li key={r.id} onMouseDown={() => addImpacted(r)}
+                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm">
+                          <span className="font-medium">{r.full_name}</span>
+                          {r.unit && <span className="ml-2 text-xs text-gray-400">Ap. {r.unit}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                {impactedResidents.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {impactedResidents.map(r => (
+                      <span key={r.id} className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs px-2 py-1 rounded-full">
+                        {r.name}{r.unit ? ` · Ap. ${r.unit}` : ''}
+                        <button type="button" onClick={() => setImpactedResidents(prev => prev.filter(x => x.id !== r.id))} className="ml-0.5 text-blue-400 hover:text-red-500">✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Descrição detalhada <span className="text-red-500">*</span></label>
@@ -843,6 +903,17 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                     <FieldCell label="Categoria">{d.category_name ?? '—'}</FieldCell>
                     <FieldCell label="Serviço afetado">{d.service_impacted ?? '—'}</FieldCell>
                     <FieldCell label="Org. responsável">{d.org_responsible ?? '—'}</FieldCell>
+                    {d.impacted_residents && d.impacted_residents.length > 0 && (
+                      <FieldCell label="Moradores impactados">
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {d.impacted_residents.map(r => (
+                            <span key={r.id} className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2 py-0.5 rounded-full">
+                              {r.name}{r.unit ? ` · Ap. ${r.unit}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </FieldCell>
+                    )}
                     <FieldCell label="Solicitante">{d.requester_name ?? '—'}</FieldCell>
                     <FieldCell label="Telefone">
                       {d.requester_phone ? (
@@ -1201,6 +1272,33 @@ export default function ServiceOrdersPage() {
                           </li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+                  {reportData.by_day?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-2">Atividade Diária</p>
+                      <div className="overflow-x-auto rounded-lg border border-gray-100">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-gray-50 text-gray-500 uppercase text-[10px]">
+                              <th className="text-left px-3 py-2">Data</th>
+                              <th className="text-right px-3 py-2">Total</th>
+                              <th className="text-right px-3 py-2">Abertas</th>
+                              <th className="text-right px-3 py-2">Resolvidas</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {reportData.by_day.map((d: any) => (
+                              <tr key={d.dia} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 text-gray-700">{new Date(d.dia + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                                <td className="px-3 py-2 text-right font-semibold text-gray-800">{d.total}</td>
+                                <td className="px-3 py-2 text-right text-blue-600">{d.abertas}</td>
+                                <td className="px-3 py-2 text-right text-green-600">{d.resolvidas}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>

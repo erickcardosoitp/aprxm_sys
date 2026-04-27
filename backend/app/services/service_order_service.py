@@ -44,6 +44,7 @@ class ServiceOrderService:
         assigned_to: UUID | None = None,
         assigned_to_name: str | None = None,
         energia_eletrica_data: dict | None = None,
+        impacted_residents: list | None = None,
     ) -> ServiceOrder:
         number = await self._next_number(association_id)
 
@@ -79,6 +80,7 @@ class ServiceOrderService:
             assigned_to=assigned_to,
             assigned_to_name=assigned_to_name,
             energia_eletrica_data=energia_eletrica_data,
+            impacted_residents=impacted_residents or [],
             created_by=created_by,
         )
         self._session.add(so)
