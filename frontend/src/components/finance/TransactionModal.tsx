@@ -359,7 +359,9 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         }
 
         // Issue proof of residence — returns PDF blob
-        const res = await api.post('/finance/proof-of-residence/issue', {
+        let res: any
+        try {
+          res = await api.post('/finance/proof-of-residence/issue', {
           resident_name: proofName.trim(),
           resident_cpf: proofCpf.trim(),
           resident_neighborhood: proofNeighborhood.trim(),
@@ -373,7 +375,19 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           category_id: categoryId || undefined,
           resident_id: resident?.id || undefined,
           cash_session_id: selectedSessionId || undefined,
-        }, { responseType: 'blob' })
+          }, { responseType: 'blob' })
+        } catch (e: any) {
+          const data = e.response?.data
+          let detail = 'Erro ao emitir comprovante.'
+          if (data instanceof Blob) {
+            try { const text = await data.text(); detail = JSON.parse(text)?.detail ?? detail } catch { /* keep default */ }
+          } else if (data?.detail) {
+            detail = data.detail
+          }
+          toast.error(detail)
+          setSaving(false)
+          return
+        }
 
         const barcodeCode: string = (res as any).headers?.['x-barcode-code'] || ''
 
