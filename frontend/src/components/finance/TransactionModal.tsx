@@ -164,6 +164,9 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [showSessionPicker, setShowSessionPicker] = useState(false)
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
 
+  // mensalidade — months
+  const [mensalidadeMonths, setMensalidadeMonths] = useState<string[]>([])
+
   // Step 3 — barcode confirmation
   const [pendingBarcodeCode, setPendingBarcodeCode] = useState('')
   const [barcodeInput, setBarcodeInput] = useState('')
@@ -206,6 +209,18 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
       setAmount(parseFloat(settings.default_mensalidade_amount).toFixed(2))
     }
   }, [incomeSubtype, txType, settings])
+
+  // Auto-select months when mensalidade amount changes
+  useEffect(() => {
+    if (txType !== 'income' || incomeSubtype !== 'mensalidade') return
+    const defaultAmt = parseFloat(settings?.default_mensalidade_amount || '0')
+    const count = defaultAmt > 0 && amount ? Math.max(1, Math.round(parseFloat(amount) / defaultAmt)) : 1
+    const now = new Date()
+    setMensalidadeMonths(Array.from({ length: count }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    }))
+  }, [amount, incomeSubtype, txType, settings?.default_mensalidade_amount])
 
   // Auto-fill from resident lookup into proof fields
   useEffect(() => {
@@ -414,11 +429,18 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         return
       }
 
-      if (!amount || !description.trim()) return
+      const isMensalidade = txType === 'income' && incomeSubtype === 'mensalidade'
+      if (!amount || (!isMensalidade && !description.trim())) return
+      const mensalidadeDesc = isMensalidade && mensalidadeMonths.length > 0
+        ? `Mensalidade — ${[...mensalidadeMonths].sort().map(ym => {
+            const [y, m] = ym.split('-')
+            return ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(m)-1] + '/' + y
+          }).join(', ')}`
+        : description.trim()
       const txPayload = {
         type: txType,
         amount: parseFloat(amount),
-        description: description.trim(),
+        description: mensalidadeDesc,
         income_subtype: txType === 'income' ? incomeSubtype : undefined,
         category_id: categoryId || undefined,
         payment_method_id: paymentMethodId || undefined,
@@ -988,6 +1010,35 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                       onChange={(e) => setAmount(e.target.value)} placeholder="0,00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
+                  {txType === 'income' && incomeSubtype === 'mensalidade' && mensalidadeMonths.length > 1 && (() => {
+                    const now = new Date()
+                    const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+                    return (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Meses referentes <span className="text-[#26619c] font-normal">({mensalidadeMonths.length}x)</span>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {Array.from({ length: 12 }, (_, i) => {
+                            const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+                            const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                            const selected = mensalidadeMonths.includes(ym)
+                            return (
+                              <button key={ym} type="button"
+                                onClick={() => setMensalidadeMonths(prev =>
+                                  selected ? prev.filter(m => m !== ym) : [...prev, ym]
+                                )}
+                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                                  selected ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600 hover:border-[#26619c]'
+                                }`}>
+                                {monthNames[d.getMonth()]}/{d.getFullYear()}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
                   {!(txType === 'income' && incomeSubtype === 'mensalidade') && (
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Descrição <span className="text-red-500">*</span></label>
