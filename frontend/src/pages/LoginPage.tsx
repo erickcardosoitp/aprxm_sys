@@ -1,11 +1,23 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { jwtDecode } from 'jwt-decode'
-import { Building2, ChevronRight, Clock, Loader2, Lock, Mail, X } from 'lucide-react'
+import { Building2, ChevronRight, Clock, Fingerprint, Loader2, Lock, Mail, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import type { UserRole } from '../types'
+
+function bufToB64(buf: ArrayBuffer): string {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+}
+
+function b64ToBuf(b64: string): ArrayBuffer {
+  const s = atob(b64.replace(/-/g, '+').replace(/_/g, '/'))
+  const buf = new Uint8Array(s.length)
+  for (let i = 0; i < s.length; i++) buf[i] = s.charCodeAt(i)
+  return buf.buffer
+}
 
 interface OrgOption {
   id: string
@@ -49,6 +61,7 @@ export default function LoginPage() {
   const [orgs, setOrgs] = useState<OrgOption[]>([])
   const [selectedOrg, setSelectedOrg] = useState<OrgOption | null>(null)
   const [loading, setLoading] = useState(false)
+  const [deviceLoading, setDeviceLoading] = useState(false)
   const [rememberAccess, setRememberAccess] = useState(true)
   const [recentLogins, setRecentLogins] = useState<RecentLogin[]>([])
 
@@ -88,6 +101,74 @@ export default function LoginPage() {
     setSelectedOrg({ id: recent.associationId, name: recent.associationName, role: recent.role, slug: '' })
     setOrgs([])
     setStep('password')
+  }
+
+  const handleDeviceLogin = async () => {
+    if (!selectedOrg || !email) return
+    if (!('credentials' in navigator)) {
+      toast.error('Seu navegador não suporta login por dispositivo.')
+      return
+    }
+    setDeviceLoading(true)
+    try {
+      const beginRes = await api.post('/auth/webauthn/authenticate/begin', {
+        email,
+        association_id: selectedOrg.id,
+      })
+      const options = beginRes.data
+      const userId = options.user_id
+
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge: b64ToBuf(options.challenge),
+          allowCredentials: (options.allowCredentials ?? []).map((c: any) => ({
+            type: 'public-key',
+            id: b64ToBuf(c.id),
+          })),
+          userVerification: options.userVerification ?? 'preferred',
+          rpId: options.rpId,
+          timeout: options.timeout ?? 60000,
+        },
+      }) as PublicKeyCredential | null
+
+      if (!assertion) return
+
+      const resp = assertion.response as AuthenticatorAssertionResponse
+      const credential = {
+        id: assertion.id,
+        rawId: bufToB64(assertion.rawId),
+        type: assertion.type,
+        response: {
+          authenticatorData: bufToB64(resp.authenticatorData),
+          clientDataJSON: bufToB64(resp.clientDataJSON),
+          signature: bufToB64(resp.signature),
+          userHandle: resp.userHandle ? bufToB64(resp.userHandle) : null,
+        },
+      }
+
+      const res = await api.post<{ access_token: string }>('/auth/webauthn/authenticate/complete', {
+        user_id: userId,
+        association_id: selectedOrg.id,
+        credential,
+      })
+
+      const token = res.data.access_token
+      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string }>(token)
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess)
+      if (rememberAccess) {
+        saveRecent({ email, associationId: payload.association_id, associationName: payload.association_name || selectedOrg.name || '', role: payload.role })
+        setRecentLogins(loadRecent())
+      }
+      navigate('/')
+    } catch (e: any) {
+      if (e?.name === 'NotAllowedError') {
+        toast.error('Autenticação cancelada.')
+      } else {
+        toast.error(e?.response?.data?.detail ?? 'Dispositivo não reconhecido.')
+      }
+    } finally {
+      setDeviceLoading(false)
+    }
   }
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -294,6 +375,20 @@ export default function LoginPage() {
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Entrar'}
                 </button>
+
+                {'credentials' in navigator && (
+                  <button
+                    type="button"
+                    onClick={handleDeviceLogin}
+                    disabled={deviceLoading}
+                    className="w-full flex items-center justify-center gap-2 border border-gray-200 hover:border-[#26619c] hover:bg-blue-50 text-gray-600 hover:text-[#26619c] py-3 rounded-xl text-sm font-medium transition disabled:opacity-50"
+                  >
+                    {deviceLoading
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <><Fingerprint className="w-4 h-4" /> Entrar com dispositivo</>
+                    }
+                  </button>
+                )}
               </form>
             )}
           </div>

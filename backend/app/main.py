@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, cash_boxes, chat, demands, finance, financeiro, geral, mensalidades, notifications, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers
+from app.routers import admin, agent, auth, carriers, cash_boxes, chat, demands, finance, financeiro, geral, mensalidades, notifications, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers, webauthn
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -494,6 +494,34 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_notifications_user ON notifications(user_id, association_id, created_at DESC)"
         ))
 
+        # webauthn_credentials: passkey / biometric login
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS webauthn_credentials (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                credential_id TEXT NOT NULL,
+                public_key BYTEA NOT NULL,
+                sign_count BIGINT NOT NULL DEFAULT 0,
+                device_name TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(credential_id)
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_webauthn_user ON webauthn_credentials(user_id)"
+        ))
+
+        # webauthn_challenges: temporary challenge storage (TTL 5 min)
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS webauthn_challenges (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                challenge TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '5 minutes'
+            )
+        """))
+
         await session.commit()
 
 
@@ -544,6 +572,7 @@ app.include_router(carriers.router, prefix=PREFIX)
 app.include_router(demands.router, prefix=PREFIX)
 app.include_router(chat.router, prefix=PREFIX)
 app.include_router(notifications.router, prefix=PREFIX)
+app.include_router(webauthn.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

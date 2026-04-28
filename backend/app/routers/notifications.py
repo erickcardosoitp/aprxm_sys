@@ -57,7 +57,7 @@ async def send_push_to_user(user_id: str, title: str, body: str, data: dict | No
         """), {"uid": user_id})).fetchall()
 
     payload = {"title": title, "body": body, "data": data or {}}
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     for r in rows:
         await loop.run_in_executor(None, _send_push_sync, r[0], r[1], r[2], payload)
 

@@ -88,12 +88,22 @@ async def create_so(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    import asyncio as _asyncio
+    from app.routers.notifications import create_notification as _notif
     svc = ServiceOrderService(session)
     so = await svc.create(
         association_id=current.association_id,
         created_by=current.user_id,
         **body.model_dump(),
     )
+    if body.assigned_to and str(body.assigned_to) != str(current.user_id):
+        _asyncio.create_task(_notif(
+            str(current.association_id), str(body.assigned_to),
+            f"📋 OS #{so.number} atribuída a você",
+            body.title,
+            "task",
+            {"url": f"/service-orders/{so.id}"},
+        ))
     return {"id": str(so.id), "number": so.number, "status": so.status}
 
 
@@ -137,6 +147,14 @@ async def add_comment(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import json
+    import asyncio as _asyncio
+    from app.routers.notifications import create_notification as _notif
+
+    so_row = (await session.execute(text("""
+        SELECT order_number, title, created_by, assigned_to FROM service_orders
+        WHERE id = :id AND association_id = :aid
+    """), {"id": str(so_id), "aid": str(current.association_id)})).fetchone()
+
     result = await session.execute(
         text("""
             INSERT INTO service_order_comments
@@ -154,6 +172,23 @@ async def add_comment(
     )
     row = result.fetchone()
     await session.commit()
+
+    commenter_name = (await session.execute(
+        text("SELECT full_name FROM users WHERE id = :id"), {"id": str(current.user_id)}
+    )).scalar() or "Usuário"
+
+    if so_row:
+        so_num, so_title, creator_id, assigned_id = so_row
+        preview = (body.comment or "")[:120]
+        notif_title = f"💬 {commenter_name} comentou na OS #{so_num}"
+        notif_data = {"url": f"/service-orders/{so_id}"}
+        targets = {str(creator_id), str(assigned_id) if assigned_id else None} - {None, str(current.user_id)}
+        for uid in targets:
+            _asyncio.create_task(_notif(
+                str(current.association_id), uid,
+                notif_title, preview, "comment", notif_data,
+            ))
+
     return {"id": str(row[0]), "created_at": str(row[1])}
 
 

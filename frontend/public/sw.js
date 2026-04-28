@@ -1,3 +1,6 @@
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   const { title, body, data } = event.data.json();

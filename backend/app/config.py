@@ -46,8 +46,13 @@ class Settings(BaseSettings):
     # Cron
     cron_secret: str = ""
 
+    # WebAuthn
+    webauthn_rp_id: str = "localhost"
+    webauthn_rp_name: str = "APRXM"
+    webauthn_origin: str = "http://localhost:5173"
+
     # Web Push (VAPID)
-    vapid_public_key: str = "BJjf0OQd7x6RJFkM3lIgNknJqpZWpUcTGBDjIxGHvaxkVnbHq1ZpUFvcXuhE8PVTduHkaap7sW6Xyp6BMZOWPp4"
+    vapid_public_key: str = "BLO14dFm05hU6anlXTh0SyhF2PrEg9-YJZlOz1w7ahTj-6LgmYoGugyozWZwxtsgeFoutdQ01J3Xsgf_ow00acc"
     vapid_private_key: str = ""
     vapid_claims_sub: str = "mailto:erickcardoso@institutotiapretinha.org"
 

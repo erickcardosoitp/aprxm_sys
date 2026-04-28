@@ -7,6 +7,7 @@ import { settingsService } from '../../services/settings'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import type { AssociationSettings } from '../../types'
+import DeviceCredentials from '../../components/profile/DeviceCredentials'
 
 // ─── Access Groups types ───────────────────────────────────────────────────────
 
@@ -523,6 +524,11 @@ export default function SettingsPage() {
           </button>
         </div>
       )}
+
+      {/* ── Dispositivos (WebAuthn) ── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <DeviceCredentials />
+      </div>
 
       {/* ── Caixa section ── */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col gap-5">
