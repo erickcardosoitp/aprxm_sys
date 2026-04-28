@@ -289,12 +289,11 @@ async def authenticate_complete(
         SELECT id, full_name, role FROM users WHERE id = :uid
     """), {"uid": body.user_id})).fetchone()
 
-    token = create_access_token({
-        "sub": body.user_id,
-        "association_id": body.association_id,
-        "role": user_row[2],
-        "full_name": user_row[1],
-        "linked_association_ids": [],
-    })
+    token = create_access_token(
+        subject=user_row[0],
+        association_id=body.association_id,
+        role=user_row[2],
+        full_name=user_row[1],
+    )
 
     return {"access_token": token, "token_type": "bearer"}
