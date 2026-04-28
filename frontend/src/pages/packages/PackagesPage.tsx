@@ -2380,17 +2380,24 @@ export default function PackagesPage() {
                           </select>
                         ) : null}
                         {(delivererOpts.length === 0 || delivererManual) && (
-                          <div className="flex gap-2">
-                            <input
-                              value={delivererName}
-                              onChange={e => setDelivererName(e.target.value)}
-                              className={`${inputCls} flex-1 ${delivererManual ? 'mt-2' : ''}`}
-                              placeholder="Nome do entregador"
-                            />
-                            {delivererManual && (
-                              <button onClick={() => { setDelivererManual(false); setDelivererName(''); setDelivererSig('') }}
-                                className="mt-2 text-xs text-gray-400 hover:text-red-500 shrink-0">✕ Cancelar</button>
+                          <div className="flex flex-col gap-1.5">
+                            {delivererOpts.length === 0 && !delivererManual && (
+                              <p className="text-[11px] text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">
+                                Nenhum entregador cadastrado. <a href="/settings" className="underline font-medium">Cadastrar em Configurações</a>
+                              </p>
                             )}
+                            <div className="flex gap-2">
+                              <input
+                                value={delivererName}
+                                onChange={e => setDelivererName(e.target.value)}
+                                className={`${inputCls} flex-1 ${delivererManual ? 'mt-2' : ''}`}
+                                placeholder="Nome do entregador"
+                              />
+                              {delivererManual && (
+                                <button onClick={() => { setDelivererManual(false); setDelivererName(''); setDelivererSig('') }}
+                                  className="mt-2 text-xs text-gray-400 hover:text-red-500 shrink-0">✕ Cancelar</button>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>

@@ -68,6 +68,7 @@ export function AppShell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [notifs, setNotifs] = useState<AppNotification[]>([])
   const notifRef = useRef<HTMLDivElement>(null)
+  const [pushPerm, setPushPerm] = useState<NotificationPermission | 'unsupported'>('default')
 
   const isSuperAdmin = role === 'superadmin' || role === 'admin_master'
   const isAdmin      = role === 'admin' || role === 'diretoria' || role === 'conselho' || isSuperAdmin
@@ -108,17 +109,27 @@ export function AppShell() {
     setUnreadCount(prev => Math.max(0, prev - 1))
   }
 
-  // Service Worker + Push subscription
+  // Service Worker registration (without requesting permission automatically)
   useEffect(() => {
-    if (!role || !('serviceWorker' in navigator) || !('PushManager' in window)) return
-    navigator.serviceWorker.register('/sw.js').then(async (reg) => {
+    if (!role) return
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushPerm('unsupported'); return
+    }
+    if ('Notification' in window) setPushPerm(Notification.permission)
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  }, [role])
+
+  const enablePushNotifications = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+    try {
       const perm = await Notification.requestPermission()
+      setPushPerm(perm)
       if (perm !== 'granted') return
+      const reg = await navigator.serviceWorker.ready
       const vapidRes = await api.get<{ key: string }>('/notifications/vapid-public-key')
-      const vapidKey = vapidRes.data.key
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: _urlBase64ToUint8Array(vapidKey),
+        applicationServerKey: _urlBase64ToUint8Array(vapidRes.data.key),
       })
       const j = sub.toJSON()
       await api.post('/notifications/subscribe', {
@@ -126,8 +137,8 @@ export function AppShell() {
         p256dh: j.keys?.p256dh,
         auth: j.keys?.auth,
       })
-    }).catch(() => {})
-  }, [role])
+    } catch { /* silent */ }
+  }
 
   // Close notif dropdown on outside click
   useEffect(() => {
@@ -242,6 +253,14 @@ export function AppShell() {
                     </button>
                   )}
                 </div>
+                {pushPerm === 'default' && (
+                  <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center justify-between gap-2">
+                    <span className="text-xs text-blue-700">Ativar notificações push?</span>
+                    <button onClick={enablePushNotifications} className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg transition">
+                      Ativar
+                    </button>
+                  </div>
+                )}
                 <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
                   {notifs.length === 0 && (
                     <p className="text-sm text-gray-400 text-center py-8">Nenhuma notificação</p>
