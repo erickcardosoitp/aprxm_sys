@@ -589,6 +589,11 @@ export default function PackagesPage() {
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
   const [loading, setLoading] = useState(false)
   const [filterStatus, setFilterStatus] = useState('')
+  const [showDeliveredSearch, setShowDeliveredSearch] = useState(false)
+  const deliveredInputRef = useRef<DebouncedInputHandle>(null)
+  const [deliveredQ, setDeliveredQ] = useState('')
+  const [deliveredPackages, setDeliveredPackages] = useState<Package[]>([])
+  const [deliveredLoading, setDeliveredLoading] = useState(false)
   const [filterOp, setFilterOp] = useState<string | null>(null)
   const [filterOpSet, setFilterOpSet] = useState<Set<string>>(new Set())
   const [showOpDropdown, setShowOpDropdown] = useState(false)
@@ -1216,6 +1221,7 @@ export default function PackagesPage() {
     try {
       const params: Record<string, string> = {}
       if (filterStatus) params.status = filterStatus
+      else params.statuses = 'received,notified,reversed'
       if (filterQ.trim()) params.q = filterQ.trim()
       if (filterDateFrom) params.date_from = filterDateFrom
       if (filterDateTo) params.date_to = filterDateTo
@@ -1416,6 +1422,16 @@ export default function PackagesPage() {
 
   const pendingCount = packages.filter(p => p.status === 'received' || p.status === 'notified').length
   const clearFilters = () => { setFilterQ(''); filterInputRef.current?.clear(); setFilterDateFrom(''); setFilterDateTo(''); setFilterStatus(''); setFilterOp(null); setFilterOpSet(new Set()) }
+
+  const searchDelivered = async (q: string) => {
+    setDeliveredQ(q)
+    if (q.trim().length < 3) { setDeliveredPackages([]); return }
+    setDeliveredLoading(true)
+    try {
+      const res = await api.get<Package[]>('/packages', { params: { statuses: 'delivered,returned', q: q.trim() } })
+      setDeliveredPackages(res.data)
+    } catch { /* silent */ } finally { setDeliveredLoading(false) }
+  }
   const opNames = [...new Set(packages.map(p => p.received_by_name).filter(Boolean))] as string[]
   const displayPackages = filterOpSet.size > 0 ? packages.filter(p => p.received_by_name && filterOpSet.has(p.received_by_name)) : packages
   const activeFilterCount = [filterQ, filterDateFrom, filterDateTo, filterStatus].filter(Boolean).length + filterOpSet.size
@@ -1915,6 +1931,59 @@ export default function PackagesPage() {
                 <EsteiraStepper status={pkg.status} />
               </div>
             ))
+          )}
+        </div>
+      )}
+
+      {/* ─── Buscar entregues ─────────────────────────────────────────────────── */}
+      {pageTab === 'encomendas' && (
+        <div className="border border-gray-200 rounded-xl bg-gray-50 overflow-hidden">
+          <button
+            onClick={() => { setShowDeliveredSearch(v => !v); if (!showDeliveredSearch) setTimeout(() => deliveredInputRef.current?.focus(), 100) }}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-500 hover:bg-gray-100 transition"
+          >
+            <span className="flex items-center gap-2 font-medium">
+              <Search className="w-4 h-4" />
+              Buscar encomenda entregue / devolvida
+            </span>
+            <span className="text-xs text-gray-400">{showDeliveredSearch ? '▲' : '▼'}</span>
+          </button>
+          {showDeliveredSearch && (
+            <div className="px-4 pb-4 flex flex-col gap-2 border-t border-gray-200 pt-3 bg-white">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <DebouncedInput
+                  ref={deliveredInputRef}
+                  onSearch={searchDelivered}
+                  delay={1200}
+                  placeholder="Nome, rastreio, unidade… (mín. 3 caracteres)"
+                  className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c] bg-white"
+                />
+              </div>
+              {deliveredLoading && <p className="text-xs text-gray-400 text-center py-2">Buscando…</p>}
+              {!deliveredLoading && deliveredQ.length >= 3 && deliveredPackages.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-2">Nenhuma encomenda encontrada.</p>
+              )}
+              {deliveredPackages.length > 0 && (
+                <ul className="divide-y divide-gray-100 border border-gray-200 rounded-xl overflow-hidden bg-white">
+                  {deliveredPackages.map(pkg => (
+                    <li key={pkg.id}>
+                      <button className="w-full text-left px-4 py-3 hover:bg-gray-50 transition" onClick={() => setDetailPkg(pkg)}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-800 truncate">{pkg.resident_name ?? '—'}</p>
+                            <p className="text-xs text-gray-400">{pkg.carrier_name ?? ''}{pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}</p>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLORS[pkg.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                            {STATUS_LABELS[pkg.status] ?? pkg.status}
+                          </span>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       )}

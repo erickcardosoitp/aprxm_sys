@@ -270,6 +270,7 @@ async def list_package_events(
 @router.get("", summary="Listar encomendas")
 async def list_packages(
     status: PackageStatus | None = None,
+    statuses: str | None = None,
     q: str | None = None,
     cpf: str | None = None,
     cep: str | None = None,
@@ -281,7 +282,13 @@ async def list_packages(
     from sqlalchemy import text as sa_text
     filters = ["p.association_id = :aid"]
     params: dict = {"aid": str(current.association_id)}
-    if status:
+    if statuses:
+        valid = [s.strip() for s in statuses.split(",") if s.strip()]
+        placeholders = ", ".join(f":st{i}" for i in range(len(valid)))
+        filters.append(f"p.status IN ({placeholders})")
+        for i, s in enumerate(valid):
+            params[f"st{i}"] = s
+    elif status:
         filters.append("p.status = :status")
         params["status"] = status.value if hasattr(status, "value") else status
     if date_from:
