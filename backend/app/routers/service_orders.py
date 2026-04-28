@@ -391,6 +391,16 @@ async def create_task(
         except Exception:
             pass
 
+    if body.assigned_to:
+        import asyncio
+        from app.routers.notifications import create_notification
+        asyncio.create_task(create_notification(
+            str(current.association_id), str(body.assigned_to),
+            "📋 Nova tarefa atribuída",
+            f'Você foi atribuído(a) à tarefa "{body.title}"',
+            "task",
+        ))
+
     return {"id": str(row[0]), "created_at": str(row[1])}
 
 

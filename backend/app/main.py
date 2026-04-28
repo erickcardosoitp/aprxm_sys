@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, cash_boxes, chat, demands, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers
+from app.routers import admin, agent, auth, carriers, cash_boxes, chat, demands, finance, financeiro, geral, mensalidades, notifications, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -456,6 +456,41 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_role_permissions_assoc ON role_permissions(association_id, role)"
         ))
 
+        # push_subscriptions: VAPID push device registration
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                endpoint TEXT NOT NULL,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(user_id, endpoint)
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_push_subs_user ON push_subscriptions(user_id)"
+        ))
+
+        # notifications: in-app notification inbox
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title VARCHAR(255) NOT NULL,
+                body TEXT NOT NULL,
+                type VARCHAR(30) NOT NULL DEFAULT 'info',
+                data JSONB NOT NULL DEFAULT '{}',
+                read_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_notifications_user ON notifications(user_id, association_id, created_at DESC)"
+        ))
+
         await session.commit()
 
 
@@ -505,6 +540,7 @@ app.include_router(porta_a_porta.router, prefix=PREFIX)
 app.include_router(carriers.router, prefix=PREFIX)
 app.include_router(demands.router, prefix=PREFIX)
 app.include_router(chat.router, prefix=PREFIX)
+app.include_router(notifications.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

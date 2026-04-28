@@ -1,11 +1,27 @@
-import { type ComponentType, useEffect, useRef, useState } from 'react'
+import { type ComponentType, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, Download, FileText, LogOut, MessageSquare, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
+import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, LogOut, MessageSquare, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import type { UserRole } from '../../types'
+
+interface AppNotification {
+  id: string
+  title: string
+  body: string
+  type: string
+  read: boolean
+  created_at: string
+}
+
+function _urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = atob(base64)
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)))
+}
 
 type NavItem = { to: string; label: string; icon: ComponentType<{ className?: string }> }
 
@@ -48,6 +64,11 @@ export function AppShell() {
   const [switching, setSwitching] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notifs, setNotifs] = useState<AppNotification[]>([])
+  const notifRef = useRef<HTMLDivElement>(null)
+
   const isSuperAdmin = role === 'superadmin' || role === 'admin_master'
   const isAdmin      = role === 'admin' || role === 'diretoria' || role === 'conselho' || isSuperAdmin
 
@@ -55,6 +76,68 @@ export function AppShell() {
     if (!role || isSuperAdmin) return
     api.get('/admin/my-permissions').then(r => setPermissions(r.data)).catch(() => {})
   }, [role])
+
+  const fetchUnread = useCallback(() => {
+    api.get<{ count: number }>('/notifications/unread-count').then(r => setUnreadCount(r.data.count)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!role) return
+    fetchUnread()
+    const id = setInterval(fetchUnread, 30_000)
+    return () => clearInterval(id)
+  }, [role, fetchUnread])
+
+  const openNotifs = async () => {
+    setNotifOpen(true)
+    try {
+      const r = await api.get<AppNotification[]>('/notifications')
+      setNotifs(r.data)
+    } catch { /* silent */ }
+  }
+
+  const markAllRead = async () => {
+    await api.patch('/notifications/read-all').catch(() => {})
+    setNotifs(prev => prev.map(n => ({ ...n, read: true })))
+    setUnreadCount(0)
+  }
+
+  const markRead = async (id: string) => {
+    await api.patch(`/notifications/${id}/read`).catch(() => {})
+    setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+    setUnreadCount(prev => Math.max(0, prev - 1))
+  }
+
+  // Service Worker + Push subscription
+  useEffect(() => {
+    if (!role || !('serviceWorker' in navigator) || !('PushManager' in window)) return
+    navigator.serviceWorker.register('/sw.js').then(async (reg) => {
+      const perm = await Notification.requestPermission()
+      if (perm !== 'granted') return
+      const vapidRes = await api.get<{ key: string }>('/notifications/vapid-public-key')
+      const vapidKey = vapidRes.data.key
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _urlBase64ToUint8Array(vapidKey),
+      })
+      const j = sub.toJSON()
+      await api.post('/notifications/subscribe', {
+        endpoint: j.endpoint,
+        p256dh: j.keys?.p256dh,
+        auth: j.keys?.auth,
+      })
+    }).catch(() => {})
+  }, [role])
+
+  // Close notif dropdown on outside click
+  useEffect(() => {
+    if (!notifOpen) return
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [notifOpen])
 
   const canView = (module: string) => {
     if (isSuperAdmin) return true
@@ -134,6 +217,58 @@ export function AppShell() {
           >
             <MessageSquare className="w-5 h-5" />
           </NavLink>
+
+          {/* Notifications */}
+          <div className="relative" ref={notifRef}>
+            <button
+              onClick={notifOpen ? () => setNotifOpen(false) : openNotifs}
+              className="relative p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {notifOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                  <span className="text-sm font-semibold text-gray-800">Notificações</span>
+                  {unreadCount > 0 && (
+                    <button onClick={markAllRead} className="text-xs text-blue-600 hover:text-blue-700">
+                      Marcar tudo como lido
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
+                  {notifs.length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-8">Nenhuma notificação</p>
+                  )}
+                  {notifs.map(n => (
+                    <button
+                      key={n.id}
+                      onClick={() => markRead(n.id)}
+                      className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition ${n.read ? 'opacity-60' : ''}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!n.read && <span className="mt-1.5 w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
+                        {n.read && <span className="mt-1.5 w-2 h-2 shrink-0" />}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">{n.title}</p>
+                          <p className="text-xs text-gray-500 line-clamp-2">{n.body}</p>
+                          <p className="text-[10px] text-gray-300 mt-0.5">
+                            {new Date(n.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* User menu */}
           <div className="relative" ref={menuRef}>

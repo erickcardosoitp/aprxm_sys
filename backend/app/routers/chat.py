@@ -118,6 +118,19 @@ async def send_message(
         })
         row = result.fetchone()
         await session.commit()
+
+    # notify mentioned users
+    if body.mention_ids:
+        import asyncio
+        from app.routers.notifications import create_notification
+        preview = (body.content or "")[:100]
+        for uid in body.mention_ids:
+            asyncio.create_task(create_notification(
+                str(current.association_id), uid,
+                f"💬 {sender_name} mencionou você",
+                preview, "mention",
+            ))
+
     return {
         "id": str(row[0]),
         "sender_id": str(current.user_id),
