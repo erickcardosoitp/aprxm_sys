@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, Barcode, Camera, FileText, MessageCircle, Package as PackageIcon, Plus,
@@ -1231,7 +1231,7 @@ export default function PackagesPage() {
   }
 
   useEffect(() => {
-    const t = setTimeout(loadPackages, filterQ ? 350 : 0)
+    const t = setTimeout(loadPackages, filterQ ? 1200 : 0)
     return () => clearTimeout(t)
   }, [filterStatus, filterQ, filterDateFrom, filterDateTo])
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
@@ -1716,7 +1716,7 @@ export default function PackagesPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             <input
               value={filterQ}
-              onChange={e => setFilterQ(e.target.value)}
+              onChange={e => { const v = e.target.value; startTransition(() => setFilterQ(v)) }}
               placeholder="Buscar nome, rastreio, unidade…"
               className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c] bg-white"
             />
@@ -2125,9 +2125,11 @@ export default function PackagesPage() {
                     id="recipient-search"
                     value={recipientSearch}
                     onChange={e => {
-                      setRecipientSearch(e.target.value); setSearchEmpty(false); setShowGuestForm(false)
+                      const v = e.target.value
+                      setRecipientSearch(v)
+                      startTransition(() => { setSearchEmpty(false); setShowGuestForm(false) })
                       if (residentSearchTimer.current) clearTimeout(residentSearchTimer.current)
-                      residentSearchTimer.current = setTimeout(() => searchResidents(e.target.value), SEARCH_DELAY)
+                      residentSearchTimer.current = setTimeout(() => searchResidents(v), SEARCH_DELAY)
                     }}
                     className={`${inputCls} pl-9`}
                     placeholder="Buscar por nome, telefone, CPF ou CEP…"
