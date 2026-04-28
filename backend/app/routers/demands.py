@@ -167,11 +167,13 @@ async def delete_demand(
 
 @router.post("/reminders/trigger", summary="Cron: enviar lembretes de prazo do dia")
 async def trigger_reminders(
-    x_cron_secret: str | None = Header(None, alias="x-cron-secret"),
+    authorization: str | None = Header(None),
 ) -> dict:
     settings = get_settings()
-    if settings.cron_secret and x_cron_secret != settings.cron_secret:
-        raise HTTPException(401, "Não autorizado")
+    if settings.cron_secret:
+        expected = f"Bearer {settings.cron_secret}"
+        if authorization != expected:
+            raise HTTPException(401, "Não autorizado")
 
     today = date.today().isoformat()
     sent = 0
