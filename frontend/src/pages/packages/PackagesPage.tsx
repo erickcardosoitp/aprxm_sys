@@ -1,4 +1,5 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
+import DebouncedInput, { type DebouncedInputHandle } from '../../components/ui/DebouncedInput'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, Barcode, Camera, FileText, MessageCircle, Package as PackageIcon, Plus,
@@ -617,6 +618,8 @@ export default function PackagesPage() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const loadPackagesKeyRef = useRef(0)
   const residentSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const filterInputRef = useRef<DebouncedInputHandle>(null)
+  const recipientInputRef = useRef<DebouncedInputHandle>(null)
   const cardReassignTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const responsibleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reassignTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1329,7 +1332,7 @@ export default function PackagesPage() {
   }
 
   const resetReceive = () => {
-    setShowReceive(false); setStep('recipient'); setRecipientSearch('')
+    setShowReceive(false); setStep('recipient'); setRecipientSearch(''); recipientInputRef.current?.clear()
     setSearchResults([]); setSelectedRecipient(null); setShowGuestForm(false); setSearchEmpty(false)
     setGuest(emptyGuest()); setTracking(''); setCarrier(''); setPhotos([])
     setDelivererName(''); setDelivererSig(''); setDelivererManual(false)
@@ -1412,7 +1415,7 @@ export default function PackagesPage() {
   }
 
   const pendingCount = packages.filter(p => p.status === 'received' || p.status === 'notified').length
-  const clearFilters = () => { setFilterQ(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterStatus(''); setFilterOp(null); setFilterOpSet(new Set()) }
+  const clearFilters = () => { setFilterQ(''); filterInputRef.current?.clear(); setFilterDateFrom(''); setFilterDateTo(''); setFilterStatus(''); setFilterOp(null); setFilterOpSet(new Set()) }
   const opNames = [...new Set(packages.map(p => p.received_by_name).filter(Boolean))] as string[]
   const displayPackages = filterOpSet.size > 0 ? packages.filter(p => p.received_by_name && filterOpSet.has(p.received_by_name)) : packages
   const activeFilterCount = [filterQ, filterDateFrom, filterDateTo, filterStatus].filter(Boolean).length + filterOpSet.size
@@ -1714,9 +1717,10 @@ export default function PackagesPage() {
         <div className="flex gap-2 items-center">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            <input
-              value={filterQ}
-              onChange={e => { const v = e.target.value; startTransition(() => setFilterQ(v)) }}
+            <DebouncedInput
+              ref={filterInputRef}
+              onSearch={v => startTransition(() => setFilterQ(v))}
+              delay={1200}
               placeholder="Buscar nome, rastreio, unidade…"
               className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c] bg-white"
             />
@@ -2121,16 +2125,11 @@ export default function PackagesPage() {
 
                 <div className="relative mb-2">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
+                  <DebouncedInput
+                    ref={recipientInputRef}
                     id="recipient-search"
-                    value={recipientSearch}
-                    onChange={e => {
-                      const v = e.target.value
-                      setRecipientSearch(v)
-                      startTransition(() => { setSearchEmpty(false); setShowGuestForm(false) })
-                      if (residentSearchTimer.current) clearTimeout(residentSearchTimer.current)
-                      residentSearchTimer.current = setTimeout(() => searchResidents(v), SEARCH_DELAY)
-                    }}
+                    onSearch={v => { setRecipientSearch(v); startTransition(() => { setSearchEmpty(false); setShowGuestForm(false) }); searchResidents(v) }}
+                    delay={SEARCH_DELAY}
                     className={`${inputCls} pl-9`}
                     placeholder="Buscar por nome, telefone, CPF ou CEP…"
                   />
