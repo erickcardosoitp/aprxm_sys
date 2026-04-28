@@ -151,18 +151,19 @@ async def update_demand(
     return dict(zip(cols, [str(v) if v is not None else None for v in row]))
 
 
-@router.delete("/{demand_id}", status_code=204)
+@router.delete("/{demand_id}")
 async def delete_demand(
     demand_id: UUID,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> None:
+) -> dict:
     res = await session.execute(text(
         "DELETE FROM demands WHERE id = :did AND association_id = :aid"
     ), {"did": str(demand_id), "aid": str(current.association_id)})
     if res.rowcount == 0:
         raise HTTPException(404, "Demanda não encontrada.")
     await session.commit()
+    return {"ok": True}
 
 
 @router.post("/reminders/trigger", summary="Cron: enviar lembretes de prazo do dia")
