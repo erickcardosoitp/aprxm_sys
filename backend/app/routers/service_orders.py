@@ -495,3 +495,46 @@ async def list_sos(
             "created_by_name": creator_names.get(s.created_by),
         })
     return result
+
+
+@router.post("/{so_id}/presence", summary="Registrar presença na OS")
+async def register_presence(
+    so_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    user_row = await session.execute(select(User.full_name).where(User.id == current.user_id))
+    full_name = user_row.scalar_one_or_none() or "Usuário"
+    await session.execute(
+        text("""
+            INSERT INTO so_presence (so_id, user_id, association_id, full_name, last_seen_at)
+            VALUES (:so_id, :user_id, :assoc_id, :full_name, NOW())
+            ON CONFLICT (so_id, user_id) DO UPDATE SET last_seen_at = NOW(), full_name = EXCLUDED.full_name
+        """),
+        {"so_id": str(so_id), "user_id": str(current.user_id), "assoc_id": str(current.association_id), "full_name": full_name},
+    )
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/{so_id}/presence", summary="Quem está vendo a OS agora")
+async def get_presence(
+    so_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    rows = await session.execute(
+        text("""
+            SELECT user_id, full_name, last_seen_at
+            FROM so_presence
+            WHERE so_id = :so_id
+              AND association_id = :assoc_id
+              AND last_seen_at >= NOW() - INTERVAL '10 minutes'
+            ORDER BY last_seen_at DESC
+        """),
+        {"so_id": str(so_id), "assoc_id": str(current.association_id)},
+    )
+    return [
+        {"user_id": str(r.user_id), "full_name": r.full_name, "last_seen_at": r.last_seen_at.isoformat()}
+        for r in rows
+    ]

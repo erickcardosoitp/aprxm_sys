@@ -1187,6 +1187,8 @@ interface DetailPanelProps {
   onUpdated: () => void
 }
 
+interface PresenceUser { user_id: string; full_name: string; last_seen_at: string }
+
 function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'tasks' | 'demands'>('details')
   const [showPrint, setShowPrint] = useState(false)
@@ -1198,6 +1200,8 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
   const [detail, setDetail] = useState<ServiceOrder>(so)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [presence, setPresence] = useState<PresenceUser[]>([])
+  const [newCommentsCount, setNewCommentsCount] = useState(0)
   const [editForm, setEditForm] = useState({
     title: so.title,
     description: so.description,
@@ -1251,11 +1255,40 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
         try {
           const res = await api.get<SOComment[]>(`/service-orders/${so.id}/comments`)
           setComments(res.data)
+          const key = `so_comments_viewed_${so.id}`
+          const lastViewed = localStorage.getItem(key)
+          if (lastViewed) {
+            const since = new Date(lastViewed)
+            setNewCommentsCount(res.data.filter(c => new Date(c.created_at) > since).length)
+          }
+          localStorage.setItem(key, new Date().toISOString())
+          setNewCommentsCount(0)
         } catch { toast.error('Erro ao carregar comentários.') } finally { setLoadingComments(false) }
       }
       fetchComments()
+    } else {
+      const key = `so_comments_viewed_${so.id}`
+      const lastViewed = localStorage.getItem(key)
+      if (lastViewed && comments.length > 0) {
+        const since = new Date(lastViewed)
+        setNewCommentsCount(comments.filter(c => new Date(c.created_at) > since).length)
+      }
     }
   }, [activeTab, so.id])
+
+  // Presença em tempo real
+  useEffect(() => {
+    const ping = () => api.post(`/service-orders/${so.id}/presence`).catch(() => {})
+    const fetchPresence = () =>
+      api.get<PresenceUser[]>(`/service-orders/${so.id}/presence`)
+        .then(r => setPresence(r.data))
+        .catch(() => {})
+
+    ping()
+    fetchPresence()
+    const interval = setInterval(() => { ping(); fetchPresence() }, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [so.id])
 
   const handleAddComment = async () => {
     if (!commentText.trim()) return
@@ -1307,9 +1340,28 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
               {STATUS_LABELS[d.status]}
             </span>
           </div>
-          <div className="flex items-center shrink-0 ml-3">
+          <div className="flex items-center shrink-0 ml-3 gap-2">
+            {presence.length > 0 && (
+              <div className="flex items-center gap-1">
+                {presence.slice(0, 4).map(p => {
+                  const initials = p.full_name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
+                  const mins = Math.floor((Date.now() - new Date(p.last_seen_at).getTime()) / 60000)
+                  const label = `${p.full_name} · ${mins < 1 ? 'agora' : `${mins}min atrás`}`
+                  return (
+                    <div key={p.user_id} title={label}
+                      className="w-7 h-7 rounded-full bg-[#26619c] text-white text-[10px] font-bold flex items-center justify-center cursor-default ring-2 ring-white"
+                    >
+                      {initials}
+                    </div>
+                  )
+                })}
+                {presence.length > 4 && (
+                  <span className="text-xs text-gray-400">+{presence.length - 4}</span>
+                )}
+              </div>
+            )}
             <button onClick={() => setShowPrint(true)} title="Visualizar OS"
-              className="text-gray-400 hover:text-[#26619c] mr-1">
+              className="text-gray-400 hover:text-[#26619c]">
               <FileText className="w-4 h-4" />
             </button>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
@@ -1332,6 +1384,14 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
             className={`py-2.5 text-sm font-medium border-b-2 flex items-center gap-1.5 transition mr-4 ${activeTab === 'comments' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent'}`}
           >
             <MessageSquare className="w-3.5 h-3.5" /> Comentários
+            {comments.length > 0 && (
+              <span className="flex items-center gap-1">
+                <span className="bg-gray-100 text-gray-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">{comments.length}</span>
+                {newCommentsCount > 0 && (
+                  <span className="bg-blue-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{newCommentsCount} nov.</span>
+                )}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('tasks')}
