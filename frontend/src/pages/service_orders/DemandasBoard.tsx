@@ -24,7 +24,7 @@ interface Demand {
   created_by_name?: string
 }
 
-interface UserOption { id: string; full_name: string }
+interface UserOption { id: string; full_name: string; is_active?: boolean }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -212,12 +212,15 @@ function DemandModal({ demand, users, onClose, onSaved, serviceOrderId, defaultS
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
 
-function DemandCard({ demand, onEdit, onMove, onDelete, canWrite }: {
+function DemandCard({ demand, onEdit, onMove, onDelete, canWrite, isDragging, onDragStart, onDragEnd }: {
   demand: Demand
   canWrite: boolean
   onEdit: () => void
   onDelete: () => void
   onMove: (status: DemandStatus) => void
+  isDragging?: boolean
+  onDragStart?: () => void
+  onDragEnd?: () => void
 }) {
   const isOverdue = demand.due_date && new Date(demand.due_date + 'T23:59:59') < new Date() && demand.status !== 'concluido'
   const colIdx = COLUMNS.findIndex(c => c.key === demand.status)
@@ -227,7 +230,10 @@ function DemandCard({ demand, onEdit, onMove, onDelete, canWrite }: {
 
   return (
     <div
-      className="bg-white rounded-xl border border-gray-100 shadow-sm p-3.5 flex flex-col gap-2.5 hover:shadow-md hover:border-gray-200 transition-all group cursor-pointer"
+      className={`bg-white rounded-xl border border-gray-100 shadow-sm p-3.5 flex flex-col gap-2.5 hover:shadow-md hover:border-gray-200 transition-all group cursor-pointer${isDragging ? ' opacity-50' : ''}`}
+      draggable={canWrite}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onClick={onEdit}
     >
       {/* Top row: phase + priority flag */}
@@ -293,6 +299,8 @@ export default function DemandasBoard({ canWrite, serviceOrderId }: { canWrite: 
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ demand: Demand | null; status?: DemandStatus } | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState<DemandStatus | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -309,7 +317,7 @@ export default function DemandasBoard({ canWrite, serviceOrderId }: { canWrite: 
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
-    api.get<UserOption[]>('/admin/users').then(r => setUsers(r.data)).catch(() => {})
+    api.get<UserOption[]>('/admin/users?active_only=true').then(r => setUsers(r.data)).catch(() => {})
   }, [])
 
   const handleSaved = (saved: Demand) => {
@@ -331,6 +339,22 @@ export default function DemandasBoard({ canWrite, serviceOrderId }: { canWrite: 
       setDemands(prev)
       toast.error('Erro ao mover.')
     }
+  }
+
+  const handleDragStart = (id: string) => setDragging(id)
+  const handleDragEnd = () => { setDragging(null); setDragOver(null) }
+  const handleDragOverCol = (e: React.DragEvent, status: DemandStatus) => {
+    e.preventDefault()
+    setDragOver(status)
+  }
+  const handleDropOnCol = async (e: React.DragEvent, status: DemandStatus) => {
+    e.preventDefault()
+    setDragOver(null)
+    if (!dragging) return
+    const demand = demands.find(d => d.id === dragging)
+    if (!demand || demand.status === status) { setDragging(null); return }
+    setDragging(null)
+    handleMove(demand, status)
   }
 
   const handleDelete = async (id: string) => {
@@ -389,7 +413,12 @@ export default function DemandasBoard({ canWrite, serviceOrderId }: { canWrite: 
           const highCount  = colDemands.filter(d => d.priority === 'high').length
 
           return (
-            <div key={col.key} className="flex-shrink-0 w-60 sm:w-64 flex flex-col gap-2 snap-start">
+            <div
+              key={col.key}
+              className={`flex-shrink-0 w-60 sm:w-64 flex flex-col gap-2 snap-start${dragOver === col.key ? ' ring-2 ring-[#26619c]/40' : ''}`}
+              onDragOver={e => handleDragOverCol(e, col.key)}
+              onDrop={e => handleDropOnCol(e, col.key)}
+            >
               {/* Column header */}
               <div className={`flex items-center justify-between px-3 py-2 rounded-xl border-l-2 bg-white shadow-sm ${col.accent}`}>
                 <span className="text-xs font-bold text-gray-700 tracking-wide">{col.label}</span>
@@ -413,6 +442,9 @@ export default function DemandasBoard({ canWrite, serviceOrderId }: { canWrite: 
                     onEdit={() => setModal({ demand: d })}
                     onMove={status => handleMove(d, status)}
                     onDelete={() => handleDelete(d.id)}
+                    isDragging={dragging === d.id}
+                    onDragStart={() => handleDragStart(d.id)}
+                    onDragEnd={handleDragEnd}
                   />
                 ))}
                 {colDemands.length === 0 && (

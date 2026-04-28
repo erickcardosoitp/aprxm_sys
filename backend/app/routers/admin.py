@@ -46,14 +46,14 @@ def _serialize_user(u: User) -> dict:
 
 @router.get("/users", summary="Listar usuários da associação")
 async def list_users(
+    active_only: bool = False,
     current: CurrentUser = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    stmt = (
-        select(User)
-        .where(User.association_id == current.association_id)
-        .order_by(User.full_name)
-    )
+    stmt = select(User).where(User.association_id == current.association_id)
+    if active_only:
+        stmt = stmt.where(User.is_active == True)
+    stmt = stmt.order_by(User.full_name)
     result = await session.execute(stmt)
     return [_serialize_user(u) for u in result.scalars().all()]
 

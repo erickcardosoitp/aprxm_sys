@@ -128,10 +128,6 @@ export default function ChatPage() {
       setMentionIdx(null)
       setMentionFilter('')
     }
-    // auto-resize
-    const ta = e.target
-    ta.style.height = 'auto'
-    ta.style.height = Math.min(ta.scrollHeight, 112) + 'px'
   }
 
   const filteredUsers = mentionIdx !== null
@@ -162,7 +158,6 @@ export default function ChatPage() {
     const ids = [...mentionIds]
     setText('')
     setMentionIds([])
-    if (textRef.current) { textRef.current.style.height = 'auto' }
     try {
       const res = await api.post<ChatMessage>('/chat/messages', {
         content, message_type: 'text', mention_ids: ids,
@@ -357,8 +352,7 @@ export default function ChatPage() {
           placeholder={recording ? 'Gravando áudio…' : 'Mensagem… (@ para mencionar)'}
           rows={1}
           disabled={recording || uploading}
-          className="flex-1 resize-none rounded-2xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-gray-50 disabled:opacity-50"
-          style={{ minHeight: '38px', maxHeight: '112px' }}
+          className="flex-1 min-h-[40px] max-h-28 resize-none overflow-y-auto rounded-2xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-gray-50 disabled:opacity-50"
         />
 
         {recording ? (
