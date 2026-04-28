@@ -616,6 +616,7 @@ export default function PackagesPage() {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const loadPackagesKeyRef = useRef(0)
+  const residentSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Carriers & Deliverers
   const [carriers, setCarriers] = useState<{ id: string; name: string }[]>([])
@@ -2118,7 +2119,11 @@ export default function PackagesPage() {
                   <input
                     id="recipient-search"
                     value={recipientSearch}
-                    onChange={e => { setRecipientSearch(e.target.value); setSearchEmpty(false); setShowGuestForm(false); searchResidents(e.target.value) }}
+                    onChange={e => {
+                      setRecipientSearch(e.target.value); setSearchEmpty(false); setShowGuestForm(false)
+                      if (residentSearchTimer.current) clearTimeout(residentSearchTimer.current)
+                      residentSearchTimer.current = setTimeout(() => searchResidents(e.target.value), 300)
+                    }}
                     className={`${inputCls} pl-9`}
                     placeholder="Buscar por nome, telefone, CPF ou CEP…"
                   />
@@ -3314,7 +3319,10 @@ export default function PackagesPage() {
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-medium text-gray-600">Entregador (opcional)</label>
+                      <label className="text-xs font-medium text-gray-600">
+                        Entregador (opcional)
+                        {!delivererOptsLoading && <span className="ml-1 text-gray-400">({delivererOpts.length} cadastrado{delivererOpts.length !== 1 ? 's' : ''})</span>}
+                      </label>
                       <button onClick={loadDelivererOpts} className="text-[10px] text-[#26619c] hover:underline">
                         {delivererOptsLoading ? 'Carregando…' : '↻ Atualizar'}
                       </button>
