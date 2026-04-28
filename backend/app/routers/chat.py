@@ -105,7 +105,7 @@ async def send_message(
         result = await session.execute(text("""
             INSERT INTO chat_messages
                 (association_id, sender_id, sender_name, content, message_type, media_url, mention_ids)
-            VALUES (:assoc, :sender, :name, :content, :mtype, :media, :mentions::jsonb)
+            VALUES (:assoc, :sender, :name, :content, :mtype, :media, CAST(:mentions AS jsonb))
             RETURNING id, created_at
         """), {
             "assoc": str(current.association_id),
