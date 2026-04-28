@@ -297,6 +297,9 @@ async def _run_migrations() -> None:
         await session.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_deliverers_assoc ON deliverers(association_id)"
         ))
+        await session.execute(text(
+            "UPDATE deliverers SET active = TRUE WHERE active IS NULL"
+        ))
 
         await session.execute(text("""
             CREATE TABLE IF NOT EXISTS resident_update_requests (

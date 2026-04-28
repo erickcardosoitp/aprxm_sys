@@ -75,7 +75,7 @@ async def list_deliverers(
         SELECT d.id, d.name, d.carrier_id, c.name AS carrier_name, d.signature_url, d.created_at
         FROM deliverers d
         LEFT JOIN carriers c ON c.id = d.carrier_id
-        WHERE d.association_id = :aid AND d.active = TRUE
+        WHERE d.association_id = :aid AND d.active IS NOT FALSE
         ORDER BY d.name
     """), {"aid": str(current.association_id)})).fetchall()
     return [
