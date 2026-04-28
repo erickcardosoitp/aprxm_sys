@@ -68,10 +68,8 @@ async def register_begin(
     )
 
     challenge_b64 = base64.urlsafe_b64encode(options.challenge).decode().rstrip("=")
-    await session.execute(text("""
-        DELETE FROM webauthn_challenges WHERE user_id = :uid;
-        INSERT INTO webauthn_challenges (user_id, challenge) VALUES (:uid, :ch)
-    """), {"uid": str(current.user_id), "ch": challenge_b64})
+    await session.execute(text("DELETE FROM webauthn_challenges WHERE user_id = :uid"), {"uid": str(current.user_id)})
+    await session.execute(text("INSERT INTO webauthn_challenges (user_id, challenge) VALUES (:uid, :ch)"), {"uid": str(current.user_id), "ch": challenge_b64})
     await session.commit()
 
     return json.loads(webauthn.options_to_json(options))
@@ -197,10 +195,8 @@ async def authenticate_begin(
     )
 
     challenge_b64 = base64.urlsafe_b64encode(options.challenge).decode().rstrip("=")
-    await session.execute(text("""
-        DELETE FROM webauthn_challenges WHERE user_id = :uid;
-        INSERT INTO webauthn_challenges (user_id, challenge) VALUES (:uid, :ch)
-    """), {"uid": user_id, "ch": challenge_b64})
+    await session.execute(text("DELETE FROM webauthn_challenges WHERE user_id = :uid"), {"uid": user_id})
+    await session.execute(text("INSERT INTO webauthn_challenges (user_id, challenge) VALUES (:uid, :ch)"), {"uid": user_id, "ch": challenge_b64})
     await session.commit()
 
     return {**json.loads(webauthn.options_to_json(options)), "user_id": user_id}
