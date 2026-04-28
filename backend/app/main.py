@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, cash_boxes, demands, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers
+from app.routers import admin, agent, auth, carriers, cash_boxes, chat, demands, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -410,6 +410,24 @@ async def _run_migrations() -> None:
         ]:
             await session.execute(text(f"ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS {col}"))
 
+        # chat_messages: corporate chat with 15-day retention
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                sender_id UUID REFERENCES users(id),
+                sender_name VARCHAR(255) NOT NULL DEFAULT 'Sistema',
+                content TEXT,
+                message_type VARCHAR(20) NOT NULL DEFAULT 'text',
+                media_url TEXT,
+                mention_ids JSONB NOT NULL DEFAULT '[]',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_chat_messages_assoc ON chat_messages(association_id, created_at)"
+        ))
+
         # role_permissions: per-association configurable module access
         await session.execute(text("""
             CREATE TABLE IF NOT EXISTS role_permissions (
@@ -475,6 +493,7 @@ app.include_router(cash_boxes.router, prefix=PREFIX)
 app.include_router(porta_a_porta.router, prefix=PREFIX)
 app.include_router(carriers.router, prefix=PREFIX)
 app.include_router(demands.router, prefix=PREFIX)
+app.include_router(chat.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

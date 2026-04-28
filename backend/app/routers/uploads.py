@@ -7,7 +7,9 @@ from app.services.storage_service import StorageService
 router = APIRouter(prefix="/uploads", tags=["Uploads"])
 
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-MAX_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+ALLOWED_AUDIO = {"audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/aac"}
+MAX_SIZE_BYTES = 10 * 1024 * 1024
+MAX_AUDIO_BYTES = 5 * 1024 * 1024
 
 
 @router.post("", summary="Upload de arquivo para Supabase Storage")
@@ -45,4 +47,21 @@ async def upload_base64(
 
     svc = StorageService(str(current.association_id))
     url = svc.upload_base64(data_url, folder)
+    return JSONResponse({"url": url})
+
+
+@router.post("/audio", summary="Upload de áudio para chat")
+async def upload_audio(
+    file: UploadFile = File(...),
+    folder: str = Form(default="chat/audio"),
+    current: CurrentUser = Depends(get_current_user),
+) -> JSONResponse:
+    ct = file.content_type or ""
+    if ct not in ALLOWED_AUDIO and not ct.startswith("audio/"):
+        return JSONResponse(status_code=400, content={"detail": "Tipo de arquivo não permitido."})
+    file_bytes = await file.read()
+    if len(file_bytes) > MAX_AUDIO_BYTES:
+        return JSONResponse(status_code=400, content={"detail": "Áudio muito grande (máx. 5 MB)."})
+    svc = StorageService(str(current.association_id))
+    url = svc.upload(file_bytes, file.filename or f"audio_{current.user_id}.webm", folder)
     return JSONResponse({"url": url})

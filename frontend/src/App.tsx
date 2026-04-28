@@ -18,6 +18,7 @@ import { useAuthStore } from './store/authStore'
 import PublicRegisterPage from './pages/public/PublicRegisterPage'
 import PublicUpdatePage from './pages/public/PublicUpdatePage'
 import CadastroPortaAPorta from './pages/public/CadastroPortaAPorta'
+import ChatPage from './pages/chat/ChatPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated())
@@ -89,6 +90,7 @@ export default function App() {
           <Route path="geral"          element={<RequireAggregator><GeralPage /></RequireAggregator>} />
           <Route path="superadmin"     element={<RequireSuperAdmin><SuperAdminPage /></RequireSuperAdmin>} />
           <Route path="logs"           element={<RequireAdmin><LogsPage /></RequireAdmin>} />
+          <Route path="chat"           element={<ChatPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

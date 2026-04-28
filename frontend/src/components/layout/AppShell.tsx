@@ -1,6 +1,6 @@
 import { type ComponentType, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, Download, FileText, LogOut, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
+import { Activity, BarChart2, Building2, Check, ChevronDown, DollarSign, Download, FileText, LogOut, MessageSquare, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
@@ -125,6 +125,16 @@ export function AppShell() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Chat */}
+          <NavLink
+            to="/chat"
+            className={({ isActive }) =>
+              `p-1.5 rounded-xl transition ${isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}`
+            }
+          >
+            <MessageSquare className="w-5 h-5" />
+          </NavLink>
+
           {/* User menu */}
           <div className="relative" ref={menuRef}>
             <button

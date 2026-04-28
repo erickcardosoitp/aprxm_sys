@@ -375,6 +375,21 @@ async def create_task(
     })
     row = result.fetchone()
     await session.commit()
+
+    if body.assigned_to_name:
+        try:
+            from app.routers.chat import post_system_message
+            so_num = await session.execute(
+                text("SELECT order_number FROM service_orders WHERE id = :id"),
+                {"id": str(so_id)},
+            )
+            num = so_num.scalar()
+            msg = f"📋 {body.assigned_to_name} foi atribuído(a) à tarefa "{body.title}" da OS #{num}"
+            await post_system_message(str(current.association_id), msg, session)
+            await session.commit()
+        except Exception:
+            pass
+
     return {"id": str(row[0]), "created_at": str(row[1])}
 
 
