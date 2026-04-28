@@ -617,6 +617,11 @@ export default function PackagesPage() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const loadPackagesKeyRef = useRef(0)
   const residentSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cardReassignTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const responsibleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reassignTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const brxSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const SEARCH_DELAY = 800
 
   // Carriers & Deliverers
   const [carriers, setCarriers] = useState<{ id: string; name: string }[]>([])
@@ -1447,7 +1452,7 @@ export default function PackagesPage() {
             <div onClick={e => e.stopPropagation()} className="mt-1.5">
               {cardReassignPkgId === pkg.id ? (
                 <div className="relative">
-                  <input autoFocus value={cardReassignSearch} onChange={e => searchCardReassign(e.target.value)}
+                  <input autoFocus value={cardReassignSearch} onChange={e => { const v = e.target.value; setCardReassignSearch(v); if (cardReassignTimer.current) clearTimeout(cardReassignTimer.current); cardReassignTimer.current = setTimeout(() => { if (v.length >= 2) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setCardReassignResults(r.data.slice(0, 5))).catch(() => setCardReassignResults([])); else setCardReassignResults([]) }, SEARCH_DELAY) }}
                     placeholder="Buscar morador…" className="w-full text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#26619c]" />
                   <button onClick={() => { setCardReassignPkgId(null); setCardReassignSearch(''); setCardReassignResults([]) }} className="absolute right-1 top-1 text-gray-400 text-xs">✕</button>
                   {cardReassignResults.length > 0 && (
@@ -2122,7 +2127,7 @@ export default function PackagesPage() {
                     onChange={e => {
                       setRecipientSearch(e.target.value); setSearchEmpty(false); setShowGuestForm(false)
                       if (residentSearchTimer.current) clearTimeout(residentSearchTimer.current)
-                      residentSearchTimer.current = setTimeout(() => searchResidents(e.target.value), 300)
+                      residentSearchTimer.current = setTimeout(() => searchResidents(e.target.value), SEARCH_DELAY)
                     }}
                     className={`${inputCls} pl-9`}
                     placeholder="Buscar por nome, telefone, CPF ou CEP…"
@@ -2228,7 +2233,7 @@ export default function PackagesPage() {
                       <div className="flex flex-col gap-1">
                         <label className="text-xs text-gray-600">Responsável (associado titular) *</label>
                         <input value={newResResponsibleSearch}
-                          onChange={e => { setNewResResponsibleSearch(e.target.value); setNewResResponsible(null); searchResponsible(e.target.value) }}
+                          onChange={e => { const v = e.target.value; setNewResResponsibleSearch(v); setNewResResponsible(null); if (responsibleTimer.current) clearTimeout(responsibleTimer.current); responsibleTimer.current = setTimeout(() => searchResponsible(v), SEARCH_DELAY) }}
                           className={inputCls} placeholder="Buscar associado…" />
                         {newResResponsibleResults.length > 0 && (
                           <ul className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-32 overflow-y-auto">
@@ -2705,7 +2710,7 @@ export default function PackagesPage() {
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Atribuir encomenda a outro morador/dependente:</p>
                     <div className="relative">
-                      <input value={reassignSearch} onChange={e => searchReassign(e.target.value)}
+                      <input value={reassignSearch} onChange={e => { const v = e.target.value; setReassignSearch(v); if (reassignTimer.current) clearTimeout(reassignTimer.current); reassignTimer.current = setTimeout(() => { if (v.length >= 2) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setReassignResults(r.data.slice(0, 6))).catch(() => setReassignResults([])); else setReassignResults([]) }, SEARCH_DELAY) }}
                         className={inputCls} placeholder="Buscar por nome ou CPF…" />
                       {reassignResults.length > 0 && (
                         <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
@@ -3143,7 +3148,7 @@ export default function PackagesPage() {
                     <input
                       ref={brxSearchRef}
                       value={brxSearch}
-                      onChange={e => { setBrxSearch(e.target.value); setBrxSelected(null); searchBrxResidents(e.target.value) }}
+                      onChange={e => { const v = e.target.value; setBrxSearch(v); setBrxSelected(null); if (brxSearchTimer.current) clearTimeout(brxSearchTimer.current); brxSearchTimer.current = setTimeout(() => searchBrxResidents(v), SEARCH_DELAY) }}
                       onKeyDown={e => {
                         if (e.key === 'Enter' && brxResults.length > 0) { e.preventDefault(); selectBrxResident(brxResults[0]) }
                       }}
@@ -3226,7 +3231,7 @@ export default function PackagesPage() {
                         {newResType === 'dependent' && (
                           <div className="flex flex-col gap-1">
                             <input value={newResResponsibleSearch}
-                              onChange={e => { setNewResResponsibleSearch(e.target.value); setNewResResponsible(null); searchResponsible(e.target.value) }}
+                              onChange={e => { const v = e.target.value; setNewResResponsibleSearch(v); setNewResResponsible(null); if (responsibleTimer.current) clearTimeout(responsibleTimer.current); responsibleTimer.current = setTimeout(() => searchResponsible(v), SEARCH_DELAY) }}
                               className={inputCls} placeholder="Responsável (associado)…" />
                             {newResResponsibleResults.length > 0 && (
                               <ul className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-24 overflow-y-auto">
