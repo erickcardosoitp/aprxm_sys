@@ -125,6 +125,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
   const [isAcordo, setIsAcordo] = useState(false)
   const [acordoInstallments, setAcordoInstallments] = useState(2)
+  const [acordoMonths, setAcordoMonths] = useState(2)
+  const [acordoEntrada, setAcordoEntrada] = useState('')
 
   // Step 2 — income specific
   const [cpfQuery, setCpfQuery] = useState('')
@@ -165,6 +167,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
 
   // mensalidade — months
+  const [mensalidadeMode, setMensalidadeMode] = useState<'unica' | 'multipla'>('unica')
   const [mensalidadeMonths, setMensalidadeMonths] = useState<string[]>([])
 
   // Step 3 — barcode confirmation
@@ -214,13 +217,13 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   useEffect(() => {
     if (txType !== 'income' || incomeSubtype !== 'mensalidade') return
     const defaultAmt = parseFloat(settings?.default_mensalidade_amount || '0')
-    const count = defaultAmt > 0 && amount ? Math.max(1, Math.round(parseFloat(amount) / defaultAmt)) : 1
+    const count = mensalidadeMode === 'unica' ? 1 : (defaultAmt > 0 && amount ? Math.max(1, Math.round(parseFloat(amount) / defaultAmt)) : 1)
     const now = new Date()
     setMensalidadeMonths(Array.from({ length: count }, (_, i) => {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     }))
-  }, [amount, incomeSubtype, txType, settings?.default_mensalidade_amount])
+  }, [amount, incomeSubtype, txType, settings?.default_mensalidade_amount, mensalidadeMode])
 
   // Auto-fill from resident lookup into proof fields
   useEffect(() => {
@@ -448,6 +451,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         cash_session_id: selectedSessionId || undefined,
         is_acordo: isAcordo || undefined,
         acordo_installments: isAcordo ? acordoInstallments : undefined,
+        acordo_months: isAcordo ? acordoMonths : undefined,
+        acordo_entrada: isAcordo && acordoEntrada ? parseFloat(acordoEntrada) : undefined,
       }
       try {
         await financeService.registerTransaction(txPayload)
@@ -965,18 +970,50 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input type="checkbox" checked={isAcordo} onChange={e => setIsAcordo(e.target.checked)}
                       className="w-4 h-4 rounded accent-purple-600" />
-                    <span className="text-sm font-medium text-purple-700">Pagamento por Acordo</span>
+                    <span className="text-sm font-medium text-purple-700">Acordo de parcelamento</span>
                   </label>
-                  {isAcordo && (
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 flex items-center gap-3">
-                      <span className="text-xs text-purple-700 font-medium">Parcelas restantes:</span>
-                      <select value={acordoInstallments} onChange={e => setAcordoInstallments(Number(e.target.value))}
-                        className="border border-purple-300 rounded-lg px-2 py-1 text-sm text-purple-800 bg-white">
-                        {[2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}
-                      </select>
-                      <span className="text-xs text-purple-500">Será refletido em Leads</span>
-                    </div>
-                  )}
+                  {isAcordo && (() => {
+                    const defaultAmt = parseFloat(settings?.default_mensalidade_amount || '0')
+                    const total = acordoMonths * defaultAmt
+                    const entrada = parseFloat(acordoEntrada || '0')
+                    const restante = total - entrada
+                    const parcelasValor = acordoInstallments > 0 ? restante / acordoInstallments : 0
+                    return (
+                      <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex flex-col gap-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-[10px] text-purple-600 font-semibold mb-1">Meses</label>
+                            <select value={acordoMonths} onChange={e => setAcordoMonths(Number(e.target.value))}
+                              className="w-full border border-purple-300 rounded-lg px-2 py-1.5 text-xs text-purple-800 bg-white">
+                              {[1,2,3,4,5,6,7,8,9,10,11,12,18,24].map(n => <option key={n} value={n}>{n} {n === 1 ? 'mês' : 'meses'}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-purple-600 font-semibold mb-1">Entrada (R$)</label>
+                            <input type="number" min="0" step="0.01" value={acordoEntrada}
+                              onChange={e => setAcordoEntrada(e.target.value)}
+                              placeholder="0,00"
+                              className="w-full border border-purple-300 rounded-lg px-2 py-1.5 text-xs bg-white" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-purple-600 font-semibold mb-1">Parcelas</label>
+                            <select value={acordoInstallments} onChange={e => setAcordoInstallments(Number(e.target.value))}
+                              className="w-full border border-purple-300 rounded-lg px-2 py-1.5 text-xs text-purple-800 bg-white">
+                              {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}x</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        {defaultAmt > 0 && (
+                          <div className="bg-white rounded-lg px-3 py-2 text-xs grid grid-cols-2 gap-x-4 gap-y-1 border border-purple-100">
+                            <div className="flex justify-between"><span className="text-gray-500">Total dívida</span><span className="font-semibold text-purple-700">R$ {total.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Entrada</span><span className="font-semibold">R$ {entrada.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Restante</span><span className="font-semibold">R$ {restante.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Cada parcela</span><span className="font-semibold text-blue-700">R$ {parcelasValor.toFixed(2)}</span></div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
 
@@ -999,6 +1036,18 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                       </div>
                     </div>
                   )}
+                  {txType === 'income' && incomeSubtype === 'mensalidade' && (
+                    <div className="flex gap-2">
+                      {(['unica', 'multipla'] as const).map(m => (
+                        <button key={m} type="button" onClick={() => setMensalidadeMode(m)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition ${
+                            mensalidadeMode === m ? 'border-[#26619c] bg-blue-50 text-[#26619c]' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}>
+                          {m === 'unica' ? 'Única (1 mês)' : 'Múltipla'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
                       Valor (R$) <span className="text-red-500">*</span>
@@ -1010,7 +1059,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                       onChange={(e) => setAmount(e.target.value)} placeholder="0,00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
-                  {txType === 'income' && incomeSubtype === 'mensalidade' && mensalidadeMonths.length > 1 && (() => {
+                  {txType === 'income' && incomeSubtype === 'mensalidade' && mensalidadeMode === 'multipla' && mensalidadeMonths.length > 0 && (() => {
                     const now = new Date()
                     const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
                     return (

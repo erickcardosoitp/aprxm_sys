@@ -98,6 +98,15 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
     const counted = blindTotal
     setLoading(true)
     try {
+      // Warn if there are pending approvals
+      const pendingRes = await financeService.listPendingApprovals().catch(() => ({ data: [] }))
+      const pendingCount = pendingRes.data?.length ?? 0
+      if (pendingCount > 0) {
+        const ok = window.confirm(
+          `⚠️ Há ${pendingCount} despesa(s) pendente(s) de aprovação!\n\nSe fechar agora, essas despesas ficam sem aprovação e podem gerar diferença.\n\nClique em OK para fechar mesmo assim, ou Cancelar para revisar antes.`
+        )
+        if (!ok) { setLoading(false); return }
+      }
       const res = await financeService.listTransactions(session.id)
       const txs: Transaction[] = res.data
       setTransactions(txs)

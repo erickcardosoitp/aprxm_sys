@@ -619,8 +619,11 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
               </button>
             )
           ) : step === 4 ? (
-            <button onClick={onClose}
-              className="bg-gray-800 hover:bg-gray-900 text-white px-6 py-2.5 rounded-xl text-sm font-semibold">
+            <button
+              onClick={onClose}
+              disabled={cashBoxes.some(b => b.is_malote) && transfersDone.length === 0}
+              title={cashBoxes.some(b => b.is_malote) && transfersDone.length === 0 ? 'Repasse ao malote obrigatório' : undefined}
+              className="bg-gray-800 hover:bg-gray-900 disabled:opacity-40 text-white px-6 py-2.5 rounded-xl text-sm font-semibold">
               Concluir
             </button>
           ) : (

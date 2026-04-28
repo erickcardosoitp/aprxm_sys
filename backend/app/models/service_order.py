@@ -68,7 +68,11 @@ class ServiceOrder(SQLModel, table=True):
     reference_point: str | None = None
     request_date: datetime | None = None
     address_cep: str | None = None
+    address_street: str | None = Field(default=None, max_length=255)
+    address_number: str | None = Field(default=None, max_length=20)
+    address_complement: str | None = Field(default=None, max_length=100)
     use_requester_address: bool = Field(default=False)
+    community_wide: bool = Field(default=False)
 
     # assigned to user (name resolved at query time)
     assigned_to_name: str | None = Field(default=None, max_length=255)

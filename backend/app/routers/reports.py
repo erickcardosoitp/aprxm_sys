@@ -1,5 +1,6 @@
 from datetime import date
 from io import BytesIO
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
@@ -13,206 +14,327 @@ from app.database import get_session
 
 router = APIRouter(prefix="/reports", tags=["Relatórios"])
 
-_HEADER_COLOR = "1A3F6F"
+_HDR = "1A3F6F"
 
 
-def _mk_wb(sheet_name: str) -> tuple[Workbook, any]:
+def _mk(sheet: str):
     wb = Workbook()
     ws = wb.active
-    ws.title = sheet_name
+    ws.title = sheet
     return wb, ws
 
 
-def _style_headers(ws, headers: list[str]) -> None:
-    for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=h)
-        cell.font = Font(bold=True, color="FFFFFF", size=10)
-        cell.fill = PatternFill("solid", fgColor=_HEADER_COLOR)
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+def _headers(ws, cols: list[str]):
+    for i, h in enumerate(cols, 1):
+        c = ws.cell(row=1, column=i, value=h)
+        c.font = Font(bold=True, color="FFFFFF", size=10)
+        c.fill = PatternFill("solid", fgColor=_HDR)
+        c.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 22
 
 
-def _auto_width(ws) -> None:
+def _widths(ws):
     for col in ws.columns:
-        max_len = max((len(str(c.value or "")) for c in col), default=8)
-        ws.column_dimensions[col[0].column_letter].width = min(max_len + 3, 45)
+        w = max((len(str(c.value or "")) for c in col), default=8)
+        ws.column_dimensions[col[0].column_letter].width = min(w + 3, 48)
 
 
-def _respond(wb: Workbook, filename: str) -> Response:
+def _xlsx(wb: Workbook, name: str) -> Response:
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
     return Response(
         content=buf.read(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
 
 
-def _v(val) -> str:
-    return str(val) if val is not None else "—"
+def _s(v: Any) -> str:
+    return str(v) if v is not None else "—"
+
+
+# ─── Financeiro ───────────────────────────────────────────────────────────────
+
+async def _query_finance(session, aid: str, date_from=None, date_to=None, tx_type=None, payment_method=None):
+    conds = ["t.association_id = :aid", "t.reversed_at IS NULL"]
+    p: dict = {"aid": aid}
+    if date_from: conds.append("t.created_at::date >= :df"); p["df"] = date.fromisoformat(date_from)
+    if date_to: conds.append("t.created_at::date <= :dt"); p["dt"] = date.fromisoformat(date_to)
+    if tx_type in ("income", "expense"): conds.append("t.type = :tp"); p["tp"] = tx_type
+    if payment_method: conds.append("pm.name ILIKE :pm"); p["pm"] = f"%{payment_method}%"
+    w = " AND ".join(conds)
+    rows = (await session.execute(text(f"""
+        SELECT t.created_at::date, t.type, t.amount, t.description,
+               pm.name AS pagamento, u.full_name AS criado_por
+        FROM transactions t
+        LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+        LEFT JOIN users u ON u.id = t.created_by
+        WHERE {w} ORDER BY t.created_at DESC
+    """), p)).fetchall()
+    return [{"Data": _s(r[0]), "Tipo": "Entrada" if r[1] == "income" else "Saída",
+             "Valor (R$)": float(r[2] or 0), "Descrição": _s(r[3]),
+             "Pagamento": _s(r[4]), "Criado por": _s(r[5])} for r in rows]
+
+
+@router.get("/finance/preview")
+async def preview_finance(
+    date_from: str | None = None, date_to: str | None = None,
+    tx_type: str | None = None, payment_method: str | None = None,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await _query_finance(session, str(current.association_id), date_from, date_to, tx_type, payment_method)
 
 
 @router.get("/finance")
 async def export_finance(
-    date_from: str,
-    date_to: str,
+    date_from: str | None = None, date_to: str | None = None,
+    tx_type: str | None = None, payment_method: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    df, dt = date.fromisoformat(date_from), date.fromisoformat(date_to)
-    rows = (await session.execute(text("""
-        SELECT t.created_at::date, t.type, t.amount, t.description,
-               pm.name, u.full_name, cs.id
-        FROM transactions t
-        LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
-        LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
-        LEFT JOIN users u ON u.id = t.created_by
-        WHERE t.association_id = :aid AND t.created_at::date BETWEEN :df AND :dt
-          AND t.reversed_at IS NULL
-        ORDER BY t.created_at DESC
-    """), {"aid": str(current.association_id), "df": df, "dt": dt})).fetchall()
+    rows = await _query_finance(session, str(current.association_id), date_from, date_to, tx_type, payment_method)
+    wb, ws = _mk("Financeiro")
+    cols = list(rows[0].keys()) if rows else ["Data","Tipo","Valor (R$)","Descrição","Pagamento","Criado por"]
+    _headers(ws, cols)
+    for r in rows: ws.append(list(r.values()))
+    _widths(ws)
+    return _xlsx(wb, f"financeiro.xlsx")
 
-    wb, ws = _mk_wb("Financeiro")
-    _style_headers(ws, ["Data", "Tipo", "Valor (R$)", "Descrição", "Forma de Pagamento", "Criado por"])
-    for r in rows:
-        ws.append([_v(r[0]), "Entrada" if r[1] == "income" else "Saída", float(r[2] or 0), _v(r[3]), _v(r[4]), _v(r[5])])
-    _auto_width(ws)
-    return _respond(wb, f"financeiro_{date_from}_{date_to}.xlsx")
+
+# ─── Moradores ────────────────────────────────────────────────────────────────
+
+async def _query_residents(session, aid: str, res_type=None, res_status=None, q=None):
+    conds = ["association_id = :aid"]
+    p: dict = {"aid": aid}
+    if res_type: conds.append("type = :tp"); p["tp"] = res_type
+    if res_status: conds.append("status = :st"); p["st"] = res_status
+    if q: conds.append("(full_name ILIKE :q OR cpf ILIKE :q)"); p["q"] = f"%{q}%"
+    w = " AND ".join(conds)
+    rows = (await session.execute(text(f"""
+        SELECT full_name, cpf, phone_primary, email, address_street,
+               address_number, address_neighborhood, address_cep,
+               type, status, unit, block, created_at::date
+        FROM residents WHERE {w} ORDER BY full_name
+    """), p)).fetchall()
+    cols = ["Nome","CPF","Telefone","E-mail","Rua","Número","Bairro","CEP","Tipo","Status","Unidade","Bloco","Cadastrado em"]
+    return [dict(zip(cols, [_s(v) for v in r])) for r in rows]
+
+
+@router.get("/residents/preview")
+async def preview_residents(
+    res_type: str | None = None, res_status: str | None = None, q: str | None = None,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await _query_residents(session, str(current.association_id), res_type, res_status, q)
 
 
 @router.get("/residents")
 async def export_residents(
+    res_type: str | None = None, res_status: str | None = None, q: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    rows = (await session.execute(text("""
-        SELECT full_name, cpf, phone_primary, email, address_street, address_number,
-               address_complement, address_neighborhood, address_city, address_cep,
-               type, status, unit, block, created_at::date
-        FROM residents WHERE association_id = :aid ORDER BY full_name
-    """), {"aid": str(current.association_id)})).fetchall()
+    rows = await _query_residents(session, str(current.association_id), res_type, res_status, q)
+    wb, ws = _mk("Moradores")
+    cols = list(rows[0].keys()) if rows else []
+    _headers(ws, cols)
+    for r in rows: ws.append(list(r.values()))
+    _widths(ws)
+    return _xlsx(wb, "moradores.xlsx")
 
-    wb, ws = _mk_wb("Moradores")
-    _style_headers(ws, ["Nome", "CPF", "Telefone", "E-mail", "Rua", "Número",
-                         "Complemento", "Bairro", "Cidade", "CEP", "Tipo", "Status",
-                         "Unidade", "Bloco", "Cadastrado em"])
-    for r in rows:
-        ws.append([_v(v) for v in r])
-    _auto_width(ws)
-    return _respond(wb, "moradores.xlsx")
+
+# ─── Encomendas ───────────────────────────────────────────────────────────────
+
+async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_status=None):
+    conds = ["p.association_id = :aid"]
+    p: dict = {"aid": aid}
+    if date_from: conds.append("p.received_at::date >= :df"); p["df"] = date.fromisoformat(date_from)
+    if date_to: conds.append("p.received_at::date <= :dt"); p["dt"] = date.fromisoformat(date_to)
+    if pkg_status: conds.append("p.status = :st"); p["st"] = pkg_status
+    w = " AND ".join(conds)
+    rows = (await session.execute(text(f"""
+        SELECT p.tracking_code, p.recipient_name, p.recipient_unit, p.recipient_block,
+               p.status, p.carrier, p.received_at::date, p.delivered_at::date,
+               p.delivery_fee, u.full_name
+        FROM packages p LEFT JOIN users u ON u.id = p.received_by
+        WHERE {w} ORDER BY p.received_at DESC
+    """), p)).fetchall()
+    cols = ["Código Rastreio","Destinatário","Unidade","Bloco","Status","Transportadora",
+            "Recebido em","Entregue em","Taxa (R$)","Recebido por"]
+    return [dict(zip(cols, [_s(v) for v in r])) for r in rows]
+
+
+@router.get("/packages/preview")
+async def preview_packages(
+    date_from: str | None = None, date_to: str | None = None, pkg_status: str | None = None,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status)
 
 
 @router.get("/packages")
 async def export_packages(
-    date_from: str,
-    date_to: str,
+    date_from: str | None = None, date_to: str | None = None, pkg_status: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    df, dt = date.fromisoformat(date_from), date.fromisoformat(date_to)
-    rows = (await session.execute(text("""
-        SELECT p.tracking_code, p.recipient_name, p.recipient_unit, p.recipient_block,
-               p.status, p.carrier, p.received_at::date, p.delivered_at::date,
-               p.delivery_fee, u.full_name
-        FROM packages p
-        LEFT JOIN users u ON u.id = p.received_by
-        WHERE p.association_id = :aid AND p.received_at::date BETWEEN :df AND :dt
-        ORDER BY p.received_at DESC
-    """), {"aid": str(current.association_id), "df": df, "dt": dt})).fetchall()
-
-    wb, ws = _mk_wb("Encomendas")
-    _style_headers(ws, ["Código Rastreio", "Destinatário", "Unidade", "Bloco", "Status",
-                         "Transportadora", "Recebido em", "Entregue em", "Taxa (R$)", "Recebido por"])
-    for r in rows:
-        ws.append([_v(v) for v in r])
-    _auto_width(ws)
-    return _respond(wb, f"encomendas_{date_from}_{date_to}.xlsx")
+    rows = await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status)
+    wb, ws = _mk("Encomendas")
+    cols = list(rows[0].keys()) if rows else []
+    _headers(ws, cols)
+    for r in rows: ws.append(list(r.values()))
+    _widths(ws)
+    return _xlsx(wb, "encomendas.xlsx")
 
 
-@router.get("/service-orders")
-async def export_service_orders(
-    date_from: str,
-    date_to: str,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> Response:
-    df, dt = date.fromisoformat(date_from), date.fromisoformat(date_to)
-    rows = (await session.execute(text("""
+# ─── Ordens de Serviço ────────────────────────────────────────────────────────
+
+async def _query_service_orders(session, aid: str, date_from=None, date_to=None, so_status=None, so_priority=None, category=None):
+    conds = ["association_id = :aid"]
+    p: dict = {"aid": aid}
+    if date_from: conds.append("created_at::date >= :df"); p["df"] = date.fromisoformat(date_from)
+    if date_to: conds.append("created_at::date <= :dt"); p["dt"] = date.fromisoformat(date_to)
+    if so_status: conds.append("status = :st"); p["st"] = so_status
+    if so_priority: conds.append("priority = :pr"); p["pr"] = so_priority
+    if category: conds.append("category_name ILIKE :cat"); p["cat"] = f"%{category}%"
+    w = " AND ".join(conds)
+    rows = (await session.execute(text(f"""
         SELECT number, title, status, priority, area, category_name,
                service_impacted, org_responsible, requester_name, requester_phone,
                assigned_to_name, request_date::date, created_at::date,
                resolved_at::date, resolution_notes, cancellation_reason
-        FROM service_orders
-        WHERE association_id = :aid AND created_at::date BETWEEN :df AND :dt
-        ORDER BY number
-    """), {"aid": str(current.association_id), "df": df, "dt": dt})).fetchall()
+        FROM service_orders WHERE {w} ORDER BY number
+    """), p)).fetchall()
+    cols = ["Nº","Título","Status","Prioridade","Área","Categoria","Serviço Afetado",
+            "Org. Responsável","Solicitante","Telefone","Atribuído a","Data Solicitação",
+            "Criado em","Resolvido em","Notas Resolução","Motivo Cancelamento"]
+    return [dict(zip(cols, [_s(v) for v in r])) for r in rows]
 
-    wb, ws = _mk_wb("Ordens de Serviço")
-    _style_headers(ws, ["Nº", "Título", "Status", "Prioridade", "Área", "Categoria",
-                         "Serviço Afetado", "Org. Responsável", "Solicitante", "Telefone",
-                         "Atribuído a", "Data Solicitação", "Criado em", "Resolvido em",
-                         "Notas Resolução", "Motivo Cancelamento"])
-    for r in rows:
-        ws.append([_v(v) for v in r])
-    _auto_width(ws)
-    return _respond(wb, f"ordens_{date_from}_{date_to}.xlsx")
+
+@router.get("/service-orders/preview")
+async def preview_service_orders(
+    date_from: str | None = None, date_to: str | None = None,
+    so_status: str | None = None, so_priority: str | None = None, category: str | None = None,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await _query_service_orders(session, str(current.association_id), date_from, date_to, so_status, so_priority, category)
+
+
+@router.get("/service-orders")
+async def export_service_orders(
+    date_from: str | None = None, date_to: str | None = None,
+    so_status: str | None = None, so_priority: str | None = None, category: str | None = None,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    rows = await _query_service_orders(session, str(current.association_id), date_from, date_to, so_status, so_priority, category)
+    wb, ws = _mk("Ordens de Serviço")
+    cols = list(rows[0].keys()) if rows else []
+    _headers(ws, cols)
+    for r in rows: ws.append(list(r.values()))
+    _widths(ws)
+    return _xlsx(wb, "ordens.xlsx")
+
+
+# ─── Mensalidades ─────────────────────────────────────────────────────────────
+
+async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, men_status=None, ref_month=None):
+    conds = ["m.association_id = :aid"]
+    p: dict = {"aid": aid}
+    if date_from: conds.append("m.due_date >= :df"); p["df"] = date.fromisoformat(date_from)
+    if date_to: conds.append("m.due_date <= :dt"); p["dt"] = date.fromisoformat(date_to)
+    if men_status: conds.append("m.status = :st"); p["st"] = men_status
+    if ref_month: conds.append("m.reference_month = :rm"); p["rm"] = ref_month
+    w = " AND ".join(conds)
+    rows = (await session.execute(text(f"""
+        SELECT r.full_name, r.unit, m.reference_month, m.due_date,
+               m.amount, m.status, m.paid_at::date, m.payment_method
+        FROM mensalidades m JOIN residents r ON r.id = m.resident_id
+        WHERE {w} ORDER BY m.reference_month, r.full_name
+    """), p)).fetchall()
+    cols = ["Morador","Unidade","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento"]
+    return [dict(zip(cols, [_s(v) for v in r])) for r in rows]
+
+
+@router.get("/mensalidades/preview")
+async def preview_mensalidades(
+    date_from: str | None = None, date_to: str | None = None,
+    men_status: str | None = None, ref_month: str | None = None,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await _query_mensalidades(session, str(current.association_id), date_from, date_to, men_status, ref_month)
 
 
 @router.get("/mensalidades")
 async def export_mensalidades(
-    date_from: str,
-    date_to: str,
+    date_from: str | None = None, date_to: str | None = None,
+    men_status: str | None = None, ref_month: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    df, dt = date.fromisoformat(date_from), date.fromisoformat(date_to)
-    rows = (await session.execute(text("""
-        SELECT r.full_name, r.unit, m.reference_month, m.due_date,
-               m.amount, m.status, m.paid_at::date, m.payment_method
-        FROM mensalidades m
-        JOIN residents r ON r.id = m.resident_id
-        WHERE m.association_id = :aid AND m.due_date BETWEEN :df AND :dt
-        ORDER BY m.reference_month, r.full_name
-    """), {"aid": str(current.association_id), "df": df, "dt": dt})).fetchall()
+    rows = await _query_mensalidades(session, str(current.association_id), date_from, date_to, men_status, ref_month)
+    wb, ws = _mk("Mensalidades")
+    cols = list(rows[0].keys()) if rows else []
+    _headers(ws, cols)
+    for r in rows: ws.append(list(r.values()))
+    _widths(ws)
+    return _xlsx(wb, "mensalidades.xlsx")
 
-    wb, ws = _mk_wb("Mensalidades")
-    _style_headers(ws, ["Morador", "Unidade", "Mês Referência", "Vencimento",
-                         "Valor (R$)", "Status", "Pago em", "Forma Pagamento"])
-    for r in rows:
-        ws.append([_v(v) for v in r])
-    _auto_width(ws)
-    return _respond(wb, f"mensalidades_{date_from}_{date_to}.xlsx")
+
+# ─── Registros Diários ────────────────────────────────────────────────────────
+
+async def _query_daily_records(session, aid: str, date_from=None, date_to=None, task_status=None, task_priority=None):
+    conds = ["t.association_id = :aid"]
+    p: dict = {"aid": aid}
+    if date_from: conds.append("t.due_date >= :df"); p["df"] = date.fromisoformat(date_from)
+    if date_to: conds.append("t.due_date <= :dt"); p["dt"] = date.fromisoformat(date_to)
+    if task_status: conds.append("t.status = :st"); p["st"] = task_status
+    if task_priority: conds.append("t.priority = :pr"); p["pr"] = task_priority
+    w = " AND ".join(conds)
+    rows = (await session.execute(text(f"""
+        SELECT so.number, so.title, t.title, t.priority, t.status,
+               t.due_date, t.notes, t.assigned_to_name, t.created_at::date,
+               (SELECT COUNT(*) FROM jsonb_array_elements(t.checklist) i WHERE (i->>'done')::boolean = true),
+               jsonb_array_length(t.checklist)
+        FROM service_order_tasks t
+        JOIN service_orders so ON so.id = t.service_order_id
+        WHERE {w} ORDER BY t.due_date NULLS LAST, so.number
+    """), p)).fetchall()
+    return [{
+        "OS Nº": _s(r[0]), "Título da OS": _s(r[1]), "Registro": _s(r[2]),
+        "Prioridade": _s(r[3]), "Status": _s(r[4]), "Data Entrega": _s(r[5]),
+        "Notas": _s(r[6]), "Responsável": _s(r[7]), "Criado em": _s(r[8]),
+        "Checklist": f"{r[9]}/{r[10]}" if r[10] else "—",
+    } for r in rows]
+
+
+@router.get("/daily-records/preview")
+async def preview_daily_records(
+    date_from: str | None = None, date_to: str | None = None,
+    task_status: str | None = None, task_priority: str | None = None,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await _query_daily_records(session, str(current.association_id), date_from, date_to, task_status, task_priority)
 
 
 @router.get("/daily-records")
 async def export_daily_records(
-    date_from: str,
-    date_to: str,
+    date_from: str | None = None, date_to: str | None = None,
+    task_status: str | None = None, task_priority: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    df, dt = date.fromisoformat(date_from), date.fromisoformat(date_to)
-    rows = (await session.execute(text("""
-        SELECT so.number, so.title, t.title, t.priority, t.status,
-               t.due_date, t.notes, t.assigned_to_name, t.created_at::date,
-               (SELECT COUNT(*) FROM jsonb_array_elements(t.checklist) item
-                WHERE (item->>'done')::boolean = true) AS done_items,
-               jsonb_array_length(t.checklist) AS total_items
-        FROM service_order_tasks t
-        JOIN service_orders so ON so.id = t.service_order_id
-        WHERE t.association_id = :aid AND t.due_date BETWEEN :df AND :dt
-        ORDER BY t.due_date, so.number
-    """), {"aid": str(current.association_id), "df": df, "dt": dt})).fetchall()
-
-    wb, ws = _mk_wb("Registros Diários")
-    _style_headers(ws, ["OS Nº", "Título da OS", "Registro", "Prioridade", "Status",
-                         "Data Entrega", "Notas", "Responsável", "Criado em", "Checklist"])
-    for r in rows:
-        ws.append([
-            _v(r[0]), _v(r[1]), _v(r[2]), _v(r[3]), _v(r[4]),
-            _v(r[5]), _v(r[6]), _v(r[7]), _v(r[8]),
-            f"{r[9]}/{r[10]}" if r[10] else "—",
-        ])
-    _auto_width(ws)
-    return _respond(wb, f"registros_{date_from}_{date_to}.xlsx")
+    rows = await _query_daily_records(session, str(current.association_id), date_from, date_to, task_status, task_priority)
+    wb, ws = _mk("Registros Diários")
+    cols = list(rows[0].keys()) if rows else []
+    _headers(ws, cols)
+    for r in rows: ws.append(list(r.values()))
+    _widths(ws)
+    return _xlsx(wb, "registros_diarios.xlsx")

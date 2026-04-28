@@ -192,8 +192,8 @@ function SessionDetailModal({
 }) {
   const role = useAuthStore((s) => s.role)
   const userId = useAuthStore((s) => s.userId)
-  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin' || role === 'diretoria'
-  const isAdminRole = role === 'admin' || role === 'superadmin' || role === 'diretoria'
+  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
+  const isAdminRole = role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
   const [transactions, setTransactions] = useState<SessionTx[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([])
   const [loading, setLoading] = useState(false)
@@ -597,8 +597,8 @@ function SessionDetailModal({
 export default function FinancePage() {
   const role = useAuthStore((s) => s.role)
   const canSeeTotals = role !== 'operator' && role !== 'viewer'
-  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin' || role === 'diretoria'
-  const isAdminRole = role === 'admin' || role === 'superadmin' || role === 'diretoria'
+  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
+  const isAdminRole = role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
 
   const [tab, setTab] = useState<Tab>('caixa')
   const [session, setSession] = useState<CashSession | null>(null)
@@ -645,6 +645,12 @@ export default function FinancePage() {
     if (!adminCloseTarget) return
     const bal = parseFloat(adminCloseBalance)
     if (isNaN(bal)) { toast.error('Valor inválido.'); return }
+    if (pendingApprovals.length > 0) {
+      const ok = window.confirm(
+        `⚠️ Atenção: há ${pendingApprovals.length} despesa(s) pendente(s) de aprovação nesta associação.\n\nSe fechar agora, essas despesas ficam sem aprovação e podem gerar diferença no caixa.\n\nDeseja fechar mesmo assim?`
+      )
+      if (!ok) return
+    }
     setAdminClosing(true)
     try {
       await financeService.closeSession(bal, undefined, adminCloseTarget.id)
@@ -652,6 +658,7 @@ export default function FinancePage() {
       setAdminCloseTarget(null)
       setAdminCloseBalance('')
       loadSession()
+      loadPendingApprovals()
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao fechar caixa.')
     } finally { setAdminClosing(false) }
@@ -800,7 +807,8 @@ export default function FinancePage() {
   useEffect(() => {
     if (canSeeTotals) settingsService.get().then(r => setSettings(r.data)).catch(() => {})
   }, [canSeeTotals])
-  useEffect(() => { if (session) loadPendingApprovals() }, [session?.id])
+  useEffect(() => { loadPendingApprovals() }, [])
+  useEffect(() => { if (!session) loadPendingApprovals() }, [session?.id])
 
   const todayLabel = new Date().toLocaleDateString('pt-BR')
   const activeTxs = transactions.filter(t => !t.reversed_at && !t.is_reversal)
@@ -1120,6 +1128,38 @@ export default function FinancePage() {
             </button>
           )}
 
+          {/* Pendentes — sempre visível, mesmo sem caixa aberto */}
+          {isConferenteOrAbove && pendingApprovals.length > 0 && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 bg-amber-100 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4" />
+                  {pendingApprovals.length} despesa{pendingApprovals.length > 1 ? 's' : ''} aguardando aprovação
+                </h3>
+                {!session && (
+                  <span className="text-[10px] bg-red-100 text-red-700 font-semibold px-2 py-0.5 rounded-full">Caixa fechado</span>
+                )}
+              </div>
+              <ul className="divide-y divide-amber-100">
+                {pendingApprovals.map(p => (
+                  <li key={p.id} className="flex items-center justify-between px-4 py-3 gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{p.description}</p>
+                      <p className="text-xs text-gray-500">{p.creator_name} · {p.category_name ?? '—'}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-semibold text-red-600">R$ {parseFloat(p.amount).toFixed(2)}</span>
+                      <button onClick={() => setApprovalItem(p)}
+                        className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg font-medium transition">
+                        Revisar
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {session && (
             <>
               {sangriaAlert && (
@@ -1201,15 +1241,9 @@ export default function FinancePage() {
                 </div>
               )}
 
-              {/* Pending approvals — conferente/admin only */}
-              {isConferenteOrAbove && pendingApprovals.length > 0 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-amber-200 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-amber-800 flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4" />
-                      Aguardando Aprovação ({pendingApprovals.length})
-                    </h3>
-                  </div>
+              {/* Pending approvals — now rendered above session block, kept here for spacing */}
+              {false && isConferenteOrAbove && pendingApprovals.length > 0 && (
+                <div className="hidden">
                   <ul className="divide-y divide-amber-100">
                     {pendingApprovals.map(p => (
                       <li key={p.id} className="flex items-center justify-between px-4 py-3 gap-3">
@@ -1219,12 +1253,7 @@ export default function FinancePage() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-sm font-semibold text-red-600">R$ {parseFloat(p.amount).toFixed(2)}</span>
-                          <button
-                            onClick={() => setApprovalItem(p)}
-                            className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg font-medium transition"
-                          >
-                            Revisar
-                          </button>
+                          <button onClick={() => setApprovalItem(p)} className="hidden">Revisar</button>
                         </div>
                       </li>
                     ))}
@@ -1455,6 +1484,29 @@ export default function FinancePage() {
                                 className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg transition"
                               >
                                 Transferir
+                              </button>
+                            )}
+                            {s.status !== 'open' && isAdminRole && (
+                              <button
+                                onClick={async e => {
+                                  e.stopPropagation()
+                                  const hasConferencia = !!s.conferido_por
+                                  const msg = hasConferencia
+                                    ? `Reabrir esta sessão?\n\nEsta sessão foi conferida por ${s.conferido_por}. Ao reabrir, os dados de conferência serão mantidos mas o status voltará para "Aberto".\n\nDeseja continuar?`
+                                    : 'Reabrir esta sessão para correção de lançamentos?'
+                                  if (!window.confirm(msg)) return
+                                  try {
+                                    await api.post(`/finance/sessions/${s.id}/reopen`)
+                                    toast.success('Caixa reaberto.')
+                                    loadSessions()
+                                    loadSession()
+                                  } catch (err: any) {
+                                    toast.error(err.response?.data?.detail ?? 'Erro ao reabrir caixa.')
+                                  }
+                                }}
+                                className="text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 font-semibold px-3 py-1.5 rounded-lg transition whitespace-nowrap"
+                              >
+                                Reabrir
                               </button>
                             )}
                           </div>

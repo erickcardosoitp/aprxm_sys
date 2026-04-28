@@ -1,122 +1,425 @@
 import { useState } from 'react'
-import { Download, DollarSign, Users, Package, FileText, CreditCard, ClipboardList } from 'lucide-react'
+import { Download, DollarSign, Users, Package, FileText, CreditCard, ClipboardList, Search, ChevronDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
-interface Module {
-  key: string
+type ModuleKey = 'finance' | 'residents' | 'packages' | 'service-orders' | 'mensalidades' | 'daily-records'
+
+interface ModuleDef {
+  key: ModuleKey
   label: string
   endpoint: string
   icon: React.ComponentType<{ className?: string }>
-  hasDate: boolean
-  description: string
 }
 
-const MODULES: Module[] = [
-  { key: 'finance', label: 'Financeiro', endpoint: 'finance', icon: DollarSign, hasDate: true, description: 'Entradas e saídas por período' },
-  { key: 'residents', label: 'Moradores', endpoint: 'residents', icon: Users, hasDate: false, description: 'Cadastro completo de moradores' },
-  { key: 'packages', label: 'Encomendas', endpoint: 'packages', icon: Package, hasDate: true, description: 'Encomendas recebidas no período' },
-  { key: 'service_orders', label: 'Ordens de Serviço', endpoint: 'service-orders', icon: FileText, hasDate: true, description: 'Todas as OS abertas no período' },
-  { key: 'mensalidades', label: 'Mensalidades', endpoint: 'mensalidades', icon: CreditCard, hasDate: true, description: 'Mensalidades com vencimento no período' },
-  { key: 'daily_records', label: 'Registros Diários', endpoint: 'daily-records', icon: ClipboardList, hasDate: true, description: 'Tarefas com data de entrega no período' },
+const MODULES: ModuleDef[] = [
+  { key: 'finance',        label: 'Financeiro',       endpoint: 'finance',        icon: DollarSign },
+  { key: 'residents',      label: 'Moradores',        endpoint: 'residents',      icon: Users },
+  { key: 'packages',       label: 'Encomendas',       endpoint: 'packages',       icon: Package },
+  { key: 'service-orders', label: 'Ordens de Serviço',endpoint: 'service-orders', icon: FileText },
+  { key: 'mensalidades',   label: 'Mensalidades',     endpoint: 'mensalidades',   icon: CreditCard },
+  { key: 'daily-records',  label: 'Registros Diários',endpoint: 'daily-records',  icon: ClipboardList },
 ]
 
 function firstDayOfMonth() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
+function today() { return new Date().toISOString().split('T')[0] }
 
-function today() {
-  return new Date().toISOString().split('T')[0]
+const inputCls = 'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c] bg-white w-full'
+const selectCls = inputCls + ' appearance-none'
+
+// ─── Filter panels per module ─────────────────────────────────────────────────
+
+interface FiltersState {
+  date_from: string
+  date_to: string
+  tx_type: string
+  payment_method: string
+  res_type: string
+  res_status: string
+  q: string
+  pkg_status: string
+  so_status: string
+  so_priority: string
+  category: string
+  men_status: string
+  ref_month: string
+  task_status: string
+  task_priority: string
 }
 
-export default function ReportsPage() {
-  const [dateFrom, setDateFrom] = useState(firstDayOfMonth)
-  const [dateTo, setDateTo] = useState(today)
-  const [loading, setLoading] = useState<string | null>(null)
+const DEFAULT_FILTERS: FiltersState = {
+  date_from: firstDayOfMonth(), date_to: today(),
+  tx_type: '', payment_method: '',
+  res_type: '', res_status: '', q: '',
+  pkg_status: '',
+  so_status: '', so_priority: '', category: '',
+  men_status: '', ref_month: '',
+  task_status: '', task_priority: '',
+}
 
-  const exportReport = async (mod: Module) => {
-    setLoading(mod.key)
+function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string> {
+  const p: Record<string, string> = {}
+  const d = (k: keyof FiltersState) => { if (f[k]) p[k] = f[k] }
+  const date = () => { d('date_from'); d('date_to') }
+  if (mod === 'finance')        { date(); d('tx_type'); d('payment_method') }
+  if (mod === 'residents')      { d('res_type'); d('res_status'); d('q') }
+  if (mod === 'packages')       { date(); d('pkg_status') }
+  if (mod === 'service-orders') { date(); d('so_status'); d('so_priority'); d('category') }
+  if (mod === 'mensalidades')   { date(); d('men_status'); d('ref_month') }
+  if (mod === 'daily-records')  { date(); d('task_status'); d('task_priority') }
+  return p
+}
+
+function FilterPanel({ mod, filters, setFilters }: {
+  mod: ModuleKey
+  filters: FiltersState
+  setFilters: React.Dispatch<React.SetStateAction<FiltersState>>
+}) {
+  const set = (k: keyof FiltersState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setFilters(f => ({ ...f, [k]: e.target.value }))
+
+  const DateRange = () => (
+    <>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">De</label>
+        <input type="date" value={filters.date_from} onChange={set('date_from')} className={inputCls} />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Até</label>
+        <input type="date" value={filters.date_to} onChange={set('date_to')} className={inputCls} />
+      </div>
+    </>
+  )
+
+  if (mod === 'finance') return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <DateRange />
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Tipo</label>
+        <div className="relative">
+          <select value={filters.tx_type} onChange={set('tx_type')} className={selectCls}>
+            <option value="">Todos</option>
+            <option value="income">Entradas</option>
+            <option value="expense">Saídas</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Forma de pagamento</label>
+        <input type="text" placeholder="PIX, Dinheiro…" value={filters.payment_method} onChange={set('payment_method')} className={inputCls} />
+      </div>
+    </div>
+  )
+
+  if (mod === 'residents') return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Tipo</label>
+        <div className="relative">
+          <select value={filters.res_type} onChange={set('res_type')} className={selectCls}>
+            <option value="">Todos</option>
+            <option value="member">Membro</option>
+            <option value="guest">Visitante</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Status</label>
+        <div className="relative">
+          <select value={filters.res_status} onChange={set('res_status')} className={selectCls}>
+            <option value="">Todos</option>
+            <option value="active">Ativo</option>
+            <option value="inactive">Inativo</option>
+            <option value="pending">Pendente</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Nome / CPF</label>
+        <input type="text" placeholder="Buscar…" value={filters.q} onChange={set('q')} className={inputCls} />
+      </div>
+    </div>
+  )
+
+  if (mod === 'packages') return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <DateRange />
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Status</label>
+        <div className="relative">
+          <select value={filters.pkg_status} onChange={set('pkg_status')} className={selectCls}>
+            <option value="">Todos</option>
+            <option value="received">Recebido</option>
+            <option value="notified">Notificado</option>
+            <option value="delivered">Entregue</option>
+            <option value="returned">Devolvido</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+    </div>
+  )
+
+  if (mod === 'service-orders') return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <DateRange />
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Status</label>
+        <div className="relative">
+          <select value={filters.so_status} onChange={set('so_status')} className={selectCls}>
+            <option value="">Todos</option>
+            <option value="open">Aberta</option>
+            <option value="in_progress">Em andamento</option>
+            <option value="resolved">Resolvida</option>
+            <option value="cancelled">Cancelada</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Prioridade</label>
+        <div className="relative">
+          <select value={filters.so_priority} onChange={set('so_priority')} className={selectCls}>
+            <option value="">Todas</option>
+            <option value="low">Baixa</option>
+            <option value="medium">Média</option>
+            <option value="high">Alta</option>
+            <option value="critical">Crítica</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <div className="sm:col-span-4">
+        <label className="block text-xs text-gray-500 mb-1">Categoria</label>
+        <input type="text" placeholder="Elétrica, Hidráulica…" value={filters.category} onChange={set('category')} className={inputCls} />
+      </div>
+    </div>
+  )
+
+  if (mod === 'mensalidades') return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <DateRange />
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Status</label>
+        <div className="relative">
+          <select value={filters.men_status} onChange={set('men_status')} className={selectCls}>
+            <option value="">Todos</option>
+            <option value="pending">Pendente</option>
+            <option value="paid">Pago</option>
+            <option value="overdue">Em atraso</option>
+            <option value="waived">Isento</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Mês ref. (YYYY-MM)</label>
+        <input type="text" placeholder="2025-01" value={filters.ref_month} onChange={set('ref_month')} className={inputCls} />
+      </div>
+    </div>
+  )
+
+  if (mod === 'daily-records') return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <DateRange />
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Status</label>
+        <div className="relative">
+          <select value={filters.task_status} onChange={set('task_status')} className={selectCls}>
+            <option value="">Todos</option>
+            <option value="open">Aberto</option>
+            <option value="pending">Pendente</option>
+            <option value="waiting_third">Ag. Terceiros</option>
+            <option value="done">Concluído</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Prioridade</label>
+        <div className="relative">
+          <select value={filters.task_priority} onChange={set('task_priority')} className={selectCls}>
+            <option value="">Todas</option>
+            <option value="low">Baixa</option>
+            <option value="medium">Média</option>
+            <option value="high">Alta</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+    </div>
+  )
+
+  return null
+}
+
+// ─── Preview table ─────────────────────────────────────────────────────────────
+
+function PreviewTable({ rows }: { rows: Record<string, unknown>[] }) {
+  if (!rows.length) return (
+    <div className="text-center py-16 text-gray-400 text-sm">Nenhum registro encontrado.</div>
+  )
+  const cols = Object.keys(rows[0])
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-200">
+      <table className="min-w-full text-xs">
+        <thead>
+          <tr className="bg-[#1a3f6f] text-white">
+            {cols.map(c => (
+              <th key={c} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {rows.map((row, i) => (
+            <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+              {cols.map(c => (
+                <td key={c} className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[200px] truncate">
+                  {String(row[c] ?? '—')}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ─── Main ──────────────────────────────────────────────────────────────────────
+
+export default function ReportsPage() {
+  const [selected, setSelected] = useState<ModuleKey>('finance')
+  const [filters, setFilters] = useState<FiltersState>(DEFAULT_FILTERS)
+  const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  const mod = MODULES.find(m => m.key === selected)!
+
+  const handleModuleChange = (key: ModuleKey) => {
+    setSelected(key)
+    setRows(null)
+  }
+
+  const handlePreview = async () => {
+    setPreviewing(true)
+    setRows(null)
     try {
-      const params = mod.hasDate ? { date_from: dateFrom, date_to: dateTo } : {}
+      const params = filtersToParams(selected, filters)
+      const res = await api.get(`/reports/${mod.endpoint}/preview`, { params })
+      setRows(res.data)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao buscar dados.')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const params = filtersToParams(selected, filters)
       const res = await api.get(`/reports/${mod.endpoint}`, { params, responseType: 'blob' })
       const url = URL.createObjectURL(new Blob([res.data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       }))
       const a = document.createElement('a')
-      const suffix = mod.hasDate ? `_${dateFrom}_${dateTo}` : ''
       a.href = url
-      a.download = `${mod.endpoint}${suffix}.xlsx`
+      a.download = `${mod.endpoint}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
       toast.success(`${mod.label} exportado!`)
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao exportar.')
     } finally {
-      setLoading(null)
+      setExporting(false)
     }
   }
 
-  const inputCls = 'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
-
   return (
-    <div className="flex flex-col gap-5 p-4 sm:p-6 max-w-screen-lg mx-auto w-full">
+    <div className="flex flex-col gap-5 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
       <div className="flex items-center gap-3">
         <Download className="w-6 h-6 text-[#26619c]" />
         <h1 className="text-2xl font-bold text-gray-900">Relatórios</h1>
       </div>
 
-      {/* Period filter */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Período padrão</p>
-        <div className="flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">De</label>
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Até</label>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={inputCls} />
-          </div>
-          <p className="text-xs text-gray-400 self-center">Módulos sem filtro de data exportam o cadastro completo.</p>
+      {/* Module selector */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Tipo de relatório</p>
+        <div className="flex flex-wrap gap-2">
+          {MODULES.map(m => {
+            const Icon = m.icon
+            const active = m.key === selected
+            return (
+              <button
+                key={m.key}
+                onClick={() => handleModuleChange(m.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition border ${
+                  active
+                    ? 'bg-[#26619c] text-white border-[#26619c]'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-[#26619c]/40 hover:text-[#26619c]'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {m.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Module cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {MODULES.map(mod => {
-          const Icon = mod.icon
-          const isLoading = loading === mod.key
-          return (
-            <div key={mod.key} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl bg-[#e8f0fb] flex items-center justify-center shrink-0">
-                <Icon className="w-5 h-5 text-[#26619c]" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-900 text-sm">{mod.label}</p>
-                <p className="text-xs text-gray-400 truncate">{mod.description}</p>
-                {mod.hasDate && (
-                  <p className="text-[10px] text-gray-300 mt-0.5">
-                    {new Date(dateFrom + 'T12:00:00').toLocaleDateString('pt-BR')} — {new Date(dateTo + 'T12:00:00').toLocaleDateString('pt-BR')}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => exportReport(mod)}
-                disabled={isLoading}
-                className="flex items-center gap-1.5 px-4 py-2 bg-[#26619c] hover:bg-[#1a4f87] text-white rounded-xl text-xs font-semibold transition disabled:opacity-50 shrink-0"
-              >
-                {isLoading ? (
-                  <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <Download className="w-3.5 h-3.5" />
-                )}
-                Excel
-              </button>
-            </div>
-          )
-        })}
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Filtros</p>
+        <FilterPanel mod={selected} filters={filters} setFilters={setFilters} />
+
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={handlePreview}
+            disabled={previewing}
+            className="flex items-center gap-2 px-4 py-2 bg-[#26619c] hover:bg-[#1a4f87] text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
+          >
+            {previewing
+              ? <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              : <Search className="w-4 h-4" />
+            }
+            Visualizar
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
+          >
+            {exporting
+              ? <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              : <Download className="w-4 h-4" />
+            }
+            Exportar Excel
+          </button>
+        </div>
       </div>
+
+      {/* Preview */}
+      {rows !== null && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Prévia — {mod.label}
+            </p>
+            <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-3 py-1">
+              {rows.length} {rows.length === 1 ? 'registro' : 'registros'}
+            </span>
+          </div>
+          <PreviewTable rows={rows} />
+        </div>
+      )}
     </div>
   )
 }

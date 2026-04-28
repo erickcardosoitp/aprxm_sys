@@ -49,7 +49,7 @@ export function AppShell() {
   const menuRef = useRef<HTMLDivElement>(null)
 
   const isSuperAdmin = role === 'superadmin' || role === 'admin_master'
-  const isAdmin      = role === 'admin' || role === 'diretoria' || isSuperAdmin
+  const isAdmin      = role === 'admin' || role === 'diretoria' || role === 'conselho' || isSuperAdmin
 
   useEffect(() => {
     if (!role || isSuperAdmin) return

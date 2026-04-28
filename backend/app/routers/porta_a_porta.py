@@ -64,8 +64,10 @@ class LeadIn(BaseModel):
 
 
 class AcordoIn(BaseModel):
-    sinal: Decimal = Field(gt=0, description="Valor pago como entrada agora")
-    parcelas: int = Field(ge=1, le=24, description="Número de parcelas para o restante")
+    date_from: str  # YYYY-MM  (from month — can be past)
+    date_to: str    # YYYY-MM  (to month)
+    parcelas: int = Field(ge=1, le=24, description="Número de parcelas para pagar o total")
+    sinal: Decimal | None = Field(default=None, ge=0, description="Entrada opcional agora")
     payment_method: str | None = None
 
 
@@ -78,6 +80,7 @@ class PayInstallmentIn(BaseModel):
 class PayLeadIn(BaseModel):
     payment_method: str | None = None
     paid_at: datetime | None = None
+    malote_box_id: UUID | None = None
 
 
 class CommissionPaymentIn(BaseModel):
@@ -127,10 +130,19 @@ def _serialize_lead(lead: PortaAPortaLead, operator_name: str | None = None) -> 
     }
 
 
-def _commission(paid_count: int, monthly_fee: float = 20.0) -> float:
+def _regular_commission(paid_count: int, monthly_fee: float = 20.0) -> float:
     """Every 5 paid leads → operator earns 2 monthly fees."""
     batches = paid_count // 5
     return round(batches * 2 * monthly_fee, 2)
+
+
+def _acordo_commission(months: int) -> float:
+    """Flat commission per acordo: R$30 for ≤6mo, R$40 for ≥12mo."""
+    if months <= 6:
+        return 30.0
+    if months >= 12:
+        return 40.0
+    return 30.0  # default for 7-11 months
 
 
 # ── Operator / admin endpoints ────────────────────────────────────────────────
@@ -387,7 +399,7 @@ async def pay_lead(
             )
             session.add(dep_resident)
 
-    # Auto-register income transaction in current open session (or offline)
+    # Calculate amount paid in this transaction
     paid_amount = sum(
         p.amount for p in pmts
         if p.status == "paid" and (
@@ -397,41 +409,61 @@ async def pay_lead(
         )
     )
     if not paid_amount:
-        paid_amount = body.amount if hasattr(body, 'amount') and body.amount else lead.monthly_fee
+        paid_amount = lead.monthly_fee
 
     from sqlalchemy import text as sa_text
-    open_session_row = (await session.execute(sa_text(
-        "SELECT id FROM cash_sessions WHERE association_id=:aid AND status='open' "
-        "AND opened_by=:uid ORDER BY opened_at DESC LIMIT 1"
-    ), {"aid": str(current.association_id), "uid": str(current.user_id)})).fetchone()
-    if not open_session_row:
+
+    if body.malote_box_id:
+        # Send to malote (cash box) instead of session transaction
+        box_row = (await session.execute(sa_text(
+            "SELECT id, balance FROM cash_boxes WHERE id=:bid AND association_id=:aid AND is_malote=true"
+        ), {"bid": str(body.malote_box_id), "aid": str(current.association_id)})).fetchone()
+        if box_row:
+            await session.execute(sa_text("""
+                INSERT INTO cash_box_movements (association_id, cash_box_id, amount, movement_type, description, created_by)
+                VALUES (:aid, :bid, :amt, 'credit', :desc, :uid)
+            """), {
+                "aid": str(current.association_id), "bid": str(body.malote_box_id),
+                "amt": float(paid_amount), "desc": f"Porta a Porta — {lead.full_name}",
+                "uid": str(current.user_id),
+            })
+            await session.execute(sa_text(
+                "UPDATE cash_boxes SET balance = balance + :amt, updated_at = NOW() WHERE id = :bid"
+            ), {"amt": float(paid_amount), "bid": str(body.malote_box_id)})
+    else:
+        # Register as income transaction in open cash session
         open_session_row = (await session.execute(sa_text(
             "SELECT id FROM cash_sessions WHERE association_id=:aid AND status='open' "
-            "ORDER BY opened_at DESC LIMIT 1"
-        ), {"aid": str(current.association_id)})).fetchone()
+            "AND opened_by=:uid ORDER BY opened_at DESC LIMIT 1"
+        ), {"aid": str(current.association_id), "uid": str(current.user_id)})).fetchone()
+        if not open_session_row:
+            open_session_row = (await session.execute(sa_text(
+                "SELECT id FROM cash_sessions WHERE association_id=:aid AND status='open' "
+                "ORDER BY opened_at DESC LIMIT 1"
+            ), {"aid": str(current.association_id)})).fetchone()
 
-    from app.models.finance import Transaction, TransactionType
-    tx = Transaction(
-        association_id=current.association_id,
-        cash_session_id=open_session_row[0] if open_session_row else None,
-        type=TransactionType.income,
-        amount=Decimal(str(paid_amount)),
-        description=f"Porta a Porta — {lead.full_name}",
-        income_subtype="mensalidade",
-        payment_method_id=None,
-        resident_id=lead.resident_id,
-        approval_status="approved",
-        approved_by=current.user_id,
-        approved_at=datetime.utcnow(),
-        created_by=current.user_id,
-    )
-    session.add(tx)
+        from app.models.finance import Transaction, TransactionType
+        tx = Transaction(
+            association_id=current.association_id,
+            cash_session_id=open_session_row[0] if open_session_row else None,
+            type=TransactionType.income,
+            amount=Decimal(str(paid_amount)),
+            description=f"Porta a Porta — {lead.full_name}",
+            income_subtype="mensalidade",
+            payment_method_id=None,
+            resident_id=lead.resident_id,
+            approval_status="approved",
+            approved_by=current.user_id,
+            approved_at=datetime.utcnow(),
+            created_by=current.user_id,
+        )
+        session.add(tx)
 
     await session.commit()
     return {"ok": True, "lead_status": lead.status, "resident_id": str(lead.resident_id) if lead.resident_id else None}
 
 
-@router.post("/leads/{lead_id}/acordo", summary="Registrar acordo: sinal + parcelas do restante")
+@router.post("/leads/{lead_id}/acordo", summary="Registrar acordo: período (passado+futuro) + parcelas")
 async def fazer_acordo(
     lead_id: str,
     body: AcordoIn,
@@ -447,11 +479,20 @@ async def fazer_acordo(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado.")
 
-    total = float(lead.monthly_fee)
-    sinal = float(body.sinal)
-    if sinal >= total:
-        raise HTTPException(status_code=400, detail="Sinal não pode ser igual ou maior que o total. Use o pagamento normal.")
+    # Parse date range and calculate total
+    try:
+        fy, fm = map(int, body.date_from.split("-"))
+        ty, tm = map(int, body.date_to.split("-"))
+    except ValueError:
+        raise HTTPException(400, "Formato de data inválido. Use YYYY-MM.")
+    months = (ty * 12 + tm) - (fy * 12 + fm) + 1
+    if months <= 0:
+        raise HTTPException(400, "Data fim deve ser igual ou posterior à data início.")
 
+    total = round(float(lead.monthly_fee) * months, 2)
+    sinal = float(body.sinal) if body.sinal else 0.0
+    if sinal >= total:
+        raise HTTPException(400, "Sinal não pode ser igual ou maior que o total.")
     restante = round(total - sinal, 2)
     per_parcela = round(restante / body.parcelas, 2)
     now = datetime.utcnow()
@@ -467,19 +508,22 @@ async def fazer_acordo(
         await session.delete(p)
     await session.flush()
 
-    # Register sinal as paid installment 0
-    sinal_pmt = PortaAPortaPayment(
-        association_id=current.association_id,
-        lead_id=lead.id,
-        installment_number=0,
-        total_installments=body.parcelas + 1,
-        amount=Decimal(str(sinal)),
-        status="paid",
-        paid_at=now,
-        payment_method=body.payment_method,
-        due_date=date.today(),
-    )
-    session.add(sinal_pmt)
+    total_installments = body.parcelas + (1 if sinal > 0 else 0)
+
+    # Register sinal as paid installment 0 (if provided)
+    if sinal > 0:
+        sinal_pmt = PortaAPortaPayment(
+            association_id=current.association_id,
+            lead_id=lead.id,
+            installment_number=0,
+            total_installments=total_installments,
+            amount=Decimal(str(sinal)),
+            status="paid",
+            paid_at=now,
+            payment_method=body.payment_method,
+            due_date=date.today(),
+        )
+        session.add(sinal_pmt)
 
     # Create installments for remainder
     for i in range(1, body.parcelas + 1):
@@ -487,19 +531,30 @@ async def fazer_acordo(
             association_id=current.association_id,
             lead_id=lead.id,
             installment_number=i,
-            total_installments=body.parcelas + 1,
+            total_installments=total_installments,
             amount=Decimal(str(per_parcela)),
             due_date=date.today().replace(day=1) + timedelta(days=30 * i),
         )
         session.add(pmt)
 
-    lead.payment_type = "parcelado"
-    lead.total_installments = body.parcelas + 1
-    lead.status = "agreement"
-    lead.updated_at = now
-    session.add(lead)
+    # Update lead
+    from sqlalchemy import text as sa_text
+    await session.execute(sa_text("""
+        UPDATE porta_a_porta_leads
+        SET payment_type = 'parcelado', total_installments = :ti, status = 'agreement',
+            monthly_fee = :total, acordo_months = :months,
+            acordo_date_from = :df, acordo_date_to = :dt, updated_at = NOW()
+        WHERE id = :lid
+    """), {"ti": total_installments, "total": total, "months": months,
+           "df": body.date_from, "dt": body.date_to, "lid": str(lead.id)})
+
     await session.commit()
-    return {"ok": True, "sinal": str(sinal), "restante": str(restante), "parcelas": body.parcelas, "per_parcela": str(per_parcela)}
+    return {
+        "ok": True, "months": months, "total": str(total),
+        "sinal": str(sinal), "restante": str(restante),
+        "parcelas": body.parcelas, "per_parcela": str(per_parcela),
+        "commission": _acordo_commission(months),
+    }
 
 
 @router.delete("/leads/{lead_id}", summary="Cancelar lead")
@@ -551,13 +606,20 @@ async def get_summary(
     """), {"aid": str(current.association_id)})
     pay_row = pay_result.fetchone()
 
-    # Per-operator commission breakdown
+    # Per-operator commission breakdown (regular + acordo)
     op_result = await session.execute(sa_text("""
         SELECT
             COALESCE(l.commissioned_to, l.operator_id) AS eff_operator_id,
             COALESCE(c.full_name, u.full_name) AS operator_name,
-            COUNT(*) FILTER (WHERE l.status = 'paid') AS paid_count,
-            COALESCE(SUM(l.monthly_fee) FILTER (WHERE l.status = 'paid'), 0) AS total_fee
+            COUNT(*) FILTER (WHERE l.status = 'paid' AND l.acordo_months IS NULL) AS paid_count,
+            COALESCE(SUM(l.monthly_fee) FILTER (WHERE l.status = 'paid' AND l.acordo_months IS NULL), 0) AS total_fee,
+            COALESCE(SUM(
+                CASE WHEN l.status IN ('paid','agreement') AND l.acordo_months IS NOT NULL
+                THEN CASE WHEN l.acordo_months <= 6 THEN 30.0
+                          WHEN l.acordo_months >= 12 THEN 40.0
+                          ELSE 30.0 END
+                ELSE 0 END
+            ), 0) AS acordo_commission
         FROM porta_a_porta_leads l
         LEFT JOIN users u ON u.id = l.operator_id
         LEFT JOIN users c ON c.id = l.commissioned_to
@@ -577,10 +639,14 @@ async def get_summary(
 
 
     commissions = []
+    total_commission_sum = 0.0
     for r in op_result.fetchall():
         paid = int(r[2] or 0)
         avg_fee = float(r[3] or 0) / paid if paid else 20.0
-        earned = _commission(paid, avg_fee)
+        regular_earned = _regular_commission(paid, avg_fee)
+        acordo_earned = float(r[4] or 0)
+        earned = round(regular_earned + acordo_earned, 2)
+        total_commission_sum += earned
         op_id = str(r[0])
         commission_paid = comm_paid_map.get(op_id, 0.0)
         commissions.append({
@@ -593,9 +659,7 @@ async def get_summary(
             "next_commission_in": 5 - (paid % 5) if paid % 5 != 0 else 5,
         })
 
-    paid_leads = int(row[1] or 0)
-    monthly_fee_avg = 20.0
-    total_commission = _commission(paid_leads, monthly_fee_avg)
+    total_commission = round(total_commission_sum, 2)
 
     return {
         "total_leads": int(row[0] or 0),

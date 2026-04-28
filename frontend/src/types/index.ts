@@ -9,6 +9,7 @@ export type UserRole =
   | 'conferente'
   | 'diretoria'
   | 'diretoria_adjunta'
+  | 'conselho'
   | 'operator'
   | 'viewer'
 
