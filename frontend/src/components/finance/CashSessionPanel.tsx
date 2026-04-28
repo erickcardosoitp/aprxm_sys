@@ -310,9 +310,9 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
                   className="w-full border-2 border-gray-300 rounded-xl bg-white cursor-crosshair touch-none"
                   style={{ height: 120 }}
                 />
-                {!hasSig && <p className="text-xs text-gray-400 mt-1 text-center">Assine acima para confirmar o fechamento</p>}
+                {!hasSig && <p className="text-xs text-amber-600 font-medium mt-1 text-center">⚠️ Assinatura obrigatória para fechar o caixa</p>}
               </div>
-              <button onClick={handleConfirm} disabled={!hasSig || loading}
+              <button onClick={!hasSig ? () => toast.error('Assine o campo acima para confirmar o fechamento.') : handleConfirm} disabled={loading}
                 className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50 flex items-center justify-center gap-1.5">
                 <Lock className="w-3.5 h-3.5" />
                 {loading ? 'Fechando…' : 'Confirmar Fechamento'}
