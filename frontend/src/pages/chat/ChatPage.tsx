@@ -120,7 +120,7 @@ export default function ChatPage() {
     const pos = e.target.selectionStart ?? val.length
     setText(val)
     const before = val.slice(0, pos)
-    const m = before.match(/@(\w*)$/)
+    const m = before.match(/@([^@\s]*)$/)
     if (m) {
       setMentionIdx(m.index!)
       setMentionFilter(m[1].toLowerCase())
@@ -139,14 +139,20 @@ export default function ChatPage() {
     : []
 
   const insertMention = (user: ChatUser) => {
-    const pos = textRef.current?.selectionStart ?? text.length
-    const before = text.slice(0, mentionIdx!)
-    const after = text.slice(pos)
-    setText(`${before}@${user.name} ${after}`)
+    const atStart = mentionIdx!
+    const queryEnd = atStart + 1 + mentionFilter.length
+    const before = text.slice(0, atStart)
+    const after = text.slice(queryEnd)
+    const newText = `${before}@${user.name} ${after}`
+    setText(newText)
     setMentionIds(prev => prev.includes(user.id) ? prev : [...prev, user.id])
     setMentionIdx(null)
     setMentionFilter('')
-    setTimeout(() => textRef.current?.focus(), 0)
+    const newCursor = atStart + user.name.length + 2
+    setTimeout(() => {
+      textRef.current?.focus()
+      textRef.current?.setSelectionRange(newCursor, newCursor)
+    }, 0)
   }
 
   async function sendText() {
