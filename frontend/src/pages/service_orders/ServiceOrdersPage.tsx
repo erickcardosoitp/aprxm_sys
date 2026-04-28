@@ -22,7 +22,7 @@ interface ServiceOrder {
   area?: string; unit?: string; block?: string
   service_impacted?: string; category_name?: string; org_responsible?: string
   requester_name?: string; requester_phone?: string; requester_email?: string
-  reference_point?: string; address_cep?: string; address_street?: string; address_number?: string; address_complement?: string; assigned_to?: string; community_wide?: boolean
+  reference_point?: string; address_cep?: string; address_street?: string; address_number?: string; address_complement?: string; assigned_to?: string; assigned_to_name?: string; community_wide?: boolean
   requester_resident_id?: string; resolution_notes?: string; resolved_at?: string
   cancellation_reason?: string; request_date?: string
   impacted_residents?: {id: string; name: string; unit?: string}[]
@@ -1667,7 +1667,7 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                     <FieldCell label="Data solicitação">{fmt(d.request_date ?? d.created_at)}</FieldCell>
                     <FieldCell label="CEP">{d.address_cep ?? '—'}</FieldCell>
                     <FieldCell label="Ponto de referência">{d.reference_point ?? '—'}</FieldCell>
-                    {d.assigned_to && <FieldCell label="Atribuído a">{d.assigned_to}</FieldCell>}
+                    {d.assigned_to && <FieldCell label="Atribuído a">{d.assigned_to_name ?? d.assigned_to}</FieldCell>}
                     {d.resolution_notes && (
                       <div className="col-span-2">
                         <FieldCell label="Notas de resolução">{d.resolution_notes}</FieldCell>

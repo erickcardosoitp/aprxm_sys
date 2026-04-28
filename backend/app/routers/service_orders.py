@@ -492,6 +492,7 @@ async def list_sos(
             "community_wide": s.community_wide,
             "created_at": str(s.created_at),
             "assigned_to": str(s.assigned_to) if s.assigned_to else None,
+            "assigned_to_name": s.assigned_to_name,
             "created_by_name": creator_names.get(s.created_by),
         })
     return result
