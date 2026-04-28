@@ -527,8 +527,8 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                                 onChange={e => setRepasses(prev => prev.map((r, j) => j === i ? { ...r, boxId: e.target.value } : r))}
                                 className="flex-1 border border-gray-300 rounded-lg px-2 py-2 text-xs bg-white focus:outline-none">
                                 <option value="">Selecionar caixinha…</option>
-                                {cashBoxes.filter(b => b.is_malote).map(b => (
-                                  <option key={b.id} value={b.id}>{b.name} ({fmt(b.balance)})</option>
+                                {cashBoxes.map(b => (
+                                  <option key={b.id} value={b.id}>{b.is_malote ? '📦 ' : ''}{b.name} ({fmt(b.balance)})</option>
                                 ))}
                               </select>
                               <input type="number" min="0.01" step="0.01" value={rep.amount}
@@ -621,8 +621,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
           ) : step === 4 ? (
             <button
               onClick={onClose}
-              disabled={cashBoxes.some(b => b.is_malote) && transfersDone.length === 0}
-              title={cashBoxes.some(b => b.is_malote) && transfersDone.length === 0 ? 'Repasse ao malote obrigatório' : undefined}
+              disabled={false}
               className="bg-gray-800 hover:bg-gray-900 disabled:opacity-40 text-white px-6 py-2.5 rounded-xl text-sm font-semibold">
               Concluir
             </button>
