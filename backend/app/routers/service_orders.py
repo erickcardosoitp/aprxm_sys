@@ -34,7 +34,11 @@ class CreateSORequest(BaseModel):
     reference_point: str | None = None
     request_date: datetime | None = None
     address_cep: str | None = None
+    address_street: str | None = None
+    address_number: str | None = None
+    address_complement: str | None = None
     use_requester_address: bool = False
+    community_wide: bool = False
     assigned_to: UUID | None = None
     assigned_to_name: str | None = None
     energia_eletrica_data: dict | None = None
@@ -52,6 +56,10 @@ class UpdateSORequest(BaseModel):
     org_responsible: str | None = None
     reference_point: str | None = None
     address_cep: str | None = None
+    address_street: str | None = None
+    address_number: str | None = None
+    address_complement: str | None = None
+    community_wide: bool | None = None
     assigned_to: UUID | None = None
     assigned_to_name: str | None = None
     requester_name: str | None = None
@@ -265,6 +273,10 @@ async def get_so(
         "requester_email": so.requester_email,
         "reference_point": so.reference_point,
         "address_cep": so.address_cep,
+        "address_street": so.address_street,
+        "address_number": so.address_number,
+        "address_complement": so.address_complement,
+        "community_wide": so.community_wide,
         "use_requester_address": so.use_requester_address,
         "resolution_notes": so.resolution_notes, "resolved_at": str(so.resolved_at) if so.resolved_at else None,
         "cancellation_reason": so.cancellation_reason,
@@ -437,6 +449,11 @@ async def list_sos(
             "requester_phone": s.requester_phone,
             "unit": s.unit,
             "block": s.block,
+            "address_cep": s.address_cep,
+            "address_street": s.address_street,
+            "address_number": s.address_number,
+            "address_complement": s.address_complement,
+            "community_wide": s.community_wide,
             "created_at": str(s.created_at),
             "assigned_to": str(s.assigned_to) if s.assigned_to else None,
         })

@@ -75,6 +75,18 @@ async def geral_dashboard(
         {"ids": ids_str},
     )
     row = result.fetchone()
+
+    cofre_rows = (await session.execute(text("""
+        SELECT a.name, cb.balance
+          FROM cash_boxes cb
+          JOIN associations a ON a.id = cb.association_id
+         WHERE cb.association_id = ANY(:ids) AND cb.is_cofre = true AND cb.is_active = true
+         ORDER BY a.name, cb.name
+    """), {"ids": ids_str})).fetchall()
+
+    cofres = [{"association": r[0], "balance": str(round(float(r[1]), 2))} for r in cofre_rows]
+    total_cofres = str(round(sum(float(r[1]) for r in cofre_rows), 2))
+
     return {
         "total_moradores": row.total_moradores,
         "total_membros": row.total_membros,
@@ -82,6 +94,8 @@ async def geral_dashboard(
         "total_pendente": str(row.total_pendente),
         "inadimplentes": row.inadimplentes,
         "encomendas_aguardando": row.encomendas_aguardando,
+        "cofres": cofres,
+        "total_cofres": total_cofres,
     }
 
 
@@ -186,3 +200,66 @@ async def geral_moradores(
         }
         for r in result.fetchall()
     ]
+
+
+@router.get("/inventario", summary="Inventário financeiro mensal consolidado")
+async def inventario_mensal(
+    month: str = Query(description="Mês no formato YYYY-MM"),
+    assoc_ids: list[str] | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    _require_aggregator(current)
+    ids = _resolve_ids(current, assoc_ids)
+    ids_str = [str(i) for i in ids]
+
+    rows = (await session.execute(text("""
+        SELECT
+            a.id,
+            a.name AS association_name,
+            COALESCE((
+                SELECT SUM(m.amount) FROM mensalidades m
+                 WHERE m.association_id = a.id AND m.status = 'paid'
+                   AND TO_CHAR(m.paid_at, 'YYYY-MM') = :month
+            ), 0) AS mensalidades_pagas,
+            COALESCE((
+                SELECT COUNT(*) FROM mensalidades m
+                 WHERE m.association_id = a.id AND m.status = 'paid'
+                   AND TO_CHAR(m.paid_at, 'YYYY-MM') = :month
+            ), 0) AS qtd_mensalidades,
+            COALESCE((
+                SELECT SUM(t.amount) FROM transactions t
+                 WHERE t.association_id = a.id AND t.type = 'income'
+                   AND t.reversed_at IS NULL AND t.is_reversal = false
+                   AND TO_CHAR(t.created_at, 'YYYY-MM') = :month
+            ), 0) AS total_receitas,
+            COALESCE((
+                SELECT SUM(t.amount) FROM transactions t
+                 WHERE t.association_id = a.id AND t.type = 'expense'
+                   AND t.reversed_at IS NULL AND t.is_reversal = false
+                   AND TO_CHAR(t.created_at, 'YYYY-MM') = :month
+            ), 0) AS total_despesas,
+            COALESCE((
+                SELECT SUM(cb.balance) FROM cash_boxes cb
+                 WHERE cb.association_id = a.id AND cb.is_active = true
+            ), 0) AS saldo_caixinhas,
+            COALESCE((
+                SELECT SUM(cb.balance) FROM cash_boxes cb
+                 WHERE cb.association_id = a.id AND cb.is_cofre = true AND cb.is_active = true
+            ), 0) AS saldo_cofres
+          FROM associations a
+         WHERE a.id = ANY(:ids)
+         ORDER BY a.name
+    """), {"ids": ids_str, "month": month})).fetchall()
+
+    return [{
+        "association_id": str(r[0]),
+        "association_name": r[1],
+        "mensalidades_pagas": str(round(float(r[2]), 2)),
+        "qtd_mensalidades": int(r[3]),
+        "total_receitas": str(round(float(r[4]), 2)),
+        "total_despesas": str(round(float(r[5]), 2)),
+        "saldo_caixinhas": str(round(float(r[6]), 2)),
+        "saldo_cofres": str(round(float(r[7]), 2)),
+        "liquido_mes": str(round(float(r[4]) - float(r[5]), 2)),
+    } for r in rows]

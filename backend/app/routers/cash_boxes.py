@@ -17,6 +17,7 @@ class BoxRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
     is_malote: bool = False
+    is_cofre: bool = False
 
 
 class MovementRequest(BaseModel):
@@ -166,12 +167,12 @@ async def list_boxes(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     rows = (await session.execute(text("""
-        SELECT id, name, description, balance, is_active, created_at, is_malote
+        SELECT id, name, description, balance, is_active, created_at, is_malote, is_cofre
           FROM cash_boxes WHERE association_id = :aid ORDER BY name
     """), {"aid": str(current.association_id)})).fetchall()
     return [{"id": str(r[0]), "name": r[1], "description": r[2],
              "balance": str(r[3]), "is_active": r[4], "created_at": str(r[5]),
-             "is_malote": bool(r[6])} for r in rows]
+             "is_malote": bool(r[6]), "is_cofre": bool(r[7])} for r in rows]
 
 
 @router.post("", summary="Criar caixinha")
@@ -181,12 +182,12 @@ async def create_box(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     r = (await session.execute(text("""
-        INSERT INTO cash_boxes (id, association_id, name, description, is_malote)
-        VALUES (gen_random_uuid(), :aid, :name, :desc, :malote)
-        RETURNING id, name, balance, is_malote
-    """), {"aid": str(current.association_id), "name": body.name, "desc": body.description, "malote": body.is_malote})).fetchone()
+        INSERT INTO cash_boxes (id, association_id, name, description, is_malote, is_cofre)
+        VALUES (gen_random_uuid(), :aid, :name, :desc, :malote, :cofre)
+        RETURNING id, name, balance, is_malote, is_cofre
+    """), {"aid": str(current.association_id), "name": body.name, "desc": body.description, "malote": body.is_malote, "cofre": body.is_cofre})).fetchone()
     await session.commit()
-    return {"id": str(r[0]), "name": r[1], "balance": str(r[2]), "is_malote": bool(r[3])}
+    return {"id": str(r[0]), "name": r[1], "balance": str(r[2]), "is_malote": bool(r[3]), "is_cofre": bool(r[4])}
 
 
 @router.put("/{box_id}", summary="Editar caixinha")
@@ -198,9 +199,9 @@ async def update_box(
 ) -> dict:
     from uuid import UUID as _UUID
     await session.execute(text("""
-        UPDATE cash_boxes SET name=:name, description=:desc, is_malote=:malote, updated_at=NOW()
+        UPDATE cash_boxes SET name=:name, description=:desc, is_malote=:malote, is_cofre=:cofre, updated_at=NOW()
          WHERE id=:id AND association_id=:aid
-    """), {"id": _UUID(box_id), "aid": current.association_id, "name": body.name, "desc": body.description, "malote": body.is_malote})
+    """), {"id": _UUID(box_id), "aid": current.association_id, "name": body.name, "desc": body.description, "malote": body.is_malote, "cofre": body.is_cofre})
     await session.commit()
     return {"ok": True}
 

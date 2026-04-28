@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, cash_boxes, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers
+from app.routers import admin, agent, auth, carriers, cash_boxes, demands, finance, financeiro, geral, mensalidades, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -141,6 +141,18 @@ async def _run_migrations() -> None:
 
         await session.execute(text(
             "ALTER TABLE cash_boxes ADD COLUMN IF NOT EXISTS is_malote BOOLEAN DEFAULT false NOT NULL"
+        ))
+        await session.execute(text(
+            "ALTER TABLE cash_boxes ADD COLUMN IF NOT EXISTS is_cofre BOOLEAN DEFAULT false NOT NULL"
+        ))
+        await session.execute(text(
+            "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS quebra_responsavel VARCHAR(200)"
+        ))
+        await session.execute(text(
+            "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS quebra_assinatura_url TEXT"
+        ))
+        await session.execute(text(
+            "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS quebra_apurada_at TIMESTAMPTZ"
         ))
         await session.execute(text(
             "ALTER TABLE bank_statements ADD COLUMN IF NOT EXISTS batched_at TIMESTAMPTZ"
@@ -347,6 +359,57 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_so_tasks_assoc ON service_order_tasks(association_id)"
         ))
 
+        # porta_a_porta: acordo date range columns
+        await session.execute(text(
+            "ALTER TABLE porta_a_porta_leads ADD COLUMN IF NOT EXISTS acordo_months INTEGER"
+        ))
+        await session.execute(text(
+            "ALTER TABLE porta_a_porta_leads ADD COLUMN IF NOT EXISTS acordo_date_from VARCHAR(7)"
+        ))
+        await session.execute(text(
+            "ALTER TABLE porta_a_porta_leads ADD COLUMN IF NOT EXISTS acordo_date_to VARCHAR(7)"
+        ))
+
+        # demands: Kanban board for task management
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS demands (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                status VARCHAR(30) NOT NULL DEFAULT 'gaveta',
+                phase VARCHAR(30) NOT NULL DEFAULT 'pendente',
+                priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+                assigned_to UUID REFERENCES users(id),
+                assigned_to_name VARCHAR(255),
+                due_date DATE,
+                notes TEXT,
+                created_by UUID NOT NULL REFERENCES users(id),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_demands_assoc ON demands(association_id, status)"
+        ))
+
+        # conselho role
+        await session.execute(text("""
+            DO $$ BEGIN
+                ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'conselho';
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+
+        # service_orders: community-wide + address fields
+        for col in [
+            "community_wide BOOLEAN DEFAULT FALSE",
+            "address_street VARCHAR(255)",
+            "address_number VARCHAR(20)",
+            "address_complement VARCHAR(100)",
+        ]:
+            await session.execute(text(f"ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS {col}"))
+
         # role_permissions: per-association configurable module access
         await session.execute(text("""
             CREATE TABLE IF NOT EXISTS role_permissions (
@@ -411,6 +474,7 @@ app.include_router(agent.router, prefix=PREFIX)
 app.include_router(cash_boxes.router, prefix=PREFIX)
 app.include_router(porta_a_porta.router, prefix=PREFIX)
 app.include_router(carriers.router, prefix=PREFIX)
+app.include_router(demands.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

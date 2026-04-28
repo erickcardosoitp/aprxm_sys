@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle, ChevronDown, FileText, MessageSquare, Pencil, Plus, Search, X,
-  Clock, CheckCircle, XCircle, Archive, Loader2, User,
+  Clock, CheckCircle, XCircle, Archive, Loader2, User, LayoutDashboard,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
+import DemandasBoard from './DemandasBoard'
 
 // ─── Extended types (superset of types/index.ts) ──────────────────────────────
 
@@ -21,7 +22,7 @@ interface ServiceOrder {
   area?: string; unit?: string; block?: string
   service_impacted?: string; category_name?: string; org_responsible?: string
   requester_name?: string; requester_phone?: string; requester_email?: string
-  reference_point?: string; address_cep?: string; assigned_to?: string
+  reference_point?: string; address_cep?: string; address_street?: string; address_number?: string; address_complement?: string; assigned_to?: string; community_wide?: boolean
   requester_resident_id?: string; resolution_notes?: string; resolved_at?: string
   cancellation_reason?: string; request_date?: string
   impacted_residents?: {id: string; name: string; unit?: string}[]
@@ -145,7 +146,7 @@ const ALL_STATUSES: ServiceOrderStatus[] = [
   'pending', 'open', 'in_progress', 'waiting_third_party', 'resolved', 'archived', 'cancelled',
 ]
 
-const CAN_WRITE_ROLES = ['admin', 'conferente', 'diretoria_adjunta', 'diretoria', 'superadmin']
+const CAN_WRITE_ROLES = ['admin', 'conferente', 'diretoria_adjunta', 'diretoria', 'conselho', 'superadmin']
 
 // ─── Input helper ─────────────────────────────────────────────────────────────
 
@@ -178,6 +179,12 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
   const [useMoradorCep, setUseMoradorCep] = useState(false)
   const [referencePoint, setReferencePoint] = useState('')
   const [description, setDescription] = useState('')
+
+  const [communityWide, setCommunityWide] = useState(false)
+  const [addressStreet, setAddressStreet] = useState('')
+  const [addressNumber, setAddressNumber] = useState('')
+  const [addressComplement, setAddressComplement] = useState('')
+  const [cepLoading, setCepLoading] = useState(false)
 
   const [assignedToId, setAssignedToId] = useState<string | null>(null)
   const [assignedToName, setAssignedToName] = useState('')
@@ -261,6 +268,17 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
     }
   }, [useMoradorCep, selectedResident])
 
+  const lookupCep = async (raw: string) => {
+    const digits = raw.replace(/\D/g, '')
+    if (digits.length !== 8) return
+    setCepLoading(true)
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      const data = await res.json()
+      if (!data.erro) setAddressStreet(data.logradouro ?? '')
+    } catch { /* silent */ } finally { setCepLoading(false) }
+  }
+
   const handleSubmit = async () => {
     if (!title.trim()) { toast.error('Título é obrigatório.'); return }
     if (!description.trim()) { toast.error('Descrição é obrigatória.'); return }
@@ -270,20 +288,24 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
         title: title.trim(),
         description: description.trim(),
         priority, status,
+        community_wide: communityWide,
         service_impacted: serviceImpacted || undefined,
         category_name: category || undefined,
         org_responsible: orgResponsible || undefined,
         address_cep: cep || undefined,
+        address_street: addressStreet || undefined,
+        address_number: addressNumber || undefined,
+        address_complement: addressComplement || undefined,
         reference_point: referencePoint || undefined,
-        requester_resident_id: selectedResident?.id ?? undefined,
-        requester_name: selectedResident?.full_name ?? undefined,
-        requester_phone: requesterPhone || undefined,
-        requester_email: requesterEmail || undefined,
+        requester_resident_id: communityWide ? undefined : (selectedResident?.id ?? undefined),
+        requester_name: communityWide ? undefined : (selectedResident?.full_name ?? undefined),
+        requester_phone: communityWide ? undefined : (requesterPhone || undefined),
+        requester_email: communityWide ? undefined : (requesterEmail || undefined),
         request_date: requestDate || undefined,
         assigned_to: assignedToId || undefined,
         assigned_to_name: assignedToName || undefined,
         energia_eletrica_data: isEnergiaEletrica && Object.keys(energiaData).length ? energiaData : undefined,
-        impacted_residents: impactedResidents,
+        impacted_residents: communityWide ? [] : impactedResidents,
       })
       toast.success('Ordem de serviço criada!')
       onCreated()
@@ -304,8 +326,19 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-5">
+          {/* Comunidade inteira */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={communityWide}
+              onChange={e => setCommunityWide(e.target.checked)}
+              className="w-4 h-4 accent-[#26619c]"
+            />
+            <span className="text-sm font-medium text-gray-700">Toda a comunidade (sem morador específico)</span>
+          </label>
+
           {/* SECTION 1 */}
-          <div>
+          {!communityWide && <div>
             <p className="text-xs font-semibold text-[#26619c] uppercase tracking-wide mb-3">Seção 1 — Solicitante</p>
             <div className="flex flex-col gap-3">
               {/* Resident search */}
@@ -372,7 +405,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                 <input type="email" value={requesterEmail} onChange={e => setRequesterEmail(e.target.value)} className={inputCls} placeholder="email@exemplo.com" />
               </div>
             </div>
-          </div>
+          </div>}
 
           {/* SECTION 2 */}
           <div>
@@ -429,32 +462,77 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Org. responsável</label>
-                  <select value={orgResponsible} onChange={e => setOrgResponsible(e.target.value)} className={inputCls} disabled={!category}>
+                  <select
+                    value={orgOptions.includes(orgResponsible) ? orgResponsible : (orgResponsible ? '__outro__' : '')}
+                    onChange={e => setOrgResponsible(e.target.value === '__outro__' ? '' : e.target.value)}
+                    className={inputCls}
+                    disabled={!category}
+                  >
                     <option value="">— selecione —</option>
                     {orgOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                    <option value="__outro__">Outro…</option>
                   </select>
+                  {(!orgOptions.includes(orgResponsible) || orgResponsible === '') && (
+                    <input
+                      value={orgOptions.includes(orgResponsible) ? '' : orgResponsible}
+                      onChange={e => setOrgResponsible(e.target.value)}
+                      className={`${inputCls} mt-1.5`}
+                      placeholder="Digite o órgão responsável"
+                    />
+                  )}
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs text-gray-600 mb-1">CEP do local</label>
                 <div className="flex items-center gap-3">
-                  <input
-                    value={cep}
-                    onChange={e => setCep(e.target.value)}
-                    className={inputCls}
-                    placeholder="00000-000"
-                    disabled={useMoradorCep}
-                  />
-                  <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap cursor-pointer">
+                  <div className="relative flex-1">
                     <input
-                      type="checkbox"
-                      checked={useMoradorCep}
-                      onChange={e => setUseMoradorCep(e.target.checked)}
-                      className="w-3.5 h-3.5 accent-[#26619c]"
+                      value={cep}
+                      onChange={e => { setCep(e.target.value); lookupCep(e.target.value) }}
+                      className={inputCls}
+                      placeholder="00000-000"
+                      disabled={useMoradorCep}
                     />
-                    Usar CEP do morador
-                  </label>
+                    {cepLoading && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">buscando…</span>}
+                  </div>
+                  {!communityWide && (
+                    <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={useMoradorCep}
+                        onChange={e => setUseMoradorCep(e.target.checked)}
+                        className="w-3.5 h-3.5 accent-[#26619c]"
+                      />
+                      Usar CEP do morador
+                    </label>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <div className="col-span-2">
+                    <input
+                      value={addressStreet}
+                      onChange={e => setAddressStreet(e.target.value)}
+                      className={inputCls}
+                      placeholder="Logradouro"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      value={addressNumber}
+                      onChange={e => setAddressNumber(e.target.value)}
+                      className={inputCls}
+                      placeholder="Nº"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <input
+                      value={addressComplement}
+                      onChange={e => setAddressComplement(e.target.value)}
+                      className={inputCls}
+                      placeholder="Complemento (opcional)"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -969,8 +1047,14 @@ function SOPrintModal({ so, onClose }: { so: ServiceOrder; onClose: () => void }
 
         <div className="border-t border-gray-200 pt-4 mb-6">
           <h2 className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-3">Localização</h2>
+          {so.community_wide && (
+            <p className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 mb-3 inline-block">
+              Toda a comunidade
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-x-8 gap-y-1">
             <PField label="CEP" value={so.address_cep} />
+            <PField label="Logradouro" value={[so.address_street, so.address_number, so.address_complement].filter(Boolean).join(', ') || undefined} />
             <PField label="Ponto de Referência" value={so.reference_point} />
           </div>
         </div>
@@ -1041,6 +1125,9 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
     category_name: so.category_name ?? '',
     org_responsible: so.org_responsible ?? '',
     address_cep: so.address_cep ?? '',
+    address_street: so.address_street ?? '',
+    address_number: so.address_number ?? '',
+    address_complement: so.address_complement ?? '',
     reference_point: so.reference_point ?? '',
     requester_name: so.requester_name ?? '',
     requester_phone: so.requester_phone ?? '',
@@ -1051,7 +1138,8 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
   const handleSaveEdit = async () => {
     setSaving(true)
     try {
-      await api.put(`/service-orders/${so.id}`, editForm)
+      const payload = { ...editForm, org_responsible: editForm.org_responsible === '\x00' ? '' : editForm.org_responsible }
+      await api.put(`/service-orders/${so.id}`, payload)
       toast.success('OS atualizada.')
       setEditing(false)
       const res = await api.get<ServiceOrder>(`/service-orders/${so.id}`)
@@ -1196,6 +1284,9 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                             category_name: d.category_name ?? '',
                             org_responsible: d.org_responsible ?? '',
                             address_cep: d.address_cep ?? '',
+                            address_street: d.address_street ?? '',
+                            address_number: d.address_number ?? '',
+                            address_complement: d.address_complement ?? '',
                             reference_point: d.reference_point ?? '',
                             requester_name: d.requester_name ?? '',
                             requester_phone: d.requester_phone ?? '',
@@ -1290,14 +1381,23 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Org. responsável</label>
                       <select
-                        value={editForm.org_responsible}
-                        onChange={e => setEditForm(f => ({ ...f, org_responsible: e.target.value }))}
+                        value={(ORG_BY_CATEGORY[editForm.category_name] ?? []).includes(editForm.org_responsible) ? editForm.org_responsible : (editForm.org_responsible ? '__outro__' : '')}
+                        onChange={e => setEditForm(f => ({ ...f, org_responsible: e.target.value === '__outro__' ? '\x00' : e.target.value }))}
                         className={inputCls}
                         disabled={!editForm.category_name}
                       >
                         <option value="">— Selecione —</option>
                         {(ORG_BY_CATEGORY[editForm.category_name] ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+                        <option value="__outro__">Outro…</option>
                       </select>
+                      {(editForm.org_responsible === '\x00' || (editForm.org_responsible && !(ORG_BY_CATEGORY[editForm.category_name] ?? []).includes(editForm.org_responsible))) && (
+                        <input
+                          value={editForm.org_responsible === '\x00' ? '' : editForm.org_responsible}
+                          onChange={e => setEditForm(f => ({ ...f, org_responsible: e.target.value }))}
+                          className={`${inputCls} mt-1.5`}
+                          placeholder="Digite o órgão responsável"
+                        />
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -1306,7 +1406,18 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                       <input
                         type="text"
                         value={editForm.address_cep}
-                        onChange={e => setEditForm(f => ({ ...f, address_cep: e.target.value }))}
+                        onChange={async e => {
+                          const v = e.target.value
+                          setEditForm(f => ({ ...f, address_cep: v }))
+                          const digits = v.replace(/\D/g, '')
+                          if (digits.length === 8) {
+                            try {
+                              const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+                              const d = await r.json()
+                              if (!d.erro) setEditForm(f => ({ ...f, address_street: d.logradouro ?? f.address_street }))
+                            } catch { /* silent */ }
+                          }
+                        }}
                         className={inputCls}
                         placeholder="00000-000"
                       />
@@ -1319,6 +1430,20 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                         onChange={e => setEditForm(f => ({ ...f, reference_point: e.target.value }))}
                         className={inputCls}
                       />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <label className="block text-xs text-gray-600 mb-1">Logradouro</label>
+                      <input value={editForm.address_street} onChange={e => setEditForm(f => ({ ...f, address_street: e.target.value }))} className={inputCls} placeholder="Logradouro" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Nº</label>
+                      <input value={editForm.address_number} onChange={e => setEditForm(f => ({ ...f, address_number: e.target.value }))} className={inputCls} placeholder="Nº" />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="block text-xs text-gray-600 mb-1">Complemento</label>
+                      <input value={editForm.address_complement} onChange={e => setEditForm(f => ({ ...f, address_complement: e.target.value }))} className={inputCls} placeholder="Complemento" />
                     </div>
                   </div>
                   <div>
@@ -1496,6 +1621,8 @@ export default function ServiceOrdersPage() {
   const { role } = useAuthStore()
   const canWrite = CAN_WRITE_ROLES.includes(role ?? '')
 
+  const [pageTab, setPageTab] = useState<'ordens' | 'demandas'>('ordens')
+
   const [orders, setOrders] = useState<ServiceOrder[]>([])
   const [loading, setLoading] = useState(false)
   const [showNewOS, setShowNewOS] = useState(false)
@@ -1555,11 +1682,13 @@ export default function ServiceOrdersPage() {
           Ordens de Serviço
         </h1>
         <div className="flex gap-2">
-          <button onClick={() => { setShowReport(true); loadReport() }}
-            className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
-            <FileText className="w-4 h-4" /><span className="hidden sm:inline">Relatório</span>
-          </button>
-          {canWrite && (
+          {pageTab === 'ordens' && (
+            <button onClick={() => { setShowReport(true); loadReport() }}
+              className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
+              <FileText className="w-4 h-4" /><span className="hidden sm:inline">Relatório</span>
+            </button>
+          )}
+          {pageTab === 'ordens' && canWrite && (
             <button
               onClick={() => setShowNewOS(true)}
               className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition"
@@ -1570,6 +1699,25 @@ export default function ServiceOrdersPage() {
         </div>
       </div>
 
+      {/* Page tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        <button
+          onClick={() => setPageTab('ordens')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'ordens' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
+        >
+          <FileText className="w-4 h-4" /> Ordens
+        </button>
+        <button
+          onClick={() => setPageTab('demandas')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'demandas' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
+        >
+          <LayoutDashboard className="w-4 h-4" /> Demandas
+        </button>
+      </div>
+
+      {pageTab === 'demandas' && <DemandasBoard canWrite={canWrite} />}
+
+      {pageTab === 'ordens' && <>
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-3">
         {[
@@ -1656,8 +1804,9 @@ export default function ServiceOrdersPage() {
                     </div>
                     <p className="text-sm font-medium text-gray-800 truncate">{so.title}</p>
                     <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                      {so.community_wide && <span className="text-blue-600 font-medium">Toda a comunidade</span>}
                       {so.category_name && <span>{so.category_name}</span>}
-                      {so.requester_name && <><span>·</span><span>{so.requester_name}</span></>}
+                      {!so.community_wide && so.requester_name && <><span>·</span><span>{so.requester_name}</span></>}
                       <span>·</span>
                       <span>{new Date(so.created_at).toLocaleDateString('pt-BR')}</span>
                     </p>
@@ -1774,6 +1923,7 @@ export default function ServiceOrdersPage() {
           </div>
         </div>
       )}
+      </>}
     </div>
   )
 }

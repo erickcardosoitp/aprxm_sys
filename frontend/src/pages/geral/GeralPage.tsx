@@ -14,6 +14,8 @@ interface Dashboard {
   total_pendente: string
   inadimplentes: number
   encomendas_aguardando: number
+  cofres?: { association: string; balance: string }[]
+  total_cofres?: string
 }
 interface CobrancaItem {
   id: string
@@ -39,7 +41,7 @@ interface Morador {
   pendencias: number
 }
 
-type Tab = 'dashboard' | 'cobrancas' | 'moradores'
+type Tab = 'dashboard' | 'cobrancas' | 'moradores' | 'inventario'
 type CobrancasFilter = 'all' | 'paid' | 'pending' | 'overdue'
 
 const fmt = (v: string | number) =>
@@ -75,6 +77,11 @@ export default function GeralPage() {
   const [searchQ, setSearchQ] = useState('')
   const [searchTimeout, setSearchTimeout] = useState<ReturnType<typeof setTimeout> | null>(null)
 
+  // Inventário
+  const [invMonth, setInvMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [inventario, setInventario] = useState<any[]>([])
+  const [loadingInv, setLoadingInv] = useState(false)
+
   const assocIdsParam = assocFilter === 'all' ? undefined : [assocFilter]
 
   useEffect(() => { loadAssocs() }, [])
@@ -82,7 +89,18 @@ export default function GeralPage() {
     if (tab === 'dashboard') loadDashboard()
     if (tab === 'cobrancas') loadCobrancas(cobFilter)
     if (tab === 'moradores') loadMoradores()
+    if (tab === 'inventario') loadInventario()
   }, [tab, assocFilter])
+
+  const loadInventario = async (month?: string) => {
+    setLoadingInv(true)
+    try {
+      const params: any = { month: month ?? invMonth }
+      if (assocFilter !== 'all') params.assoc_ids = [assocFilter]
+      const res = await api.get<any[]>('/geral/inventario', { params })
+      setInventario(res.data)
+    } catch { setInventario([]) } finally { setLoadingInv(false) }
+  }
 
   const loadAssocs = async () => {
     try {
@@ -134,6 +152,7 @@ export default function GeralPage() {
     { key: 'dashboard', label: 'Resumo', icon: TrendingUp },
     { key: 'cobrancas', label: 'Cobranças', icon: DollarSign },
     { key: 'moradores', label: 'Moradores', icon: Users },
+    { key: 'inventario', label: 'Inventário', icon: Building2 },
   ]
 
   const AssocBadge = ({ slug, name }: { slug: string; name: string }) => (
@@ -212,6 +231,20 @@ export default function GeralPage() {
                   <p className="text-xs text-red-400 mt-0.5">{dashboard.inadimplentes} inadimplentes</p>
                 </div>
               </div>
+              {dashboard.cofres && dashboard.cofres.length > 0 && (
+                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
+                  <p className="text-xs text-slate-600 font-medium mb-2">Cofres</p>
+                  <p className="text-xl font-bold text-slate-800">{fmt(dashboard.total_cofres ?? '0')}</p>
+                  <div className="mt-2 flex flex-col gap-1">
+                    {dashboard.cofres.map((c, i) => (
+                      <div key={i} className="flex justify-between text-xs text-slate-600">
+                        <span>{c.association}</span>
+                        <span className="font-medium">{fmt(c.balance)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           ) : null}
         </div>
@@ -333,6 +366,75 @@ export default function GeralPage() {
               </ul>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Inventário */}
+      {tab === 'inventario' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <input
+              type="month"
+              value={invMonth}
+              onChange={e => { setInvMonth(e.target.value); loadInventario(e.target.value) }}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+          {loadingInv ? (
+            <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+          ) : inventario.length === 0 ? (
+            <div className="p-6 text-center text-gray-400 text-sm">Nenhum dado.</div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {inventario.map(row => (
+                <div key={row.association_id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                  <p className="text-sm font-semibold text-gray-800 mb-3">{row.association_name}</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-green-50 rounded-lg p-2">
+                      <p className="text-green-600">Receitas do mês</p>
+                      <p className="font-bold text-green-700 text-base mt-0.5">{fmt(row.total_receitas)}</p>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-2">
+                      <p className="text-red-500">Despesas do mês</p>
+                      <p className="font-bold text-red-600 text-base mt-0.5">{fmt(row.total_despesas)}</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-2">
+                      <p className="text-blue-600">Mensalidades pagas</p>
+                      <p className="font-bold text-blue-700 text-base mt-0.5">{fmt(row.mensalidades_pagas)}</p>
+                      <p className="text-blue-400 mt-0.5">{row.qtd_mensalidades} pagamento(s)</p>
+                    </div>
+                    <div className={`rounded-lg p-2 ${parseFloat(row.liquido_mes) >= 0 ? 'bg-emerald-50' : 'bg-orange-50'}`}>
+                      <p className={parseFloat(row.liquido_mes) >= 0 ? 'text-emerald-600' : 'text-orange-600'}>Líquido do mês</p>
+                      <p className={`font-bold text-base mt-0.5 ${parseFloat(row.liquido_mes) >= 0 ? 'text-emerald-700' : 'text-orange-700'}`}>{fmt(row.liquido_mes)}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <p className="text-gray-500">Saldo caixinhas</p>
+                      <p className="font-bold text-gray-700 text-base mt-0.5">{fmt(row.saldo_caixinhas)}</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-2">
+                      <p className="text-slate-500">Saldo cofres</p>
+                      <p className="font-bold text-slate-700 text-base mt-0.5">{fmt(row.saldo_cofres)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div className="bg-gray-800 rounded-xl p-4 text-white">
+                <p className="text-xs text-gray-400 mb-1">Consolidado — {invMonth}</p>
+                <div className="flex justify-between text-sm">
+                  <span>Total receitas</span>
+                  <span className="font-bold text-green-400">{fmt(String(inventario.reduce((s, r) => s + parseFloat(r.total_receitas), 0)))}</span>
+                </div>
+                <div className="flex justify-between text-sm mt-1">
+                  <span>Total despesas</span>
+                  <span className="font-bold text-red-400">{fmt(String(inventario.reduce((s, r) => s + parseFloat(r.total_despesas), 0)))}</span>
+                </div>
+                <div className="flex justify-between text-sm mt-1">
+                  <span>Saldo total cofres</span>
+                  <span className="font-bold text-slate-300">{fmt(String(inventario.reduce((s, r) => s + parseFloat(r.saldo_cofres), 0)))}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -860,8 +860,9 @@ export default function PackagesPage() {
         type: 'member', cpf: upgradeCpf.trim(), status: 'active',
         is_member_confirmed: true, terms_accepted: true, lgpd_accepted: true,
       })
-      toast.success('Morador cadastrado como associado!')
+      toast.success('Morador cadastrado como associado! Taxa isenta nesta entrega.')
       setUpgradedResidentInfo({ id: deliveryTarget.resident_id!, name: deliveryTarget.resident_name ?? '' })
+      setDeliveryTarget(prev => prev ? { ...prev, resident_type: 'member', has_delivery_fee: false } : prev)
       setShowUpgrade(false); setUpgradeCpf('')
       loadPackages()
     } catch (e: any) {
@@ -2704,25 +2705,28 @@ export default function PackagesPage() {
                   </div>
 
                   {/* Upgrade current guest to member */}
-                  {!showUpgrade ? (
-                    <button onClick={() => setShowUpgrade(true)}
-                      className="text-xs text-[#26619c] underline self-start">
-                      Ou cadastrar este visitante como associado
-                    </button>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      <input value={upgradeCpf} onChange={e => setUpgradeCpf(e.target.value)}
-                        className={inputCls} placeholder="CPF do morador *" />
-                      <div className="flex gap-2">
-                        <button onClick={() => { setShowUpgrade(false); setUpgradeCpf('') }}
-                          className="flex-1 border border-gray-300 text-gray-600 py-1.5 rounded-lg text-xs">Cancelar</button>
-                        <button onClick={handleUpgradeToMember} disabled={upgradeLoading}
-                          className="flex-1 bg-[#26619c] text-white py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50">
-                          {upgradeLoading ? '…' : 'Confirmar'}
-                        </button>
+                  <div className="border-t border-orange-200 pt-2">
+                    {!showUpgrade ? (
+                      <button onClick={() => setShowUpgrade(true)}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white text-xs font-semibold py-2 rounded-lg transition flex items-center justify-center gap-1.5">
+                        ✓ Associar morador — isentar taxa
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <p className="text-xs font-medium text-green-700">Ao confirmar, o morador vira associado e a taxa é isenta nesta entrega.</p>
+                        <input value={upgradeCpf} onChange={e => setUpgradeCpf(e.target.value)}
+                          className={inputCls} placeholder="CPF do associado *" />
+                        <div className="flex gap-2">
+                          <button onClick={() => { setShowUpgrade(false); setUpgradeCpf('') }}
+                            className="flex-1 border border-gray-300 text-gray-600 py-1.5 rounded-lg text-xs">Cancelar</button>
+                          <button onClick={handleUpgradeToMember} disabled={upgradeLoading}
+                            className="flex-1 bg-green-600 text-white py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50">
+                            {upgradeLoading ? '…' : 'Confirmar Associação'}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
 

@@ -637,6 +637,33 @@ async def registrar_quebra(
     return {"id": str(tx.id), "description": tx.description, "amount": str(tx.amount), "type": tx.type}
 
 
+class ApuracaoQuebraRequest(BaseModel):
+    responsavel: str = Field(min_length=2, max_length=200)
+    assinatura_url: str | None = None
+
+
+@router.patch("/sessions/{session_id}/apuracao-quebra", summary="Registrar apuração de quebra (responsável + assinatura)")
+async def apuracao_quebra(
+    session_id: UUID,
+    body: ApuracaoQuebraRequest,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    row = (await session.execute(sa_text(
+        "SELECT id FROM cash_sessions WHERE id=:id AND association_id=:aid"
+    ), {"id": str(session_id), "aid": str(current.association_id)})).fetchone()
+    if not row:
+        raise HTTPException(404, "Sessão não encontrada.")
+    await session.execute(sa_text("""
+        UPDATE cash_sessions
+           SET quebra_responsavel=:resp, quebra_assinatura_url=:sig, quebra_apurada_at=NOW()
+         WHERE id=:id AND association_id=:aid
+    """), {"resp": body.responsavel, "sig": body.assinatura_url, "id": str(session_id), "aid": str(current.association_id)})
+    await session.commit()
+    return {"ok": True}
+
+
 class TransferToCashboxRequest(BaseModel):
     cash_box_id: UUID
     amount: Decimal = Field(ge=0)
@@ -1083,6 +1110,9 @@ async def list_sessions(
                 a.name            AS association_name,
                 cs.quebra_caixa,
                 cs.malote_sent_at,
+                cs.quebra_responsavel,
+                cs.quebra_assinatura_url,
+                cs.quebra_apurada_at,
                 CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_pix, 0)
                      ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
                           AND (t.reversed_at IS NULL AND t.is_reversal = false)
@@ -1119,7 +1149,8 @@ async def list_sessions(
                      cs.opening_balance, cs.closing_balance, cs.expected_balance,
                      cs.difference, u_open.full_name, u_close.full_name, u_review.full_name,
                      cs.origin, a.name, cs.quebra_caixa, cs.malote_sent_at, cs.manual_pix, cs.manual_dinheiro,
-                     cs.manual_total_bruto, cs.manual_total_baixas
+                     cs.manual_total_bruto, cs.manual_total_baixas,
+                     cs.quebra_responsavel, cs.quebra_assinatura_url, cs.quebra_apurada_at
             ORDER BY cs.opened_at DESC
         """.replace("{uid_filter}", "" if current.is_conferente else "AND cs.opened_by = :uid")),
         {"aid": str(current.association_id)} if current.is_conferente else {"aid": str(current.association_id), "uid": str(current.user_id)},
@@ -1142,10 +1173,13 @@ async def list_sessions(
             "association_name": r[12],
             "quebra_caixa": str(round(float(r[13]), 2)) if r[13] is not None else None,
             "malote_sent_at": str(r[14]) if r[14] is not None else None,
-            "total_pix": str(round(float(r[15]), 2)),
-            "total_dinheiro": str(round(float(r[16]), 2)),
-            "total_bruto": str(round(float(r[17]), 2)),
-            "total_baixas": str(round(float(r[18]), 2)),
+            "quebra_responsavel": r[15],
+            "quebra_assinatura_url": r[16],
+            "quebra_apurada_at": str(r[17]) if r[17] is not None else None,
+            "total_pix": str(round(float(r[18]), 2)),
+            "total_dinheiro": str(round(float(r[19]), 2)),
+            "total_bruto": str(round(float(r[20]), 2)),
+            "total_baixas": str(round(float(r[21]), 2)),
         }
         for r in rows
     ]
