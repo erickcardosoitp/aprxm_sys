@@ -321,16 +321,16 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
     }
   }, [useMoradorCep, selectedResident])
 
-  const lookupCep = async (raw: string) => {
-    const digits = raw.replace(/\D/g, '')
+  useEffect(() => {
+    const digits = cep.replace(/\D/g, '')
     if (digits.length !== 8) return
     setCepLoading(true)
-    try {
-      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
-      const data = await res.json()
-      if (!data.erro) setAddressStreet(data.logradouro ?? '')
-    } catch { /* silent */ } finally { setCepLoading(false) }
-  }
+    fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      .then(r => r.json())
+      .then(data => { if (!data.erro) setAddressStreet(data.logradouro ?? '') })
+      .catch(() => {})
+      .finally(() => setCepLoading(false))
+  }, [cep])
 
   const handleSubmit = async () => {
     if (!title.trim()) { toast.error('Título é obrigatório.'); return }
@@ -570,7 +570,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                   <div className="relative flex-1">
                     <input
                       value={cep}
-                      onChange={e => { setCep(e.target.value); lookupCep(e.target.value) }}
+                      onChange={e => setCep(e.target.value)}
                       className={inputCls}
                       placeholder="00000-000"
                       disabled={useMoradorCep}
