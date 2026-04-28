@@ -11,7 +11,7 @@ import DemandasBoard from './DemandasBoard'
 // ─── Extended types (superset of types/index.ts) ──────────────────────────────
 
 type ServiceOrderStatus =
-  | 'pending' | 'open' | 'in_progress' | 'waiting_third_party'
+  | 'draft' | 'pending' | 'open' | 'in_progress' | 'waiting_third_party'
   | 'resolved' | 'archived' | 'cancelled'
 
 type ServiceOrderPriority = 'low' | 'medium' | 'high' | 'critical'
@@ -26,7 +26,7 @@ interface ServiceOrder {
   requester_resident_id?: string; resolution_notes?: string; resolved_at?: string
   cancellation_reason?: string; request_date?: string
   impacted_residents?: {id: string; name: string; unit?: string}[]
-  created_at: string; updated_at?: string
+  created_at: string; updated_at?: string; created_by_name?: string
 }
 
 interface SOComment {
@@ -70,6 +70,7 @@ interface UserResult {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<ServiceOrderStatus, string> = {
+  draft: 'Rascunho',
   pending: 'Pendente',
   open: 'Aberta',
   in_progress: 'Em Andamento',
@@ -80,6 +81,7 @@ const STATUS_LABELS: Record<ServiceOrderStatus, string> = {
 }
 
 const STATUS_COLORS: Record<ServiceOrderStatus, string> = {
+  draft: 'bg-amber-50 text-amber-600 border border-amber-200',
   pending: 'bg-gray-100 text-gray-600',
   open: 'bg-blue-100 text-blue-700',
   in_progress: 'bg-yellow-100 text-yellow-700',
@@ -90,6 +92,7 @@ const STATUS_COLORS: Record<ServiceOrderStatus, string> = {
 }
 
 const STATUS_ICONS: Record<ServiceOrderStatus, React.ReactNode> = {
+  draft: <Pencil className="w-3 h-3" />,
   pending: <Clock className="w-3 h-3" />,
   open: <AlertCircle className="w-3 h-3" />,
   in_progress: <Loader2 className="w-3 h-3" />,
@@ -143,7 +146,7 @@ const ORG_BY_CATEGORY: Record<string, string[]> = {
 }
 
 const ALL_STATUSES: ServiceOrderStatus[] = [
-  'pending', 'open', 'in_progress', 'waiting_third_party', 'resolved', 'archived', 'cancelled',
+  'draft', 'pending', 'open', 'in_progress', 'waiting_third_party', 'resolved', 'archived', 'cancelled',
 ]
 
 const CAN_WRITE_ROLES = ['admin', 'conferente', 'diretoria_adjunta', 'diretoria', 'conselho', 'superadmin']
@@ -192,7 +195,57 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
   const [assignedResults, setAssignedResults] = useState<UserResult[]>([])
   const [energiaData, setEnergiaData] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  const [showExitConfirm, setShowExitConfirm] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const isDirty = !!(title || description || selectedResident || serviceImpacted || category || cep || referencePoint || communityWide)
+
+  useEffect(() => {
+    if (!isDirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
+  const handleClose = () => {
+    if (isDirty) { setShowExitConfirm(true) } else { onClose() }
+  }
+
+  const handleSaveDraft = async () => {
+    if (!title.trim() && !description.trim()) { onClose(); return }
+    setSaving(true)
+    try {
+      await api.post('/service-orders', {
+        title: title.trim() || '(Rascunho)',
+        description: description.trim() || '(sem descrição)',
+        priority, status: 'draft',
+        community_wide: communityWide,
+        service_impacted: serviceImpacted || undefined,
+        category_name: category || undefined,
+        org_responsible: orgResponsible || undefined,
+        address_cep: cep || undefined,
+        address_street: addressStreet || undefined,
+        address_number: addressNumber || undefined,
+        address_complement: addressComplement || undefined,
+        reference_point: referencePoint || undefined,
+        requester_resident_id: communityWide ? undefined : (selectedResident?.id ?? undefined),
+        requester_name: communityWide ? undefined : (selectedResident?.full_name ?? undefined),
+        requester_phone: communityWide ? undefined : (requesterPhone || undefined),
+        requester_email: communityWide ? undefined : (requesterEmail || undefined),
+        request_date: requestDate || undefined,
+        assigned_to: assignedToId || undefined,
+        assigned_to_name: assignedToName || undefined,
+        impacted_residents: communityWide ? [] : impactedResidents,
+      })
+      toast.success('Rascunho salvo.')
+      onCreated()
+      onClose()
+    } catch {
+      toast.error('Erro ao salvar rascunho.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const [allUsers, setAllUsers] = useState<UserResult[]>([])
   useEffect(() => {
@@ -319,11 +372,39 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto py-6 px-4">
-      <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl">
+      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900 text-lg">Nova Ordem de Serviço</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
+
+        {showExitConfirm && (
+          <div className="absolute inset-0 z-10 bg-black/50 rounded-2xl flex items-center justify-center p-6">
+            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm flex flex-col gap-4">
+              <p className="font-semibold text-gray-900 text-center">O que deseja fazer?</p>
+              <p className="text-sm text-gray-500 text-center">Você tem informações não salvas nesta OS.</p>
+              <button
+                onClick={handleSaveDraft}
+                disabled={saving}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-white rounded-lg py-2.5 text-sm font-medium transition"
+              >
+                Salvar como rascunho
+              </button>
+              <button
+                onClick={() => setShowExitConfirm(false)}
+                className="w-full border border-gray-200 text-gray-700 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50 transition"
+              >
+                Continuar editando
+              </button>
+              <button
+                onClick={onClose}
+                className="w-full text-red-500 text-sm font-medium hover:underline"
+              >
+                Desistir e fechar
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="px-6 py-5 flex flex-col gap-5">
           {/* Comunidade inteira */}
@@ -1820,6 +1901,7 @@ export default function ServiceOrdersPage() {
                       {!so.community_wide && so.requester_name && <><span>·</span><span>{so.requester_name}</span></>}
                       <span>·</span>
                       <span>{new Date(so.created_at).toLocaleDateString('pt-BR')}</span>
+                      {so.created_by_name && <><span>·</span><span className="flex items-center gap-0.5"><User className="w-3 h-3" />{so.created_by_name}</span></>}
                     </p>
                   </div>
                 </div>

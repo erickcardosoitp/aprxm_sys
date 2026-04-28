@@ -16,6 +16,7 @@ except ImportError:
 
 
 class ServiceOrderStatus(str, Enum):
+    draft = "draft"
     pending = "pending"
     open = "open"
     in_progress = "in_progress"

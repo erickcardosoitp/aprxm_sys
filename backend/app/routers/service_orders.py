@@ -10,6 +10,7 @@ from sqlmodel import select
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
 from app.models.service_order import ServiceOrderPriority, ServiceOrderStatus
+from app.models.user import User
 from app.services.service_order_service import ServiceOrderService
 
 router = APIRouter(prefix="/service-orders", tags=["Ordens de Serviço"])
@@ -453,6 +454,15 @@ async def list_sos(
 ) -> list[dict]:
     svc = ServiceOrderService(session)
     sos = await svc.list(current.association_id, status)
+
+    creator_ids = list({s.created_by for s in sos})
+    creator_names: dict[UUID, str] = {}
+    if creator_ids:
+        rows = await session.execute(
+            select(User.id, User.full_name).where(User.id.in_(creator_ids))
+        )
+        creator_names = {r.id: r.full_name for r in rows}
+
     result = []
     for s in sos:
         if priority and s.priority != priority:
@@ -482,5 +492,6 @@ async def list_sos(
             "community_wide": s.community_wide,
             "created_at": str(s.created_at),
             "assigned_to": str(s.assigned_to) if s.assigned_to else None,
+            "created_by_name": creator_names.get(s.created_by),
         })
     return result
