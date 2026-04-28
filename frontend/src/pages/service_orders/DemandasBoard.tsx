@@ -131,6 +131,9 @@ function DemandModal({ demand, users, onClose, onSaved, serviceOrderId, defaultS
         saved = res.data as Demand
       }
       onSaved(saved)
+      if (form.assigned_to_name) {
+        toast.success(`Email enviado para ${form.assigned_to_name}`, { icon: '📧' })
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
     } finally {
@@ -243,7 +246,7 @@ function DemandCard({ demand, onEdit, onMove, onDelete, canWrite, isDragging, on
         </span>
         <div className="flex items-center gap-1">
           {isOverdue && <AlertCircle className="w-3.5 h-3.5 text-red-500" />}
-          <Flag className={`w-3.5 h-3.5 ${pc.flag}`} title={pc.label} />
+          <span title={pc.label}><Flag className={`w-3.5 h-3.5 ${pc.flag}`} /></span>
         </div>
       </div>
 
@@ -317,7 +320,7 @@ export default function DemandasBoard({ canWrite, serviceOrderId }: { canWrite: 
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
-    api.get<UserOption[]>('/admin/users?active_only=true').then(r => setUsers(r.data)).catch(() => {})
+    api.get<UserOption[]>('/admin/users?active_only=true').then(r => setUsers(r.data.filter(u => u.is_active !== false))).catch(() => {})
   }, [])
 
   const handleSaved = (saved: Demand) => {

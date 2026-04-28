@@ -129,7 +129,7 @@ export function AppShell() {
       const vapidRes = await api.get<{ key: string }>('/notifications/vapid-public-key')
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: _urlBase64ToUint8Array(vapidRes.data.key),
+        applicationServerKey: _urlBase64ToUint8Array(vapidRes.data.key) as unknown as BufferSource,
       })
       const j = sub.toJSON()
       await api.post('/notifications/subscribe', {

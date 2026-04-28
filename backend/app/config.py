@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # Cron
     cron_secret: str = ""
 
+    # Web Push (VAPID)
+    vapid_public_key: str = "BJjf0OQd7x6RJFkM3lIgNknJqpZWpUcTGBDjIxGHvaxkVnbHq1ZpUFvcXuhE8PVTduHkaap7sW6Xyp6BMZOWPp4"
+    vapid_private_key: str = ""
+    vapid_claims_sub: str = "mailto:erickcardoso@institutotiapretinha.org"
+
 
 
 @lru_cache

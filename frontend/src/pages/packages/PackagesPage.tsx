@@ -1188,10 +1188,13 @@ export default function PackagesPage() {
   const [carrierOpts, setCarrierOpts] = useState<CarrierOpt[]>([])
   const [delivererOpts, setDelivererOpts] = useState<DelivererOpt[]>([])
 
-  useEffect(() => {
+  const loadDelivererOpts = () => {
     api.get<CarrierOpt[]>('/carriers').then(r => setCarrierOpts(r.data)).catch(() => {})
     api.get<DelivererOpt[]>('/carriers/deliverers').then(r => setDelivererOpts(r.data)).catch(() => {})
-  }, [])
+  }
+  useEffect(() => { loadDelivererOpts() }, [])
+  useEffect(() => { if (showReceive) loadDelivererOpts() }, [showReceive])
+  useEffect(() => { if (showBulkReceive) loadDelivererOpts() }, [showBulkReceive])
 
   const loadPackages = async () => {
     const key = ++loadPackagesKeyRef.current
@@ -3323,12 +3326,15 @@ export default function PackagesPage() {
                         className={inputCls} placeholder="Nome do courier / transportadora" autoFocus />
                     )}
                   </div>
-                  {delivererOpts.length > 0 && brxDelivererSig ? (
+                  {brxDelivererSig ? (
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Assinatura</label>
-                      <img src={brxDelivererSig} alt="assinatura" className="h-16 border border-gray-200 rounded-lg bg-white object-contain" />
+                      <div className="flex items-center gap-3">
+                        <img src={brxDelivererSig} alt="assinatura" className="h-16 border border-gray-200 rounded-lg bg-white object-contain flex-1" />
+                        <button onClick={() => setBrxDelivererSig('')} className="text-xs text-red-500 hover:underline shrink-0">Refazer</button>
+                      </div>
                     </div>
-                  ) : delivererOpts.length === 0 && (
+                  ) : (
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Assinatura do entregador (opcional)</label>
                       <SignaturePad label="Assinatura do entregador" onSave={setBrxDelivererSig}
