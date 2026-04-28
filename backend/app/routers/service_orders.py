@@ -384,7 +384,8 @@ async def create_task(
                 {"id": str(so_id)},
             )
             num = so_num.scalar()
-            msg = f"📋 {body.assigned_to_name} foi atribuído(a) à tarefa "{body.title}" da OS #{num}"
+            title = body.title
+            msg = f'📋 {body.assigned_to_name} foi atribuído(a) à tarefa "{title}" da OS #{num}'
             await post_system_message(str(current.association_id), msg, session)
             await session.commit()
         except Exception:
