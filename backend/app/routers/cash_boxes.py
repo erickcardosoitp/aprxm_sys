@@ -26,6 +26,12 @@ class MovementRequest(BaseModel):
     description: str = Field(min_length=1)
 
 
+class TransferRequest(BaseModel):
+    destination_id: str
+    amount: Decimal = Field(gt=0)
+    description: str = Field(min_length=1)
+
+
 @router.get("/summary", summary="Resumo: caixa aberto + caixinhas + sangrias")
 async def summary(
     current: CurrentUser = Depends(get_current_user),
@@ -247,6 +253,51 @@ async def add_movement(
            "mtype": body.movement_type, "desc": body.description, "usr": str(current.user_id)})
     await session.commit()
     return {"ok": True, "new_balance": str(round(new_bal, 2))}
+
+
+@router.post("/{box_id}/transfer", summary="Transferir entre caixinhas")
+async def transfer_between_boxes(
+    box_id: str,
+    body: TransferRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    aid = str(current.association_id)
+    src = (await session.execute(text("""
+        SELECT id, balance, name FROM cash_boxes
+         WHERE id=:id AND association_id=:aid AND is_active=true
+    """), {"id": box_id, "aid": aid})).fetchone()
+    if not src:
+        raise HTTPException(404, "Caixinha de origem não encontrada.")
+    dst = (await session.execute(text("""
+        SELECT id, balance, name FROM cash_boxes
+         WHERE id=:id AND association_id=:aid AND is_active=true
+    """), {"id": body.destination_id, "aid": aid})).fetchone()
+    if not dst:
+        raise HTTPException(404, "Caixinha de destino não encontrada.")
+    if src[0] == dst[0]:
+        raise HTTPException(400, "Origem e destino não podem ser iguais.")
+    amt = float(body.amount)
+    new_src = float(src[1]) - amt
+    if new_src < 0:
+        raise HTTPException(400, "Saldo insuficiente na caixinha de origem.")
+    new_dst = float(dst[1]) + amt
+    usr = str(current.user_id)
+    desc = body.description
+    await session.execute(text("UPDATE cash_boxes SET balance=:b, updated_at=NOW() WHERE id=:id"),
+                          {"b": new_src, "id": box_id})
+    await session.execute(text("UPDATE cash_boxes SET balance=:b, updated_at=NOW() WHERE id=:id"),
+                          {"b": new_dst, "id": body.destination_id})
+    await session.execute(text("""
+        INSERT INTO cash_box_movements (id, association_id, cash_box_id, amount, movement_type, description, created_by)
+        VALUES (gen_random_uuid(), :aid, :bid, :amt, 'debit', :desc, :usr)
+    """), {"aid": aid, "bid": box_id, "amt": amt, "desc": f"Transferência para {dst[2]}: {desc}", "usr": usr})
+    await session.execute(text("""
+        INSERT INTO cash_box_movements (id, association_id, cash_box_id, amount, movement_type, description, created_by)
+        VALUES (gen_random_uuid(), :aid, :bid, :amt, 'credit', :desc, :usr)
+    """), {"aid": aid, "bid": body.destination_id, "amt": amt, "desc": f"Transferência de {src[2]}: {desc}", "usr": usr})
+    await session.commit()
+    return {"ok": True, "src_balance": str(round(new_src, 2)), "dst_balance": str(round(new_dst, 2))}
 
 
 @router.get("/{box_id}/movements", summary="Movimentações de uma caixinha")

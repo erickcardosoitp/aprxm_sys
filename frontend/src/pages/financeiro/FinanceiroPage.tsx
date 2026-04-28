@@ -317,6 +317,11 @@ export default function FinanceiroPage() {
   const [showMoveForm, setShowMoveForm] = useState(false)
   const [moveForm, setMoveForm] = useState({ amount: '', movement_type: 'credit', description: '' })
   const [savingBox, setSavingBox] = useState(false)
+  const [boxTransferSource, setBoxTransferSource] = useState<CashBox | null>(null)
+  const [boxTransferDest, setBoxTransferDest] = useState('')
+  const [boxTransferAmt, setBoxTransferAmt] = useState('')
+  const [boxTransferDesc, setBoxTransferDesc] = useState('')
+  const [boxTransferring, setBoxTransferring] = useState(false)
 
   // Open cash session
   const [openSession, setOpenSession] = useState<{ id: string } | null | undefined>(undefined)
@@ -742,6 +747,26 @@ export default function FinanceiroPage() {
       loadBoxSummary()
       loadBoxMovements(selectedBox.id)
     } catch { /* ignore */ } finally { setSavingBox(false) }
+  }
+
+  const handleBoxTransfer = async () => {
+    if (!boxTransferSource || !boxTransferDest || !boxTransferAmt || !boxTransferDesc) return
+    setBoxTransferring(true)
+    try {
+      await api.post(`/cash-boxes/${boxTransferSource.id}/transfer`, {
+        destination_id: boxTransferDest,
+        amount: parseFloat(boxTransferAmt),
+        description: boxTransferDesc,
+      })
+      toast.success('Transferência realizada!')
+      setBoxTransferSource(null)
+      setBoxTransferDest('')
+      setBoxTransferAmt('')
+      setBoxTransferDesc('')
+      loadBoxSummary()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao transferir.')
+    } finally { setBoxTransferring(false) }
   }
 
   const handleCreateManualSession = async () => {
@@ -2484,6 +2509,10 @@ export default function FinanceiroPage() {
                             className="flex-1 text-xs bg-red-50 text-red-700 border border-red-200 py-1.5 rounded-lg font-medium text-center">− Saída</button>
                           <button onClick={() => { setSelectedBox(box); setShowMoveForm(false); loadBoxMovements(box.id) }}
                             className="flex-1 text-xs bg-gray-100 text-gray-600 py-1.5 rounded-lg font-medium text-center">Histórico</button>
+                          {cashBoxes.filter(b => b.id !== box.id && b.is_active).length > 0 && (
+                            <button onClick={() => { setBoxTransferSource(box); setBoxTransferDest(''); setBoxTransferAmt(''); setBoxTransferDesc('') }}
+                              className="flex-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 py-1.5 rounded-lg font-medium text-center">↗ Transferir</button>
+                          )}
                         </div>
                         {selectedBox?.id === box.id && !showMoveForm && boxMovements.length > 0 && (
                           <div className="mt-2 border-t border-gray-100 pt-2">
@@ -2643,6 +2672,51 @@ export default function FinanceiroPage() {
                   <button onClick={handleTransferConferido} disabled={!transferBoxId || !transferAmt || transferring}
                     className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
                     {transferring ? 'Transferindo…' : 'Confirmar repasse'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Transferência entre caixinhas modal */}
+          {boxTransferSource && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div className="bg-white rounded-2xl w-full max-w-sm p-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-gray-800">Transferir entre caixinhas</h2>
+                  <button onClick={() => setBoxTransferSource(null)} className="text-gray-400 text-xl">×</button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Origem: <span className="font-semibold text-gray-700">{boxTransferSource.name}</span>
+                  {boxTransferSource.is_malote && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">Malote</span>}
+                  <span className="ml-1 text-indigo-700 font-medium">· Saldo: R$ {parseFloat(boxTransferSource.balance).toFixed(2)}</span>
+                </p>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Destino</label>
+                  <select value={boxTransferDest} onChange={e => setBoxTransferDest(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <option value="">Selecione…</option>
+                    {cashBoxes.filter(b => b.id !== boxTransferSource.id && b.is_active).map(b => (
+                      <option key={b.id} value={b.id}>{b.name}{b.is_malote ? ' (Malote)' : b.is_cofre ? ' (Cofre)' : ''} — R$ {parseFloat(b.balance).toFixed(2)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Valor (R$)</label>
+                  <input type="number" min="0.01" step="0.01" value={boxTransferAmt} onChange={e => setBoxTransferAmt(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Descrição</label>
+                  <input type="text" value={boxTransferDesc} onChange={e => setBoxTransferDesc(e.target.value)}
+                    placeholder="Ex: Recolhimento semanal"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setBoxTransferSource(null)} className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+                  <button onClick={handleBoxTransfer} disabled={!boxTransferDest || !boxTransferAmt || !boxTransferDesc || boxTransferring}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                    {boxTransferring ? 'Transferindo…' : 'Confirmar'}
                   </button>
                 </div>
               </div>
