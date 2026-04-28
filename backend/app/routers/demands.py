@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 from uuid import UUID
+import asyncio
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
@@ -44,6 +45,27 @@ class UpdateDemandRequest(BaseModel):
     due_date: str | None = None
     notes: str | None = None
     service_order_id: UUID | None = None
+
+
+async def _send_assignment_email(session, user_id: str, demand_title: str, user_name: str) -> None:
+    try:
+        from app.services.email_service import send_email
+        row = (await session.execute(text("SELECT email FROM users WHERE id = :uid"), {"uid": user_id})).scalar()
+        if not row:
+            return
+        html = f"""
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+  <h2 style="color:#1a3f6f;margin-bottom:4px">📋 Nova demanda atribuída</h2>
+  <p>Olá, <strong>{user_name}</strong>!</p>
+  <p>Você foi atribuído(a) à seguinte demanda:</p>
+  <div style="background:#f3f4f6;border-radius:8px;padding:16px;margin:16px 0">
+    <p style="font-size:16px;font-weight:600;margin:0">{demand_title}</p>
+  </div>
+  <p style="color:#6b7280;font-size:13px">APRXM — Sistema de Gestão Comunitária</p>
+</div>"""
+        send_email(to=row, subject=f"📋 Nova demanda: {demand_title}", html=html)
+    except Exception:
+        pass
 
 
 @router.get("")
@@ -101,11 +123,19 @@ async def create_demand(
         "aid": str(current.association_id), "title": body.title, "desc": body.description,
         "status": body.status, "phase": body.phase, "priority": body.priority,
         "at": str(body.assigned_to) if body.assigned_to else None,
-        "atn": body.assigned_to_name, "dd": body.due_date, "notes": body.notes,
+        "atn": body.assigned_to_name,
+        "dd": date.fromisoformat(body.due_date) if body.due_date else None,
+        "notes": body.notes,
         "cb": str(current.user_id),
         "so_id": str(body.service_order_id) if body.service_order_id else None,
     })).fetchone()
     await session.commit()
+
+    if body.assigned_to and body.assigned_to_name:
+        asyncio.create_task(_send_assignment_email(
+            session, str(body.assigned_to), body.title, body.assigned_to_name,
+        ))
+
     cols = ["id", "title", "status", "phase", "priority", "assigned_to_name", "due_date", "created_at", "service_order_id"]
     return dict(zip(cols, [str(v) if v is not None else None for v in row]))
 
@@ -133,7 +163,7 @@ async def update_demand(
         sets.append("priority = :priority"); p["priority"] = body.priority
     if body.assigned_to is not None:      sets.append("assigned_to = :at");          p["at"] = str(body.assigned_to)
     if body.assigned_to_name is not None: sets.append("assigned_to_name = :atn");    p["atn"] = body.assigned_to_name
-    if body.due_date is not None:         sets.append("due_date = :dd");             p["dd"] = body.due_date
+    if body.due_date is not None:         sets.append("due_date = :dd");             p["dd"] = date.fromisoformat(body.due_date) if body.due_date else None
     if body.notes is not None:            sets.append("notes = :notes");             p["notes"] = body.notes
     if body.service_order_id is not None: sets.append("service_order_id = :so_id"); p["so_id"] = str(body.service_order_id)
 
@@ -146,6 +176,12 @@ async def update_demand(
     if not row:
         raise HTTPException(404, "Demanda não encontrada.")
     await session.commit()
+
+    if body.assigned_to and body.assigned_to_name:
+        asyncio.create_task(_send_assignment_email(
+            session, str(body.assigned_to), row[1], body.assigned_to_name,
+        ))
+
     cols = ["id", "title", "description", "status", "phase", "priority",
             "assigned_to", "assigned_to_name", "due_date", "notes", "updated_at", "service_order_id"]
     return dict(zip(cols, [str(v) if v is not None else None for v in row]))
