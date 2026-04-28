@@ -89,6 +89,18 @@ export function AppShell() {
     return () => clearInterval(id)
   }, [role, fetchUnread])
 
+  useEffect(() => {
+    if (!role) return
+    const warm = () => {
+      api.get('/health').catch(() => {})
+      api.get('/residents/search?q=_warm').catch(() => {})
+      api.get('/packages/counts').catch(() => {})
+    }
+    warm()
+    const id = setInterval(warm, 4 * 60_000)
+    return () => clearInterval(id)
+  }, [role])
+
   const openNotifs = async () => {
     setNotifOpen(true)
     try {
