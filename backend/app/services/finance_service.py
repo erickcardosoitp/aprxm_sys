@@ -205,6 +205,7 @@ class FinanceService:
         package_id: UUID | None = None,
         is_acordo: bool = False,
         acordo_installments: int = 2,
+        acordo_months: int = 1,
     ) -> Transaction:
         # Expense transactions require approval before affecting balance
         approval_status = "pending" if tx_type == TransactionType.expense else None
@@ -232,37 +233,45 @@ class FinanceService:
             from app.models.mensalidade import Mensalidade, MensalidadeStatus
             from sqlmodel import select as sq_sel
             from datetime import date as dt_date, datetime as dt_dt
-            ref_month = datetime.utcnow().strftime("%Y-%m")
-            # Try to find existing pending mensalidade for this resident+month
-            existing = await self._session.execute(
-                sq_sel(Mensalidade).where(
-                    Mensalidade.association_id == association_id,
-                    Mensalidade.resident_id == resident_id,
-                    Mensalidade.reference_month == ref_month,
-                )
-            )
-            mens = existing.scalar_one_or_none()
+            now = datetime.utcnow()
             target_status = MensalidadeStatus.agreement if is_acordo else MensalidadeStatus.paid
-            if mens:
-                if mens.status != MensalidadeStatus.paid:
-                    mens.status = target_status
-                    mens.paid_at = datetime.utcnow()
-                    mens.transaction_id = tx.id
-                    self._session.add(mens)
-            else:
-                due = dt_date(datetime.utcnow().year, datetime.utcnow().month, 10)
-                new_mens = Mensalidade(
-                    association_id=association_id,
-                    resident_id=resident_id,
-                    reference_month=ref_month,
-                    due_date=due,
-                    amount=amount,
-                    status=target_status,
-                    paid_at=datetime.utcnow(),
-                    transaction_id=tx.id,
-                    created_by=created_by,
+            def _month_offset(base: datetime, offset: int) -> str:
+                y, mo = base.year, base.month - offset
+                while mo <= 0:
+                    mo += 12; y -= 1
+                return f"{y:04d}-{mo:02d}"
+            # Generate list of months to cover: for acordo with multiple months, go backwards
+            months_to_cover = [_month_offset(now, i) for i in range(acordo_months - 1, -1, -1)]
+            for ref_month in months_to_cover:
+                existing = await self._session.execute(
+                    sq_sel(Mensalidade).where(
+                        Mensalidade.association_id == association_id,
+                        Mensalidade.resident_id == resident_id,
+                        Mensalidade.reference_month == ref_month,
+                    )
                 )
-                self._session.add(new_mens)
+                mens = existing.scalar_one_or_none()
+                if mens:
+                    if mens.status != MensalidadeStatus.paid:
+                        mens.status = target_status
+                        mens.paid_at = now
+                        mens.transaction_id = tx.id
+                        self._session.add(mens)
+                else:
+                    yr, mo = int(ref_month[:4]), int(ref_month[5:])
+                    due = dt_date(yr, mo, 10)
+                    new_mens = Mensalidade(
+                        association_id=association_id,
+                        resident_id=resident_id,
+                        reference_month=ref_month,
+                        due_date=due,
+                        amount=amount,
+                        status=target_status,
+                        paid_at=now,
+                        transaction_id=tx.id,
+                        created_by=created_by,
+                    )
+                    self._session.add(new_mens)
 
             if is_acordo:
                 from app.models.porta_a_porta import PortaAPortaLead

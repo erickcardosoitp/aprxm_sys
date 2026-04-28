@@ -12,8 +12,10 @@ import html2canvas from 'html2canvas'
 import api from '../../services/api'
 import { printCarne as printCarneUtil } from '../../utils/printCarne'
 import { CaixaConferenciaModal } from '../../components/finance/CaixaConferenciaModal'
+import { SignaturePad } from '../../components/packages/SignaturePad'
 import { useAuthStore } from '../../store/authStore'
 import { financeService } from '../../services/finance'
+import { uploadService } from '../../services/upload'
 import type { Resident } from '../../types'
 import PortaAPortaTab from './PortaAPortaTab'
 
@@ -604,6 +606,7 @@ export default function FinanceiroPage() {
   const [loadingPixPending, setLoadingPixPending] = useState(false)
   const [apuracaoTarget, setApuracaoTarget] = useState<Session | null>(null)
   const [apuracaoResp, setApuracaoResp] = useState('')
+  const [apuracaoSig, setApuracaoSig] = useState<string | null>(null)
   const [savingApuracao, setSavingApuracao] = useState(false)
   const [editingPayer, setEditingPayer] = useState<{ id: string; value: string } | null>(null)
   const [editingResident, setEditingResident] = useState<{ txId: string; residentId: string; value: string } | null>(null)
@@ -2560,16 +2563,28 @@ export default function FinanceiroPage() {
                   {apuracaoTarget.quebra_apurada_at && (
                     <p className="text-xs text-green-600">✓ Apurada anteriormente por {apuracaoTarget.quebra_responsavel}</p>
                   )}
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Assinatura do responsável</label>
+                    <SignaturePad
+                      label=""
+                      onSave={url => setApuracaoSig(url)}
+                      onClear={() => setApuracaoSig(null)}
+                      onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'finance/signatures')}
+                    />
+                  </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setApuracaoTarget(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancelar</button>
+                    <button onClick={() => { setApuracaoTarget(null); setApuracaoSig(null); setApuracaoResp('') }} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancelar</button>
                     <button
                       disabled={savingApuracao || !apuracaoResp.trim()}
                       onClick={async () => {
                         setSavingApuracao(true)
                         try {
-                          await api.patch(`/finance/sessions/${apuracaoTarget.id}/apuracao-quebra`, { responsavel: apuracaoResp })
+                          await api.patch(`/finance/sessions/${apuracaoTarget.id}/apuracao-quebra`, {
+                            responsavel: apuracaoResp,
+                            assinatura_url: apuracaoSig ?? undefined,
+                          })
                           toast.success('Apuração registrada.')
-                          setApuracaoTarget(null)
+                          setApuracaoTarget(null); setApuracaoSig(null); setApuracaoResp('')
                           loadSessions()
                         } catch (e: any) {
                           toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')

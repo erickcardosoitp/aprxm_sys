@@ -83,6 +83,8 @@ class TransactionRequest(BaseModel):
     payment_status: str | None = None  # "paid" | "pending"
     is_acordo: bool = False
     acordo_installments: int = Field(default=2, ge=2, le=12)
+    acordo_months: int = Field(default=1, ge=1, le=24)
+    acordo_entrada: Decimal | None = None
 
 
 class ConferenciaRequest(BaseModel):
@@ -560,6 +562,7 @@ async def register_transaction(
         reference_number=body.reference_number,
         is_acordo=body.is_acordo,
         acordo_installments=body.acordo_installments,
+        acordo_months=body.acordo_months,
     )
     return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
 
