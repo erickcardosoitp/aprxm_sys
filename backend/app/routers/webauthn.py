@@ -10,7 +10,11 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from webauthn.helpers.structs import (
+    AuthenticationCredential,
+    AuthenticatorAssertionResponse,
+    AuthenticatorAttestationResponse,
     AuthenticatorSelectionCriteria,
+    RegistrationCredential,
     ResidentKeyRequirement,
     UserVerificationRequirement,
 )
@@ -97,13 +101,24 @@ async def register_complete(
     challenge_bytes = base64.urlsafe_b64decode(row[0] + "==")
 
     try:
-        parsed = webauthn.parse_registration_credential_json(json.dumps(body.credential))
+        c = body.credential
+        r = c.get("response", {})
+        parsed = RegistrationCredential(
+            id=c["id"],
+            raw_id=base64.urlsafe_b64decode(c["rawId"] + "=="),
+            response=AuthenticatorAttestationResponse(
+                client_data_json=base64.urlsafe_b64decode(r["clientDataJSON"] + "=="),
+                attestation_object=base64.urlsafe_b64decode(r["attestationObject"] + "=="),
+            ),
+        )
         verification = webauthn.verify_registration_response(
             credential=parsed,
             expected_challenge=challenge_bytes,
             expected_rp_id=_rp_id(),
             expected_origin=_origin(),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(400, f"Falha na verificação: {e}")
 
@@ -234,7 +249,18 @@ async def authenticate_complete(
         raise HTTPException(400, "Dispositivo não reconhecido.")
 
     try:
-        parsed = webauthn.parse_authentication_credential_json(json.dumps(body.credential))
+        c = body.credential
+        r = c.get("response", {})
+        parsed = AuthenticationCredential(
+            id=c["id"],
+            raw_id=base64.urlsafe_b64decode(c["rawId"] + "=="),
+            response=AuthenticatorAssertionResponse(
+                client_data_json=base64.urlsafe_b64decode(r["clientDataJSON"] + "=="),
+                authenticator_data=base64.urlsafe_b64decode(r["authenticatorData"] + "=="),
+                signature=base64.urlsafe_b64decode(r["signature"] + "=="),
+                user_handle=base64.urlsafe_b64decode(r["userHandle"] + "==") if r.get("userHandle") else None,
+            ),
+        )
         verification = webauthn.verify_authentication_response(
             credential=parsed,
             expected_challenge=challenge_bytes,
@@ -243,6 +269,8 @@ async def authenticate_complete(
             credential_public_key=bytes(cred_row[1]),
             credential_current_sign_count=cred_row[2],
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(401, f"Falha na autenticação: {e}")
 
