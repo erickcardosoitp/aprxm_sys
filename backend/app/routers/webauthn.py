@@ -286,22 +286,15 @@ async def authenticate_complete(
     await session.commit()
 
     user_row = (await session.execute(text("""
-        SELECT u.id, u.email, u.full_name, u.role, u.association_id,
-               array_agg(DISTINCT ua.association_id) FILTER (WHERE ua.association_id IS NOT NULL) AS linked
-        FROM users u
-        LEFT JOIN user_associations ua ON ua.user_id = u.id AND ua.is_active = true
-        WHERE u.id = :uid
-        GROUP BY u.id
+        SELECT id, full_name, role FROM users WHERE id = :uid
     """), {"uid": body.user_id})).fetchone()
 
-    linked = [str(x) for x in (user_row[5] or []) if x]
-
     token = create_access_token({
-        "sub": str(user_row[0]),
+        "sub": body.user_id,
         "association_id": body.association_id,
-        "role": user_row[3],
-        "full_name": user_row[2],
-        "linked_association_ids": linked,
+        "role": user_row[2],
+        "full_name": user_row[1],
+        "linked_association_ids": [],
     })
 
     return {"access_token": token, "token_type": "bearer"}
