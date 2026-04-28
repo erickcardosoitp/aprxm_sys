@@ -621,7 +621,7 @@ export default function PackagesPage() {
   const responsibleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reassignTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const brxSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const SEARCH_DELAY = 800
+  const SEARCH_DELAY = 1200
 
   // Carriers & Deliverers
   const [carriers, setCarriers] = useState<{ id: string; name: string }[]>([])
@@ -707,7 +707,7 @@ export default function PackagesPage() {
   const [cardReassignResults, setCardReassignResults] = useState<{ id: string; full_name: string; type: string; unit?: string; responsible_name?: string }[]>([])
   const searchCardReassign = async (q: string) => {
     setCardReassignSearch(q)
-    if (q.length < 2) { setCardReassignResults([]); return }
+    if (q.length < 3) { setCardReassignResults([]); return }
     try { const r = await api.get<any[]>(`/residents/search?q=${encodeURIComponent(q)}`); setCardReassignResults(r.data.slice(0, 5)) } catch { setCardReassignResults([]) }
   }
   const doCardReassign = async (pkgId: string, residentId: string, residentName: string) => {
@@ -837,7 +837,7 @@ export default function PackagesPage() {
 
   const searchReassign = async (q: string) => {
     setReassignSearch(q)
-    if (q.length < 2) { setReassignResults([]); return }
+    if (q.length < 3) { setReassignResults([]); return }
     try {
       const res = await api.get<any[]>(`/residents/search?q=${encodeURIComponent(q)}`)
       setReassignResults(res.data.slice(0, 6))
@@ -992,7 +992,7 @@ export default function PackagesPage() {
   const brxSearchRef = useRef<HTMLInputElement>(null)
 
   const searchBrxResidents = async (q: string) => {
-    if (q.length < 2) { setBrxResults([]); return }
+    if (q.length < 3) { setBrxResults([]); return }
     try {
       const res = await api.get<Resident[]>('/residents/search', { params: { q } })
       setBrxResults(res.data.slice(0, 8))
@@ -1247,7 +1247,7 @@ export default function PackagesPage() {
   }, [bulkRxQueue])
 
   const searchResidents = async (q: string) => {
-    if (q.length < 2) { setSearchResults([]); setSearchEmpty(false); setShowGuestForm(false); return }
+    if (q.length < 3) { setSearchResults([]); setSearchEmpty(false); setShowGuestForm(false); return }
     try {
       const res = await api.get<Resident[]>('/residents/search', { params: { q } })
       const results = res.data.slice(0, 8)
@@ -1269,7 +1269,7 @@ export default function PackagesPage() {
   }
 
   const searchResponsible = async (q: string) => {
-    if (q.length < 2) { setNewResResponsibleResults([]); return }
+    if (q.length < 3) { setNewResResponsibleResults([]); return }
     try {
       const res = await api.get<Resident[]>('/residents/search', { params: { q } })
       setNewResResponsibleResults(res.data.filter(r => r.type === 'member' && !('responsible_id' in r && (r as any).responsible_id)).slice(0, 6))
@@ -1452,7 +1452,7 @@ export default function PackagesPage() {
             <div onClick={e => e.stopPropagation()} className="mt-1.5">
               {cardReassignPkgId === pkg.id ? (
                 <div className="relative">
-                  <input autoFocus value={cardReassignSearch} onChange={e => { const v = e.target.value; setCardReassignSearch(v); if (cardReassignTimer.current) clearTimeout(cardReassignTimer.current); cardReassignTimer.current = setTimeout(() => { if (v.length >= 2) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setCardReassignResults(r.data.slice(0, 5))).catch(() => setCardReassignResults([])); else setCardReassignResults([]) }, SEARCH_DELAY) }}
+                  <input autoFocus value={cardReassignSearch} onChange={e => { const v = e.target.value; setCardReassignSearch(v); if (cardReassignTimer.current) clearTimeout(cardReassignTimer.current); cardReassignTimer.current = setTimeout(() => { if (v.length >= 3) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setCardReassignResults(r.data.slice(0, 5))).catch(() => setCardReassignResults([])); else setCardReassignResults([]) }, SEARCH_DELAY) }}
                     placeholder="Buscar morador…" className="w-full text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#26619c]" />
                   <button onClick={() => { setCardReassignPkgId(null); setCardReassignSearch(''); setCardReassignResults([]) }} className="absolute right-1 top-1 text-gray-400 text-xs">✕</button>
                   {cardReassignResults.length > 0 && (
@@ -2710,7 +2710,7 @@ export default function PackagesPage() {
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Atribuir encomenda a outro morador/dependente:</p>
                     <div className="relative">
-                      <input value={reassignSearch} onChange={e => { const v = e.target.value; setReassignSearch(v); if (reassignTimer.current) clearTimeout(reassignTimer.current); reassignTimer.current = setTimeout(() => { if (v.length >= 2) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setReassignResults(r.data.slice(0, 6))).catch(() => setReassignResults([])); else setReassignResults([]) }, SEARCH_DELAY) }}
+                      <input value={reassignSearch} onChange={e => { const v = e.target.value; setReassignSearch(v); if (reassignTimer.current) clearTimeout(reassignTimer.current); reassignTimer.current = setTimeout(() => { if (v.length >= 3) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setReassignResults(r.data.slice(0, 6))).catch(() => setReassignResults([])); else setReassignResults([]) }, SEARCH_DELAY) }}
                         className={inputCls} placeholder="Buscar por nome ou CPF…" />
                       {reassignResults.length > 0 && (
                         <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
