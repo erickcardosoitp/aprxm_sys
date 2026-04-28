@@ -588,6 +588,7 @@ export default function PackagesPage() {
   const [showReceive, setShowReceive] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
   const [loading, setLoading] = useState(false)
+  const [packagesLoading, setPackagesLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('')
   const [showDeliveredSearch, setShowDeliveredSearch] = useState(false)
   const deliveredInputRef = useRef<DebouncedInputHandle>(null)
@@ -1218,6 +1219,7 @@ export default function PackagesPage() {
 
   const loadPackages = async () => {
     const key = ++loadPackagesKeyRef.current
+    setPackagesLoading(true)
     try {
       const params: Record<string, string> = {}
       if (filterStatus) params.status = filterStatus
@@ -1236,6 +1238,8 @@ export default function PackagesPage() {
       setStatusCounts(cntRes.data)
     } catch {
       if (key === loadPackagesKeyRef.current) toast.error('Erro ao carregar encomendas.')
+    } finally {
+      if (key === loadPackagesKeyRef.current) setPackagesLoading(false)
     }
   }
 
@@ -1845,13 +1849,21 @@ export default function PackagesPage() {
       {/* List View */}
       {pageTab === 'encomendas' && viewMode === 'list' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          {displayPackages.length === 0
-            ? <div className="p-8 text-center text-gray-400 text-sm">Nenhuma encomenda encontrada.</div>
-            : <ul className="divide-y divide-gray-100">
-                {displayPackages.map((pkg) => (
-                  <li key={pkg.id}><PackageCard pkg={pkg} /></li>
-                ))}
-              </ul>
+          {packagesLoading
+            ? <div className="flex items-center justify-center gap-2 p-8 text-gray-400 text-sm">
+                <svg className="animate-spin w-5 h-5 text-[#26619c]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                Carregando encomendas…
+              </div>
+            : displayPackages.length === 0
+              ? <div className="p-8 text-center text-gray-400 text-sm">Nenhuma encomenda aguardando.</div>
+              : <ul className="divide-y divide-gray-100">
+                  {displayPackages.map((pkg) => (
+                    <li key={pkg.id}><PackageCard pkg={pkg} /></li>
+                  ))}
+                </ul>
           }
         </div>
       )}
