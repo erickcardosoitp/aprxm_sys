@@ -663,7 +663,7 @@ async def get_summary(
 
     return {
         "total_leads": int(row[0] or 0),
-        "paid_leads": paid_leads,
+        "paid_leads": int(row[1] or 0),
         "pending_leads": int(row[2] or 0),
         "agreement_leads": int(row[3] or 0),
         "cancelled_leads": int(row[4] or 0),
