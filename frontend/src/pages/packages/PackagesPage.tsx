@@ -1188,13 +1188,19 @@ export default function PackagesPage() {
   const [carrierOpts, setCarrierOpts] = useState<CarrierOpt[]>([])
   const [delivererOpts, setDelivererOpts] = useState<DelivererOpt[]>([])
 
+  const [delivererOptsLoading, setDelivererOptsLoading] = useState(false)
   const loadDelivererOpts = () => {
-    api.get<CarrierOpt[]>('/carriers').then(r => setCarrierOpts(r.data)).catch(() => {})
-    api.get<DelivererOpt[]>('/carriers/deliverers').then(r => setDelivererOpts(r.data)).catch(() => {})
+    setDelivererOptsLoading(true)
+    Promise.all([
+      api.get<CarrierOpt[]>('/carriers'),
+      api.get<DelivererOpt[]>('/carriers/deliverers'),
+    ]).then(([rc, rd]) => {
+      setCarrierOpts(rc.data)
+      setDelivererOpts(rd.data)
+    }).catch(() => {}).finally(() => setDelivererOptsLoading(false))
   }
   useEffect(() => { loadDelivererOpts() }, [])
-  useEffect(() => { if (showReceive) loadDelivererOpts() }, [showReceive])
-  useEffect(() => { if (showBulkReceive) loadDelivererOpts() }, [showBulkReceive])
+  useEffect(() => { if (showReceiveMode) loadDelivererOpts() }, [showReceiveMode])
 
   const loadPackages = async () => {
     const key = ++loadPackagesKeyRef.current
@@ -3307,19 +3313,26 @@ export default function PackagesPage() {
                     <p className="text-xs text-gray-500 mt-0.5">Colete a assinatura antes de liberar o entregador. As encomendas serão bipadas na próxima etapa.</p>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Entregador (opcional)</label>
-                    {delivererOpts.length > 0 ? (
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-gray-600">Entregador (opcional)</label>
+                      <button onClick={loadDelivererOpts} className="text-[10px] text-[#26619c] hover:underline">
+                        {delivererOptsLoading ? 'Carregando…' : '↻ Atualizar'}
+                      </button>
+                    </div>
+                    {delivererOptsLoading ? (
+                      <div className={`${inputCls} text-gray-400 text-xs`}>Carregando entregadores…</div>
+                    ) : delivererOpts.length > 0 ? (
                       <select
                         value={delivererOpts.find(d => d.name === brxDelivererName)?.id ?? ''}
                         onChange={e => {
                           const d = delivererOpts.find(x => x.id === e.target.value)
-                          if (d) { setBrxDelivererName(d.name); if (d.signature_url) setBrxDelivererSig(d.signature_url) }
+                          if (d) { setBrxDelivererName(d.name); setBrxDelivererSig(d.signature_url ?? '') }
                           else { setBrxDelivererName(''); setBrxDelivererSig('') }
                         }}
                         className={`${inputCls} bg-white`}
                       >
                         <option value="">— Selecione —</option>
-                        {delivererOpts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        {delivererOpts.map(d => <option key={d.id} value={d.id}>{d.name}{d.signature_url ? ' ✓' : ''}</option>)}
                       </select>
                     ) : (
                       <input value={brxDelivererName} onChange={e => setBrxDelivererName(e.target.value)}
