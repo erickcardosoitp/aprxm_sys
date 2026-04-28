@@ -76,12 +76,13 @@ const EMPTY_FORM: FormState = {
 }
 
 function DemandModal({
-  demand, users, onClose, onSaved,
+  demand, users, onClose, onSaved, serviceOrderId,
 }: {
   demand: Demand | null
   users: UserOption[]
   onClose: () => void
   onSaved: (d: Demand) => void
+  serviceOrderId?: string
 }) {
   const isEdit = !!demand
   const [form, setForm] = useState<FormState>(demand ? {
@@ -102,7 +103,7 @@ function DemandModal({
     if (!form.title.trim()) { toast.error('Título obrigatório.'); return }
     setSaving(true)
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         title: form.title.trim(),
         description: form.description || null,
         phase: form.phase,
@@ -111,6 +112,7 @@ function DemandModal({
         due_date: form.due_date || null,
         notes: form.notes || null,
       }
+      if (!isEdit && serviceOrderId) payload.service_order_id = serviceOrderId
       let saved: Demand
       if (isEdit) {
         const res = await api.patch(`/demands/${demand!.id}`, payload)
@@ -265,7 +267,7 @@ function DemandCard({ demand, onEdit, onMove, onDelete, canWrite }: {
 
 // ─── Board ────────────────────────────────────────────────────────────────────
 
-export default function DemandasBoard({ canWrite }: { canWrite: boolean }) {
+export default function DemandasBoard({ canWrite, serviceOrderId }: { canWrite: boolean; serviceOrderId?: string }) {
   const [demands, setDemands] = useState<Demand[]>([])
   const [users, setUsers] = useState<UserOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -275,7 +277,8 @@ export default function DemandasBoard({ canWrite }: { canWrite: boolean }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.get<Demand[]>('/demands')
+      const params = serviceOrderId ? { service_order_id: serviceOrderId } : {}
+      const res = await api.get<Demand[]>('/demands', { params })
       setDemands(res.data)
     } catch {
       toast.error('Erro ao carregar demandas.')
@@ -390,6 +393,7 @@ export default function DemandasBoard({ canWrite }: { canWrite: boolean }) {
           users={users}
           onClose={() => setModal(null)}
           onSaved={handleSaved}
+          serviceOrderId={serviceOrderId}
         />
       )}
     </div>

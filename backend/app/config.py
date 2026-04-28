@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     # Business rules
     delivery_fee_default: float = 2.50
 
+    # Email (Gmail SMTP)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = "erickcardoso@institutotiapretinha.org"
+    smtp_password: str = ""
+    smtp_from: str = "Associação de Moradores <erickcardoso@institutotiapretinha.org>"
+
+    # Cron
+    cron_secret: str = ""
+
 
 
 @lru_cache

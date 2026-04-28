@@ -393,6 +393,17 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_demands_assoc ON demands(association_id, status)"
         ))
 
+        # demands: link to service_order + reminder tracking
+        await session.execute(text(
+            "ALTER TABLE demands ADD COLUMN IF NOT EXISTS service_order_id UUID REFERENCES service_orders(id)"
+        ))
+        await session.execute(text(
+            "ALTER TABLE demands ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_demands_so ON demands(service_order_id) WHERE service_order_id IS NOT NULL"
+        ))
+
         # conselho role
         await session.execute(text("""
             DO $$ BEGIN

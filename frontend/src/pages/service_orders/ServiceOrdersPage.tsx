@@ -1107,7 +1107,7 @@ interface DetailPanelProps {
 }
 
 function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'tasks'>('details')
+  const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'tasks' | 'demands'>('details')
   const [showPrint, setShowPrint] = useState(false)
   const [comments, setComments] = useState<SOComment[]>([])
   const [commentText, setCommentText] = useState('')
@@ -1254,9 +1254,15 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
           </button>
           <button
             onClick={() => setActiveTab('tasks')}
-            className={`py-2.5 text-sm font-medium border-b-2 flex items-center gap-1.5 transition ${activeTab === 'tasks' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent'}`}
+            className={`py-2.5 text-sm font-medium border-b-2 flex items-center gap-1.5 transition mr-4 ${activeTab === 'tasks' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent'}`}
           >
             📋 Registros
+          </button>
+          <button
+            onClick={() => setActiveTab('demands')}
+            className={`py-2.5 text-sm font-medium border-b-2 flex items-center gap-1.5 transition ${activeTab === 'demands' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent'}`}
+          >
+            🗂 Demandas
           </button>
         </div>
 
@@ -1590,6 +1596,11 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
 
           {activeTab === 'tasks' && (
             <DailyRecordsTab soId={so.id} canWrite={canWrite} />
+          )}
+          {activeTab === 'demands' && (
+            <div className="pt-2">
+              <DemandasBoard canWrite={canWrite} serviceOrderId={so.id} />
+            </div>
           )}
         </div>
       </div>
