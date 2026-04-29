@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import 'leaflet/dist/leaflet.css'
 import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp, TrendingDown, DollarSign, AlertCircle } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -651,36 +652,71 @@ function OverviewTab() {
 
 interface StreetData { street: string; city: string; state: string; cep: string; members: number; guests: number }
 
-type HeatView = 'associados' | 'nao_associados' | 'total'
+const GEO_CACHE = 'aprxm_geo_v3:'
 
-function heatColor(ratio: number, view: HeatView): string {
-  const t = Math.max(0, Math.min(1, ratio))
-  if (view === 'associados') {
-    // white → blue
-    const r = Math.round(255 - t * (255 - 30))
-    const g = Math.round(255 - t * (255 - 97))
-    const b = Math.round(255 - t * (255 - 220))
-    return `rgb(${r},${g},${b})`
+async function geocodeCep(cep: string, street: string): Promise<[number, number] | null> {
+  const cleanCep = cep.replace(/\D/g, '')
+  const key = GEO_CACHE + (cleanCep || street)
+  const cached = localStorage.getItem(key)
+  if (cached) return cached === 'null' ? null : JSON.parse(cached)
+
+  // ViaCEP → pega logradouro e bairro para montar query melhor
+  if (cleanCep.length === 8) {
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`)
+      const d = await r.json()
+      if (!d.erro && d.localidade) {
+        const query = `${d.logradouro || street}, ${d.bairro || ''}, ${d.localidade}, ${d.uf}, Brasil`
+        const geo = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=br`,
+          { headers: { 'User-Agent': 'APROXIMA/1.0 (institutotiapretinha.org)' } }
+        )
+        const gd = await geo.json()
+        if (gd.length) {
+          const coord: [number, number] = [parseFloat(gd[0].lat), parseFloat(gd[0].lon)]
+          localStorage.setItem(key, JSON.stringify(coord))
+          return coord
+        }
+      }
+    } catch { /* fallthrough */ }
   }
-  if (view === 'nao_associados') {
-    // white → orange
-    const r = Math.round(255 - t * (255 - 234))
-    const g = Math.round(255 - t * (255 - 88))
-    const b = Math.round(255 - t * (255 - 12))
-    return `rgb(${r},${g},${b})`
-  }
-  // total: white → indigo
-  const r = Math.round(255 - t * (255 - 67))
-  const g = Math.round(255 - t * (255 - 56))
-  const b = Math.round(255 - t * (255 - 202))
-  return `rgb(${r},${g},${b})`
+
+  // Fallback: Nominatim direto com nome da rua
+  try {
+    const query = `${street}, Madureira, Rio de Janeiro, RJ, Brasil`
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=br`,
+      { headers: { 'User-Agent': 'APROXIMA/1.0 (institutotiapretinha.org)' } }
+    )
+    const d = await r.json()
+    if (d.length) {
+      const coord: [number, number] = [parseFloat(d[0].lat), parseFloat(d[0].lon)]
+      localStorage.setItem(key, JSON.stringify(coord))
+      return coord
+    }
+  } catch { /* ignore */ }
+
+  localStorage.setItem(key, 'null')
+  return null
 }
 
-function MapTab() {
-  const [streets, setStreets] = useState<StreetData[]>([])
-  const [loading, setLoading] = useState(true)
-  const [view, setView] = useState<HeatView>('associados')
+type HeatView = 'associados' | 'nao_associados' | 'total'
 
+function MapTab() {
+  const mapRef      = useRef<HTMLDivElement>(null)
+  const mapInst     = useRef<any>(null)
+  const heatLayerM  = useRef<any>(null)
+  const heatLayerG  = useRef<any>(null)
+  const [streets, setStreets]   = useState<StreetData[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [progress, setProgress] = useState(0)
+  const [total, setTotal]       = useState(0)
+  const [view, setView]         = useState<HeatView>('associados')
+
+  const totalMembers = streets.reduce((a, s) => a + s.members, 0)
+  const totalGuests  = streets.reduce((a, s) => a + s.guests, 0)
+
+  // Carrega dados
   useEffect(() => {
     api.get('/residents/map-data')
       .then(r => setStreets(r.data))
@@ -688,18 +724,93 @@ function MapTab() {
       .finally(() => setLoading(false))
   }, [])
 
-  const totalMembers = streets.reduce((a, s) => a + s.members, 0)
-  const totalGuests  = streets.reduce((a, s) => a + s.guests, 0)
-  const maxMembers   = Math.max(...streets.map(s => s.members), 1)
-  const maxGuests    = Math.max(...streets.map(s => s.guests), 1)
-  const maxTotal     = Math.max(...streets.map(s => s.members + s.guests), 1)
+  // Inicializa mapa
+  useEffect(() => {
+    if (!mapRef.current || mapInst.current) return
+    import('leaflet').then(({ default: L }) => {
+      const map = L.map(mapRef.current!, { zoomControl: true })
+        .setView([-22.8756, -43.3278], 14)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors', maxZoom: 19,
+      }).addTo(map)
+      mapInst.current = map
+    })
+    return () => { mapInst.current?.remove(); mapInst.current = null }
+  }, [])
 
-  if (loading) return <div className="text-center text-sm text-gray-400 py-16">Carregando…</div>
-  if (!streets.length) return <div className="text-center text-sm text-gray-400 py-16">Nenhum dado de endereço cadastrado.</div>
+  // Geocoda ruas e monta camadas de calor
+  useEffect(() => {
+    if (!streets.length || !mapInst.current) return
+    const aborted = { v: false }
 
-  const getValue = (s: StreetData) => view === 'associados' ? s.members : view === 'nao_associados' ? s.guests : s.members + s.guests
-  const getMax   = () => view === 'associados' ? maxMembers : view === 'nao_associados' ? maxGuests : maxTotal
-  const sorted   = [...streets].sort((a, b) => getValue(b) - getValue(a))
+    const run = async () => {
+      const [L, heatModule] = await Promise.all([
+        import('leaflet'),
+        import('leaflet.heat'),
+      ])
+      void heatModule
+
+      const pointsM: [number, number, number][] = []
+      const pointsG: [number, number, number][] = []
+      const maxM = Math.max(...streets.map(s => s.members), 1)
+      const maxG = Math.max(...streets.map(s => s.guests), 1)
+
+      setTotal(streets.length)
+
+      for (let i = 0; i < streets.length; i++) {
+        if (aborted.v) return
+        const s = streets[i]
+        const cacheKey = GEO_CACHE + (s.cep.replace(/\D/g, '') || s.street)
+        const isCached = !!localStorage.getItem(cacheKey)
+        if (!isCached && i > 0) await new Promise(r => setTimeout(r, 1200))
+        if (aborted.v) return
+
+        const coord = await geocodeCep(s.cep, s.street)
+        if (!coord || aborted.v) { setProgress(i + 1); continue }
+
+        const [lat, lng] = coord
+        if (s.members > 0) pointsM.push([lat, lng, s.members / maxM])
+        if (s.guests  > 0) pointsG.push([lat, lng, s.guests  / maxG])
+        setProgress(i + 1)
+
+        // Atualiza camadas progressivamente
+        const map = mapInst.current
+        if (!map) return
+
+        if (heatLayerM.current) map.removeLayer(heatLayerM.current)
+        if (heatLayerG.current) map.removeLayer(heatLayerG.current)
+
+        heatLayerM.current = (L.default as any).heatLayer(pointsM, {
+          radius: 30, blur: 25, maxZoom: 17,
+          gradient: { 0.2: '#bfdbfe', 0.5: '#3b82f6', 0.8: '#1d4ed8', 1.0: '#1e3a8a' },
+        })
+        heatLayerG.current = (L.default as any).heatLayer(pointsG, {
+          radius: 30, blur: 25, maxZoom: 17,
+          gradient: { 0.2: '#fed7aa', 0.5: '#f97316', 0.8: '#ea580c', 1.0: '#9a3412' },
+        })
+
+        if (view === 'associados' || view === 'total') heatLayerM.current.addTo(map)
+        if (view === 'nao_associados' || view === 'total') heatLayerG.current.addTo(map)
+      }
+    }
+
+    run()
+    return () => { aborted.v = true }
+  }, [streets])
+
+  // Troca camadas ao mudar visão
+  useEffect(() => {
+    const map = mapInst.current
+    if (!map) return
+    if (heatLayerM.current) {
+      if (view === 'associados' || view === 'total') { if (!map.hasLayer(heatLayerM.current)) heatLayerM.current.addTo(map) }
+      else map.removeLayer(heatLayerM.current)
+    }
+    if (heatLayerG.current) {
+      if (view === 'nao_associados' || view === 'total') { if (!map.hasLayer(heatLayerG.current)) heatLayerG.current.addTo(map) }
+      else map.removeLayer(heatLayerG.current)
+    }
+  }, [view])
 
   return (
     <div className="flex flex-col gap-4">
@@ -713,77 +824,46 @@ function MapTab() {
           <div className="text-2xl font-bold text-orange-600">{totalGuests}</div>
           <div className="text-xs text-orange-500 mt-0.5">Não associados</div>
         </div>
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
-          <div className="text-2xl font-bold text-indigo-700">{totalMembers + totalGuests}</div>
-          <div className="text-xs text-indigo-500 mt-0.5">Total</div>
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-gray-700">{totalMembers + totalGuests}</div>
+          <div className="text-xs text-gray-500 mt-0.5">Total</div>
         </div>
       </div>
 
-      {/* Seletor de visão */}
-      <div className="flex bg-gray-100 rounded-xl p-1 gap-1 self-start">
-        {([['associados','Associados'],['nao_associados','Não assoc.'],['total','Total']] as [HeatView,string][]).map(([v, label]) => (
-          <button key={v} onClick={() => setView(v)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${view === v ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Mapa de calor por rua */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Mapa de calor — por rua</span>
-          <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
-            <span>menos</span>
-            {[0.1,0.3,0.5,0.7,0.9].map(t => (
-              <span key={t} className="w-4 h-4 rounded-sm inline-block border border-gray-200"
-                style={{ background: heatColor(t, view) }} />
-            ))}
-            <span>mais</span>
-          </div>
+      {/* Controles */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+          {([['associados','🔵 Associados'],['nao_associados','🟠 Não assoc.'],['total','Todos']] as [HeatView,string][]).map(([v, label]) => (
+            <button key={v} onClick={() => setView(v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${view === v ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+              {label}
+            </button>
+          ))}
         </div>
-        <div className="grid gap-px p-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
-          {sorted.map(s => {
-            const val   = getValue(s)
-            const ratio = val / getMax()
-            const bg    = heatColor(ratio, view)
-            const dark  = ratio > 0.5
-            return (
-              <div key={s.street} className="rounded-lg p-2.5 flex flex-col gap-1 border border-gray-100 cursor-default"
-                style={{ background: bg }}
-                title={`${s.street}\nAssociados: ${s.members}\nNão assoc.: ${s.guests}`}>
-                <span className={`text-[11px] font-semibold leading-tight line-clamp-2 ${dark ? 'text-white' : 'text-gray-800'}`}>
-                  {s.street}
-                </span>
-                <div className={`flex gap-1.5 text-[10px] font-medium ${dark ? 'text-white/80' : 'text-gray-500'}`}>
-                  <span>🔵 {s.members}</span>
-                  <span>🟠 {s.guests}</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Barra proporcional geral */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-        <div className="text-xs text-gray-500 mb-2 font-medium">Distribuição geral</div>
-        {(totalMembers + totalGuests) > 0 && (
-          <div className="flex rounded-full overflow-hidden h-5">
-            <div className="bg-blue-500 flex items-center justify-center text-[10px] text-white font-bold"
-              style={{ width: `${(totalMembers / (totalMembers + totalGuests)) * 100}%` }}>
-              {Math.round((totalMembers / (totalMembers + totalGuests)) * 100)}%
-            </div>
-            <div className="bg-orange-400 flex items-center justify-center text-[10px] text-white font-bold"
-              style={{ width: `${(totalGuests / (totalMembers + totalGuests)) * 100}%` }}>
-              {Math.round((totalGuests / (totalMembers + totalGuests)) * 100)}%
-            </div>
-          </div>
+        {loading && <span className="text-xs text-gray-400">Carregando dados…</span>}
+        {!loading && total > 0 && progress < total && (
+          <span className="text-xs text-gray-400">Geocodificando {progress}/{total} ruas…</span>
         )}
-        <div className="flex gap-4 mt-2 text-[11px] text-gray-500">
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Associados</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" /> Não associados</span>
-        </div>
+        {!loading && total > 0 && progress === total && (
+          <span className="text-xs text-green-600 font-medium">{total} ruas mapeadas</span>
+        )}
+      </div>
+
+      {/* Mapa */}
+      <div ref={mapRef} className="rounded-xl overflow-hidden border border-gray-200 shadow-sm"
+        style={{ height: 480, background: '#e5e7eb' }} />
+
+      {/* Legenda */}
+      <div className="flex flex-wrap gap-4 text-xs text-gray-500 px-1">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-8 h-3 rounded-sm" style={{ background: 'linear-gradient(to right,#bfdbfe,#1d4ed8)' }} />
+          Associados (azul)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-8 h-3 rounded-sm" style={{ background: 'linear-gradient(to right,#fed7aa,#ea580c)' }} />
+          Não associados (laranja)
+        </span>
+        <span className="text-gray-400">Intensidade = quantidade de moradores na rua</span>
       </div>
     </div>
   )
