@@ -112,28 +112,36 @@ async def send_message(
 ) -> dict:
     if not body.content and not body.media_url:
         raise HTTPException(400, "Mensagem sem conteúdo")
-    async with AsyncSessionLocal() as session:
-        name_row = await session.execute(
-            text("SELECT full_name FROM users WHERE id = :uid"),
-            {"uid": str(current.user_id)},
-        )
-        sender_name = name_row.scalar() or "Usuário"
-        result = await session.execute(text("""
-            INSERT INTO chat_messages
-                (association_id, sender_id, sender_name, content, message_type, media_url, mention_ids)
-            VALUES (:assoc, :sender, :name, :content, :mtype, :media, CAST(:mentions AS jsonb))
-            RETURNING id, created_at
-        """), {
-            "assoc": str(current.association_id),
-            "sender": str(current.user_id),
-            "name": sender_name,
-            "content": body.content,
-            "mtype": body.message_type,
-            "media": body.media_url,
-            "mentions": json.dumps(body.mention_ids),
-        })
-        row = result.fetchone()
-        await session.commit()
+    import asyncio as _aio
+    for attempt in range(3):
+        try:
+            async with AsyncSessionLocal() as session:
+                name_row = await session.execute(
+                    text("SELECT full_name FROM users WHERE id = :uid"),
+                    {"uid": str(current.user_id)},
+                )
+                sender_name = name_row.scalar() or "Usuário"
+                result = await session.execute(text("""
+                    INSERT INTO chat_messages
+                        (association_id, sender_id, sender_name, content, message_type, media_url, mention_ids)
+                    VALUES (:assoc, :sender, :name, :content, :mtype, :media, CAST(:mentions AS jsonb))
+                    RETURNING id, created_at
+                """), {
+                    "assoc": str(current.association_id),
+                    "sender": str(current.user_id),
+                    "name": sender_name,
+                    "content": body.content,
+                    "mtype": body.message_type,
+                    "media": body.media_url,
+                    "mentions": json.dumps(body.mention_ids),
+                })
+                row = result.fetchone()
+                await session.commit()
+            break
+        except Exception as e:
+            if attempt == 2:
+                raise
+            await _aio.sleep(0.1 * (attempt + 1))
 
     import asyncio
     from app.routers.notifications import create_notification
