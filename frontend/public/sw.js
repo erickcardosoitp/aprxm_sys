@@ -3,14 +3,19 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('push', (event) => {
   if (!event.data) return;
-  const { title, body, data } = event.data.json();
+  let title = 'APROXIMA';
+  let body = '';
+  let data = {};
+  try {
+    const payload = event.data.json();
+    title = payload.title || title;
+    body = payload.body || '';
+    data = payload.data || {};
+  } catch (_) {
+    body = event.data.text();
+  }
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      data: data || {},
-    })
+    self.registration.showNotification(title, { body, data })
   );
 });
 
