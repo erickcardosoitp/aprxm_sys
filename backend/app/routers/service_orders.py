@@ -116,7 +116,7 @@ async def create_so(
   <p><strong>{body.title}</strong></p>
   <p style="color:#6b7280;font-size:13px">APRXM — Sistema de Gestão Comunitária</p>
 </div>"""
-            _aio.get_running_loop().run_in_executor(None, send_email, assigned_email, f"OS #{so.number} atribuída a você", html)
+            await _aio.get_running_loop().run_in_executor(None, send_email, assigned_email, f"OS #{so.number} atribuída a você", html)
     return {"id": str(so.id), "number": so.number, "status": so.status}
 
 
@@ -220,7 +220,7 @@ async def add_comment(
   <p style="color:#6b7280;font-size:13px">APRXM — Sistema de Gestão Comunitária</p>
 </div>"""
             for (email,) in email_rows:
-                _aio.get_running_loop().run_in_executor(None, send_email, email, f"OS #{so_num} — novo comentário", html)
+                await _aio.get_running_loop().run_in_executor(None, send_email, email, f"OS #{so_num} — novo comentário", html)
 
     return {"id": str(row[0]), "created_at": str(row[1])}
 
