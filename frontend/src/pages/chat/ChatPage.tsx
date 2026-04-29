@@ -217,7 +217,7 @@ export default function ChatPage() {
         content, message_type: 'text', mention_ids: ids,
       })
       lastSinceRef.current = res.data.created_at
-      setMessages(prev => [...prev, res.data])
+      setMessages(prev => prev.some(m => m.id === res.data.id) ? prev : [...prev, res.data])
       setTimeout(() => scrollToBottom(), 50)
     } catch {
       toast.error('Erro ao enviar mensagem')
