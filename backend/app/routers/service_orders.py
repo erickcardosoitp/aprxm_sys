@@ -256,6 +256,33 @@ async def list_comments(
     ]
 
 
+@router.get("/search", summary="Buscar OS por número ou título")
+async def search_so(
+    q: str = "",
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as sa_text
+    rows = await session.execute(
+        sa_text("""
+            SELECT id, number, title, status, priority
+            FROM service_orders
+            WHERE association_id = :aid
+              AND (
+                CAST(number AS TEXT) ILIKE :q
+                OR title ILIKE :q
+              )
+            ORDER BY number DESC
+            LIMIT 8
+        """),
+        {"aid": str(current.association_id), "q": f"%{q}%"},
+    )
+    return [
+        {"id": str(r[0]), "number": r[1], "title": r[2], "status": r[3], "priority": r[4]}
+        for r in rows.fetchall()
+    ]
+
+
 @router.get("/report", summary="Relatório de OS por período")
 async def service_orders_report(
     date_from: str,

@@ -4,11 +4,20 @@ import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 
+interface OSSearchResult {
+  id: string
+  number: number
+  title: string
+  status: string
+  priority: string
+}
+
 interface ChatMessage {
   id: string
   sender_id: string | null
   sender_name: string
   sender_role: string | null
+  sender_association?: string | null
   content: string | null
   message_type: 'text' | 'audio' | 'photo' | 'system'
   media_url: string | null
@@ -23,6 +32,7 @@ interface ChatUser {
 
 export default function ChatPage() {
   const userId = useAuthStore(s => s.userId)
+  const associationName = useAuthStore(s => s.associationName)
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [users, setUsers] = useState<ChatUser[]>([])
@@ -33,6 +43,10 @@ export default function ChatPage() {
   const [mentionIdx, setMentionIdx] = useState<number | null>(null)
   const [mentionFilter, setMentionFilter] = useState('')
   const [mentionIds, setMentionIds] = useState<string[]>([])
+  const [osIdx, setOsIdx] = useState<number | null>(null)
+  const [osFilter, setOsFilter] = useState('')
+  const [osResults, setOsResults] = useState<OSSearchResult[]>([])
+  const osSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [recording, setRecording] = useState(false)
   const [recordSecs, setRecordSecs] = useState(0)
   const [uploading, setUploading] = useState(false)
@@ -73,6 +87,7 @@ export default function ChatPage() {
   }, [])
 
   useEffect(() => {
+    localStorage.setItem('chatLastRead', new Date().toISOString())
     ;(async () => {
       try {
         const [msgRes, userRes] = await Promise.all([
@@ -121,13 +136,33 @@ export default function ChatPage() {
     const pos = e.target.selectionStart ?? val.length
     setText(val)
     const before = val.slice(0, pos)
-    const m = before.match(/@([^@\s]*)$/)
-    if (m) {
-      setMentionIdx(m.index!)
-      setMentionFilter(m[1].toLowerCase())
+
+    const atMatch = before.match(/@([^@\s]*)$/)
+    if (atMatch) {
+      setMentionIdx(atMatch.index!)
+      setMentionFilter(atMatch[1].toLowerCase())
+      setOsIdx(null)
+      return
+    }
+    setMentionIdx(null)
+    setMentionFilter('')
+
+    const hashMatch = before.match(/#([^\s]*)$/)
+    if (hashMatch) {
+      setOsIdx(hashMatch.index!)
+      const q = hashMatch[1]
+      setOsFilter(q)
+      if (osSearchTimeout.current) clearTimeout(osSearchTimeout.current)
+      osSearchTimeout.current = setTimeout(async () => {
+        try {
+          const res = await api.get<OSSearchResult[]>('/service-orders/search', { params: { q } })
+          setOsResults(res.data)
+        } catch { setOsResults([]) }
+      }, 250)
     } else {
-      setMentionIdx(null)
-      setMentionFilter('')
+      setOsIdx(null)
+      setOsFilter('')
+      setOsResults([])
     }
   }
 
@@ -146,6 +181,24 @@ export default function ChatPage() {
     setMentionIdx(null)
     setMentionFilter('')
     const newCursor = atStart + user.name.length + 2
+    setTimeout(() => {
+      textRef.current?.focus()
+      textRef.current?.setSelectionRange(newCursor, newCursor)
+    }, 0)
+  }
+
+  const insertOsMention = (os: OSSearchResult) => {
+    const hashStart = osIdx!
+    const queryEnd = hashStart + 1 + osFilter.length
+    const before = text.slice(0, hashStart)
+    const after = text.slice(queryEnd)
+    const token = `#OS-${os.number}`
+    const newText = `${before}${token} ${after}`
+    setText(newText)
+    setOsIdx(null)
+    setOsFilter('')
+    setOsResults([])
+    const newCursor = hashStart + token.length + 1
     setTimeout(() => {
       textRef.current?.focus()
       textRef.current?.setSelectionRange(newCursor, newCursor)
@@ -262,11 +315,13 @@ export default function ChatPage() {
       e.preventDefault()
       if (filteredUsers.length > 0 && mentionIdx !== null) {
         insertMention(filteredUsers[0])
+      } else if (osResults.length > 0 && osIdx !== null) {
+        insertOsMention(osResults[0])
       } else {
         sendText()
       }
     }
-    if (e.key === 'Escape') { setMentionIdx(null) }
+    if (e.key === 'Escape') { setMentionIdx(null); setOsIdx(null); setOsResults([]) }
   }
 
   const grouped = groupByDate(messages)
@@ -308,7 +363,7 @@ export default function ChatPage() {
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
               {msgs.map(msg => (
-                <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} />
+                <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} myAssociation={associationName ?? ''} />
               ))}
             </div>
           ))
@@ -334,6 +389,36 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* OS autocomplete */}
+      {osResults.length > 0 && osIdx !== null && (
+        <div className="mx-3 mb-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden shrink-0">
+          <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100">
+            <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Ordens de Serviço</span>
+          </div>
+          {osResults.map(os => (
+            <button
+              key={os.id}
+              onMouseDown={e => { e.preventDefault(); insertOsMention(os) }}
+              className="w-full px-3 py-2 text-left hover:bg-orange-50 flex items-center gap-2"
+            >
+              <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold shrink-0">
+                #
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-gray-800">OS #{os.number}</div>
+                <div className="text-xs text-gray-500 truncate">{os.title}</div>
+              </div>
+              <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium ${
+                os.status === 'resolved' ? 'bg-green-100 text-green-700' :
+                os.status === 'cancelled' ? 'bg-gray-100 text-gray-500' :
+                os.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                'bg-yellow-100 text-yellow-700'
+              }`}>{os.status}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Input bar */}
       <div className="border-t border-gray-200 bg-white px-3 py-2 flex items-end gap-2 shrink-0">
         <button
@@ -350,7 +435,7 @@ export default function ChatPage() {
           value={text}
           onChange={onTextChange}
           onKeyDown={onKeyDown}
-          placeholder={recording ? 'Gravando áudio…' : 'Mensagem… (@ para mencionar)'}
+          placeholder={recording ? 'Gravando áudio…' : 'Mensagem… (@ usuário, # para O.S.)'}
           rows={1}
           disabled={recording || uploading}
           className="flex-1 min-h-[40px] max-h-28 resize-none overflow-y-auto rounded-2xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-gray-50 disabled:opacity-50"
@@ -409,15 +494,62 @@ function groupByDate(msgs: ChatMessage[]) {
 }
 
 function renderText(content: string) {
-  const parts = content.split(/(@\S+)/g)
-  return parts.map((p, i) =>
-    p.startsWith('@')
-      ? <span key={i} className="font-semibold opacity-90">{p}</span>
-      : p
+  const parts = content.split(/(#OS-\d+|@\S+)/g)
+  return parts.map((p, i) => {
+    if (p.startsWith('@')) return <span key={i} className="font-semibold opacity-90">{p}</span>
+    if (p.startsWith('#OS-')) {
+      const num = parseInt(p.slice(4), 10)
+      return <OSMentionCard key={i} number={num} />
+    }
+    return p
+  })
+}
+
+function OSMentionCard({ number }: { number: number }) {
+  const [os, setOs] = useState<OSSearchResult | null>(null)
+
+  useEffect(() => {
+    api.get<OSSearchResult[]>('/service-orders/search', { params: { q: String(number) } })
+      .then(r => {
+        const found = r.data.find(o => o.number === number)
+        if (found) setOs(found)
+      })
+      .catch(() => {})
+  }, [number])
+
+  const statusLabel: Record<string, string> = {
+    pending: 'Pendente', open: 'Aberta', in_progress: 'Em andamento',
+    waiting_third_party: 'Aguardando', resolved: 'Resolvida',
+    archived: 'Arquivada', cancelled: 'Cancelada',
+  }
+  const priorityColor: Record<string, string> = {
+    low: 'text-gray-500', medium: 'text-yellow-600',
+    high: 'text-orange-600', critical: 'text-red-600',
+  }
+
+  if (!os) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-50 border border-orange-200 rounded text-orange-700 text-xs font-medium">
+      #{number} …
+    </span>
+  )
+
+  return (
+    <span className="block my-1 p-2 bg-orange-50 border border-orange-200 rounded-lg text-left">
+      <span className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-orange-700 font-bold text-xs">OS #{os.number}</span>
+        <span className={`text-[10px] font-semibold ${priorityColor[os.priority] ?? ''}`}>
+          {os.priority === 'critical' ? '🔴' : os.priority === 'high' ? '🟠' : os.priority === 'medium' ? '🟡' : '⚪'} {os.priority}
+        </span>
+        <span className="ml-auto text-[10px] bg-white border border-orange-200 px-1.5 py-0.5 rounded-full text-orange-600 font-medium">
+          {statusLabel[os.status] ?? os.status}
+        </span>
+      </span>
+      <span className="block text-xs text-gray-700 mt-0.5 leading-snug">{os.title}</span>
+    </span>
   )
 }
 
-function MessageBubble({ msg, isOwn }: { msg: ChatMessage; isOwn: boolean }) {
+function MessageBubble({ msg, isOwn, myAssociation }: { msg: ChatMessage; isOwn: boolean; myAssociation: string }) {
   const time = new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
   if (msg.message_type === 'system') {
@@ -443,6 +575,9 @@ function MessageBubble({ msg, isOwn }: { msg: ChatMessage; isOwn: boolean }) {
             {msg.sender_name}
             {msg.sender_role && (
               <span className="ml-1 text-gray-400 font-normal">· {msg.sender_role}</span>
+            )}
+            {msg.sender_association && msg.sender_association !== myAssociation && (
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 text-[9px] font-semibold leading-none">{msg.sender_association}</span>
             )}
           </span>
         )}

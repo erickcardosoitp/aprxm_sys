@@ -3,7 +3,7 @@ import 'leaflet/dist/leaflet.css'
 import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp, TrendingDown, DollarSign, AlertCircle } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LabelList,
+  PieChart, Pie, Cell, LabelList, Legend,
 } from 'recharts'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
@@ -652,70 +652,47 @@ function OverviewTab() {
 
 interface StreetData { street: string; city: string; state: string; cep: string; members: number; guests: number }
 
-const GEO_CACHE = 'aprxm_geo_v4:'
-
-// Retorna geometria da rua via Nominatim polygon_geojson (sem CORS)
-async function getStreetGeometry(street: string): Promise<[number, number][] | null> {
-  const key = GEO_CACHE + street
-  const cached = localStorage.getItem(key)
-  if (cached) return cached === 'null' ? null : JSON.parse(cached)
-
-  const NOM = 'https://nominatim.openstreetmap.org/search'
-  const headers = { 'User-Agent': 'APROXIMA/1.0 (institutotiapretinha.org)' }
-
-  const queries = [
-    `${street}, Madureira, Rio de Janeiro, RJ, Brasil`,
-    `${street}, Rio de Janeiro, Brasil`,
-  ]
-
-  for (const q of queries) {
-    try {
-      const r = await fetch(
-        `${NOM}?q=${encodeURIComponent(q)}&format=json&limit=3&polygon_geojson=1&countrycodes=br`,
-        { headers }
-      )
-      const items = await r.json()
-      // Prefere resultado com geometria do tipo LineString (rua real)
-      const withLine = items.find((x: any) => x.geojson?.type === 'LineString')
-      const withMulti = items.find((x: any) => x.geojson?.type === 'MultiLineString')
-      const best = withLine ?? withMulti ?? items[0]
-      if (!best) continue
-
-      let coords: [number, number][] | null = null
-      if (best.geojson?.type === 'LineString') {
-        coords = best.geojson.coordinates.map(([lng, lat]: number[]) => [lat, lng])
-      } else if (best.geojson?.type === 'MultiLineString') {
-        coords = best.geojson.coordinates.flat().map(([lng, lat]: number[]) => [lat, lng])
-      } else {
-        coords = [[parseFloat(best.lat), parseFloat(best.lon)]]
-      }
-
-      if (coords?.length) {
-        localStorage.setItem(key, JSON.stringify(coords))
-        return coords
-      }
-    } catch { /* next query */ }
-  }
-
-  localStorage.setItem(key, 'null')
-  return null
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const assoc = payload.find((p: any) => p.dataKey === 'members')?.value ?? 0
+  const guest = payload.find((p: any) => p.dataKey === 'guests')?.value ?? 0
+  const tot = assoc + guest
+  const pct = tot > 0 ? Math.round(assoc / tot * 100) : 0
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-3 py-2.5 text-xs min-w-[160px]">
+      <p className="font-semibold text-gray-800 mb-1.5 truncate max-w-[200px]">{label}</p>
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+        <span className="text-gray-600">Associados</span>
+        <span className="ml-auto font-bold text-blue-700">{assoc}</span>
+      </div>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" />
+        <span className="text-gray-600">Não assoc.</span>
+        <span className="ml-auto font-bold text-orange-600">{guest}</span>
+      </div>
+      <div className="flex items-center justify-between border-t border-gray-100 pt-1.5">
+        <span className="text-gray-500">Total</span>
+        <span className="font-bold text-gray-800">{tot}</span>
+      </div>
+      <div className="mt-0.5">
+        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-1.5 bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-gray-400 text-[10px]">{pct}% associados</span>
+      </div>
+    </div>
+  )
 }
 
-type HeatView = 'associados' | 'nao_associados' | 'total'
-
 function MapTab() {
-  const mapRef    = useRef<HTMLDivElement>(null)
-  const mapInst   = useRef<any>(null)
-  const markersM  = useRef<any[]>([])
-  const markersG  = useRef<any[]>([])
-  const [streets, setStreets]   = useState<StreetData[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [progress, setProgress] = useState(0)
-  const [total, setTotal]       = useState(0)
-  const [view, setView]         = useState<HeatView>('total')
+  const [streets, setStreets] = useState<StreetData[]>([])
+  const [loading, setLoading] = useState(true)
 
   const totalMembers = streets.reduce((a, s) => a + s.members, 0)
   const totalGuests  = streets.reduce((a, s) => a + s.guests, 0)
+  const total        = totalMembers + totalGuests
+  const assocRate    = total > 0 ? Math.round(totalMembers / total * 100) : 0
 
   useEffect(() => {
     api.get('/residents/map-data')
@@ -724,164 +701,120 @@ function MapTab() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Inicializa mapa uma vez
-  useEffect(() => {
-    if (!mapRef.current || mapInst.current) return
-    import('leaflet').then(({ default: L }) => {
-      if (!mapRef.current) return
-      const map = L.map(mapRef.current, { zoomControl: true })
-        .setView([-22.8756, -43.3278], 14)
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors', maxZoom: 19,
-      }).addTo(map)
-      mapInst.current = map
-    })
-    return () => {
-      mapInst.current?.remove()
-      mapInst.current = null
-      markersM.current = []
-      markersG.current = []
-    }
-  }, [])
+  // Ordena por total desc, top 25
+  const chartData = [...streets]
+    .sort((a, b) => (b.members + b.guests) - (a.members + a.guests))
+    .slice(0, 25)
+    .map(s => ({ name: s.street, members: s.members, guests: s.guests }))
+    .reverse() // horizontal bar: top = highest
 
-  // Geocoda ruas e pinta a geometria real no mapa
-  useEffect(() => {
-    if (!streets.length) return
-    const aborted = { v: false }
+  const chartH = Math.max(300, chartData.length * 38)
 
-    const run = async () => {
-      const { default: L } = await import('leaflet')
-      const maxM = Math.max(...streets.map(s => s.members), 1)
-      const maxG = Math.max(...streets.map(s => s.guests), 1)
-      setTotal(streets.length)
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        {[...Array(4)].map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />)}
+      </div>
+    )
+  }
 
-      // Interpola cor azul por intensidade (claro → escuro)
-      const blueColor = (ratio: number) => {
-        const t = 0.2 + ratio * 0.8
-        const r = Math.round(219 - t * (219 - 30))
-        const g = Math.round(234 - t * (234 - 64))
-        const b = Math.round(254 - t * (254 - 175))
-        return `rgb(${r},${g},${b})`
-      }
-      // Interpola cor laranja por intensidade
-      const orangeColor = (ratio: number) => {
-        const t = 0.2 + ratio * 0.8
-        const r = Math.round(254 - t * (254 - 154))
-        const g = Math.round(215 - t * (215 - 52))
-        const b = Math.round(170 - t * 170)
-        return `rgb(${r},${g},${b})`
-      }
-
-      for (let i = 0; i < streets.length; i++) {
-        if (aborted.v) return
-        const s = streets[i]
-        const isCached = !!localStorage.getItem(GEO_CACHE + s.street)
-        if (!isCached && i > 0) await new Promise(r => setTimeout(r, 800))
-        if (aborted.v) return
-
-        const geom = await getStreetGeometry(s.street)
-        setProgress(i + 1)
-        if (!geom || aborted.v || !mapInst.current) continue
-
-        const map = mapInst.current
-        const isLine = geom.length >= 2
-
-        const drawLayer = (coords: [number, number][], color: string, weight: number, tooltip: string) => {
-          if (isLine) {
-            return L.polyline(coords, { color, weight, opacity: 0.9 })
-              .bindTooltip(tooltip, { sticky: true })
-          }
-          return L.circleMarker(coords[0], { radius: 8, color, weight: 2, fillColor: color, fillOpacity: 0.8 })
-            .bindTooltip(tooltip, { sticky: true })
-        }
-
-        if (s.members > 0) {
-          const ratio = s.members / maxM
-          const layer = drawLayer(geom, blueColor(ratio), 4 + ratio * 8,
-            `<b>${s.street}</b><br/>Associados: <b>${s.members}</b>`)
-          markersM.current.push(layer)
-          if (view === 'associados' || view === 'total') layer.addTo(map)
-        }
-
-        if (s.guests > 0) {
-          const ratio = s.guests / maxG
-          const layer = drawLayer(geom, orangeColor(ratio), 4 + ratio * 8,
-            `<b>${s.street}</b><br/>Não assoc.: <b>${s.guests}</b>`)
-          markersG.current.push(layer)
-          if (view === 'nao_associados' || view === 'total') layer.addTo(map)
-        }
-      }
-    }
-
-    run()
-    return () => { aborted.v = true }
-  }, [streets])
-
-  // Mostra/esconde camadas ao trocar visão
-  useEffect(() => {
-    const map = mapInst.current
-    if (!map) return
-    markersM.current.forEach(c => {
-      if (view === 'associados' || view === 'total') { if (!map.hasLayer(c)) c.addTo(map) }
-      else map.removeLayer(c)
-    })
-    markersG.current.forEach(c => {
-      if (view === 'nao_associados' || view === 'total') { if (!map.hasLayer(c)) c.addTo(map) }
-      else map.removeLayer(c)
-    })
-  }, [view])
+  if (!streets.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-2">
+        <MapPin className="w-8 h-8 opacity-30" />
+        <p className="text-sm">Nenhum morador com endereço cadastrado.</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Totais */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
-          <div className="text-2xl font-bold text-blue-700">{totalMembers}</div>
-          <div className="text-xs text-blue-600 mt-0.5">Associados</div>
+    <div className="flex flex-col gap-5">
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Total</span>
+          <span className="text-3xl font-extrabold text-gray-800">{total}</span>
+          <span className="text-xs text-gray-400">moradores c/ endereço</span>
         </div>
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
-          <div className="text-2xl font-bold text-orange-600">{totalGuests}</div>
-          <div className="text-xs text-orange-500 mt-0.5">Não associados</div>
+        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-blue-400">Associados</span>
+          <span className="text-3xl font-extrabold text-blue-700">{totalMembers}</span>
+          <div className="h-1.5 bg-blue-100 rounded-full mt-1 overflow-hidden">
+            <div className="h-1.5 bg-blue-500 rounded-full transition-all" style={{ width: `${assocRate}%` }} />
+          </div>
         </div>
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
-          <div className="text-2xl font-bold text-gray-700">{totalMembers + totalGuests}</div>
-          <div className="text-xs text-gray-500 mt-0.5">Total</div>
+        <div className="bg-orange-50 border border-orange-100 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-orange-400">Não associados</span>
+          <span className="text-3xl font-extrabold text-orange-600">{totalGuests}</span>
+          <div className="h-1.5 bg-orange-100 rounded-full mt-1 overflow-hidden">
+            <div className="h-1.5 bg-orange-400 rounded-full transition-all" style={{ width: `${100 - assocRate}%` }} />
+          </div>
+        </div>
+        <div className="bg-green-50 border border-green-100 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-green-500">Taxa assoc.</span>
+          <span className="text-3xl font-extrabold text-green-700">{assocRate}%</span>
+          <span className="text-xs text-green-600">dos cadastrados</span>
         </div>
       </div>
 
-      {/* Controles */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
-          {([['associados','🔵 Associados'],['nao_associados','🟠 Não assoc.'],['total','Todos']] as [HeatView,string][]).map(([v, label]) => (
-            <button key={v} onClick={() => setView(v)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${view === v ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-              {label}
-            </button>
-          ))}
+      {/* Chart */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-800">Distribuição por rua</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Top {chartData.length} ruas com mais moradores</p>
+          </div>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" />Associados</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-orange-400 inline-block" />Não assoc.</span>
+          </div>
         </div>
-        {loading && <span className="text-xs text-gray-400">Carregando dados…</span>}
-        {!loading && total > 0 && progress < total && (
-          <span className="text-xs text-gray-400">Geocodificando {progress}/{total} ruas…</span>
-        )}
-        {!loading && total > 0 && progress === total && (
-          <span className="text-xs text-green-600 font-medium">{total} ruas mapeadas</span>
-        )}
+        <div className="px-2 py-4">
+          <ResponsiveContainer width="100%" height={chartH}>
+            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 32, top: 0, bottom: 0 }} barSize={14} barCategoryGap="25%">
+              <XAxis type="number" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" width={170} tick={{ fontSize: 11, fill: '#4b5563' }} axisLine={false} tickLine={false}
+                tickFormatter={(v: string) => v.length > 24 ? v.slice(0, 22) + '…' : v} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f9fafb' }} />
+              <Bar dataKey="members" name="Associados" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]}>
+                <LabelList dataKey="members" position="right" style={{ fontSize: 10, fill: '#3b82f6', fontWeight: 600 }}
+                  formatter={(v: unknown) => (typeof v === 'number' && v > 0) ? v : ''} />
+              </Bar>
+              <Bar dataKey="guests" name="Não assoc." stackId="a" fill="#fb923c" radius={[2, 2, 2, 2]}>
+                <LabelList dataKey="guests" position="right" style={{ fontSize: 10, fill: '#ea580c', fontWeight: 600 }}
+                  formatter={(v: unknown) => (typeof v === 'number' && v > 0) ? v : ''} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
-      {/* Mapa */}
-      <div ref={mapRef} className="rounded-xl overflow-hidden border border-gray-200 shadow-sm"
-        style={{ height: 480, background: '#e5e7eb' }} />
-
-      {/* Legenda */}
-      <div className="flex flex-wrap gap-4 text-xs text-gray-500 px-1">
-        <span className="flex items-center gap-2">
-          <span className="inline-block w-8 h-2 rounded-full" style={{ background: 'linear-gradient(to right,#bfdbfe,#1e3a8a)' }} />
-          Associados — azul (mais escuro = mais)
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="inline-block w-8 h-2 rounded-full" style={{ background: 'linear-gradient(to right,#fed7aa,#9a3412)' }} />
-          Não associados — laranja (mais escuro = mais)
-        </span>
+      {/* Street table summary */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-800">Todas as ruas</h3>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {[...streets].sort((a, b) => (b.members + b.guests) - (a.members + a.guests)).map((s, i) => {
+            const t = s.members + s.guests
+            const pct = t > 0 ? Math.round(s.members / t * 100) : 0
+            return (
+              <div key={i} className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50/60 transition">
+                <span className="text-[10px] font-bold text-gray-300 w-5 shrink-0 text-right">{i + 1}</span>
+                <span className="flex-1 text-sm text-gray-700 truncate">{s.street}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-semibold text-blue-600 w-6 text-right">{s.members}</span>
+                  <div className="w-20 h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-2 rounded-full" style={{ width: `${pct}%`, background: '#3b82f6' }} />
+                  </div>
+                  <span className="text-xs text-gray-400 w-6">{s.guests}</span>
+                  <span className="text-xs font-bold text-gray-600 w-7 text-right">{t}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
