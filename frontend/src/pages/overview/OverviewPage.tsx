@@ -652,47 +652,49 @@ function OverviewTab() {
 
 interface StreetData { street: string; city: string; state: string; cep: string; members: number; guests: number }
 
-const GEO_CACHE = 'aprxm_geo_v3:'
+const GEO_CACHE = 'aprxm_geo_v4:'
 
-async function geocodeCep(cep: string, street: string): Promise<[number, number] | null> {
-  const cleanCep = cep.replace(/\D/g, '')
-  const key = GEO_CACHE + (cleanCep || street)
+// Retorna array de coordenadas da rua via Overpass (geometria real) ou ponto via Nominatim
+async function getStreetGeometry(street: string): Promise<[number, number][] | null> {
+  const key = GEO_CACHE + street
   const cached = localStorage.getItem(key)
   if (cached) return cached === 'null' ? null : JSON.parse(cached)
 
-  // ViaCEP → pega logradouro e bairro para montar query melhor
-  if (cleanCep.length === 8) {
-    try {
-      const r = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`)
-      const d = await r.json()
-      if (!d.erro && d.localidade) {
-        const query = `${d.logradouro || street}, ${d.bairro || ''}, ${d.localidade}, ${d.uf}, Brasil`
-        const geo = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=br`,
-          { headers: { 'User-Agent': 'APROXIMA/1.0 (institutotiapretinha.org)' } }
-        )
-        const gd = await geo.json()
-        if (gd.length) {
-          const coord: [number, number] = [parseFloat(gd[0].lat), parseFloat(gd[0].lon)]
-          localStorage.setItem(key, JSON.stringify(coord))
-          return coord
-        }
-      }
-    } catch { /* fallthrough */ }
-  }
-
-  // Fallback: Nominatim direto com nome da rua
+  // Overpass: busca a way (rua) por nome em Madureira
   try {
-    const query = `${street}, Madureira, Rio de Janeiro, RJ, Brasil`
+    const query = `[out:json][timeout:10];
+area["name"="Madureira"]->.a;
+way["name"~"${street.replace(/"/g, '')}",i](area.a);
+out geom;`
+    const r = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', body: query,
+    })
+    const d = await r.json()
+    if (d.elements?.length) {
+      // Pega o primeiro way com mais nós
+      const best = d.elements.reduce((a: any, b: any) =>
+        (b.geometry?.length ?? 0) > (a.geometry?.length ?? 0) ? b : a
+      )
+      if (best.geometry?.length >= 2) {
+        const coords: [number, number][] = best.geometry.map((g: any) => [g.lat, g.lon])
+        localStorage.setItem(key, JSON.stringify(coords))
+        return coords
+      }
+    }
+  } catch { /* fallthrough */ }
+
+  // Fallback: ponto via Nominatim
+  try {
+    const q = `${street}, Madureira, Rio de Janeiro, RJ, Brasil`
     const r = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=br`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`,
       { headers: { 'User-Agent': 'APROXIMA/1.0 (institutotiapretinha.org)' } }
     )
     const d = await r.json()
     if (d.length) {
-      const coord: [number, number] = [parseFloat(d[0].lat), parseFloat(d[0].lon)]
-      localStorage.setItem(key, JSON.stringify(coord))
-      return coord
+      const pt: [number, number][] = [[parseFloat(d[0].lat), parseFloat(d[0].lon)]]
+      localStorage.setItem(key, JSON.stringify(pt))
+      return pt
     }
   } catch { /* ignore */ }
 
@@ -703,20 +705,19 @@ async function geocodeCep(cep: string, street: string): Promise<[number, number]
 type HeatView = 'associados' | 'nao_associados' | 'total'
 
 function MapTab() {
-  const mapRef      = useRef<HTMLDivElement>(null)
-  const mapInst     = useRef<any>(null)
-  const heatLayerM  = useRef<any>(null)
-  const heatLayerG  = useRef<any>(null)
+  const mapRef    = useRef<HTMLDivElement>(null)
+  const mapInst   = useRef<any>(null)
+  const markersM  = useRef<any[]>([])
+  const markersG  = useRef<any[]>([])
   const [streets, setStreets]   = useState<StreetData[]>([])
   const [loading, setLoading]   = useState(true)
   const [progress, setProgress] = useState(0)
   const [total, setTotal]       = useState(0)
-  const [view, setView]         = useState<HeatView>('associados')
+  const [view, setView]         = useState<HeatView>('total')
 
   const totalMembers = streets.reduce((a, s) => a + s.members, 0)
   const totalGuests  = streets.reduce((a, s) => a + s.guests, 0)
 
-  // Carrega dados
   useEffect(() => {
     api.get('/residents/map-data')
       .then(r => setStreets(r.data))
@@ -724,73 +725,92 @@ function MapTab() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Inicializa mapa
+  // Inicializa mapa uma vez
   useEffect(() => {
     if (!mapRef.current || mapInst.current) return
     import('leaflet').then(({ default: L }) => {
-      const map = L.map(mapRef.current!, { zoomControl: true })
+      if (!mapRef.current) return
+      const map = L.map(mapRef.current, { zoomControl: true })
         .setView([-22.8756, -43.3278], 14)
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors', maxZoom: 19,
       }).addTo(map)
       mapInst.current = map
     })
-    return () => { mapInst.current?.remove(); mapInst.current = null }
+    return () => {
+      mapInst.current?.remove()
+      mapInst.current = null
+      markersM.current = []
+      markersG.current = []
+    }
   }, [])
 
-  // Geocoda ruas e monta camadas de calor
+  // Geocoda ruas e pinta a geometria real no mapa
   useEffect(() => {
-    if (!streets.length || !mapInst.current) return
+    if (!streets.length) return
     const aborted = { v: false }
 
     const run = async () => {
-      const [L, heatModule] = await Promise.all([
-        import('leaflet'),
-        import('leaflet.heat'),
-      ])
-      void heatModule
-
-      const pointsM: [number, number, number][] = []
-      const pointsG: [number, number, number][] = []
+      const { default: L } = await import('leaflet')
       const maxM = Math.max(...streets.map(s => s.members), 1)
       const maxG = Math.max(...streets.map(s => s.guests), 1)
-
       setTotal(streets.length)
+
+      // Interpola cor azul por intensidade (claro → escuro)
+      const blueColor = (ratio: number) => {
+        const t = 0.2 + ratio * 0.8
+        const r = Math.round(219 - t * (219 - 30))
+        const g = Math.round(234 - t * (234 - 64))
+        const b = Math.round(254 - t * (254 - 175))
+        return `rgb(${r},${g},${b})`
+      }
+      // Interpola cor laranja por intensidade
+      const orangeColor = (ratio: number) => {
+        const t = 0.2 + ratio * 0.8
+        const r = Math.round(254 - t * (254 - 154))
+        const g = Math.round(215 - t * (215 - 52))
+        const b = Math.round(170 - t * 170)
+        return `rgb(${r},${g},${b})`
+      }
 
       for (let i = 0; i < streets.length; i++) {
         if (aborted.v) return
         const s = streets[i]
-        const cacheKey = GEO_CACHE + (s.cep.replace(/\D/g, '') || s.street)
-        const isCached = !!localStorage.getItem(cacheKey)
-        if (!isCached && i > 0) await new Promise(r => setTimeout(r, 1200))
+        const isCached = !!localStorage.getItem(GEO_CACHE + s.street)
+        if (!isCached && i > 0) await new Promise(r => setTimeout(r, 800))
         if (aborted.v) return
 
-        const coord = await geocodeCep(s.cep, s.street)
-        if (!coord || aborted.v) { setProgress(i + 1); continue }
-
-        const [lat, lng] = coord
-        if (s.members > 0) pointsM.push([lat, lng, s.members / maxM])
-        if (s.guests  > 0) pointsG.push([lat, lng, s.guests  / maxG])
+        const geom = await getStreetGeometry(s.street)
         setProgress(i + 1)
+        if (!geom || aborted.v || !mapInst.current) continue
 
-        // Atualiza camadas progressivamente
         const map = mapInst.current
-        if (!map) return
+        const isLine = geom.length >= 2
 
-        if (heatLayerM.current) map.removeLayer(heatLayerM.current)
-        if (heatLayerG.current) map.removeLayer(heatLayerG.current)
+        const drawLayer = (coords: [number, number][], color: string, weight: number, tooltip: string) => {
+          if (isLine) {
+            return L.polyline(coords, { color, weight, opacity: 0.9 })
+              .bindTooltip(tooltip, { sticky: true })
+          }
+          return L.circleMarker(coords[0], { radius: 8, color, weight: 2, fillColor: color, fillOpacity: 0.8 })
+            .bindTooltip(tooltip, { sticky: true })
+        }
 
-        heatLayerM.current = (L.default as any).heatLayer(pointsM, {
-          radius: 30, blur: 25, maxZoom: 17,
-          gradient: { 0.2: '#bfdbfe', 0.5: '#3b82f6', 0.8: '#1d4ed8', 1.0: '#1e3a8a' },
-        })
-        heatLayerG.current = (L.default as any).heatLayer(pointsG, {
-          radius: 30, blur: 25, maxZoom: 17,
-          gradient: { 0.2: '#fed7aa', 0.5: '#f97316', 0.8: '#ea580c', 1.0: '#9a3412' },
-        })
+        if (s.members > 0) {
+          const ratio = s.members / maxM
+          const layer = drawLayer(geom, blueColor(ratio), 4 + ratio * 8,
+            `<b>${s.street}</b><br/>Associados: <b>${s.members}</b>`)
+          markersM.current.push(layer)
+          if (view === 'associados' || view === 'total') layer.addTo(map)
+        }
 
-        if (view === 'associados' || view === 'total') heatLayerM.current.addTo(map)
-        if (view === 'nao_associados' || view === 'total') heatLayerG.current.addTo(map)
+        if (s.guests > 0) {
+          const ratio = s.guests / maxG
+          const layer = drawLayer(geom, orangeColor(ratio), 4 + ratio * 8,
+            `<b>${s.street}</b><br/>Não assoc.: <b>${s.guests}</b>`)
+          markersG.current.push(layer)
+          if (view === 'nao_associados' || view === 'total') layer.addTo(map)
+        }
       }
     }
 
@@ -798,18 +818,18 @@ function MapTab() {
     return () => { aborted.v = true }
   }, [streets])
 
-  // Troca camadas ao mudar visão
+  // Mostra/esconde camadas ao trocar visão
   useEffect(() => {
     const map = mapInst.current
     if (!map) return
-    if (heatLayerM.current) {
-      if (view === 'associados' || view === 'total') { if (!map.hasLayer(heatLayerM.current)) heatLayerM.current.addTo(map) }
-      else map.removeLayer(heatLayerM.current)
-    }
-    if (heatLayerG.current) {
-      if (view === 'nao_associados' || view === 'total') { if (!map.hasLayer(heatLayerG.current)) heatLayerG.current.addTo(map) }
-      else map.removeLayer(heatLayerG.current)
-    }
+    markersM.current.forEach(c => {
+      if (view === 'associados' || view === 'total') { if (!map.hasLayer(c)) c.addTo(map) }
+      else map.removeLayer(c)
+    })
+    markersG.current.forEach(c => {
+      if (view === 'nao_associados' || view === 'total') { if (!map.hasLayer(c)) c.addTo(map) }
+      else map.removeLayer(c)
+    })
   }, [view])
 
   return (
@@ -855,15 +875,14 @@ function MapTab() {
 
       {/* Legenda */}
       <div className="flex flex-wrap gap-4 text-xs text-gray-500 px-1">
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block w-8 h-3 rounded-sm" style={{ background: 'linear-gradient(to right,#bfdbfe,#1d4ed8)' }} />
-          Associados (azul)
+        <span className="flex items-center gap-2">
+          <span className="inline-block w-8 h-2 rounded-full" style={{ background: 'linear-gradient(to right,#bfdbfe,#1e3a8a)' }} />
+          Associados — azul (mais escuro = mais)
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block w-8 h-3 rounded-sm" style={{ background: 'linear-gradient(to right,#fed7aa,#ea580c)' }} />
-          Não associados (laranja)
+        <span className="flex items-center gap-2">
+          <span className="inline-block w-8 h-2 rounded-full" style={{ background: 'linear-gradient(to right,#fed7aa,#9a3412)' }} />
+          Não associados — laranja (mais escuro = mais)
         </span>
-        <span className="text-gray-400">Intensidade = quantidade de moradores na rua</span>
       </div>
     </div>
   )
