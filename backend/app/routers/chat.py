@@ -151,9 +151,9 @@ async def send_message(
     for (uid,) in other_users:
         uid_str = str(uid)
         title = f"💬 {sender_name} mencionou você" if uid_str in mentioned else f"💬 {sender_name}"
-        asyncio.create_task(create_notification(
+        await create_notification(
             str(current.association_id), uid_str, title, preview, "chat",
-        ))
+        )
 
     return {
         "id": str(row[0]),

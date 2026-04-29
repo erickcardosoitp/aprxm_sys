@@ -221,6 +221,14 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
+      {pushPerm === 'default' && (
+        <div className="bg-blue-600 text-white text-xs flex items-center justify-between px-4 py-2 gap-2">
+          <span>Ative as notificações para receber alertas em tempo real.</span>
+          <button onClick={enablePushNotifications} className="font-semibold bg-white text-blue-600 px-3 py-1 rounded-lg shrink-0">
+            Ativar
+          </button>
+        </div>
+      )}
       <header className="bg-[#1a3f6f] text-white flex items-center justify-between px-4 py-3 shadow"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
         <div className="flex flex-col leading-tight min-w-0 max-w-[55vw]">
