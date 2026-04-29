@@ -121,14 +121,38 @@ export function AppShell() {
     setUnreadCount(prev => Math.max(0, prev - 1))
   }
 
-  // Service Worker registration (without requesting permission automatically)
   useEffect(() => {
     if (!role) return
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       setPushPerm('unsupported'); return
     }
-    if ('Notification' in window) setPushPerm(Notification.permission)
+    const perm = 'Notification' in window ? Notification.permission : 'default'
+    setPushPerm(perm)
     navigator.serviceWorker.register('/sw.js').catch(() => {})
+    // auto re-subscribe if already granted (ensures fresh subscription after key rotation)
+    if (perm === 'granted') {
+      navigator.serviceWorker.ready.then(async reg => {
+        try {
+          const existing = await reg.pushManager.getSubscription()
+          const vapidRes = await api.get<{ key: string }>('/notifications/vapid-public-key')
+          const newKey = vapidRes.data.key
+          if (existing) {
+            // check if subscription matches current VAPID key
+            const existingKey = existing.options?.applicationServerKey
+            const expectedKey = _urlBase64ToUint8Array(newKey)
+            const match = existingKey && new Uint8Array(existingKey as ArrayBuffer).join() === expectedKey.join()
+            if (match) return // already subscribed with correct key
+            await existing.unsubscribe()
+          }
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: _urlBase64ToUint8Array(newKey) as unknown as BufferSource,
+          })
+          const j = sub.toJSON()
+          await api.post('/notifications/subscribe', { endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth })
+        } catch { /* silent */ }
+      })
+    }
   }, [role])
 
   const enablePushNotifications = async () => {
@@ -138,6 +162,9 @@ export function AppShell() {
       setPushPerm(perm)
       if (perm !== 'granted') return
       const reg = await navigator.serviceWorker.ready
+      // unsubscribe old subscription before re-subscribing with current VAPID key
+      const existing = await reg.pushManager.getSubscription()
+      if (existing) await existing.unsubscribe()
       const vapidRes = await api.get<{ key: string }>('/notifications/vapid-public-key')
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
@@ -149,7 +176,8 @@ export function AppShell() {
         p256dh: j.keys?.p256dh,
         auth: j.keys?.auth,
       })
-    } catch { /* silent */ }
+      setPushPerm('granted')
+    } catch (e) { console.error('Push subscribe error:', e) }
   }
 
   // Close notif dropdown on outside click
