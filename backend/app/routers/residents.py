@@ -367,6 +367,36 @@ async def get_resident_by_cpf(
     return _serialize(resident)
 
 
+@router.get("/map-data", summary="Dados de moradores por rua para mapa de calor")
+async def map_data(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from sqlalchemy import text as sa_text
+    rows = (await session.execute(sa_text("""
+        SELECT
+            address_street,
+            COALESCE(address_city, 'Rio de Janeiro') AS city,
+            COALESCE(address_state, 'RJ') AS state,
+            MAX(address_cep) AS cep,
+            SUM(CASE WHEN type = 'member' THEN 1 ELSE 0 END)::int AS members,
+            SUM(CASE WHEN type = 'guest'  THEN 1 ELSE 0 END)::int AS guests
+        FROM residents
+        WHERE association_id = :aid
+          AND address_street IS NOT NULL
+          AND address_street <> ''
+          AND status = 'active'
+        GROUP BY address_street, address_city, address_state
+        ORDER BY (SUM(CASE WHEN type = 'member' THEN 1 ELSE 0 END) + SUM(CASE WHEN type = 'guest' THEN 1 ELSE 0 END)) DESC
+        LIMIT 60
+    """), {"aid": str(current.association_id)})).fetchall()
+    return [
+        {"street": r[0], "city": r[1], "state": r[2], "cep": r[3] or "",
+         "members": r[4], "guests": r[5]}
+        for r in rows
+    ]
+
+
 @router.get("/{resident_id}", summary="Detalhe do morador")
 async def get_resident(
     resident_id: UUID,
@@ -611,31 +641,3 @@ async def reject_update_request(
     return {"ok": True}
 
 
-@router.get("/map-data", summary="Dados de moradores por rua para mapa de calor")
-async def map_data(
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    from sqlalchemy import text as sa_text
-    rows = (await session.execute(sa_text("""
-        SELECT
-            address_street,
-            COALESCE(address_city, 'Rio de Janeiro') AS city,
-            COALESCE(address_state, 'RJ') AS state,
-            MAX(address_cep) AS cep,
-            SUM(CASE WHEN type = 'member' THEN 1 ELSE 0 END)::int AS members,
-            SUM(CASE WHEN type = 'guest'  THEN 1 ELSE 0 END)::int AS guests
-        FROM residents
-        WHERE association_id = :aid
-          AND address_street IS NOT NULL
-          AND address_street <> ''
-          AND status = 'active'
-        GROUP BY address_street, address_city, address_state
-        ORDER BY (SUM(CASE WHEN type = 'member' THEN 1 ELSE 0 END) + SUM(CASE WHEN type = 'guest' THEN 1 ELSE 0 END)) DESC
-        LIMIT 60
-    """), {"aid": str(current.association_id)})).fetchall()
-    return [
-        {"street": r[0], "city": r[1], "state": r[2], "cep": r[3] or "",
-         "members": r[4], "guests": r[5]}
-        for r in rows
-    ]
