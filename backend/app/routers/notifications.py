@@ -33,10 +33,12 @@ class NotificationIn(BaseModel):
 # ─── Push helpers ─────────────────────────────────────────────────────────────
 
 def _send_push_sync(endpoint: str, p256dh: str, auth: str, payload: dict) -> None:
+    import logging
     try:
         from pywebpush import webpush, WebPushException
         s = get_settings()
         if not s.vapid_private_key:
+            logging.error("PUSH: vapid_private_key não configurado")
             return
         webpush(
             subscription_info={"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth}},
@@ -44,8 +46,9 @@ def _send_push_sync(endpoint: str, p256dh: str, auth: str, payload: dict) -> Non
             vapid_private_key=s.vapid_private_key,
             vapid_claims={"sub": s.vapid_claims_sub},
         )
-    except Exception:
-        pass
+        logging.info("PUSH: enviado com sucesso para %s", endpoint[:50])
+    except Exception as e:
+        logging.error("PUSH ERROR: %s", str(e))
 
 
 async def send_push_to_user(user_id: str, title: str, body: str, data: dict | None = None) -> None:
