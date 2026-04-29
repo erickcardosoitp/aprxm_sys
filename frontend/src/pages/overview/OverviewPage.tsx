@@ -651,9 +651,35 @@ function OverviewTab() {
 
 interface StreetData { street: string; city: string; state: string; cep: string; members: number; guests: number }
 
+type HeatView = 'associados' | 'nao_associados' | 'total'
+
+function heatColor(ratio: number, view: HeatView): string {
+  const t = Math.max(0, Math.min(1, ratio))
+  if (view === 'associados') {
+    // white → blue
+    const r = Math.round(255 - t * (255 - 30))
+    const g = Math.round(255 - t * (255 - 97))
+    const b = Math.round(255 - t * (255 - 220))
+    return `rgb(${r},${g},${b})`
+  }
+  if (view === 'nao_associados') {
+    // white → orange
+    const r = Math.round(255 - t * (255 - 234))
+    const g = Math.round(255 - t * (255 - 88))
+    const b = Math.round(255 - t * (255 - 12))
+    return `rgb(${r},${g},${b})`
+  }
+  // total: white → indigo
+  const r = Math.round(255 - t * (255 - 67))
+  const g = Math.round(255 - t * (255 - 56))
+  const b = Math.round(255 - t * (255 - 202))
+  return `rgb(${r},${g},${b})`
+}
+
 function MapTab() {
   const [streets, setStreets] = useState<StreetData[]>([])
   const [loading, setLoading] = useState(true)
+  const [view, setView] = useState<HeatView>('associados')
 
   useEffect(() => {
     api.get('/residents/map-data')
@@ -664,10 +690,16 @@ function MapTab() {
 
   const totalMembers = streets.reduce((a, s) => a + s.members, 0)
   const totalGuests  = streets.reduce((a, s) => a + s.guests, 0)
+  const maxMembers   = Math.max(...streets.map(s => s.members), 1)
+  const maxGuests    = Math.max(...streets.map(s => s.guests), 1)
   const maxTotal     = Math.max(...streets.map(s => s.members + s.guests), 1)
 
   if (loading) return <div className="text-center text-sm text-gray-400 py-16">Carregando…</div>
   if (!streets.length) return <div className="text-center text-sm text-gray-400 py-16">Nenhum dado de endereço cadastrado.</div>
+
+  const getValue = (s: StreetData) => view === 'associados' ? s.members : view === 'nao_associados' ? s.guests : s.members + s.guests
+  const getMax   = () => view === 'associados' ? maxMembers : view === 'nao_associados' ? maxGuests : maxTotal
+  const sorted   = [...streets].sort((a, b) => getValue(b) - getValue(a))
 
   return (
     <div className="flex flex-col gap-4">
@@ -681,68 +713,76 @@ function MapTab() {
           <div className="text-2xl font-bold text-orange-600">{totalGuests}</div>
           <div className="text-xs text-orange-500 mt-0.5">Não associados</div>
         </div>
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
-          <div className="text-2xl font-bold text-gray-700">{totalMembers + totalGuests}</div>
-          <div className="text-xs text-gray-500 mt-0.5">Total</div>
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-indigo-700">{totalMembers + totalGuests}</div>
+          <div className="text-xs text-indigo-500 mt-0.5">Total</div>
         </div>
       </div>
 
-      {/* Barra geral */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-        <div className="text-xs text-gray-500 mb-2 font-medium">Distribuição geral</div>
-        <div className="flex rounded-full overflow-hidden h-5">
-          <div
-            className="bg-blue-500 flex items-center justify-center text-[10px] text-white font-bold transition-all"
-            style={{ width: `${(totalMembers / (totalMembers + totalGuests)) * 100}%` }}
-          >
-            {Math.round((totalMembers / (totalMembers + totalGuests)) * 100)}%
-          </div>
-          <div
-            className="bg-orange-400 flex items-center justify-center text-[10px] text-white font-bold transition-all"
-            style={{ width: `${(totalGuests / (totalMembers + totalGuests)) * 100}%` }}
-          >
-            {Math.round((totalGuests / (totalMembers + totalGuests)) * 100)}%
-          </div>
-        </div>
-        <div className="flex gap-4 mt-2 text-[11px] text-gray-500">
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Associados</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" /> Não associados</span>
-        </div>
+      {/* Seletor de visão */}
+      <div className="flex bg-gray-100 rounded-xl p-1 gap-1 self-start">
+        {([['associados','Associados'],['nao_associados','Não assoc.'],['total','Total']] as [HeatView,string][]).map(([v, label]) => (
+          <button key={v} onClick={() => setView(v)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${view === v ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Barras por rua */}
+      {/* Mapa de calor por rua */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 text-xs font-semibold text-gray-600 uppercase tracking-wide">
-          Por rua ({streets.length})
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Mapa de calor — por rua</span>
+          <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+            <span>menos</span>
+            {[0.1,0.3,0.5,0.7,0.9].map(t => (
+              <span key={t} className="w-4 h-4 rounded-sm inline-block border border-gray-200"
+                style={{ background: heatColor(t, view) }} />
+            ))}
+            <span>mais</span>
+          </div>
         </div>
-        <div className="divide-y divide-gray-50">
-          {streets.map(s => {
-            const total = s.members + s.guests
-            const pctM  = total > 0 ? (s.members / total) * 100 : 0
-            const pctG  = total > 0 ? (s.guests  / total) * 100 : 0
-            const barW  = (total / maxTotal) * 100
+        <div className="grid gap-px p-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+          {sorted.map(s => {
+            const val   = getValue(s)
+            const ratio = val / getMax()
+            const bg    = heatColor(ratio, view)
+            const dark  = ratio > 0.5
             return (
-              <div key={s.street} className="px-4 py-2.5">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-medium text-gray-700 truncate max-w-[60%]">{s.street}</span>
-                  <div className="flex items-center gap-2 text-[11px] shrink-0">
-                    {s.members > 0 && <span className="text-blue-700 font-semibold">{s.members} assoc.</span>}
-                    {s.guests  > 0 && <span className="text-orange-600 font-semibold">{s.guests} n-assoc.</span>}
-                  </div>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden" style={{ maxWidth: '100%' }}>
-                  <div className="flex h-3 rounded-full overflow-hidden" style={{ width: `${barW}%` }}>
-                    {s.members > 0 && (
-                      <div className="bg-blue-500 h-full" style={{ width: `${pctM}%` }} title={`${s.members} associados`} />
-                    )}
-                    {s.guests > 0 && (
-                      <div className="bg-orange-400 h-full" style={{ width: `${pctG}%` }} title={`${s.guests} não associados`} />
-                    )}
-                  </div>
+              <div key={s.street} className="rounded-lg p-2.5 flex flex-col gap-1 border border-gray-100 cursor-default"
+                style={{ background: bg }}
+                title={`${s.street}\nAssociados: ${s.members}\nNão assoc.: ${s.guests}`}>
+                <span className={`text-[11px] font-semibold leading-tight line-clamp-2 ${dark ? 'text-white' : 'text-gray-800'}`}>
+                  {s.street}
+                </span>
+                <div className={`flex gap-1.5 text-[10px] font-medium ${dark ? 'text-white/80' : 'text-gray-500'}`}>
+                  <span>🔵 {s.members}</span>
+                  <span>🟠 {s.guests}</span>
                 </div>
               </div>
             )
           })}
+        </div>
+      </div>
+
+      {/* Barra proporcional geral */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <div className="text-xs text-gray-500 mb-2 font-medium">Distribuição geral</div>
+        {(totalMembers + totalGuests) > 0 && (
+          <div className="flex rounded-full overflow-hidden h-5">
+            <div className="bg-blue-500 flex items-center justify-center text-[10px] text-white font-bold"
+              style={{ width: `${(totalMembers / (totalMembers + totalGuests)) * 100}%` }}>
+              {Math.round((totalMembers / (totalMembers + totalGuests)) * 100)}%
+            </div>
+            <div className="bg-orange-400 flex items-center justify-center text-[10px] text-white font-bold"
+              style={{ width: `${(totalGuests / (totalMembers + totalGuests)) * 100}%` }}>
+              {Math.round((totalGuests / (totalMembers + totalGuests)) * 100)}%
+            </div>
+          </div>
+        )}
+        <div className="flex gap-4 mt-2 text-[11px] text-gray-500">
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Associados</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" /> Não associados</span>
         </div>
       </div>
     </div>

@@ -1068,8 +1068,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                           Meses referentes <span className="text-[#26619c] font-normal">({mensalidadeMonths.length}x)</span>
                         </label>
                         <div className="flex flex-wrap gap-2">
-                          {Array.from({ length: 14 }, (_, i) => {
-                            const d = new Date(now.getFullYear(), now.getMonth() - 2 + i, 1)
+                          {Array.from({ length: 15 }, (_, i) => {
+                            const d = new Date(now.getFullYear(), now.getMonth() - 3 + i, 1)
                             const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
                             const selected = mensalidadeMonths.includes(ym)
                             return (
