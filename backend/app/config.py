@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     webauthn_origin: str = "http://localhost:5173"
 
     # Web Push (VAPID)
-    vapid_public_key: str = "BLO14dFm05hU6anlXTh0SyhF2PrEg9-YJZlOz1w7ahTj-6LgmYoGugyozWZwxtsgeFoutdQ01J3Xsgf_ow00acc"
+    vapid_public_key: str = "BOcNCRtISdpFA9m4hvp2vacUuutGUsSTcBAERRnoCBKcjxSGzohZb7zDcwFW18JmbumwZrlEpg0cI0VcZfVSU_8"
     vapid_private_key: str = ""
     vapid_claims_sub: str = "mailto:erickcardoso@institutotiapretinha.org"
 
