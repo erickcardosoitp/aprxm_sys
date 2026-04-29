@@ -538,25 +538,6 @@ function DependentForm({ onSave, onCancel }: {
     } catch { /* silent */ }
   }
 
-  const [cepLoading, setCepLoading] = useState(false)
-  const lookupCep = async () => {
-    const cep = form.address_cep.replace(/\D/g, '')
-    if (cep.length !== 8) return
-    setCepLoading(true)
-    try {
-      const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
-      const data = await res.json()
-      if (data.erro) { toast.error('CEP não encontrado.'); return }
-      setForm(f => ({
-        ...f,
-        address_street: data.logradouro || f.address_street,
-        address_city: data.localidade || f.address_city,
-        address_state: data.uf || f.address_state,
-      }))
-    } catch { toast.error('Erro ao consultar CEP.') }
-    finally { setCepLoading(false) }
-  }
-
   const handleSubmit = async () => {
     if (!form.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
     if (!form.responsible_id) { toast.error('Selecione o associado responsável.'); return }
@@ -640,15 +621,8 @@ function DependentForm({ onSave, onCancel }: {
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">CEP</label>
-              <div className="flex gap-1">
-                <input value={form.address_cep} onChange={e => set('address_cep', e.target.value)}
-                  onBlur={lookupCep} placeholder="00000-000"
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
-                <button type="button" onClick={lookupCep} disabled={cepLoading}
-                  className="px-2 py-2 bg-[#26619c] text-white rounded-lg text-sm hover:bg-[#1a4f87] disabled:opacity-50">
-                  {cepLoading ? '…' : <Search className="w-3.5 h-3.5" />}
-                </button>
-              </div>
+              <input value={form.address_cep} onChange={e => set('address_cep', e.target.value)} placeholder="00000-000"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Número</label>
