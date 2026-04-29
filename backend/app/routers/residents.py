@@ -313,7 +313,7 @@ async def report_by_street(
             COUNT(*) FILTER (WHERE status = 'active') AS active,
             COUNT(*) FILTER (WHERE status = 'inactive') AS inactive,
             COUNT(*) FILTER (WHERE cpf IS NOT NULL AND cpf <> '') AS with_cpf,
-            COUNT(*) FILTER (WHERE phone IS NOT NULL AND phone <> '') AS with_phone
+            COUNT(*) FILTER (WHERE phone_primary IS NOT NULL AND phone_primary <> '') AS with_phone
         FROM residents
         WHERE association_id = :aid
         GROUP BY 1
@@ -622,7 +622,7 @@ async def map_data(
             address_street,
             COALESCE(address_city, 'Rio de Janeiro') AS city,
             COALESCE(address_state, 'RJ') AS state,
-            MODE() WITHIN GROUP (ORDER BY address_cep) AS cep,
+            MAX(address_cep) AS cep,
             SUM(CASE WHEN type = 'member' THEN 1 ELSE 0 END)::int AS members,
             SUM(CASE WHEN type = 'guest'  THEN 1 ELSE 0 END)::int AS guests
         FROM residents
@@ -631,7 +631,7 @@ async def map_data(
           AND address_street <> ''
           AND status = 'active'
         GROUP BY address_street, address_city, address_state
-        ORDER BY (members + guests) DESC
+        ORDER BY (SUM(CASE WHEN type = 'member' THEN 1 ELSE 0 END) + SUM(CASE WHEN type = 'guest' THEN 1 ELSE 0 END)) DESC
         LIMIT 60
     """), {"aid": str(current.association_id)})).fetchall()
     return [

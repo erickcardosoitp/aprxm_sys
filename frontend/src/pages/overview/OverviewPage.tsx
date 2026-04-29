@@ -686,7 +686,10 @@ function MapTab() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.get('/residents/map-data').then(r => { setStreets(r.data); setLoading(false) })
+    api.get('/residents/map-data')
+      .then(r => setStreets(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
