@@ -119,17 +119,25 @@ async def send_message(
         row = result.fetchone()
         await session.commit()
 
-    # notify mentioned users
-    if body.mention_ids:
-        import asyncio
-        from app.routers.notifications import create_notification
-        preview = (body.content or "")[:100]
-        for uid in body.mention_ids:
-            asyncio.create_task(create_notification(
-                str(current.association_id), uid,
-                f"💬 {sender_name} mencionou você",
-                preview, "mention",
-            ))
+    import asyncio
+    from app.routers.notifications import create_notification
+
+    preview = (body.content or "")[:100]
+
+    # notify all other active users in the association
+    async with AsyncSessionLocal() as ns:
+        other_users = (await ns.execute(text("""
+            SELECT id FROM users
+            WHERE association_id = :assoc AND is_active = true AND id != :sender
+        """), {"assoc": str(current.association_id), "sender": str(current.user_id)})).fetchall()
+
+    mentioned = set(body.mention_ids)
+    for (uid,) in other_users:
+        uid_str = str(uid)
+        title = f"💬 {sender_name} mencionou você" if uid_str in mentioned else f"💬 {sender_name}"
+        asyncio.create_task(create_notification(
+            str(current.association_id), uid_str, title, preview, "chat",
+        ))
 
     return {
         "id": str(row[0]),
