@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp, TrendingDown, DollarSign, AlertCircle } from 'lucide-react'
-import 'leaflet/dist/leaflet.css'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LabelList,
@@ -652,37 +651,8 @@ function OverviewTab() {
 
 interface StreetData { street: string; city: string; state: string; cep: string; members: number; guests: number }
 
-const MADUREIRA = { lat: -22.8756, lng: -43.3278, zoom: 15 }
-const GEO_CACHE_PREFIX = 'aprxm_geo_v2:'
-
-async function geocodeStreet(street: string, cep: string): Promise<[number, number] | null> {
-  const key = GEO_CACHE_PREFIX + street + ':' + cep
-  const cached = localStorage.getItem(key)
-  if (cached) {
-    const p = JSON.parse(cached)
-    return p ? [p[0], p[1]] : null
-  }
-  const query = cep
-    ? `${street}, ${cep}, Rio de Janeiro, RJ, Brasil`
-    : `${street}, Madureira, Rio de Janeiro, RJ, Brasil`
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=br`,
-      { headers: { 'User-Agent': 'APROXIMA/1.0 (erickcardoso@institutotiapretinha.org)' } }
-    )
-    const data = await res.json()
-    if (!data.length) { localStorage.setItem(key, 'null'); return null }
-    const coord: [number, number] = [parseFloat(data[0].lat), parseFloat(data[0].lon)]
-    localStorage.setItem(key, JSON.stringify(coord))
-    return coord
-  } catch { return null }
-}
-
 function MapTab() {
-  const mapRef = useRef<HTMLDivElement>(null)
-  const mapInstance = useRef<any>(null)
   const [streets, setStreets] = useState<StreetData[]>([])
-  const [geocoded, setGeocoded] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -692,128 +662,89 @@ function MapTab() {
       .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => {
-    if (!mapRef.current || streets.length === 0) return
-    if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null }
-
-    import('leaflet').then(({ default: L }) => {
-      const map = L.map(mapRef.current!, { zoomControl: true })
-        .setView([MADUREIRA.lat, MADUREIRA.lng], MADUREIRA.zoom)
-      mapInstance.current = map
-
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap',
-        maxZoom: 19,
-      }).addTo(map)
-
-      const maxTotal = Math.max(...streets.map(s => s.members + s.guests), 1)
-
-      const processStreets = async () => {
-        for (let i = 0; i < streets.length; i++) {
-          const s = streets[i]
-          const key = GEO_CACHE_PREFIX + s.street + ':' + s.cep
-          const isCached = !!localStorage.getItem(key)
-          if (!isCached && i > 0) await new Promise(r => setTimeout(r, 1100))
-
-          const coord = await geocodeStreet(s.street, s.cep)
-          if (!coord || !mapInstance.current) continue
-
-          const [lat, lng] = coord
-          const baseR = 15 + Math.sqrt((s.members + s.guests) / maxTotal) * 35
-
-          if (s.members > 0) {
-            L.circle([lat, lng - 0.0001], {
-              radius: baseR + Math.sqrt(s.members) * 4,
-              color: '#1d4ed8', weight: 1.5,
-              fillColor: '#3b82f6', fillOpacity: 0.6,
-            })
-              .bindTooltip(`<b>${s.street}</b><br/>Associados: <b>${s.members}</b>`, { permanent: false })
-              .addTo(map)
-
-            L.marker([lat, lng - 0.0001], {
-              icon: L.divIcon({
-                className: '',
-                html: `<div style="background:#1d4ed8;color:#fff;border-radius:9999px;padding:1px 5px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.4)">${s.members}</div>`,
-                iconAnchor: [12, 12],
-              }),
-            }).addTo(map)
-          }
-
-          if (s.guests > 0) {
-            L.circle([lat + 0.0001, lng + 0.0001], {
-              radius: baseR + Math.sqrt(s.guests) * 4,
-              color: '#c2410c', weight: 1.5,
-              fillColor: '#f97316', fillOpacity: 0.55,
-            })
-              .bindTooltip(`<b>${s.street}</b><br/>Visitantes: <b>${s.guests}</b>`, { permanent: false })
-              .addTo(map)
-
-            L.marker([lat + 0.0001, lng + 0.0001], {
-              icon: L.divIcon({
-                className: '',
-                html: `<div style="background:#c2410c;color:#fff;border-radius:9999px;padding:1px 5px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.4)">${s.guests}</div>`,
-                iconAnchor: [12, 12],
-              }),
-            }).addTo(map)
-          }
-
-          setGeocoded(i + 1)
-        }
-      }
-
-      processStreets()
-    })
-
-    return () => { mapInstance.current?.remove(); mapInstance.current = null }
-  }, [streets])
-
   const totalMembers = streets.reduce((a, s) => a + s.members, 0)
   const totalGuests  = streets.reduce((a, s) => a + s.guests, 0)
+  const maxTotal     = Math.max(...streets.map(s => s.members + s.guests), 1)
+
+  if (loading) return <div className="text-center text-sm text-gray-400 py-16">Carregando…</div>
+  if (!streets.length) return <div className="text-center text-sm text-gray-400 py-16">Nenhum dado de endereço cadastrado.</div>
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5">
-          <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" />
-          <span className="text-xs font-medium text-blue-800">Associados: <b>{totalMembers}</b></span>
+      {/* Totais */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-blue-700">{totalMembers}</div>
+          <div className="text-xs text-blue-600 mt-0.5">Associados</div>
         </div>
-        <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-1.5">
-          <span className="w-3 h-3 rounded-full bg-orange-500 inline-block" />
-          <span className="text-xs font-medium text-orange-800">Visitantes: <b>{totalGuests}</b></span>
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-orange-600">{totalGuests}</div>
+          <div className="text-xs text-orange-500 mt-0.5">Não associados</div>
         </div>
-        {!loading && streets.length > 0 && geocoded < streets.length && (
-          <span className="text-xs text-gray-400">Geocodificando {geocoded}/{streets.length} ruas…</span>
-        )}
-        {loading && <span className="text-xs text-gray-400">Carregando dados…</span>}
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-gray-700">{totalMembers + totalGuests}</div>
+          <div className="text-xs text-gray-500 mt-0.5">Total</div>
+        </div>
       </div>
 
-      <div ref={mapRef} className="rounded-xl overflow-hidden border border-gray-200 shadow-sm"
-        style={{ height: '520px', background: '#e5e7eb' }} />
-
-      {streets.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full text-xs">
-            <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
-              <tr>
-                <th className="px-3 py-2 text-left">Rua</th>
-                <th className="px-3 py-2 text-center text-blue-600">Assoc.</th>
-                <th className="px-3 py-2 text-center text-orange-500">Visit.</th>
-                <th className="px-3 py-2 text-center">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {streets.map(s => (
-                <tr key={s.street} className="hover:bg-gray-50">
-                  <td className="px-3 py-1.5 font-medium text-gray-700">{s.street}</td>
-                  <td className="px-3 py-1.5 text-center text-blue-700 font-semibold">{s.members || '—'}</td>
-                  <td className="px-3 py-1.5 text-center text-orange-600 font-semibold">{s.guests || '—'}</td>
-                  <td className="px-3 py-1.5 text-center text-gray-600 font-bold">{s.members + s.guests}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Barra geral */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <div className="text-xs text-gray-500 mb-2 font-medium">Distribuição geral</div>
+        <div className="flex rounded-full overflow-hidden h-5">
+          <div
+            className="bg-blue-500 flex items-center justify-center text-[10px] text-white font-bold transition-all"
+            style={{ width: `${(totalMembers / (totalMembers + totalGuests)) * 100}%` }}
+          >
+            {Math.round((totalMembers / (totalMembers + totalGuests)) * 100)}%
+          </div>
+          <div
+            className="bg-orange-400 flex items-center justify-center text-[10px] text-white font-bold transition-all"
+            style={{ width: `${(totalGuests / (totalMembers + totalGuests)) * 100}%` }}
+          >
+            {Math.round((totalGuests / (totalMembers + totalGuests)) * 100)}%
+          </div>
         </div>
-      )}
+        <div className="flex gap-4 mt-2 text-[11px] text-gray-500">
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Associados</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" /> Não associados</span>
+        </div>
+      </div>
+
+      {/* Barras por rua */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+          Por rua ({streets.length})
+        </div>
+        <div className="divide-y divide-gray-50">
+          {streets.map(s => {
+            const total = s.members + s.guests
+            const pctM  = total > 0 ? (s.members / total) * 100 : 0
+            const pctG  = total > 0 ? (s.guests  / total) * 100 : 0
+            const barW  = (total / maxTotal) * 100
+            return (
+              <div key={s.street} className="px-4 py-2.5">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-gray-700 truncate max-w-[60%]">{s.street}</span>
+                  <div className="flex items-center gap-2 text-[11px] shrink-0">
+                    {s.members > 0 && <span className="text-blue-700 font-semibold">{s.members} assoc.</span>}
+                    {s.guests  > 0 && <span className="text-orange-600 font-semibold">{s.guests} n-assoc.</span>}
+                  </div>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden" style={{ maxWidth: '100%' }}>
+                  <div className="flex h-3 rounded-full overflow-hidden" style={{ width: `${barW}%` }}>
+                    {s.members > 0 && (
+                      <div className="bg-blue-500 h-full" style={{ width: `${pctM}%` }} title={`${s.members} associados`} />
+                    )}
+                    {s.guests > 0 && (
+                      <div className="bg-orange-400 h-full" style={{ width: `${pctG}%` }} title={`${s.guests} não associados`} />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
