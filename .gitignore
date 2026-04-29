@@ -33,3 +33,4 @@ backend/alembic/versions/*.pyc
 *.log
 
 .vercel
+backend/.env.production
