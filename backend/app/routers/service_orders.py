@@ -97,13 +97,13 @@ async def create_so(
         **body.model_dump(),
     )
     if body.assigned_to and str(body.assigned_to) != str(current.user_id):
-        _asyncio.create_task(_notif(
+        await _notif(
             str(current.association_id), str(body.assigned_to),
             f"📋 OS #{so.number} atribuída a você",
             body.title,
             "task",
             {"url": f"/service-orders/{so.id}"},
-        ))
+        )
         assigned_email = (await session.execute(
             text("SELECT email FROM users WHERE id = :id"), {"id": str(body.assigned_to)}
         )).scalar()
@@ -199,10 +199,10 @@ async def add_comment(
         notif_data = {"url": f"/service-orders/{so_id}"}
         targets = {str(creator_id), str(assigned_id) if assigned_id else None} - {None, str(current.user_id)}
         for uid in targets:
-            _asyncio.create_task(_notif(
+            await _notif(
                 str(current.association_id), uid,
                 notif_title, preview, "comment", notif_data,
-            ))
+            )
 
         target_ids = list(targets)
         if target_ids:
@@ -463,12 +463,12 @@ async def create_task(
     if body.assigned_to:
         import asyncio
         from app.routers.notifications import create_notification
-        asyncio.create_task(create_notification(
+        await create_notification(
             str(current.association_id), str(body.assigned_to),
             "📋 Nova tarefa atribuída",
             f'Você foi atribuído(a) à tarefa "{body.title}"',
             "task",
-        ))
+        )
 
     return {"id": str(row[0]), "created_at": str(row[1])}
 

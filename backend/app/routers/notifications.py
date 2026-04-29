@@ -79,7 +79,7 @@ async def create_notification(
             await s.__aenter__()
         await s.execute(text("""
             INSERT INTO notifications (association_id, user_id, title, body, type, data)
-            VALUES (:aid, :uid, :title, :body, :type, :data::jsonb)
+            VALUES (:aid, :uid, :title, :body, :type, CAST(:data AS jsonb))
         """), {
             "aid": association_id, "uid": user_id,
             "title": title, "body": body, "type": notif_type,
@@ -91,7 +91,7 @@ async def create_notification(
         if not use_session:
             await s.__aexit__(None, None, None)
 
-    asyncio.create_task(send_push_to_user(user_id, title, body, data))
+    await send_push_to_user(user_id, title, body, data)
 
 
 # ─── Subscription endpoints ───────────────────────────────────────────────────
