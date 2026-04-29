@@ -250,14 +250,14 @@ export function AppShell() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       {(pushPerm === 'default' || pushPerm === 'denied') && (
-        <div className="bg-blue-600 text-white text-xs flex items-center justify-between px-4 py-2 gap-2">
+        <div className="bg-blue-600 text-white text-xs flex flex-col items-center gap-1.5 px-4 py-2.5 text-center" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))' }}>
           {pushPerm === 'denied' ? (
             <span>Notificações bloqueadas. Habilite nas configurações do navegador e recarregue.</span>
           ) : (
             <>
               <span>Ative as notificações para receber alertas em tempo real.</span>
-              <button onClick={enablePushNotifications} className="font-semibold bg-white text-blue-600 px-3 py-1 rounded-lg shrink-0">
-                Ativar
+              <button onClick={enablePushNotifications} className="font-semibold bg-white text-blue-600 px-4 py-1.5 rounded-lg w-full max-w-xs">
+                Ativar notificações
               </button>
             </>
           )}
