@@ -32,29 +32,25 @@ class NotificationIn(BaseModel):
 
 # ─── Push helpers ─────────────────────────────────────────────────────────────
 
-def _raw_b64_to_pem(raw_b64: str) -> str:
-    import base64
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.hazmat.backends import default_backend
-    from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
-    raw = base64.urlsafe_b64decode(raw_b64 + "==")
-    key = ec.derive_private_key(int.from_bytes(raw, "big"), ec.SECP256R1(), default_backend())
-    return key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()).decode()
-
-
 def _send_push_sync(endpoint: str, p256dh: str, auth: str, payload: dict) -> None:
     import logging
+    import base64
     try:
         from pywebpush import webpush, WebPushException
+        from py_vapid import Vapid
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.backends import default_backend
         s = get_settings()
         if not s.vapid_private_key:
             logging.error("PUSH: vapid_private_key não configurado")
             return
-        pem_key = _raw_b64_to_pem(s.vapid_private_key)
+        raw = base64.urlsafe_b64decode(s.vapid_private_key + "==")
+        ec_key = ec.derive_private_key(int.from_bytes(raw, "big"), ec.SECP256R1(), default_backend())
+        vapid = Vapid(private_key=ec_key)
         webpush(
             subscription_info={"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth}},
             data=json.dumps(payload),
-            vapid_private_key=pem_key,
+            vapid_private_key=vapid,
             vapid_claims={"sub": s.vapid_claims_sub},
         )
         logging.info("PUSH: enviado com sucesso para %s", endpoint[:50])
