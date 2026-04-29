@@ -39,7 +39,7 @@ def _raw_b64_to_pem(raw_b64: str) -> str:
     from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
     raw = base64.urlsafe_b64decode(raw_b64 + "==")
     key = ec.derive_private_key(int.from_bytes(raw, "big"), ec.SECP256R1(), default_backend())
-    return key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
+    return key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()).decode()
 
 
 def _send_push_sync(endpoint: str, p256dh: str, auth: str, payload: dict) -> None:
