@@ -654,49 +654,48 @@ interface StreetData { street: string; city: string; state: string; cep: string;
 
 const GEO_CACHE = 'aprxm_geo_v4:'
 
-// Retorna array de coordenadas da rua via Overpass (geometria real) ou ponto via Nominatim
+// Retorna geometria da rua via Nominatim polygon_geojson (sem CORS)
 async function getStreetGeometry(street: string): Promise<[number, number][] | null> {
   const key = GEO_CACHE + street
   const cached = localStorage.getItem(key)
   if (cached) return cached === 'null' ? null : JSON.parse(cached)
 
-  // Overpass: busca a way (rua) por nome em Madureira
-  try {
-    const query = `[out:json][timeout:10];
-area["name"="Madureira"]->.a;
-way["name"~"${street.replace(/"/g, '')}",i](area.a);
-out geom;`
-    const r = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST', body: query,
-    })
-    const d = await r.json()
-    if (d.elements?.length) {
-      // Pega o primeiro way com mais nós
-      const best = d.elements.reduce((a: any, b: any) =>
-        (b.geometry?.length ?? 0) > (a.geometry?.length ?? 0) ? b : a
+  const NOM = 'https://nominatim.openstreetmap.org/search'
+  const headers = { 'User-Agent': 'APROXIMA/1.0 (institutotiapretinha.org)' }
+
+  const queries = [
+    `${street}, Madureira, Rio de Janeiro, RJ, Brasil`,
+    `${street}, Rio de Janeiro, Brasil`,
+  ]
+
+  for (const q of queries) {
+    try {
+      const r = await fetch(
+        `${NOM}?q=${encodeURIComponent(q)}&format=json&limit=3&polygon_geojson=1&countrycodes=br`,
+        { headers }
       )
-      if (best.geometry?.length >= 2) {
-        const coords: [number, number][] = best.geometry.map((g: any) => [g.lat, g.lon])
+      const items = await r.json()
+      // Prefere resultado com geometria do tipo LineString (rua real)
+      const withLine = items.find((x: any) => x.geojson?.type === 'LineString')
+      const withMulti = items.find((x: any) => x.geojson?.type === 'MultiLineString')
+      const best = withLine ?? withMulti ?? items[0]
+      if (!best) continue
+
+      let coords: [number, number][] | null = null
+      if (best.geojson?.type === 'LineString') {
+        coords = best.geojson.coordinates.map(([lng, lat]: number[]) => [lat, lng])
+      } else if (best.geojson?.type === 'MultiLineString') {
+        coords = best.geojson.coordinates.flat().map(([lng, lat]: number[]) => [lat, lng])
+      } else {
+        coords = [[parseFloat(best.lat), parseFloat(best.lon)]]
+      }
+
+      if (coords?.length) {
         localStorage.setItem(key, JSON.stringify(coords))
         return coords
       }
-    }
-  } catch { /* fallthrough */ }
-
-  // Fallback: ponto via Nominatim
-  try {
-    const q = `${street}, Madureira, Rio de Janeiro, RJ, Brasil`
-    const r = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`,
-      { headers: { 'User-Agent': 'APROXIMA/1.0 (institutotiapretinha.org)' } }
-    )
-    const d = await r.json()
-    if (d.length) {
-      const pt: [number, number][] = [[parseFloat(d[0].lat), parseFloat(d[0].lon)]]
-      localStorage.setItem(key, JSON.stringify(pt))
-      return pt
-    }
-  } catch { /* ignore */ }
+    } catch { /* next query */ }
+  }
 
   localStorage.setItem(key, 'null')
   return null
