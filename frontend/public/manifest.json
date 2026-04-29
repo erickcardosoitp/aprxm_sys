@@ -1,0 +1,11 @@
+{
+  "name": "APROXIMA",
+  "short_name": "APRXM",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a3f6f",
+  "theme_color": "#1a3f6f",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
