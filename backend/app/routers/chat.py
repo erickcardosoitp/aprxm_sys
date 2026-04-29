@@ -23,11 +23,24 @@ class MessageRequest(BaseModel):
     mention_ids: list[str] = []
 
 
+ROLE_LABELS: dict[str, str] = {
+    "superadmin": "Super Admin",
+    "admin_master": "Admin Master",
+    "admin": "Admin",
+    "diretoria": "Diretoria",
+    "conferente": "Conferente",
+    "diretoria_adjunta": "Diretoria Adjunta",
+    "operator": "Operador",
+    "viewer": "Visualizador",
+}
+
+
 def _row_to_dict(r) -> dict:
     return {
         "id": str(r[0]),
         "sender_id": str(r[1]) if r[1] else None,
         "sender_name": r[2],
+        "sender_role": ROLE_LABELS.get(r[8], r[8]) if r[8] else None,
         "content": r[3],
         "message_type": r[4],
         "media_url": r[5],
@@ -46,21 +59,23 @@ async def list_messages(
     async with AsyncSessionLocal() as session:
         if before_id:
             result = await session.execute(text("""
-                SELECT id, sender_id, sender_name, content, message_type, media_url, mention_ids, created_at
-                FROM chat_messages
-                WHERE association_id = :assoc
-                  AND created_at >= :cutoff
-                  AND created_at < (SELECT created_at FROM chat_messages WHERE id = :bid)
-                ORDER BY created_at DESC
+                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role
+                FROM chat_messages m
+                LEFT JOIN users u ON u.id = m.sender_id
+                WHERE m.association_id = :assoc
+                  AND m.created_at >= :cutoff
+                  AND m.created_at < (SELECT created_at FROM chat_messages WHERE id = :bid)
+                ORDER BY m.created_at DESC
                 LIMIT :limit
             """), {"assoc": str(current.association_id), "cutoff": cutoff, "bid": before_id, "limit": limit})
         else:
             result = await session.execute(text("""
-                SELECT id, sender_id, sender_name, content, message_type, media_url, mention_ids, created_at
-                FROM chat_messages
-                WHERE association_id = :assoc
-                  AND created_at >= :cutoff
-                ORDER BY created_at DESC
+                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role
+                FROM chat_messages m
+                LEFT JOIN users u ON u.id = m.sender_id
+                WHERE m.association_id = :assoc
+                  AND m.created_at >= :cutoff
+                ORDER BY m.created_at DESC
                 LIMIT :limit
             """), {"assoc": str(current.association_id), "cutoff": cutoff, "limit": limit})
         rows = result.fetchall()
@@ -78,11 +93,12 @@ async def messages_since(
         since_dt = datetime.now(timezone.utc) - timedelta(minutes=1)
     async with AsyncSessionLocal() as session:
         result = await session.execute(text("""
-            SELECT id, sender_id, sender_name, content, message_type, media_url, mention_ids, created_at
-            FROM chat_messages
-            WHERE association_id = :assoc
-              AND created_at > :since
-            ORDER BY created_at ASC
+            SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role
+            FROM chat_messages m
+            LEFT JOIN users u ON u.id = m.sender_id
+            WHERE m.association_id = :assoc
+              AND m.created_at > :since
+            ORDER BY m.created_at ASC
             LIMIT 200
         """), {"assoc": str(current.association_id), "since": since_dt})
         rows = result.fetchall()

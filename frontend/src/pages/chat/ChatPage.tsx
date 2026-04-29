@@ -8,6 +8,7 @@ interface ChatMessage {
   id: string
   sender_id: string | null
   sender_name: string
+  sender_role: string | null
   content: string | null
   message_type: 'text' | 'audio' | 'photo' | 'system'
   media_url: string | null
@@ -438,7 +439,12 @@ function MessageBubble({ msg, isOwn }: { msg: ChatMessage; isOwn: boolean }) {
       )}
       <div className={`max-w-[75%] flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
         {!isOwn && (
-          <span className="text-[10px] text-gray-400 ml-1 mb-0.5 font-medium">{msg.sender_name}</span>
+          <span className="text-[10px] text-gray-400 ml-1 mb-0.5 font-medium">
+            {msg.sender_name}
+            {msg.sender_role && (
+              <span className="ml-1 text-gray-400 font-normal">· {msg.sender_role}</span>
+            )}
+          </span>
         )}
         <div className={`rounded-2xl px-3 py-2 ${
           isOwn

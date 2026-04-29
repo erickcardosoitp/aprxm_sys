@@ -104,6 +104,19 @@ async def create_so(
             "task",
             {"url": f"/service-orders/{so.id}"},
         ))
+        assigned_email = (await session.execute(
+            text("SELECT email FROM users WHERE id = :id"), {"id": str(body.assigned_to)}
+        )).scalar()
+        if assigned_email:
+            import asyncio as _aio
+            from app.services.email_service import send_email
+            html = f"""
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+  <h2 style="color:#1a3f6f">📋 OS #{so.number} atribuída a você</h2>
+  <p><strong>{body.title}</strong></p>
+  <p style="color:#6b7280;font-size:13px">APRXM — Sistema de Gestão Comunitária</p>
+</div>"""
+            _aio.get_running_loop().run_in_executor(None, send_email, assigned_email, f"OS #{so.number} atribuída a você", html)
     return {"id": str(so.id), "number": so.number, "status": so.status}
 
 
@@ -178,6 +191,8 @@ async def add_comment(
     )).scalar() or "Usuário"
 
     if so_row:
+        import asyncio as _aio
+        from app.services.email_service import send_email
         so_num, so_title, creator_id, assigned_id = so_row
         preview = (body.comment or "")[:120]
         notif_title = f"💬 {commenter_name} comentou na OS #{so_num}"
@@ -188,6 +203,24 @@ async def add_comment(
                 str(current.association_id), uid,
                 notif_title, preview, "comment", notif_data,
             ))
+
+        target_ids = list(targets)
+        if target_ids:
+            email_rows = (await session.execute(
+                text("SELECT email FROM users WHERE id = ANY(:ids) AND email IS NOT NULL"),
+                {"ids": target_ids},
+            )).fetchall()
+            html = f"""
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+  <h2 style="color:#1a3f6f">💬 Novo comentário — OS #{so_num}</h2>
+  <p><strong>{so_title}</strong></p>
+  <div style="background:#f3f4f6;border-radius:8px;padding:16px;margin:16px 0">
+    <p style="margin:0"><strong>{commenter_name}:</strong> {preview}</p>
+  </div>
+  <p style="color:#6b7280;font-size:13px">APRXM — Sistema de Gestão Comunitária</p>
+</div>"""
+            for (email,) in email_rows:
+                _aio.get_running_loop().run_in_executor(None, send_email, email, f"OS #{so_num} — novo comentário", html)
 
     return {"id": str(row[0]), "created_at": str(row[1])}
 
