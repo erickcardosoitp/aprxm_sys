@@ -27,6 +27,7 @@ interface ServiceOrder {
   cancellation_reason?: string; request_date?: string
   impacted_residents?: {id: string; name: string; unit?: string}[]
   created_at: string; updated_at?: string; created_by_name?: string
+  association_name?: string
 }
 
 interface SOComment {
@@ -1943,7 +1944,7 @@ export default function ServiceOrdersPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-xs font-mono text-gray-400">#{String(so.number).padStart(4, '0')}</span>
                       <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[so.status]}`}>
                         {STATUS_ICONS[so.status]}
@@ -1953,6 +1954,11 @@ export default function ServiceOrdersPage() {
                         <span className={`w-2 h-2 rounded-full ${PRIORITY_DOT[so.priority]}`} />
                         <span className={PRIORITY_TEXT[so.priority]}>{PRIORITY_LABELS[so.priority]}</span>
                       </span>
+                      {so.association_name && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 text-[10px] font-semibold leading-none">
+                          {so.association_name}
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm font-medium text-gray-800 truncate">{so.title}</p>
                     <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">

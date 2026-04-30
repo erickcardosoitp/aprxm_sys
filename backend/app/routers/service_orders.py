@@ -16,6 +16,28 @@ from app.services.service_order_service import ServiceOrderService
 router = APIRouter(prefix="/service-orders", tags=["Ordens de Serviço"])
 
 
+async def _get_group_assoc_ids(association_id: str, session: AsyncSession) -> tuple[list[UUID], dict[str, str]]:
+    """Returns (list_of_uuids_in_same_group, {id: name} map). Falls back to just the current assoc."""
+    row = (await session.execute(
+        text("SELECT chat_group FROM associations WHERE id = :aid"),
+        {"aid": association_id},
+    )).fetchone()
+    group = row[0] if row else None
+    if group:
+        rows = (await session.execute(
+            text("SELECT id, name FROM associations WHERE chat_group = :g"),
+            {"g": group},
+        )).fetchall()
+    else:
+        rows = (await session.execute(
+            text("SELECT id, name FROM associations WHERE id = :aid"),
+            {"aid": association_id},
+        )).fetchall()
+    ids = [UUID(str(r[0])) for r in rows]
+    names = {str(r[0]): r[1] for r in rows}
+    return ids, names
+
+
 class CreateSORequest(BaseModel):
     title: str
     description: str
@@ -262,12 +284,13 @@ async def search_so(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    from sqlalchemy import text as sa_text
+    assoc_ids, assoc_names = await _get_group_assoc_ids(str(current.association_id), session)
+    ids_str = ",".join(f"'{i}'" for i in assoc_ids)
     rows = await session.execute(
-        sa_text("""
-            SELECT id, number, title, status, priority
+        text(f"""
+            SELECT id, number, title, status, priority, association_id
             FROM service_orders
-            WHERE association_id = :aid
+            WHERE association_id IN ({ids_str})
               AND (
                 CAST(number AS TEXT) ILIKE :q
                 OR title ILIKE :q
@@ -275,10 +298,14 @@ async def search_so(
             ORDER BY number DESC
             LIMIT 8
         """),
-        {"aid": str(current.association_id), "q": f"%{q}%"},
+        {"q": f"%{q}%"},
     )
     return [
-        {"id": str(r[0]), "number": r[1], "title": r[2], "status": r[3], "priority": r[4]}
+        {
+            "id": str(r[0]), "number": r[1], "title": r[2],
+            "status": r[3], "priority": r[4],
+            "association_name": assoc_names.get(str(r[5])),
+        }
         for r in rows.fetchall()
     ]
 
@@ -547,8 +574,9 @@ async def list_sos(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    assoc_ids, assoc_names = await _get_group_assoc_ids(str(current.association_id), session)
     svc = ServiceOrderService(session)
-    sos = await svc.list(current.association_id, status)
+    sos = await svc.list(current.association_id, status, association_ids=assoc_ids)
 
     creator_ids = list({s.created_by for s in sos})
     creator_names: dict[UUID, str] = {}
@@ -589,6 +617,7 @@ async def list_sos(
             "assigned_to": str(s.assigned_to) if s.assigned_to else None,
             "assigned_to_name": s.assigned_to_name,
             "created_by_name": creator_names.get(s.created_by),
+            "association_name": assoc_names.get(str(s.association_id)),
         })
     return result
 

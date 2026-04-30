@@ -179,8 +179,10 @@ class ServiceOrderService:
         self,
         association_id: UUID,
         status: ServiceOrderStatus | None = None,
+        association_ids: list[UUID] | None = None,
     ) -> list[ServiceOrder]:
-        stmt = select(ServiceOrder).where(ServiceOrder.association_id == association_id)
+        ids = association_ids if association_ids else [association_id]
+        stmt = select(ServiceOrder).where(ServiceOrder.association_id.in_(ids))
         if status:
             stmt = stmt.where(ServiceOrder.status == status)
         stmt = stmt.order_by(ServiceOrder.created_at.desc())

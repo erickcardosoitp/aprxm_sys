@@ -10,6 +10,7 @@ interface OSSearchResult {
   title: string
   status: string
   priority: string
+  association_name?: string
 }
 
 interface ChatMessage {
