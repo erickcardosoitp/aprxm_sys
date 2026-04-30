@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Image, Mic, MicOff, Send } from 'lucide-react'
+import { Image, Mic, MicOff, Send, Reply, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
@@ -24,6 +24,10 @@ interface ChatMessage {
   media_url: string | null
   mention_ids: string[]
   created_at: string
+  reply_to_id?: string | null
+  reply_to_sender_name?: string | null
+  reply_to_content?: string | null
+  reply_to_type?: string | null
 }
 
 interface MessageReader { name: string; user_id: string }
@@ -52,6 +56,7 @@ export default function ChatPage() {
   const [osResults, setOsResults] = useState<OSSearchResult[]>([])
   const osSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const seenIds = useRef<Set<string>>(new Set())
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const [recording, setRecording] = useState(false)
   const [recordSecs, setRecordSecs] = useState(0)
   const [uploading, setUploading] = useState(false)
@@ -232,11 +237,14 @@ export default function ChatPage() {
     if (!content || sending) return
     setSending(true)
     const ids = [...mentionIds]
+    const reply = replyTo
     setText('')
     setMentionIds([])
+    setReplyTo(null)
     try {
       const res = await api.post<ChatMessage>('/chat/messages', {
         content, message_type: 'text', mention_ids: ids,
+        reply_to_id: reply?.id ?? null,
       })
       lastSinceRef.current = res.data.created_at
       if (!seenIds.current.has(res.data.id)) {
@@ -394,7 +402,7 @@ export default function ChatPage() {
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
               {msgs.map(msg => (
-                <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} myAssociation={associationName ?? ''} readers={reads[msg.id] ?? []} />
+                <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} myAssociation={associationName ?? ''} readers={reads[msg.id] ?? []} onReply={setReplyTo} />
               ))}
             </div>
           ))
@@ -447,6 +455,26 @@ export default function ChatPage() {
               }`}>{os.status}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Reply preview */}
+      {replyTo && (
+        <div className="mx-3 mb-1 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 flex items-start gap-2 shrink-0">
+          <div className="w-0.5 bg-blue-400 rounded-full self-stretch shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-semibold text-blue-600 mb-0.5">{replyTo.sender_name}</p>
+            {replyTo.message_type === 'photo' ? (
+              <p className="text-xs text-gray-500">📷 Foto</p>
+            ) : replyTo.message_type === 'audio' ? (
+              <p className="text-xs text-gray-500">🎤 Áudio</p>
+            ) : (
+              <p className="text-xs text-gray-600 truncate">{replyTo.content}</p>
+            )}
+          </div>
+          <button onClick={() => setReplyTo(null)} className="text-gray-400 hover:text-gray-600 shrink-0">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
@@ -580,7 +608,8 @@ function OSMentionCard({ number }: { number: number }) {
   )
 }
 
-function MessageBubble({ msg, isOwn, myAssociation, readers }: { msg: ChatMessage; isOwn: boolean; myAssociation: string; readers: MessageReader[] }) {
+function MessageBubble({ msg, isOwn, myAssociation, readers, onReply }: { msg: ChatMessage; isOwn: boolean; myAssociation: string; readers: MessageReader[]; onReply: (m: ChatMessage) => void }) {
+  const [hovered, setHovered] = useState(false)
   const time = new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
   if (msg.message_type === 'system') {
@@ -594,7 +623,11 @@ function MessageBubble({ msg, isOwn, myAssociation, readers }: { msg: ChatMessag
   }
 
   return (
-    <div className={`flex gap-2 mb-1 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div
+      className={`flex gap-2 mb-1 group ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       {!isOwn && (
         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1 select-none">
           {msg.sender_name[0]?.toUpperCase()}
@@ -617,6 +650,28 @@ function MessageBubble({ msg, isOwn, myAssociation, readers }: { msg: ChatMessag
             ? 'bg-blue-600 text-white rounded-tr-sm'
             : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm'
         }`}>
+          {/* Quoted message */}
+          {msg.reply_to_sender_name && (
+            <div className={`mb-2 rounded-xl px-2.5 py-1.5 flex gap-1.5 ${
+              isOwn ? 'bg-blue-500/40' : 'bg-gray-100'
+            }`}>
+              <div className={`w-0.5 rounded-full shrink-0 ${isOwn ? 'bg-white/60' : 'bg-blue-400'}`} />
+              <div className="min-w-0">
+                <p className={`text-[10px] font-semibold mb-0.5 ${isOwn ? 'text-blue-100' : 'text-blue-600'}`}>
+                  {msg.reply_to_sender_name}
+                </p>
+                {msg.reply_to_type === 'photo' ? (
+                  <p className={`text-[11px] ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>📷 Foto</p>
+                ) : msg.reply_to_type === 'audio' ? (
+                  <p className={`text-[11px] ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>🎤 Áudio</p>
+                ) : (
+                  <p className={`text-[11px] truncate max-w-[180px] ${isOwn ? 'text-blue-100' : 'text-gray-600'}`}>
+                    {msg.reply_to_content}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
           {msg.message_type === 'text' && msg.content && (
             <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
               {renderText(msg.content)}
@@ -650,6 +705,14 @@ function MessageBubble({ msg, isOwn, myAssociation, readers }: { msg: ChatMessag
           </div>
         )}
       </div>
+      {/* Reply button */}
+      <button
+        onClick={() => onReply(msg)}
+        className={`self-center p-1.5 rounded-full text-gray-400 hover:text-blue-500 hover:bg-gray-100 transition shrink-0 ${hovered ? 'opacity-100' : 'opacity-0'}`}
+        title="Responder"
+      >
+        <Reply className="w-4 h-4" />
+      </button>
     </div>
   )
 }

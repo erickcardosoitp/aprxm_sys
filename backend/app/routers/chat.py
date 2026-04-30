@@ -21,6 +21,7 @@ class MessageRequest(BaseModel):
     message_type: str = "text"
     media_url: Optional[str] = None
     mention_ids: list[str] = []
+    reply_to_id: Optional[str] = None
 
 
 ROLE_LABELS: dict[str, str] = {
@@ -66,6 +67,10 @@ def _row_to_dict(r) -> dict:
         "mention_ids": r[6] or [],
         "created_at": r[7].isoformat() if r[7] else None,
         "sender_association": r[9] if len(r) > 9 else None,
+        "reply_to_id": str(r[10]) if len(r) > 10 and r[10] else None,
+        "reply_to_sender_name": r[11] if len(r) > 11 else None,
+        "reply_to_content": r[12] if len(r) > 12 else None,
+        "reply_to_type": r[13] if len(r) > 13 else None,
     }
 
 
@@ -83,7 +88,7 @@ async def list_messages(
         if before_id:
             params["bid"] = before_id
             result = await session.execute(text(f"""
-                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role, a.name AS sender_association
+                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role, a.name AS sender_association, m.reply_to_id, m.reply_to_sender_name, m.reply_to_content, m.reply_to_type
                 FROM chat_messages m
                 LEFT JOIN users u ON u.id = m.sender_id
                 LEFT JOIN associations a ON a.id = m.association_id
@@ -95,7 +100,7 @@ async def list_messages(
             """), params)
         else:
             result = await session.execute(text(f"""
-                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role, a.name AS sender_association
+                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role, a.name AS sender_association, m.reply_to_id, m.reply_to_sender_name, m.reply_to_content, m.reply_to_type
                 FROM chat_messages m
                 LEFT JOIN users u ON u.id = m.sender_id
                 LEFT JOIN associations a ON a.id = m.association_id
@@ -224,10 +229,24 @@ async def send_message(
                     {"uid": str(current.user_id)},
                 )
                 sender_name = name_row.scalar() or "Usuário"
+                reply_sender = None
+                reply_content = None
+                reply_type = None
+                if body.reply_to_id:
+                    ref = (await session.execute(
+                        text("SELECT sender_name, content, message_type FROM chat_messages WHERE id = :rid"),
+                        {"rid": body.reply_to_id},
+                    )).fetchone()
+                    if ref:
+                        reply_sender = ref[0]
+                        reply_content = ref[1]
+                        reply_type = ref[2]
                 result = await session.execute(text("""
                     INSERT INTO chat_messages
-                        (association_id, sender_id, sender_name, content, message_type, media_url, mention_ids)
-                    VALUES (:assoc, :sender, :name, :content, :mtype, :media, CAST(:mentions AS jsonb))
+                        (association_id, sender_id, sender_name, content, message_type, media_url, mention_ids,
+                         reply_to_id, reply_to_sender_name, reply_to_content, reply_to_type)
+                    VALUES (:assoc, :sender, :name, :content, :mtype, :media, CAST(:mentions AS jsonb),
+                            :reply_id, :reply_sender, :reply_content, :reply_type)
                     RETURNING id, created_at
                 """), {
                     "assoc": str(current.association_id),
@@ -237,6 +256,10 @@ async def send_message(
                     "mtype": body.message_type,
                     "media": body.media_url,
                     "mentions": json.dumps(body.mention_ids),
+                    "reply_id": body.reply_to_id,
+                    "reply_sender": reply_sender,
+                    "reply_content": reply_content,
+                    "reply_type": reply_type,
                 })
                 row = result.fetchone()
                 await session.commit()
@@ -283,6 +306,10 @@ async def send_message(
         "media_url": body.media_url,
         "mention_ids": body.mention_ids,
         "created_at": row[1].isoformat(),
+        "reply_to_id": body.reply_to_id,
+        "reply_to_sender_name": reply_sender,
+        "reply_to_content": reply_content,
+        "reply_to_type": reply_type,
     }
 
 
