@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
+import L from 'leaflet'
 import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp, TrendingDown, DollarSign, AlertCircle } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -655,31 +655,36 @@ interface CepData { cep: string; street: string; members: number; guests: number
 interface CepPoint extends CepData { lat: number; lng: number }
 
 function LeafletMap({ points, center }: { points: CepPoint[]; center: [number, number] }) {
+  const divRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<L.Map | null>(null)
+
+  useEffect(() => {
+    if (!divRef.current) return
+    if (mapRef.current) { mapRef.current.remove(); mapRef.current = null }
+    const map = L.map(divRef.current).setView(center, 13)
+    mapRef.current = map
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(map)
+    points.forEach(p => {
+      if (p.members > 0) {
+        L.circleMarker([p.lat, p.lng], {
+          radius: 4 + Math.sqrt(p.members) * 3,
+          fillColor: '#3b82f6', color: '#2563eb', fillOpacity: 0.7, weight: 1,
+        }).bindPopup(`<b>${p.street || p.cep}</b><br/>Associados: ${p.members}`).addTo(map)
+      }
+      if (p.guests > 0) {
+        L.circleMarker([p.lat + 0.0001, p.lng + 0.0001], {
+          radius: 4 + Math.sqrt(p.guests) * 3,
+          fillColor: '#fb923c', color: '#ea580c', fillOpacity: 0.7, weight: 1,
+        }).bindPopup(`<b>${p.street || p.cep}</b><br/>Não associados: ${p.guests}`).addTo(map)
+      }
+    })
+    return () => { map.remove(); mapRef.current = null }
+  }, [points, center])
+
   return (
-    <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: 420 }}>
-      <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; OpenStreetMap contributors'
-        />
-        {points.flatMap(p => {
-          const items = []
-          if (p.members > 0) items.push(
-            <CircleMarker key={`m-${p.cep}`} center={[p.lat, p.lng]}
-              radius={4 + Math.sqrt(p.members) * 3} pathOptions={{ fillColor: '#3b82f6', color: '#2563eb', fillOpacity: 0.7, weight: 1 }}>
-              <Popup>{p.street || p.cep}<br />Associados: {p.members}</Popup>
-            </CircleMarker>
-          )
-          if (p.guests > 0) items.push(
-            <CircleMarker key={`g-${p.cep}`} center={[p.lat + 0.0001, p.lng + 0.0001]}
-              radius={4 + Math.sqrt(p.guests) * 3} pathOptions={{ fillColor: '#fb923c', color: '#ea580c', fillOpacity: 0.7, weight: 1 }}>
-              <Popup>{p.street || p.cep}<br />Não associados: {p.guests}</Popup>
-            </CircleMarker>
-          )
-          return items
-        })}
-      </MapContainer>
-    </div>
+    <div ref={divRef} className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: 420 }} />
   )
 }
 
