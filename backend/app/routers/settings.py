@@ -120,35 +120,43 @@ async def update_settings(
 @router.get("/association", summary="Dados da associação")
 async def get_assoc_data(
     current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
 ) -> dict:
-    result = await session.execute(
-        text("SELECT name, phone, email, address_street, address_zip, slug FROM associations WHERE id = :id"),
-        {"id": str(current.association_id)},
-    )
-    row = result.fetchone()
-    cfg_result = await session.execute(
-        text("""SELECT assoc_name, assoc_phone, assoc_email, assoc_address, assoc_cep,
-                       president_user_id, president_name, president_signature_url,
-                       assoc_logo_url, community_name, proof_stock
-                FROM association_settings WHERE association_id = :id"""),
-        {"id": str(current.association_id)},
-    )
-    cfg = cfg_result.fetchone()
-    return {
-        "name": (cfg[0] if cfg and cfg[0] else row[0]) if row else "",
-        "phone": (cfg[1] if cfg and cfg[1] else row[1]) if row else "",
-        "email": (cfg[2] if cfg and cfg[2] else row[2]) if row else "",
-        "address": (cfg[3] if cfg and cfg[3] else row[3]) if row else "",
-        "cep": (cfg[4] if cfg and cfg[4] else row[4]) if row else "",
-        "president_user_id": str(cfg[5]) if cfg and cfg[5] else None,
-        "president_name": cfg[6] if cfg else None,
-        "president_signature_url": cfg[7] if cfg else None,
-        "assoc_logo_url": cfg[8] if cfg else None,
-        "community_name": cfg[9] if cfg else None,
-        "proof_stock": cfg[10] if cfg and cfg[10] is not None else 0,
-        "slug": row[5] if row else None,
-    }
+    import asyncio
+    from app.database import AsyncSessionLocal
+    for attempt in range(3):
+        try:
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    text("SELECT name, phone, email, address_street, address_zip, slug FROM associations WHERE id = :id"),
+                    {"id": str(current.association_id)},
+                )
+                row = result.fetchone()
+                cfg_result = await session.execute(
+                    text("""SELECT assoc_name, assoc_phone, assoc_email, assoc_address, assoc_cep,
+                                   president_user_id, president_name, president_signature_url,
+                                   assoc_logo_url, community_name, proof_stock
+                            FROM association_settings WHERE association_id = :id"""),
+                    {"id": str(current.association_id)},
+                )
+                cfg = cfg_result.fetchone()
+            return {
+                "name": (cfg[0] if cfg and cfg[0] else row[0]) if row else "",
+                "phone": (cfg[1] if cfg and cfg[1] else row[1]) if row else "",
+                "email": (cfg[2] if cfg and cfg[2] else row[2]) if row else "",
+                "address": (cfg[3] if cfg and cfg[3] else row[3]) if row else "",
+                "cep": (cfg[4] if cfg and cfg[4] else row[4]) if row else "",
+                "president_user_id": str(cfg[5]) if cfg and cfg[5] else None,
+                "president_name": cfg[6] if cfg else None,
+                "president_signature_url": cfg[7] if cfg else None,
+                "assoc_logo_url": cfg[8] if cfg else None,
+                "community_name": cfg[9] if cfg else None,
+                "proof_stock": cfg[10] if cfg and cfg[10] is not None else 0,
+                "slug": row[5] if row else None,
+            }
+        except Exception as e:
+            if attempt == 2:
+                raise
+            await asyncio.sleep(0.15 * (attempt + 1))
 
 
 @router.put("/association", summary="Atualizar dados da associação (admin+)")
