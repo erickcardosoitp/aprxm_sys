@@ -61,7 +61,7 @@ const TASK_STATUS_COLORS: Record<string, string> = {
 }
 
 interface ResidentResult {
-  id: string; full_name: string; cpf?: string; phone_primary?: string; email?: string; address_cep?: string; unit?: string
+  id: string; full_name: string; cpf?: string; phone_primary?: string; email?: string; address_cep?: string; unit?: string; type?: string
 }
 
 interface UserResult {
@@ -314,6 +314,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
     setRequesterPhone(r.phone_primary ?? '')
     setRequesterEmail(r.email ?? '')
     if (useMoradorCep && r.address_cep) setCep(r.address_cep)
+    if (r.type === 'guest') setPriority('low')
   }
 
   useEffect(() => {
@@ -444,7 +445,11 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                           onMouseDown={() => pickResident(r)}
                           className="w-full text-left px-3 py-2.5 hover:bg-blue-50"
                         >
-                          <p className="text-sm font-medium text-gray-800">{r.full_name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-gray-800">{r.full_name}</p>
+                            {r.type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-medium">Visitante</span>}
+                            {r.type === 'member' && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">Associado</span>}
+                          </div>
                           <p className="text-xs text-gray-400">{r.cpf ?? ''}{r.phone_primary ? ` · ${r.phone_primary}` : ''}</p>
                         </button>
                       </li>
@@ -457,6 +462,9 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
                   <User className="w-4 h-4 text-green-600 shrink-0" />
                   <span className="text-sm font-medium text-green-800">{selectedResident.full_name}</span>
+                  {selectedResident.type === 'guest' && (
+                    <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-medium">Visitante · prioridade baixa</span>
+                  )}
                   <button className="ml-auto text-xs text-gray-400 hover:text-red-500"
                     onClick={() => { setSelectedResident(null); setResidentQuery(''); setRequesterPhone(''); setRequesterEmail('') }}>✕</button>
                 </div>
