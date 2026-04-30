@@ -47,7 +47,7 @@ def _serialize_user(u: User) -> dict:
 @router.get("/users", summary="Listar usuários da associação")
 async def list_users(
     active_only: bool = False,
-    current: CurrentUser = Depends(require_admin),
+    current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     stmt = select(User).where(User.association_id == current.association_id)
