@@ -167,6 +167,10 @@ export interface Package {
   resident_type?: string
   resident_address_street?: string
   resident_address_number?: string
+  resident_address_complement?: string
+  resident_address_district?: string
+  resident_address_city?: string
+  resident_address_state?: string
   photo_urls?: Array<{ url: string; label: string; taken_at: string }>
   notes?: string
   object_type?: string

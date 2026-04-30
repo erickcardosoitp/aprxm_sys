@@ -29,6 +29,9 @@ class CloseSessionRequest(BaseModel):
     notes: str | None = None
     reviewed_by_id: UUID | None = None
     session_id: UUID | None = None  # admin: fechar caixa de outro operador
+    blind_pix: Decimal | None = Field(default=None, ge=0)
+    blind_dinheiro: Decimal | None = Field(default=None, ge=0)
+    troco_deixado: Decimal | None = Field(default=None, ge=0)
 
 
 class ManualSessionRequest(BaseModel):
@@ -477,6 +480,9 @@ async def close_session(
         reviewed_by=body.reviewed_by_id,
         session_id=body.session_id,
         is_admin=current.is_admin,
+        blind_pix=body.blind_pix,
+        blind_dinheiro=body.blind_dinheiro,
+        troco_deixado=body.troco_deixado,
     )
     return {
         "id": str(cash.id),

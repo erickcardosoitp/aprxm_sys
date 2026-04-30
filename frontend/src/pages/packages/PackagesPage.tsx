@@ -69,11 +69,16 @@ interface PackageDetailModalProps {
   dependents?: { id: string; full_name: string; phone_primary?: string }[]
 }
 
-function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh, dependents = [] }: PackageDetailModalProps) {
+function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefresh, dependents = [] }: PackageDetailModalProps) {
+  const [pkg, setPkg] = useState<Package>(initialPkg)
   const [events, setEvents] = useState<PackageEvent[]>([])
   const [newComment, setNewComment] = useState('')
   const [addingEvent, setAddingEvent] = useState(false)
   const [notifying, setNotifying] = useState(false)
+
+  useEffect(() => {
+    api.get<Package>(`/packages/${initialPkg.id}`).then(r => setPkg(r.data)).catch(() => {})
+  }, [initialPkg.id])
   const [showReturnForm, setShowReturnForm] = useState(false)
   const [returnReason, setReturnReason] = useState('')
   const [returning, setReturning] = useState(false)
@@ -182,7 +187,7 @@ function PackageDetailModal({ pkg, onClose, onDeliverClick, onRefresh, dependent
               {(pkg.resident_address_street || pkg.resident_cep) && (
                 <p className="text-xs text-gray-400">
                   {pkg.resident_address_street
-                    ? `${pkg.resident_address_street}${pkg.resident_address_number ? `, ${pkg.resident_address_number}` : ''}${pkg.resident_cep ? ` — CEP ${pkg.resident_cep}` : ''}`
+                    ? `${pkg.resident_address_street}${pkg.resident_address_number ? `, ${pkg.resident_address_number}` : ''}${pkg.resident_address_complement ? ` ${pkg.resident_address_complement}` : ''}${pkg.resident_address_district ? ` — ${pkg.resident_address_district}` : ''}${pkg.resident_address_city ? `, ${pkg.resident_address_city}` : ''}${pkg.resident_cep ? ` — CEP ${pkg.resident_cep}` : ''}`
                     : `CEP: ${pkg.resident_cep}`}
                 </p>
               )}

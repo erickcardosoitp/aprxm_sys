@@ -16,7 +16,7 @@ interface Props {
   canConferencia?: boolean
 }
 
-type CloseStep = 'blind' | 'review' | 'sign' | 'done'
+type CloseStep = 'blind' | 'troco' | 'review' | 'sign' | 'done'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,6 +51,7 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
   }, [])
   const [blindPix, setBlindPix] = useState('')
   const [blindDinheiro, setBlindDinheiro] = useState('')
+  const [trocoValor, setTrocoValor] = useState('')
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ expected: number; counted: number; diff: number; blindPix: number; blindDinheiro: number } | null>(null)
@@ -114,7 +115,7 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
       const exits = txs.filter(t => t.type !== 'income' && !(t as any).reversed_at && !t.is_reversal).reduce((s, t) => s + parseFloat(t.amount), 0)
       const expected = income - exits
       setResult({ expected, counted, diff: counted - expected, blindPix: blindPixVal, blindDinheiro: blindDinheiroVal })
-      setStep(isOperator ? 'sign' : 'review')
+      setStep('troco')
     } catch {
       toast.error('Erro ao buscar movimentações.')
     } finally {
@@ -193,7 +194,11 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
     if (!result) return
     setLoading(true)
     try {
-      await financeService.closeSession(result.counted)
+      await financeService.closeSession(
+        result.counted, undefined, undefined,
+        result.blindPix, result.blindDinheiro,
+        parseFloat(trocoValor.replace(',', '.')) || 0,
+      )
       if (registrarQuebra && result.diff !== 0) {
         const tipo = result.diff > 0 ? 'sobra' : 'desconto'
         await api.post(`/finance/sessions/${session.id}/quebra`, {
@@ -218,8 +223,8 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
 
   // Step labels differ per role
   const stepLabels = isOperator
-    ? [{ key: 'blind', label: 'Contagem Cega' }, { key: 'sign', label: 'Assinatura' }]
-    : [{ key: 'blind', label: 'Contagem Cega' }, { key: 'review', label: 'Conferência' }]
+    ? [{ key: 'blind', label: 'Contagem Cega' }, { key: 'troco', label: 'Troco' }, { key: 'sign', label: 'Assinatura' }]
+    : [{ key: 'blind', label: 'Contagem Cega' }, { key: 'troco', label: 'Troco' }, { key: 'review', label: 'Conferência' }]
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -239,7 +244,7 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
             {stepLabels.map(({ key, label }, i) => (
               <div key={key} className={`flex-1 py-2 text-center text-xs font-medium border-b-2 transition ${
                 step === key ? 'border-[#26619c] text-[#26619c]' :
-                (i === 0 && step !== 'blind') ? 'border-green-400 text-green-600' :
+                (stepLabels.findIndex(s => s.key === key) < stepLabels.findIndex(s => s.key === step)) ? 'border-green-400 text-green-600' :
                 'border-transparent text-gray-400'
               }`}>
                 {i + 1}. {label}
@@ -285,6 +290,31 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
                 <button onClick={fetchAndContinue} disabled={!canProceed || loading}
                   className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
                   {loading ? 'Calculando…' : isOperator ? 'Próximo →' : 'Ver Conferência →'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step troco ── */}
+          {step === 'troco' && (
+            <div className="flex flex-col gap-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <p className="text-sm font-semibold text-blue-900">Troco no caixa</p>
+                <p className="text-xs text-blue-700 mt-1">Quanto você vai deixar de troco na gaveta para o próximo turno?</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Valor do troco (R$)</label>
+                <input type="number" min="0" step="0.01" value={trocoValor}
+                  onChange={e => setTrocoValor(e.target.value)} placeholder="0,00" autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter') setStep(isOperator ? 'sign' : 'review') }}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg font-semibold text-center focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setStep('blind')} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">← Voltar</button>
+                <button onClick={() => setStep(isOperator ? 'sign' : 'review')}
+                  className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition">
+                  {isOperator ? 'Próximo →' : 'Ver Conferência →'}
                 </button>
               </div>
             </div>
@@ -407,9 +437,9 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
               )}
 
               <div className="flex gap-3">
-                <button onClick={() => setStep('blind')}
+                <button onClick={() => setStep('troco')}
                   className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
-                  ← Redigitar
+                  ← Voltar
                 </button>
                 <button onClick={handleConfirm} disabled={loading}
                   className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50 flex items-center justify-center gap-1.5">

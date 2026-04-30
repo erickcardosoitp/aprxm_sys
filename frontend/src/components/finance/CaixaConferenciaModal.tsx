@@ -14,6 +14,9 @@ interface Session {
   total_bruto?: string; total_baixas?: string
   quebra_caixa?: string | null
   malote_sent_at?: string | null
+  blind_pix?: string | null
+  blind_dinheiro?: string | null
+  troco_deixado?: string | null
 }
 
 interface TxReview {
@@ -254,6 +257,21 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                 </div>
               </div>
 
+              {(session.blind_pix != null || session.blind_dinheiro != null || session.troco_deixado != null) && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col gap-1 text-xs">
+                  <p className="font-semibold text-amber-800 mb-0.5">Declarado pelo operador</p>
+                  {session.blind_pix != null && (
+                    <div className="flex justify-between text-amber-700"><span>PIX contado:</span><span className="font-bold">{fmt(session.blind_pix)}</span></div>
+                  )}
+                  {session.blind_dinheiro != null && (
+                    <div className="flex justify-between text-amber-700"><span>Dinheiro contado:</span><span className="font-bold">{fmt(session.blind_dinheiro)}</span></div>
+                  )}
+                  {session.troco_deixado != null && (
+                    <div className="flex justify-between text-amber-700"><span>Troco deixado:</span><span className="font-bold">{fmt(session.troco_deixado)}</span></div>
+                  )}
+                </div>
+              )}
+
               {isAlreadyConferido && session.closing_balance && (
                 <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex flex-col gap-1 text-xs">
                   <p className="font-semibold text-green-800 mb-0.5">Já conferido</p>
@@ -341,7 +359,16 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                             </span>
                           </div>
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm text-gray-700 truncate">{tx.description}</p>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm text-gray-700 truncate">
+                                {tx.income_subtype && tx.description.includes(' — ')
+                                  ? tx.description.split(' — ').slice(1).join(' — ')
+                                  : tx.description}
+                              </p>
+                              {tx.created_by_name && (
+                                <p className="text-[10px] text-gray-400 truncate">· {tx.created_by_name}</p>
+                              )}
+                            </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                               <p className={`text-sm font-bold ${isIncome ? 'text-green-600' : 'text-red-600'}`}>
                                 {isIncome ? '+' : '-'}{fmt(tx.amount)}

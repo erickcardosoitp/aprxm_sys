@@ -64,6 +64,10 @@ export function AppShell() {
   const [switching, setSwitching] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
+  const [chatUnread, setChatUnread] = useState(0)
+  const chatLastReadRef = useRef<string>(localStorage.getItem('chatLastRead') ?? new Date(0).toISOString())
+  const isOnChat = location.pathname === '/chat'
+
   const [notifOpen, setNotifOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [notifs, setNotifs] = useState<AppNotification[]>([])
@@ -88,6 +92,26 @@ export function AppShell() {
     const id = setInterval(fetchUnread, 30_000)
     return () => clearInterval(id)
   }, [role, fetchUnread])
+
+  useEffect(() => {
+    if (!role || isOnChat) return
+    const fetchChatUnread = () => {
+      api.get<{ count: number }>('/chat/unread-count', { params: { since: chatLastReadRef.current } })
+        .then(r => setChatUnread(r.data.count))
+        .catch(() => {})
+    }
+    fetchChatUnread()
+    const id = setInterval(fetchChatUnread, 30_000)
+    return () => clearInterval(id)
+  }, [role, isOnChat])
+
+  useEffect(() => {
+    if (!isOnChat) return
+    setChatUnread(0)
+    const now = new Date().toISOString()
+    localStorage.setItem('chatLastRead', now)
+    chatLastReadRef.current = now
+  }, [isOnChat])
 
   useEffect(() => {
     if (!role) return
@@ -279,8 +303,21 @@ export function AppShell() {
             className={({ isActive }) =>
               `p-1.5 rounded-xl transition ${isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}`
             }
+            onClick={() => {
+              setChatUnread(0)
+              const now = new Date().toISOString()
+              localStorage.setItem('chatLastRead', now)
+              chatLastReadRef.current = now
+            }}
           >
-            <MessageSquare className="w-5 h-5" />
+            <div className="relative">
+              <MessageSquare className="w-5 h-5" />
+              {chatUnread > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">
+                  {chatUnread > 9 ? '9+' : chatUnread}
+                </span>
+              )}
+            </div>
           </NavLink>
 
           {/* Notifications */}

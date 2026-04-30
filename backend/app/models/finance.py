@@ -70,6 +70,9 @@ class CashSession(SQLModel, table=True):
     status: CashSessionStatus = Field(default=CashSessionStatus.open, sa_column=Column(SAEnum(CashSessionStatus, name='cash_session_status', create_type=False), nullable=False))
     opening_balance: Decimal = Field(default=Decimal("0.00"), decimal_places=2, max_digits=12)
     closing_balance: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
+    blind_pix: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
+    blind_dinheiro: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
+    troco_deixado: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
     expected_balance: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
     difference: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
     notes: str | None = None

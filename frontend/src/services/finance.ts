@@ -12,8 +12,8 @@ export const financeService = {
   getCurrentSession: () =>
     api.get<CashSession>('/finance/sessions/current'),
 
-  closeSession: (closing_balance: number, notes?: string, session_id?: string) =>
-    api.post<CashSession>('/finance/sessions/close', { closing_balance, notes, session_id }),
+  closeSession: (closing_balance: number, notes?: string, session_id?: string, blind_pix?: number, blind_dinheiro?: number, troco?: number) =>
+    api.post<CashSession>('/finance/sessions/close', { closing_balance, notes, session_id, blind_pix, blind_dinheiro, troco_deixado: troco }),
 
   performSangria: (data: {
     amount: number

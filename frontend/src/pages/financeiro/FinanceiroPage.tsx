@@ -387,6 +387,8 @@ export default function FinanceiroPage() {
   const [savingAcordo, setSavingAcordo] = useState(false)
   const [papDeps, setPapDeps] = useState<{ name: string; phone: string; cpf: string }[]>([])
   const [savingPap, setSavingPap] = useState(false)
+  const [payPmTarget, setPayPmTarget] = useState<{ id: string; meta?: { name: string; cpf?: string; unit?: string; resident_id?: string } } | null>(null)
+  const [payPmId, setPayPmId] = useState('')
   const [showCommPay, setShowCommPay] = useState(false)
   const [commPayTarget, setCommPayTarget] = useState<any>(null)
   const [commPayForm, setCommPayForm] = useState({ amount: '', payment_method: '', paid_at: '', notes: '' })
@@ -1058,7 +1060,7 @@ export default function FinanceiroPage() {
     setTimeout(() => { w.print() }, 400)
   }
 
-  const handlePayMensalidade = async (
+  const handlePayMensalidade = (
     id: string,
     residentMeta?: { name: string; cpf?: string; unit?: string; resident_id?: string },
   ) => {
@@ -1066,10 +1068,18 @@ export default function FinanceiroPage() {
       toast.error('Abra o caixa antes de registrar pagamentos.')
       return
     }
+    setPayPmId(editPayMethods[0]?.id ?? '')
+    setPayPmTarget({ id, meta: residentMeta })
+  }
+
+  const confirmPayMensalidade = async () => {
+    if (!payPmTarget) return
+    const { id, meta: residentMeta } = payPmTarget
+    setPayPmTarget(null)
     setPayingId(id)
     try {
       const res = await api.post<{ mensalidade: Mensalidade; transaction: any; next_month: Mensalidade | null }>(
-        `/mensalidades/${id}/pay`, {}
+        `/mensalidades/${id}/pay`, payPmId ? { payment_method_id: payPmId } : {}
       )
       const paidNow = res.data.mensalidade
       const next = res.data.next_month
@@ -1091,7 +1101,7 @@ export default function FinanceiroPage() {
             residentMeta.unit,
             allRes.data,
             paidNow,
-            'Dinheiro/PIX',
+            editPayMethods.find(p => p.id === payPmId)?.name ?? 'Dinheiro/PIX',
             carneOperator,
           )
           setTimeout(() => printCarneFinanceiro(paidNow.resident_id, residentMeta.name, residentMeta.cpf, residentMeta.unit), 1200)
@@ -2569,6 +2579,31 @@ export default function FinanceiroPage() {
                 </div>
               )}
             </>
+          )}
+
+          {/* Modal forma de pagamento mensalidade */}
+          {payPmTarget && (
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+                <h2 className="text-base font-semibold text-gray-800 mb-3">Forma de pagamento</h2>
+                {editPayMethods.length > 0 ? (
+                  <select
+                    value={payPmId}
+                    onChange={e => setPayPmId(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-4"
+                  >
+                    <option value="">Não informar</option>
+                    {editPayMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+                  </select>
+                ) : (
+                  <p className="text-sm text-gray-400 mb-4">Nenhuma forma de pagamento cadastrada.</p>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={() => setPayPmTarget(null)} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600">Cancelar</button>
+                  <button onClick={confirmPayMensalidade} className="flex-1 py-2 rounded-xl bg-green-600 text-white text-sm font-medium">Confirmar</button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Apuração de quebra modal */}

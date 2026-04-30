@@ -35,6 +35,25 @@ ROLE_LABELS: dict[str, str] = {
 }
 
 
+async def _get_chat_group(association_id: str, session) -> str | None:
+    row = (await session.execute(
+        text("SELECT chat_group FROM associations WHERE id = :aid"),
+        {"aid": association_id}
+    )).fetchone()
+    return row[0] if row else None
+
+
+async def _assoc_filter(association_id: str, session) -> tuple[str, dict]:
+    """Returns (where_clause, params) filtering by chat_group if set, else by association_id."""
+    group = await _get_chat_group(association_id, session)
+    if group:
+        return (
+            "m.association_id IN (SELECT id FROM associations WHERE chat_group = :group)",
+            {"group": group}
+        )
+    return "m.association_id = :assoc", {"assoc": association_id}
+
+
 def _row_to_dict(r) -> dict:
     return {
         "id": str(r[0]),
@@ -46,6 +65,7 @@ def _row_to_dict(r) -> dict:
         "media_url": r[5],
         "mention_ids": r[6] or [],
         "created_at": r[7].isoformat() if r[7] else None,
+        "sender_association": r[9] if len(r) > 9 else None,
     }
 
 
@@ -57,27 +77,33 @@ async def list_messages(
 ) -> list[dict]:
     cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
     async with AsyncSessionLocal() as session:
+        where, params = await _assoc_filter(str(current.association_id), session)
+        params["cutoff"] = cutoff
+        params["limit"] = limit
         if before_id:
-            result = await session.execute(text("""
-                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role
+            params["bid"] = before_id
+            result = await session.execute(text(f"""
+                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role, a.name AS sender_association
                 FROM chat_messages m
                 LEFT JOIN users u ON u.id = m.sender_id
-                WHERE m.association_id = :assoc
+                LEFT JOIN associations a ON a.id = m.association_id
+                WHERE {where}
                   AND m.created_at >= :cutoff
                   AND m.created_at < (SELECT created_at FROM chat_messages WHERE id = :bid)
                 ORDER BY m.created_at DESC
                 LIMIT :limit
-            """), {"assoc": str(current.association_id), "cutoff": cutoff, "bid": before_id, "limit": limit})
+            """), params)
         else:
-            result = await session.execute(text("""
-                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role
+            result = await session.execute(text(f"""
+                SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role, a.name AS sender_association
                 FROM chat_messages m
                 LEFT JOIN users u ON u.id = m.sender_id
-                WHERE m.association_id = :assoc
+                LEFT JOIN associations a ON a.id = m.association_id
+                WHERE {where}
                   AND m.created_at >= :cutoff
                 ORDER BY m.created_at DESC
                 LIMIT :limit
-            """), {"assoc": str(current.association_id), "cutoff": cutoff, "limit": limit})
+            """), params)
         rows = result.fetchall()
     return [_row_to_dict(r) for r in reversed(rows)]
 
@@ -92,17 +118,43 @@ async def messages_since(
     except ValueError:
         since_dt = datetime.now(timezone.utc) - timedelta(minutes=1)
     async with AsyncSessionLocal() as session:
-        result = await session.execute(text("""
-            SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role
+        where, params = await _assoc_filter(str(current.association_id), session)
+        params["since"] = since_dt
+        result = await session.execute(text(f"""
+            SELECT m.id, m.sender_id, m.sender_name, m.content, m.message_type, m.media_url, m.mention_ids, m.created_at, u.role, a.name AS sender_association
             FROM chat_messages m
             LEFT JOIN users u ON u.id = m.sender_id
-            WHERE m.association_id = :assoc
+            LEFT JOIN associations a ON a.id = m.association_id
+            WHERE {where}
               AND m.created_at > :since
             ORDER BY m.created_at ASC
             LIMIT 200
-        """), {"assoc": str(current.association_id), "since": since_dt})
+        """), params)
         rows = result.fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+@router.get("/unread-count")
+async def unread_count(
+    since: str = Query(...),
+    current: CurrentUser = Depends(get_current_user),
+) -> dict:
+    try:
+        since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+    except ValueError:
+        since_dt = datetime.now(timezone.utc) - timedelta(minutes=5)
+    async with AsyncSessionLocal() as session:
+        where, params = await _assoc_filter(str(current.association_id), session)
+        params["since"] = since_dt
+        params["sender"] = str(current.user_id)
+        result = await session.execute(text(f"""
+            SELECT COUNT(*) FROM chat_messages m
+            WHERE {where}
+              AND m.created_at > :since
+              AND (m.sender_id IS NULL OR m.sender_id != :sender)
+        """), params)
+        count = result.scalar() or 0
+    return {"count": int(count)}
 
 
 @router.post("/messages")
@@ -138,7 +190,7 @@ async def send_message(
                 row = result.fetchone()
                 await session.commit()
             break
-        except Exception as e:
+        except Exception:
             if attempt == 2:
                 raise
             await _aio.sleep(0.1 * (attempt + 1))
@@ -148,12 +200,20 @@ async def send_message(
 
     preview = (body.content or "")[:100]
 
-    # notify all other active users in the association
+    # notify all active users in the chat_group (or just the association if no group)
     async with AsyncSessionLocal() as ns:
-        other_users = (await ns.execute(text("""
-            SELECT id FROM users
-            WHERE association_id = :assoc AND is_active = true AND id != :sender
-        """), {"assoc": str(current.association_id), "sender": str(current.user_id)})).fetchall()
+        group = await _get_chat_group(str(current.association_id), ns)
+        if group:
+            other_users = (await ns.execute(text("""
+                SELECT id FROM users
+                WHERE association_id IN (SELECT id FROM associations WHERE chat_group = :group)
+                  AND is_active = true AND id != :sender
+            """), {"group": group, "sender": str(current.user_id)})).fetchall()
+        else:
+            other_users = (await ns.execute(text("""
+                SELECT id FROM users
+                WHERE association_id = :assoc AND is_active = true AND id != :sender
+            """), {"assoc": str(current.association_id), "sender": str(current.user_id)})).fetchall()
 
     mentioned = set(body.mention_ids)
     for (uid,) in other_users:

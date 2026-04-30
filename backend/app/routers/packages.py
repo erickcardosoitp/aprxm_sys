@@ -239,6 +239,57 @@ async def add_package_event(
     return {"id": str(row[0]), "created_at": str(row[1])}
 
 
+@router.get("/{package_id}", summary="Detalhe completo de uma encomenda")
+async def get_package(
+    package_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    row = (await session.execute(sa_text("""
+        SELECT p.id, p.status, p.unit, p.block, p.carrier_name, p.tracking_code,
+               p.has_delivery_fee, p.delivery_fee_amount, p.received_at,
+               p.resident_id, p.photo_urls, p.notes, p.object_type,
+               p.sender_name, p.delivered_to_name, p.delivered_to_cpf,
+               p.deliverer_name, p.signature_url, p.deliverer_signature_url,
+               p.delivered_at, p.proof_of_residence_url,
+               r.full_name AS resident_name, r.cpf AS resident_cpf,
+               r.type AS resident_type, r.address_cep AS resident_cep,
+               r.phone_primary AS resident_phone,
+               r.address_street AS resident_address_street,
+               r.address_number AS resident_address_number,
+               r.address_complement AS resident_address_complement,
+               r.address_district AS resident_address_district,
+               r.address_city AS resident_address_city,
+               r.address_state AS resident_address_state,
+               u_rec.full_name AS received_by_name,
+               u_del.full_name AS delivered_by_name
+        FROM packages p
+        LEFT JOIN residents r ON r.id = p.resident_id
+        LEFT JOIN users u_rec ON u_rec.id = p.received_by
+        LEFT JOIN users u_del ON u_del.id = p.delivered_by
+        WHERE p.id = :pid AND p.association_id = :aid
+    """), {"pid": str(package_id), "aid": str(current.association_id)})).fetchone()
+    if not row:
+        raise HTTPException(404, "Encomenda não encontrada")
+    return {
+        "id": str(row[0]), "status": row[1], "unit": row[2], "block": row[3],
+        "carrier_name": row[4], "tracking_code": row[5],
+        "has_delivery_fee": row[6], "delivery_fee_amount": str(row[7]) if row[7] else None,
+        "received_at": str(row[8]), "resident_id": str(row[9]) if row[9] else None,
+        "photo_urls": row[10] or [], "notes": row[11], "object_type": row[12],
+        "sender_name": row[13], "delivered_to_name": row[14], "delivered_to_cpf": row[15],
+        "deliverer_name": row[16], "signature_url": row[17], "deliverer_signature_url": row[18],
+        "delivered_at": str(row[19]) if row[19] else None, "proof_of_residence_url": row[20],
+        "resident_name": row[21], "resident_cpf": row[22], "resident_type": row[23],
+        "resident_cep": row[24], "resident_phone": row[25],
+        "resident_address_street": row[26], "resident_address_number": row[27],
+        "resident_address_complement": row[28], "resident_address_district": row[29],
+        "resident_address_city": row[30], "resident_address_state": row[31],
+        "received_by_name": row[32], "delivered_by_name": row[33],
+    }
+
+
 @router.get("/{package_id}/events", summary="Listar eventos da encomenda")
 async def list_package_events(
     package_id: UUID,

@@ -124,6 +124,9 @@ class FinanceService:
         reviewed_by: UUID | None = None,
         session_id: UUID | None = None,
         is_admin: bool = False,
+        blind_pix: Decimal | None = None,
+        blind_dinheiro: Decimal | None = None,
+        troco_deixado: Decimal | None = None,
     ) -> CashSession:
         session = await self.get_open_session(
             association_id,
@@ -146,6 +149,12 @@ class FinanceService:
         session.updated_at = datetime.utcnow()
         if reviewed_by:
             session.reviewed_by = reviewed_by
+        if blind_pix is not None:
+            session.blind_pix = blind_pix
+        if blind_dinheiro is not None:
+            session.blind_dinheiro = blind_dinheiro
+        if troco_deixado is not None:
+            session.troco_deixado = troco_deixado
 
         self._session.add(session)
         return session
@@ -746,13 +755,23 @@ class FinanceService:
 
         # Barcode — canto superior direito
         if barcode_bytes:
+            import re as _re
             bc_io = BytesIO(barcode_bytes)
             bc_w = 45.0
             bc_x = pdf.w - pdf.r_margin - bc_w
-            pdf.image(bc_io, x=bc_x, y=10, w=bc_w)
+            bc_y = 10.0
+            # Compute rendered height from SVG dimensions to place text exactly below
+            svg_text = barcode_bytes.decode("utf-8")
+            _sw = _re.search(r'width="([\d.]+)', svg_text)
+            _sh = _re.search(r'height="([\d.]+)', svg_text)
+            if _sw and _sh:
+                bc_h = bc_w * float(_sh.group(1)) / float(_sw.group(1))
+            else:
+                bc_h = 18.0
+            pdf.image(bc_io, x=bc_x, y=bc_y, w=bc_w)
             pdf.set_font("Helvetica", size=8)
             pdf.set_text_color(80, 80, 80)
-            pdf.set_xy(bc_x, 10 + 24)
+            pdf.set_xy(bc_x, bc_y + bc_h + 0.5)
             pdf.cell(bc_w, 4, barcode_code, align="C")
 
         # Logo centralizado
