@@ -705,28 +705,18 @@ class FinanceService:
 
     @staticmethod
     def _build_barcode_image(code: str) -> bytes:
-        import re
         from barcode import Code128  # type: ignore
-        from barcode.writer import SVGWriter  # type: ignore
+        from barcode.writer import ImageWriter  # type: ignore
 
         buf = BytesIO()
-        Code128(code, writer=SVGWriter()).write(buf, options={
-            "module_height": 8.0,
-            "module_width": 0.3,
-            "quiet_zone": 2.0,
+        Code128(code, writer=ImageWriter()).write(buf, options={
+            "module_height": 6.0,
+            "module_width": 0.18,
+            "quiet_zone": 1.5,
             "write_text": False,
-            "text_distance": 0,
+            "dpi": 150,
         })
-        svg = buf.getvalue().decode("utf-8")
-        # Strip any leaked text elements
-        svg = re.sub(r"<text[^>]*>.*?</text>", "", svg, flags=re.DOTALL)
-        # Ensure viewBox exists so fpdf2 can compute aspect ratio
-        if "viewBox" not in svg:
-            nat_w = re.search(r'width="([\d.]+)', svg)
-            nat_h = re.search(r'height="([\d.]+)', svg)
-            if nat_w and nat_h:
-                svg = svg.replace("<svg ", f'<svg viewBox="0 0 {nat_w.group(1)} {nat_h.group(1)}" ', 1)
-        return svg.encode("utf-8")
+        return buf.getvalue()
 
     @staticmethod
     def _build_proof_pdf(
@@ -767,22 +757,19 @@ class FinanceService:
         pdf.set_margins(20, 20, 20)
         pdf.set_auto_page_break(auto=True, margin=20)
 
-        # Barcode — canto superior direito
+        # Barcode — canto superior direito (PNG, 28 mm de largura)
         if barcode_bytes:
-            import re as _re
-            bc_w = 38.0
+            from PIL import Image as _PILImage  # type: ignore
+            bc_w = 28.0
             bc_x = pdf.w - pdf.r_margin - bc_w
             bc_y = 10.0
-            # Compute proportional height from SVG natural dimensions
-            svg_text = barcode_bytes.decode("utf-8")
-            _sw = _re.search(r'width="([\d.]+)', svg_text)
-            _sh = _re.search(r'height="([\d.]+)', svg_text)
-            bc_h = bc_w * float(_sh.group(1)) / float(_sw.group(1)) if (_sw and _sh) else 14.0
-            pdf.image(BytesIO(barcode_bytes), x=bc_x, y=bc_y, w=bc_w)
-            pdf.set_font("Helvetica", size=7)
+            _pil = _PILImage.open(BytesIO(barcode_bytes))
+            bc_h = bc_w * _pil.height / _pil.width
+            pdf.image(BytesIO(barcode_bytes), x=bc_x, y=bc_y, w=bc_w, h=bc_h)
+            pdf.set_font("Helvetica", size=6)
             pdf.set_text_color(80, 80, 80)
             pdf.set_xy(bc_x, bc_y + bc_h + 0.5)
-            pdf.cell(bc_w, 4, barcode_code, align="C")
+            pdf.cell(bc_w, 3, barcode_code, align="C")
 
         # Logo centralizado
         logo_io = BytesIO(logo_bytes)
