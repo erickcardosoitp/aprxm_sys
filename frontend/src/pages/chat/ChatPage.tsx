@@ -366,11 +366,11 @@ export default function ChatPage() {
   const grouped = groupByDate(messages)
 
   return (
-    <div className="flex flex-col bg-gray-50" style={{ height: 'calc(100vh - 130px)' }}>
+    <div className="flex flex-col bg-purple-950" style={{ height: 'calc(100vh - 130px)' }}>
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3 shrink-0">
-        <h1 className="font-semibold text-gray-800 text-sm">Chat da Associação</h1>
-        <p className="text-xs text-gray-400">Histórico de 15 dias</p>
+      <div className="bg-purple-900 border-b border-purple-800 px-4 py-3 shrink-0">
+        <h1 className="font-semibold text-white text-sm">Chat da Associação</h1>
+        <p className="text-xs text-purple-300">Histórico de 15 dias</p>
       </div>
 
       {/* Messages */}
@@ -389,7 +389,7 @@ export default function ChatPage() {
             <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 gap-2 text-gray-400">
+          <div className="flex flex-col items-center justify-center h-32 gap-2 text-purple-300">
             <span className="text-3xl">💬</span>
             <p className="text-sm">Nenhuma mensagem ainda</p>
           </div>
@@ -397,9 +397,9 @@ export default function ChatPage() {
           grouped.map(({ date, msgs }) => (
             <div key={date}>
               <div className="flex items-center gap-2 my-3">
-                <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs text-gray-400 shrink-0">{date}</span>
-                <div className="flex-1 h-px bg-gray-200" />
+                <div className="flex-1 h-px bg-purple-800" />
+                <span className="text-xs text-purple-400 shrink-0">{date}</span>
+                <div className="flex-1 h-px bg-purple-800" />
               </div>
               {msgs.map(msg => (
                 <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} myAssociation={associationName ?? ''} readers={reads[msg.id] ?? []} onReply={setReplyTo}
@@ -486,11 +486,11 @@ export default function ChatPage() {
       )}
 
       {/* Input bar */}
-      <div className="border-t border-gray-200 bg-white px-3 py-2 flex items-end gap-2 shrink-0">
+      <div className="border-t border-purple-800 bg-purple-900 px-3 py-2 flex items-end gap-2 shrink-0">
         <button
           onClick={() => fileRef.current?.click()}
           disabled={uploading || recording}
-          className="text-gray-400 hover:text-purple-500 p-1.5 shrink-0 disabled:opacity-40 transition"
+          className="text-purple-400 hover:text-purple-200 p-1.5 shrink-0 disabled:opacity-40 transition"
         >
           <Image className="w-5 h-5" />
         </button>
@@ -504,7 +504,7 @@ export default function ChatPage() {
           placeholder={recording ? 'Gravando áudio…' : 'Mensagem… (@ usuário, # para O.S.)'}
           rows={1}
           disabled={recording || uploading}
-          className="flex-1 min-h-[40px] max-h-28 resize-none overflow-y-auto rounded-2xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-purple-400 bg-gray-50 disabled:opacity-50"
+          className="flex-1 min-h-[40px] max-h-28 resize-none overflow-y-auto rounded-2xl border border-purple-700 px-3 py-2 text-sm focus:outline-none focus:border-purple-400 bg-purple-800 text-white placeholder-purple-400 disabled:opacity-50"
         />
 
         {recording ? (
@@ -527,7 +527,7 @@ export default function ChatPage() {
           <button
             onClick={toggleRecording}
             disabled={uploading}
-            className="text-gray-400 hover:text-purple-500 p-1.5 shrink-0 disabled:opacity-40 transition"
+            className="text-purple-400 hover:text-purple-200 p-1.5 shrink-0 disabled:opacity-40 transition"
           >
             <Mic className="w-5 h-5" />
           </button>
@@ -628,7 +628,7 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
   if (msg.message_type === 'system') {
     return (
       <div className="flex justify-center my-2">
-        <span className="text-xs text-gray-500 bg-gray-200/80 px-3 py-1 rounded-full max-w-xs text-center">
+        <span className="text-xs text-purple-300 bg-purple-800/60 px-3 py-1 rounded-full max-w-xs text-center">
           {msg.content}
         </span>
       </div>
@@ -648,10 +648,10 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
       )}
       <div className={`max-w-[75%] flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
         {!isOwn && (
-          <span className="text-[10px] text-gray-400 ml-1 mb-0.5 font-medium">
+          <span className="text-[10px] text-purple-300 ml-1 mb-0.5 font-medium">
             {msg.sender_name}
             {msg.sender_role && (
-              <span className="ml-1 text-gray-400 font-normal">· {msg.sender_role}</span>
+              <span className="ml-1 text-purple-400 font-normal">· {msg.sender_role}</span>
             )}
             {msg.sender_association && msg.sender_association !== myAssociation && (
               <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 text-[9px] font-semibold leading-none">{msg.sender_association}</span>
@@ -661,24 +661,24 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
         <div className={`rounded-2xl px-3 py-2 ${
           isOwn
             ? 'bg-purple-600 text-white rounded-tr-sm'
-            : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm'
+            : 'bg-purple-800 border border-purple-700 text-purple-50 rounded-tl-sm'
         }`}>
           {/* Quoted message */}
           {msg.reply_to_sender_name && (
             <div className={`mb-2 rounded-xl px-2.5 py-1.5 flex gap-1.5 ${
-              isOwn ? 'bg-purple-500/40' : 'bg-gray-100'
+              isOwn ? 'bg-purple-500/40' : 'bg-purple-700/60'
             }`}>
-              <div className={`w-0.5 rounded-full shrink-0 ${isOwn ? 'bg-white/60' : 'bg-purple-400'}`} />
+              <div className="w-0.5 rounded-full shrink-0 bg-purple-300" />
               <div className="min-w-0">
-                <p className={`text-[10px] font-semibold mb-0.5 ${isOwn ? 'text-purple-100' : 'text-purple-600'}`}>
+                <p className="text-[10px] font-semibold mb-0.5 text-purple-200">
                   {msg.reply_to_sender_name}
                 </p>
                 {msg.reply_to_type === 'photo' ? (
-                  <p className={`text-[11px] ${isOwn ? 'text-purple-200' : 'text-gray-500'}`}>📷 Foto</p>
+                  <p className="text-[11px] text-purple-300">📷 Foto</p>
                 ) : msg.reply_to_type === 'audio' ? (
-                  <p className={`text-[11px] ${isOwn ? 'text-purple-200' : 'text-gray-500'}`}>🎤 Áudio</p>
+                  <p className="text-[11px] text-purple-300">🎤 Áudio</p>
                 ) : (
-                  <p className={`text-[11px] truncate max-w-[180px] ${isOwn ? 'text-purple-100' : 'text-gray-600'}`}>
+                  <p className="text-[11px] truncate max-w-[180px] text-purple-200">
                     {msg.reply_to_content}
                   </p>
                 )}
@@ -703,24 +703,24 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
             <audio controls src={msg.media_url} className="max-w-[240px] h-8" />
           )}
         </div>
-        <span className={`text-[10px] text-gray-400 mt-0.5 ${isOwn ? 'mr-1' : 'ml-1'}`}>{time}</span>
+        <span className={`text-[10px] text-purple-400 mt-0.5 ${isOwn ? 'mr-1' : 'ml-1'}`}>{time}</span>
         {readers.length > 0 && (
           <div className={`flex items-center gap-0.5 mt-0.5 ${isOwn ? 'justify-end mr-1' : 'ml-1'}`}>
             {readers.slice(0, 5).map(r => (
               <span key={r.user_id} title={`Visto por ${r.name}`}
-                className="w-4 h-4 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[8px] font-bold leading-none select-none">
+                className="w-4 h-4 rounded-full bg-purple-700 text-purple-200 flex items-center justify-center text-[8px] font-bold leading-none select-none">
                 {r.name[0]?.toUpperCase()}
               </span>
             ))}
             {readers.length > 5 && (
-              <span className="text-[9px] text-gray-400 ml-0.5">+{readers.length - 5}</span>
+              <span className="text-[9px] text-purple-400 ml-0.5">+{readers.length - 5}</span>
             )}
           </div>
         )}
       </div>
       {/* Action buttons */}
       <div className={`self-center flex flex-col gap-0.5 transition ${hovered ? 'opacity-100' : 'opacity-0'}`}>
-        <button onClick={() => onReply(msg)} className="p-1.5 rounded-full text-gray-400 hover:text-purple-500 hover:bg-gray-100 transition" title="Responder">
+        <button onClick={() => onReply(msg)} className="p-1.5 rounded-full text-purple-400 hover:text-purple-200 hover:bg-purple-800 transition" title="Responder">
           <Reply className="w-3.5 h-3.5" />
         </button>
         {isOwn && (
