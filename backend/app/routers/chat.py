@@ -134,6 +134,57 @@ async def messages_since(
     return [_row_to_dict(r) for r in rows]
 
 
+@router.post("/mark-read")
+async def mark_read(
+    current: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Mark all messages in the group as read by the current user (excluding own messages)."""
+    async with AsyncSessionLocal() as session:
+        where, params = await _assoc_filter(str(current.association_id), session)
+        params["uid"] = str(current.user_id)
+        name_row = await session.execute(
+            text("SELECT full_name FROM users WHERE id = :uid"), {"uid": str(current.user_id)}
+        )
+        user_name = name_row.scalar() or "Usuário"
+        params["uname"] = user_name
+        await session.execute(text(f"""
+            INSERT INTO chat_message_reads (message_id, user_id, user_name, read_at)
+            SELECT m.id, :uid, :uname, NOW()
+            FROM chat_messages m
+            WHERE {where}
+              AND (m.sender_id IS NULL OR m.sender_id != :uid)
+            ON CONFLICT (message_id, user_id) DO NOTHING
+        """), params)
+        await session.commit()
+    return {"ok": True}
+
+
+@router.get("/reads")
+async def get_reads(
+    current: CurrentUser = Depends(get_current_user),
+) -> list[dict]:
+    """Returns readers per message for the last 15 days."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+    async with AsyncSessionLocal() as session:
+        where, params = await _assoc_filter(str(current.association_id), session)
+        params["cutoff"] = cutoff
+        rows = await session.execute(text(f"""
+            SELECT r.message_id, r.user_name, r.user_id
+            FROM chat_message_reads r
+            JOIN chat_messages m ON m.id = r.message_id
+            WHERE {where}
+              AND m.created_at >= :cutoff
+            ORDER BY r.read_at ASC
+        """), params)
+        reads: dict[str, list[dict]] = {}
+        for r in rows.fetchall():
+            mid = str(r[0])
+            if mid not in reads:
+                reads[mid] = []
+            reads[mid].append({"name": r[1], "user_id": str(r[2])})
+    return [{"message_id": mid, "readers": readers} for mid, readers in reads.items()]
+
+
 @router.get("/unread-count")
 async def unread_count(
     since: str = Query(...),

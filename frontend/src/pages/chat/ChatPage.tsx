@@ -26,6 +26,8 @@ interface ChatMessage {
   created_at: string
 }
 
+interface MessageReader { name: string; user_id: string }
+
 interface ChatUser {
   id: string
   name: string
@@ -37,6 +39,7 @@ export default function ChatPage() {
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [users, setUsers] = useState<ChatUser[]>([])
+  const [reads, setReads] = useState<Record<string, MessageReader[]>>({})
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -67,8 +70,18 @@ export default function ChatPage() {
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') =>
     messagesEndRef.current?.scrollIntoView({ behavior })
 
+  const fetchReads = useCallback(async () => {
+    try {
+      const res = await api.get<{ message_id: string; readers: MessageReader[] }[]>('/chat/reads')
+      const map: Record<string, MessageReader[]> = {}
+      for (const r of res.data) map[r.message_id] = r.readers
+      setReads(map)
+    } catch { /* silent */ }
+  }, [])
+
   const startPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current)
+    let tick = 0
     pollRef.current = setInterval(async () => {
       try {
         const res = await api.get<ChatMessage[]>('/chat/messages/since', {
@@ -81,11 +94,14 @@ export default function ChatPage() {
             const fresh = res.data.filter(m => !ids.has(m.id))
             return fresh.length ? [...prev, ...fresh] : prev
           })
+          api.post('/chat/mark-read').catch(() => {})
           if (atBottomRef.current) setTimeout(() => scrollToBottom(), 50)
         }
+        tick++
+        if (tick % 8 === 0) fetchReads()
       } catch { /* silent */ }
     }, 2000)
-  }, [])
+  }, [fetchReads])
 
   useEffect(() => {
     localStorage.setItem('chatLastRead', new Date().toISOString())
@@ -100,6 +116,8 @@ export default function ChatPage() {
         setHasMore(msgRes.data.length === 50)
         if (msgRes.data.length > 0)
           lastSinceRef.current = msgRes.data[msgRes.data.length - 1].created_at
+        api.post('/chat/mark-read').catch(() => {})
+        fetchReads()
         setTimeout(() => { scrollToBottom('auto'); startPolling() }, 100)
       } finally {
         setLoading(false)
@@ -364,7 +382,7 @@ export default function ChatPage() {
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
               {msgs.map(msg => (
-                <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} myAssociation={associationName ?? ''} />
+                <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} myAssociation={associationName ?? ''} readers={reads[msg.id] ?? []} />
               ))}
             </div>
           ))
@@ -550,7 +568,7 @@ function OSMentionCard({ number }: { number: number }) {
   )
 }
 
-function MessageBubble({ msg, isOwn, myAssociation }: { msg: ChatMessage; isOwn: boolean; myAssociation: string }) {
+function MessageBubble({ msg, isOwn, myAssociation, readers }: { msg: ChatMessage; isOwn: boolean; myAssociation: string; readers: MessageReader[] }) {
   const time = new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
   if (msg.message_type === 'system') {
@@ -606,6 +624,19 @@ function MessageBubble({ msg, isOwn, myAssociation }: { msg: ChatMessage; isOwn:
           )}
         </div>
         <span className={`text-[10px] text-gray-400 mt-0.5 ${isOwn ? 'mr-1' : 'ml-1'}`}>{time}</span>
+        {readers.length > 0 && (
+          <div className={`flex items-center gap-0.5 mt-0.5 ${isOwn ? 'justify-end mr-1' : 'ml-1'}`}>
+            {readers.slice(0, 5).map(r => (
+              <span key={r.user_id} title={`Visto por ${r.name}`}
+                className="w-4 h-4 rounded-full bg-blue-200 text-blue-700 flex items-center justify-center text-[8px] font-bold leading-none select-none">
+                {r.name[0]?.toUpperCase()}
+              </span>
+            ))}
+            {readers.length > 5 && (
+              <span className="text-[9px] text-gray-400 ml-0.5">+{readers.length - 5}</span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
