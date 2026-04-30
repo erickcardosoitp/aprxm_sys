@@ -27,7 +27,7 @@ class MessageRequest(BaseModel):
 ROLE_LABELS: dict[str, str] = {
     "superadmin": "Super Admin",
     "admin_master": "Admin Master",
-    "admin": "Admin",
+    "admin": "ADMIN",
     "diretoria": "Diretoria",
     "conferente": "Conferente",
     "diretoria_adjunta": "Diretoria Adjunta",
