@@ -848,7 +848,7 @@ async def get_package(
                r.address_street AS resident_address_street,
                r.address_number AS resident_address_number,
                r.address_complement AS resident_address_complement,
-               r.address_district AS resident_address_district,
+               r.address_neighborhood AS resident_address_district,
                r.address_city AS resident_address_city,
                r.address_state AS resident_address_state,
                u_rec.full_name AS received_by_name,

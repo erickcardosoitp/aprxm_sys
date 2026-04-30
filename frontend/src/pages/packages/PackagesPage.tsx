@@ -594,7 +594,7 @@ export default function PackagesPage() {
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
   const [loading, setLoading] = useState(false)
   const [packagesLoading, setPackagesLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState('')
+  const [filterStatus, setFilterStatus] = useState('received')
   const [showDeliveredSearch, setShowDeliveredSearch] = useState(false)
   const deliveredInputRef = useRef<DebouncedInputHandle>(null)
   const [deliveredQ, setDeliveredQ] = useState('')
