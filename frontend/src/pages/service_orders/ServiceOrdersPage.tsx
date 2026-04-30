@@ -1810,6 +1810,8 @@ export default function ServiceOrdersPage() {
   const [filterStatus, setFilterStatus] = useState<ServiceOrderStatus | ''>('')
   const [filterPriority, setFilterPriority] = useState<ServiceOrderPriority | ''>('')
 
+  const HIDDEN_BY_DEFAULT: ServiceOrderStatus[] = ['cancelled', 'archived']
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -1818,7 +1820,10 @@ export default function ServiceOrdersPage() {
       if (filterPriority) params.priority = filterPriority
       if (search.trim()) params.q = search.trim()
       const res = await api.get<ServiceOrder[]>('/service-orders', { params })
-      setOrders(res.data)
+      const data = filterStatus === ''
+        ? res.data.filter(o => !HIDDEN_BY_DEFAULT.includes(o.status as ServiceOrderStatus))
+        : res.data
+      setOrders(data)
     } catch {
       toast.error('Erro ao carregar ordens de serviço.')
     } finally {
@@ -1910,8 +1915,9 @@ export default function ServiceOrdersPage() {
             <button
               onClick={() => setFilterStatus('')}
               className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${filterStatus === '' ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              title="Oculta canceladas e arquivadas"
             >
-              Todas
+              Ativas
             </button>
             {ALL_STATUSES.map(s => (
               <button
