@@ -602,16 +602,27 @@ class FinanceService:
         # Generate unique 8-digit barcode code
         barcode_code = "".join(random.choices(string.digits, k=8))
 
-        if isento:
-            tx = None
+        # Fetch cash session for both exempt and non-exempt paths
+        if cash_session_id:
+            cash_session = await self.get_open_session(association_id, session_id=cash_session_id)
         else:
-            # Use explicit session if provided, otherwise prefer the issuing user's own
-            if cash_session_id:
-                cash_session = await self.get_open_session(association_id, session_id=cash_session_id)
-            else:
-                cash_session = await self.get_open_session(association_id, preferred_by=issued_by, strict_owner=True)
+            cash_session = await self.get_open_session(association_id, preferred_by=issued_by, strict_owner=True)
 
-            # Register transaction
+        if isento:
+            tx = await self.register_transaction(
+                association_id=association_id,
+                cash_session_id=cash_session.id,
+                tx_type=TransactionType.income,
+                amount=Decimal("0.00"),
+                description=f"Comprovante de Residência (Isento) — {resident_name}",
+                created_by=issued_by,
+                income_subtype=IncomeSubtype.proof_of_residence,
+                payment_method_id=payment_method_id,
+                category_id=category_id,
+                resident_id=resident_id,
+                reference_number=barcode_code,
+            )
+        else:
             tx = await self.register_transaction(
                 association_id=association_id,
                 cash_session_id=cash_session.id,
@@ -700,18 +711,24 @@ class FinanceService:
 
         buf = BytesIO()
         Code128(code, writer=SVGWriter()).write(buf, options={
-            "module_height": 10.0,
-            "module_width": 0.35,
+            "module_height": 8.0,
+            "module_width": 0.3,
             "quiet_zone": 2.0,
             "write_text": False,
+            "text_distance": 0,
         })
         svg = buf.getvalue().decode("utf-8")
-        # Inject viewBox if missing so fpdf2 renders without warnings/errors
-        if "viewBox" not in svg:
-            w = re.search(r'width="([\d.]+)', svg)
-            h = re.search(r'height="([\d.]+)', svg)
-            if w and h:
-                svg = svg.replace("<svg ", f'<svg viewBox="0 0 {w.group(1)} {h.group(1)}" ', 1)
+        # Strip any leaked text elements
+        svg = re.sub(r"<text[^>]*>.*?</text>", "", svg, flags=re.DOTALL)
+        # Extract natural dimensions for viewBox, then pin output to 38×12 mm
+        nat_w = re.search(r'width="([\d.]+)', svg)
+        nat_h = re.search(r'height="([\d.]+)', svg)
+        if nat_w and nat_h:
+            vb = f'viewBox="0 0 {nat_w.group(1)} {nat_h.group(1)}"' if "viewBox" not in svg else ""
+            svg = re.sub(r'width="[^"]*"', 'width="38mm"', svg, count=1)
+            svg = re.sub(r'height="[^"]*"', 'height="12mm"', svg, count=1)
+            if vb:
+                svg = svg.replace("<svg ", f"<svg {vb} ", 1)
         return svg.encode("utf-8")
 
     @staticmethod
@@ -753,25 +770,15 @@ class FinanceService:
         pdf.set_margins(20, 20, 20)
         pdf.set_auto_page_break(auto=True, margin=20)
 
-        # Barcode — canto superior direito
+        # Barcode — canto superior direito (dimensões fixas 38×12 mm)
         if barcode_bytes:
-            import re as _re
-            bc_io = BytesIO(barcode_bytes)
-            bc_w = 45.0
+            bc_w, bc_h = 38.0, 12.0
             bc_x = pdf.w - pdf.r_margin - bc_w
             bc_y = 10.0
-            # Compute rendered height from SVG dimensions to place text exactly below
-            svg_text = barcode_bytes.decode("utf-8")
-            _sw = _re.search(r'width="([\d.]+)', svg_text)
-            _sh = _re.search(r'height="([\d.]+)', svg_text)
-            if _sw and _sh:
-                bc_h = bc_w * float(_sh.group(1)) / float(_sw.group(1))
-            else:
-                bc_h = 18.0
-            pdf.image(bc_io, x=bc_x, y=bc_y, w=bc_w)
-            pdf.set_font("Helvetica", size=8)
+            pdf.image(BytesIO(barcode_bytes), x=bc_x, y=bc_y, w=bc_w, h=bc_h)
+            pdf.set_font("Helvetica", size=7)
             pdf.set_text_color(80, 80, 80)
-            pdf.set_xy(bc_x, bc_y + bc_h + 0.5)
+            pdf.set_xy(bc_x, bc_y + bc_h + 1.0)
             pdf.cell(bc_w, 4, barcode_code, align="C")
 
         # Logo centralizado
