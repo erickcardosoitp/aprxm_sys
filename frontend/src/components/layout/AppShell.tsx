@@ -78,6 +78,21 @@ export function AppShell() {
   const isAdmin      = role === 'admin' || role === 'diretoria' || role === 'conselho' || isSuperAdmin
 
   useEffect(() => {
+    const storedToken = useAuthStore.getState().token
+    if (storedToken && !useAuthStore.getState().associationName) {
+      try {
+        const payload = jwtDecode<{ sub: string; association_id: string; role: string; full_name: string; linked_association_ids?: string[]; association_name?: string }>(storedToken)
+        if (payload.association_name) {
+          useAuthStore.getState().setAuth(
+            storedToken, payload.sub, payload.association_id, payload.role as UserRole,
+            payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name,
+          )
+        }
+      } catch { /* token inválido */ }
+    }
+  }, [])
+
+  useEffect(() => {
     if (!role || isSuperAdmin) return
     api.get('/admin/my-permissions').then(r => setPermissions(r.data)).catch(() => {})
   }, [role])
