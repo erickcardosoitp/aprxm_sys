@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Plus, X, ChevronRight, Calendar, User, AlertCircle, Flag, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Plus, X, ChevronRight, Calendar, User, AlertCircle, Flag, Trash2, Link } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -22,7 +22,12 @@ interface Demand {
   notes?: string
   created_at: string
   created_by_name?: string
+  service_order_id?: string
+  service_order_number?: string
+  service_order_title?: string
 }
+
+interface SOOption { id: string; number: number; title: string }
 
 interface UserOption { id: string; full_name: string; is_active?: boolean }
 
@@ -67,11 +72,13 @@ interface FormState {
   assigned_to_name: string
   due_date: string
   notes: string
+  service_order_id: string
 }
 
 const EMPTY_FORM: FormState = {
   title: '', description: '', phase: 'pendente',
   priority: 'medium', assigned_to: '', assigned_to_name: '', due_date: '', notes: '',
+  service_order_id: '',
 }
 
 function DemandModal({ demand, users, onClose, onSaved, serviceOrderId, defaultStatus }: {
@@ -92,8 +99,30 @@ function DemandModal({ demand, users, onClose, onSaved, serviceOrderId, defaultS
     assigned_to_name: demand.assigned_to_name ?? '',
     due_date: demand.due_date ?? '',
     notes: demand.notes ?? '',
-  } : EMPTY_FORM)
+    service_order_id: demand.service_order_id ?? serviceOrderId ?? '',
+  } : { ...EMPTY_FORM, service_order_id: serviceOrderId ?? '' })
   const [saving, setSaving] = useState(false)
+  const [soOptions, setSoOptions] = useState<SOOption[]>(
+    demand?.service_order_id && demand.service_order_number
+      ? [{ id: demand.service_order_id, number: parseInt(demand.service_order_number), title: demand.service_order_title ?? '' }]
+      : []
+  )
+  const [soQuery, setSoQuery] = useState('')
+  const [soSearching, setSoSearching] = useState(false)
+  const soTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const searchSO = (q: string) => {
+    setSoQuery(q)
+    if (soTimeout.current) clearTimeout(soTimeout.current)
+    if (!q.trim()) { setSoOptions([]); return }
+    soTimeout.current = setTimeout(async () => {
+      setSoSearching(true)
+      try {
+        const res = await api.get<SOOption[]>('/service-orders/search', { params: { q } })
+        setSoOptions(res.data)
+      } finally { setSoSearching(false) }
+    }, 300)
+  }
 
   const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
@@ -117,10 +146,10 @@ function DemandModal({ demand, users, onClose, onSaved, serviceOrderId, defaultS
         assigned_to_name: form.assigned_to_name || null,
         due_date: form.due_date || null,
         notes: form.notes || null,
+        service_order_id: form.service_order_id || null,
       }
       if (!isEdit) {
         payload.status = defaultStatus ?? 'gaveta'
-        if (serviceOrderId) payload.service_order_id = serviceOrderId
       }
       let saved: Demand
       if (isEdit) {
@@ -195,6 +224,53 @@ function DemandModal({ demand, users, onClose, onSaved, serviceOrderId, defaultS
           </div>
 
           <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Ordem de Serviço vinculada</label>
+            {form.service_order_id ? (
+              <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
+                <Link className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                <span className="text-sm text-orange-700 font-medium flex-1 truncate">
+                  {soOptions.find(o => o.id === form.service_order_id)?.title
+                    ? `OS #${soOptions.find(o => o.id === form.service_order_id)?.number} — ${soOptions.find(o => o.id === form.service_order_id)?.title}`
+                    : `OS vinculada`}
+                </span>
+                <button type="button" onClick={() => { setForm(f => ({ ...f, service_order_id: '' })); setSoOptions([]) }}
+                  className="text-orange-400 hover:text-orange-600 transition">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  value={soQuery}
+                  onChange={e => searchSO(e.target.value)}
+                  className={inputCls}
+                  placeholder="Buscar por número ou título da O.S…"
+                />
+                {soSearching && (
+                  <div className="absolute right-3 top-2.5 w-4 h-4 border-2 border-gray-300 border-t-[#26619c] rounded-full animate-spin" />
+                )}
+                {soOptions.length > 0 && (
+                  <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                    {soOptions.map(o => (
+                      <button key={o.id} type="button"
+                        onMouseDown={e => {
+                          e.preventDefault()
+                          setForm(f => ({ ...f, service_order_id: o.id }))
+                          setSoQuery('')
+                          setSoOptions([])
+                        }}
+                        className="w-full px-3 py-2 text-left hover:bg-orange-50 flex items-center gap-2">
+                        <span className="text-xs font-mono text-gray-400 shrink-0">#{o.number}</span>
+                        <span className="text-sm text-gray-700 truncate">{o.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div>
             <label className="block text-xs font-medium text-gray-500 mb-1.5">Notas</label>
             <textarea value={form.notes} onChange={set('notes')} rows={2}
               className={inputCls + ' resize-none'} placeholder="Observações…" />
@@ -252,6 +328,11 @@ function DemandCard({ demand, onEdit, onMove, onDelete, canWrite, isDragging, on
 
       {/* Title */}
       <p className="text-sm font-semibold text-gray-800 leading-snug line-clamp-2">{demand.title}</p>
+      {demand.service_order_number && (
+        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-orange-600 font-medium w-fit">
+          <Link className="w-2.5 h-2.5" /> OS #{demand.service_order_number}
+        </span>
+      )}
 
       {/* Meta */}
       <div className="flex flex-col gap-1">

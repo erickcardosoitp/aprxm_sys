@@ -88,15 +88,18 @@ async def list_demands(
         SELECT d.id, d.title, d.description, d.status, d.phase, d.priority,
                d.assigned_to, d.assigned_to_name, d.due_date, d.notes,
                d.created_at, d.updated_at, d.service_order_id,
-               u.full_name AS created_by_name
+               u.full_name AS created_by_name,
+               so.number AS service_order_number, so.title AS service_order_title
         FROM demands d
         LEFT JOIN users u ON u.id = d.created_by
+        LEFT JOIN service_orders so ON so.id = d.service_order_id
         WHERE {w}
         ORDER BY d.created_at DESC
     """), p)).fetchall()
     cols = ["id", "title", "description", "status", "phase", "priority",
             "assigned_to", "assigned_to_name", "due_date", "notes",
-            "created_at", "updated_at", "service_order_id", "created_by_name"]
+            "created_at", "updated_at", "service_order_id", "created_by_name",
+            "service_order_number", "service_order_title"]
     return [dict(zip(cols, [str(v) if v is not None else None for v in r])) for r in rows]
 
 
