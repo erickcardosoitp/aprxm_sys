@@ -295,7 +295,7 @@ export default function ChatPage() {
         message_type: 'audio', media_url: up.data.url,
       })
       lastSinceRef.current = res.data.created_at
-      setMessages(prev => [...prev, res.data])
+      setMessages(prev => prev.some(m => m.id === res.data.id) ? prev : [...prev, res.data])
       setTimeout(() => scrollToBottom(), 50)
     } catch {
       toast.error('Erro ao enviar áudio')
@@ -320,7 +320,7 @@ export default function ChatPage() {
         message_type: 'photo', media_url: up.data.url,
       })
       lastSinceRef.current = res.data.created_at
-      setMessages(prev => [...prev, res.data])
+      setMessages(prev => prev.some(m => m.id === res.data.id) ? prev : [...prev, res.data])
       setTimeout(() => scrollToBottom(), 50)
     } catch {
       toast.error('Erro ao enviar foto')
