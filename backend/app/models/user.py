@@ -16,6 +16,7 @@ class UserRole(str, Enum):
     diretoria_adjunta = "diretoria_adjunta"
     operator = "operator"
     viewer = "viewer"
+    conselho = "conselho"
 
 
 class User(SQLModel, table=True):
