@@ -278,6 +278,29 @@ async def list_comments(
     ]
 
 
+@router.get("/by-id/{so_id}", summary="Buscar OS pelo ID")
+async def get_so_by_id(
+    so_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    assoc_ids, assoc_names = await _get_group_assoc_ids(str(current.association_id), session)
+    ids_str = ",".join(f"'{i}'" for i in assoc_ids)
+    row = (await session.execute(text(f"""
+        SELECT id, number, title, status, priority, association_id
+        FROM service_orders
+        WHERE id = :so_id AND association_id IN ({ids_str})
+    """), {"so_id": so_id})).fetchone()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(404, "OS não encontrada")
+    return {
+        "id": str(row[0]), "number": row[1], "title": row[2],
+        "status": row[3], "priority": row[4],
+        "association_name": assoc_names.get(str(row[5])),
+    }
+
+
 @router.get("/search", summary="Buscar OS por número ou título")
 async def search_so(
     q: str = "",

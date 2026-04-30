@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Image, Mic, MicOff, Send, Reply, X } from 'lucide-react'
+import { Image, Mic, MicOff, Send, Reply, X, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
@@ -219,7 +219,7 @@ export default function ChatPage() {
     const queryEnd = hashStart + 1 + osFilter.length
     const before = text.slice(0, hashStart)
     const after = text.slice(queryEnd)
-    const token = `#OS-${os.number}`
+    const token = `#OS-${os.id}`
     const newText = `${before}${token} ${after}`
     setText(newText)
     setOsIdx(null)
@@ -402,7 +402,14 @@ export default function ChatPage() {
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
               {msgs.map(msg => (
-                <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} myAssociation={associationName ?? ''} readers={reads[msg.id] ?? []} onReply={setReplyTo} />
+                <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} myAssociation={associationName ?? ''} readers={reads[msg.id] ?? []} onReply={setReplyTo}
+                  onDelete={id => {
+                    if (!confirm('Apagar esta mensagem?')) return
+                    api.delete(`/chat/messages/${id}`)
+                      .then(() => setMessages(prev => prev.filter(m => m.id !== id)))
+                      .catch(() => toast.error('Erro ao apagar mensagem'))
+                  }}
+                />
               ))}
             </div>
           ))
@@ -553,28 +560,35 @@ function groupByDate(msgs: ChatMessage[]) {
 }
 
 function renderText(content: string) {
-  const parts = content.split(/(#OS-\d+|@\S+)/g)
+  const parts = content.split(/(#OS-[\w-]+|@\S+)/g)
   return parts.map((p, i) => {
     if (p.startsWith('@')) return <span key={i} className="font-semibold opacity-90">{p}</span>
     if (p.startsWith('#OS-')) {
-      const num = parseInt(p.slice(4), 10)
-      return <OSMentionCard key={i} number={num} />
+      const ref = p.slice(4)
+      return <OSMentionCard key={i} ref={ref} />
     }
     return p
   })
 }
 
-function OSMentionCard({ number }: { number: number }) {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function OSMentionCard({ ref: ref_ }: { ref: string }) {
   const [os, setOs] = useState<OSSearchResult | null>(null)
+  const isUuid = UUID_RE.test(ref_)
 
   useEffect(() => {
-    api.get<OSSearchResult[]>('/service-orders/search', { params: { q: String(number) } })
-      .then(r => {
-        const found = r.data.find(o => o.number === number)
-        if (found) setOs(found)
-      })
-      .catch(() => {})
-  }, [number])
+    if (isUuid) {
+      api.get<OSSearchResult>(`/service-orders/by-id/${ref_}`)
+        .then(r => setOs(r.data))
+        .catch(() => {})
+    } else {
+      const num = parseInt(ref_, 10)
+      api.get<OSSearchResult[]>('/service-orders/search', { params: { q: String(num) } })
+        .then(r => { const found = r.data.find(o => o.number === num); if (found) setOs(found) })
+        .catch(() => {})
+    }
+  }, [ref_])
 
   const statusLabel: Record<string, string> = {
     pending: 'Pendente', open: 'Aberta', in_progress: 'Em andamento',
@@ -588,7 +602,7 @@ function OSMentionCard({ number }: { number: number }) {
 
   if (!os) return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-50 border border-orange-200 rounded text-orange-700 text-xs font-medium">
-      #{number} …
+      OS …
     </span>
   )
 
@@ -608,7 +622,7 @@ function OSMentionCard({ number }: { number: number }) {
   )
 }
 
-function MessageBubble({ msg, isOwn, myAssociation, readers, onReply }: { msg: ChatMessage; isOwn: boolean; myAssociation: string; readers: MessageReader[]; onReply: (m: ChatMessage) => void }) {
+function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }: { msg: ChatMessage; isOwn: boolean; myAssociation: string; readers: MessageReader[]; onReply: (m: ChatMessage) => void; onDelete: (id: string) => void }) {
   const [hovered, setHovered] = useState(false)
   const time = new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
@@ -705,14 +719,17 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply }: { msg: C
           </div>
         )}
       </div>
-      {/* Reply button */}
-      <button
-        onClick={() => onReply(msg)}
-        className={`self-center p-1.5 rounded-full text-gray-400 hover:text-blue-500 hover:bg-gray-100 transition shrink-0 ${hovered ? 'opacity-100' : 'opacity-0'}`}
-        title="Responder"
-      >
-        <Reply className="w-4 h-4" />
-      </button>
+      {/* Action buttons */}
+      <div className={`self-center flex flex-col gap-0.5 transition ${hovered ? 'opacity-100' : 'opacity-0'}`}>
+        <button onClick={() => onReply(msg)} className="p-1.5 rounded-full text-gray-400 hover:text-blue-500 hover:bg-gray-100 transition" title="Responder">
+          <Reply className="w-3.5 h-3.5" />
+        </button>
+        {isOwn && (
+          <button onClick={() => onDelete(msg.id)} className="p-1.5 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 transition" title="Apagar">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
     </div>
   )
 }

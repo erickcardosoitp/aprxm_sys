@@ -314,6 +314,28 @@ async def send_message(
     }
 
 
+@router.delete("/messages/{message_id}")
+async def delete_message(
+    message_id: str,
+    current: CurrentUser = Depends(get_current_user),
+) -> dict:
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(
+            text("SELECT sender_id FROM chat_messages WHERE id = :mid"),
+            {"mid": message_id},
+        )).fetchone()
+        if not row:
+            raise HTTPException(404, "Mensagem não encontrada")
+        if str(row[0]) != str(current.user_id) and current.role not in ("admin", "superadmin", "admin_master"):
+            raise HTTPException(403, "Sem permissão para apagar esta mensagem")
+        await session.execute(
+            text("DELETE FROM chat_messages WHERE id = :mid"),
+            {"mid": message_id},
+        )
+        await session.commit()
+    return {"deleted": message_id}
+
+
 @router.get("/users")
 async def list_users(
     current: CurrentUser = Depends(get_current_user),
