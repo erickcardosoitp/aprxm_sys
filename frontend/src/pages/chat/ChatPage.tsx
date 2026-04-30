@@ -379,14 +379,14 @@ export default function ChatPage() {
           <div className="text-center text-xs text-gray-400 py-2">Carregando...</div>
         )}
         {hasMore && !loadingMore && messages.length >= 50 && (
-          <button onClick={loadMore} className="w-full text-xs text-blue-500 py-2 hover:underline">
+          <button onClick={loadMore} className="w-full text-xs text-purple-500 py-2 hover:underline">
             Carregar mensagens anteriores
           </button>
         )}
 
         {loading ? (
           <div className="flex justify-center items-center h-32">
-            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 gap-2 text-gray-400">
@@ -424,9 +424,9 @@ export default function ChatPage() {
             <button
               key={u.id}
               onMouseDown={e => { e.preventDefault(); insertMention(u) }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex items-center gap-2"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-purple-50 flex items-center gap-2"
             >
-              <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold shrink-0">
+              <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-xs font-bold shrink-0">
                 {u.name[0]?.toUpperCase()}
               </span>
               {u.name}
@@ -457,7 +457,7 @@ export default function ChatPage() {
               <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium ${
                 os.status === 'resolved' ? 'bg-green-100 text-green-700' :
                 os.status === 'cancelled' ? 'bg-gray-100 text-gray-500' :
-                os.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                os.status === 'in_progress' ? 'bg-purple-100 text-purple-700' :
                 'bg-yellow-100 text-yellow-700'
               }`}>{os.status}</span>
             </button>
@@ -467,10 +467,10 @@ export default function ChatPage() {
 
       {/* Reply preview */}
       {replyTo && (
-        <div className="mx-3 mb-1 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 flex items-start gap-2 shrink-0">
-          <div className="w-0.5 bg-blue-400 rounded-full self-stretch shrink-0" />
+        <div className="mx-3 mb-1 bg-purple-50 border border-purple-200 rounded-xl px-3 py-2 flex items-start gap-2 shrink-0">
+          <div className="w-0.5 bg-purple-400 rounded-full self-stretch shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-semibold text-blue-600 mb-0.5">{replyTo.sender_name}</p>
+            <p className="text-[10px] font-semibold text-purple-600 mb-0.5">{replyTo.sender_name}</p>
             {replyTo.message_type === 'photo' ? (
               <p className="text-xs text-gray-500">📷 Foto</p>
             ) : replyTo.message_type === 'audio' ? (
@@ -490,7 +490,7 @@ export default function ChatPage() {
         <button
           onClick={() => fileRef.current?.click()}
           disabled={uploading || recording}
-          className="text-gray-400 hover:text-blue-500 p-1.5 shrink-0 disabled:opacity-40 transition"
+          className="text-gray-400 hover:text-purple-500 p-1.5 shrink-0 disabled:opacity-40 transition"
         >
           <Image className="w-5 h-5" />
         </button>
@@ -504,7 +504,7 @@ export default function ChatPage() {
           placeholder={recording ? 'Gravando áudio…' : 'Mensagem… (@ usuário, # para O.S.)'}
           rows={1}
           disabled={recording || uploading}
-          className="flex-1 min-h-[40px] max-h-28 resize-none overflow-y-auto rounded-2xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-gray-50 disabled:opacity-50"
+          className="flex-1 min-h-[40px] max-h-28 resize-none overflow-y-auto rounded-2xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-purple-400 bg-gray-50 disabled:opacity-50"
         />
 
         {recording ? (
@@ -519,7 +519,7 @@ export default function ChatPage() {
           <button
             onClick={sendText}
             disabled={sending}
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2.5 shrink-0 disabled:opacity-50 transition"
+            className="bg-purple-600 hover:bg-purple-700 text-white rounded-full p-2.5 shrink-0 disabled:opacity-50 transition"
           >
             <Send className="w-4 h-4" />
           </button>
@@ -527,14 +527,14 @@ export default function ChatPage() {
           <button
             onClick={toggleRecording}
             disabled={uploading}
-            className="text-gray-400 hover:text-blue-500 p-1.5 shrink-0 disabled:opacity-40 transition"
+            className="text-gray-400 hover:text-purple-500 p-1.5 shrink-0 disabled:opacity-40 transition"
           >
             <Mic className="w-5 h-5" />
           </button>
         )}
 
         {uploading && (
-          <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin shrink-0" />
         )}
       </div>
     </div>
@@ -643,7 +643,7 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
       onMouseLeave={() => setHovered(false)}
     >
       {!isOwn && (
-        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1 select-none">
+        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-400 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1 select-none">
           {msg.sender_name[0]?.toUpperCase()}
         </div>
       )}
@@ -661,25 +661,25 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
         )}
         <div className={`rounded-2xl px-3 py-2 ${
           isOwn
-            ? 'bg-blue-600 text-white rounded-tr-sm'
+            ? 'bg-purple-600 text-white rounded-tr-sm'
             : 'bg-white border border-gray-200 text-gray-800 rounded-tl-sm'
         }`}>
           {/* Quoted message */}
           {msg.reply_to_sender_name && (
             <div className={`mb-2 rounded-xl px-2.5 py-1.5 flex gap-1.5 ${
-              isOwn ? 'bg-blue-500/40' : 'bg-gray-100'
+              isOwn ? 'bg-purple-500/40' : 'bg-gray-100'
             }`}>
-              <div className={`w-0.5 rounded-full shrink-0 ${isOwn ? 'bg-white/60' : 'bg-blue-400'}`} />
+              <div className={`w-0.5 rounded-full shrink-0 ${isOwn ? 'bg-white/60' : 'bg-purple-400'}`} />
               <div className="min-w-0">
-                <p className={`text-[10px] font-semibold mb-0.5 ${isOwn ? 'text-blue-100' : 'text-blue-600'}`}>
+                <p className={`text-[10px] font-semibold mb-0.5 ${isOwn ? 'text-purple-100' : 'text-purple-600'}`}>
                   {msg.reply_to_sender_name}
                 </p>
                 {msg.reply_to_type === 'photo' ? (
-                  <p className={`text-[11px] ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>📷 Foto</p>
+                  <p className={`text-[11px] ${isOwn ? 'text-purple-200' : 'text-gray-500'}`}>📷 Foto</p>
                 ) : msg.reply_to_type === 'audio' ? (
-                  <p className={`text-[11px] ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>🎤 Áudio</p>
+                  <p className={`text-[11px] ${isOwn ? 'text-purple-200' : 'text-gray-500'}`}>🎤 Áudio</p>
                 ) : (
-                  <p className={`text-[11px] truncate max-w-[180px] ${isOwn ? 'text-blue-100' : 'text-gray-600'}`}>
+                  <p className={`text-[11px] truncate max-w-[180px] ${isOwn ? 'text-purple-100' : 'text-gray-600'}`}>
                     {msg.reply_to_content}
                   </p>
                 )}
@@ -709,7 +709,7 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
           <div className={`flex items-center gap-0.5 mt-0.5 ${isOwn ? 'justify-end mr-1' : 'ml-1'}`}>
             {readers.slice(0, 5).map(r => (
               <span key={r.user_id} title={`Visto por ${r.name}`}
-                className="w-4 h-4 rounded-full bg-blue-200 text-blue-700 flex items-center justify-center text-[8px] font-bold leading-none select-none">
+                className="w-4 h-4 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center text-[8px] font-bold leading-none select-none">
                 {r.name[0]?.toUpperCase()}
               </span>
             ))}
@@ -721,7 +721,7 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
       </div>
       {/* Action buttons */}
       <div className={`self-center flex flex-col gap-0.5 transition ${hovered ? 'opacity-100' : 'opacity-0'}`}>
-        <button onClick={() => onReply(msg)} className="p-1.5 rounded-full text-gray-400 hover:text-blue-500 hover:bg-gray-100 transition" title="Responder">
+        <button onClick={() => onReply(msg)} className="p-1.5 rounded-full text-gray-400 hover:text-purple-500 hover:bg-gray-100 transition" title="Responder">
           <Reply className="w-3.5 h-3.5" />
         </button>
         {isOwn && (
