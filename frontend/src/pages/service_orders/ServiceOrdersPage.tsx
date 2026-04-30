@@ -1771,8 +1771,8 @@ function FieldCell({ label, children }: { label: string; children: React.ReactNo
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ServiceOrdersPage() {
-  const { role } = useAuthStore()
-  const canWrite = CAN_WRITE_ROLES.includes(role ?? '')
+  const { role, permissions } = useAuthStore()
+  const canWrite = permissions?.service_orders?.can_write ?? CAN_WRITE_ROLES.includes(role ?? '')
 
   const [pageTab, setPageTab] = useState<'ordens' | 'demandas'>('ordens')
 
