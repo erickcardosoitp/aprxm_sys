@@ -56,21 +56,22 @@ async def _assoc_filter(association_id: str, session) -> tuple[str, dict]:
 
 
 def _row_to_dict(r) -> dict:
+    t = tuple(r)
     return {
-        "id": str(r[0]),
-        "sender_id": str(r[1]) if r[1] else None,
-        "sender_name": r[2],
-        "sender_role": ROLE_LABELS.get(r[8], r[8]) if r[8] else None,
-        "content": r[3],
-        "message_type": r[4],
-        "media_url": r[5],
-        "mention_ids": r[6] or [],
-        "created_at": r[7].isoformat() if r[7] else None,
-        "sender_association": r[9] if len(r) > 9 else None,
-        "reply_to_id": str(r[10]) if len(r) > 10 and r[10] else None,
-        "reply_to_sender_name": r[11] if len(r) > 11 else None,
-        "reply_to_content": r[12] if len(r) > 12 else None,
-        "reply_to_type": r[13] if len(r) > 13 else None,
+        "id": str(t[0]),
+        "sender_id": str(t[1]) if t[1] else None,
+        "sender_name": t[2],
+        "sender_role": ROLE_LABELS.get(t[8], t[8]) if t[8] else None,
+        "content": t[3],
+        "message_type": t[4],
+        "media_url": t[5],
+        "mention_ids": t[6] or [],
+        "created_at": t[7].isoformat() if t[7] else None,
+        "sender_association": t[9] if len(t) > 9 else None,
+        "reply_to_id": str(t[10]) if len(t) > 10 and t[10] else None,
+        "reply_to_sender_name": t[11] if len(t) > 11 else None,
+        "reply_to_content": t[12] if len(t) > 12 else None,
+        "reply_to_type": t[13] if len(t) > 13 else None,
     }
 
 
@@ -221,6 +222,9 @@ async def send_message(
     if not body.content and not body.media_url:
         raise HTTPException(400, "Mensagem sem conteúdo")
     import asyncio as _aio
+    reply_sender: str | None = None
+    reply_content: str | None = None
+    reply_type: str | None = None
     for attempt in range(3):
         try:
             async with AsyncSessionLocal() as session:
@@ -229,9 +233,6 @@ async def send_message(
                     {"uid": str(current.user_id)},
                 )
                 sender_name = name_row.scalar() or "Usuário"
-                reply_sender = None
-                reply_content = None
-                reply_type = None
                 if body.reply_to_id:
                     ref = (await session.execute(
                         text("SELECT sender_name, content, message_type FROM chat_messages WHERE id = :rid"),
