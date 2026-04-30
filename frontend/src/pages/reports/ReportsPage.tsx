@@ -337,7 +337,13 @@ export default function ReportsPage() {
       URL.revokeObjectURL(url)
       toast.success(`${mod.label} exportado!`)
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao exportar.')
+      let msg = 'Erro ao exportar.'
+      if (e.response?.data instanceof Blob) {
+        try { const t = await e.response.data.text(); msg = JSON.parse(t)?.detail ?? msg } catch { /* noop */ }
+      } else {
+        msg = e.response?.data?.detail ?? msg
+      }
+      toast.error(msg)
     } finally {
       setExporting(false)
     }

@@ -253,8 +253,12 @@ async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, m
     w = " AND ".join(conds)
     rows = (await session.execute(text(f"""
         SELECT r.full_name, r.unit, m.reference_month, m.due_date,
-               m.amount, m.status, m.paid_at::date, m.payment_method
-        FROM mensalidades m JOIN residents r ON r.id = m.resident_id
+               m.amount, m.status, m.paid_at::date,
+               pm.name AS payment_method
+        FROM mensalidades m
+        JOIN residents r ON r.id = m.resident_id
+        LEFT JOIN transactions t ON t.id = m.transaction_id
+        LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
         WHERE {w} ORDER BY m.reference_month, r.full_name
     """), p)).fetchall()
     cols = ["Morador","Unidade","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento"]
