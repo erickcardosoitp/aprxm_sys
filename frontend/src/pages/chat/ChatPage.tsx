@@ -564,8 +564,7 @@ function renderText(content: string) {
   return parts.map((p, i) => {
     if (p.startsWith('@')) return <span key={i} className="font-semibold opacity-90">{p}</span>
     if (p.startsWith('#OS-')) {
-      const ref = p.slice(4)
-      return <OSMentionCard key={i} ref={ref} />
+      return <OSMentionCard key={i} token={p.slice(4)} />
     }
     return p
   })
@@ -573,22 +572,22 @@ function renderText(content: string) {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-function OSMentionCard({ ref: ref_ }: { ref: string }) {
+function OSMentionCard({ token }: { token: string }) {
   const [os, setOs] = useState<OSSearchResult | null>(null)
-  const isUuid = UUID_RE.test(ref_)
+  const isUuid = UUID_RE.test(token)
 
   useEffect(() => {
     if (isUuid) {
-      api.get<OSSearchResult>(`/service-orders/by-id/${ref_}`)
+      api.get<OSSearchResult>(`/service-orders/by-id/${token}`)
         .then(r => setOs(r.data))
         .catch(() => {})
     } else {
-      const num = parseInt(ref_, 10)
+      const num = parseInt(token, 10)
       api.get<OSSearchResult[]>('/service-orders/search', { params: { q: String(num) } })
         .then(r => { const found = r.data.find(o => o.number === num); if (found) setOs(found) })
         .catch(() => {})
     }
-  }, [ref_])
+  }, [token])
 
   const statusLabel: Record<string, string> = {
     pending: 'Pendente', open: 'Aberta', in_progress: 'Em andamento',
