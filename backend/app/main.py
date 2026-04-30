@@ -525,6 +525,14 @@ async def _run_migrations() -> None:
             )
         """))
 
+        # Allow amount=0 for exempt/isento transactions
+        await session.execute(text("""
+            ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_amount_check
+        """))
+        await session.execute(text("""
+            ALTER TABLE transactions ADD CONSTRAINT transactions_amount_check CHECK (amount >= 0)
+        """))
+
         await session.commit()
 
 

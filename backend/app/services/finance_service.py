@@ -720,15 +720,12 @@ class FinanceService:
         svg = buf.getvalue().decode("utf-8")
         # Strip any leaked text elements
         svg = re.sub(r"<text[^>]*>.*?</text>", "", svg, flags=re.DOTALL)
-        # Extract natural dimensions for viewBox, then pin output to 38×12 mm
-        nat_w = re.search(r'width="([\d.]+)', svg)
-        nat_h = re.search(r'height="([\d.]+)', svg)
-        if nat_w and nat_h:
-            vb = f'viewBox="0 0 {nat_w.group(1)} {nat_h.group(1)}"' if "viewBox" not in svg else ""
-            svg = re.sub(r'width="[^"]*"', 'width="38mm"', svg, count=1)
-            svg = re.sub(r'height="[^"]*"', 'height="12mm"', svg, count=1)
-            if vb:
-                svg = svg.replace("<svg ", f"<svg {vb} ", 1)
+        # Ensure viewBox exists so fpdf2 can compute aspect ratio
+        if "viewBox" not in svg:
+            nat_w = re.search(r'width="([\d.]+)', svg)
+            nat_h = re.search(r'height="([\d.]+)', svg)
+            if nat_w and nat_h:
+                svg = svg.replace("<svg ", f'<svg viewBox="0 0 {nat_w.group(1)} {nat_h.group(1)}" ', 1)
         return svg.encode("utf-8")
 
     @staticmethod
@@ -770,15 +767,21 @@ class FinanceService:
         pdf.set_margins(20, 20, 20)
         pdf.set_auto_page_break(auto=True, margin=20)
 
-        # Barcode — canto superior direito (dimensões fixas 38×12 mm)
+        # Barcode — canto superior direito
         if barcode_bytes:
-            bc_w, bc_h = 38.0, 12.0
+            import re as _re
+            bc_w = 38.0
             bc_x = pdf.w - pdf.r_margin - bc_w
             bc_y = 10.0
-            pdf.image(BytesIO(barcode_bytes), x=bc_x, y=bc_y, w=bc_w, h=bc_h)
+            # Compute proportional height from SVG natural dimensions
+            svg_text = barcode_bytes.decode("utf-8")
+            _sw = _re.search(r'width="([\d.]+)', svg_text)
+            _sh = _re.search(r'height="([\d.]+)', svg_text)
+            bc_h = bc_w * float(_sh.group(1)) / float(_sw.group(1)) if (_sw and _sh) else 14.0
+            pdf.image(BytesIO(barcode_bytes), x=bc_x, y=bc_y, w=bc_w)
             pdf.set_font("Helvetica", size=7)
             pdf.set_text_color(80, 80, 80)
-            pdf.set_xy(bc_x, bc_y + bc_h + 1.0)
+            pdf.set_xy(bc_x, bc_y + bc_h + 0.5)
             pdf.cell(bc_w, 4, barcode_code, align="C")
 
         # Logo centralizado
