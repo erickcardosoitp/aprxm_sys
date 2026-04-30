@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
 import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp, TrendingDown, DollarSign, AlertCircle } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -650,7 +651,37 @@ function OverviewTab() {
 
 // ── Map Tab ───────────────────────────────────────────────────────────────────
 
-interface StreetData { street: string; city: string; state: string; cep: string; members: number; guests: number }
+interface CepData { cep: string; street: string; members: number; guests: number }
+interface CepPoint extends CepData { lat: number; lng: number }
+
+function LeafletMap({ points, center }: { points: CepPoint[]; center: [number, number] }) {
+  return (
+    <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: 420 }}>
+      <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; OpenStreetMap contributors'
+        />
+        {points.flatMap(p => {
+          const items = []
+          if (p.members > 0) items.push(
+            <CircleMarker key={`m-${p.cep}`} center={[p.lat, p.lng]}
+              radius={4 + Math.sqrt(p.members) * 3} pathOptions={{ fillColor: '#3b82f6', color: '#2563eb', fillOpacity: 0.7, weight: 1 }}>
+              <Popup>{p.street || p.cep}<br />Associados: {p.members}</Popup>
+            </CircleMarker>
+          )
+          if (p.guests > 0) items.push(
+            <CircleMarker key={`g-${p.cep}`} center={[p.lat + 0.0001, p.lng + 0.0001]}
+              radius={4 + Math.sqrt(p.guests) * 3} pathOptions={{ fillColor: '#fb923c', color: '#ea580c', fillOpacity: 0.7, weight: 1 }}>
+              <Popup>{p.street || p.cep}<br />Não associados: {p.guests}</Popup>
+            </CircleMarker>
+          )
+          return items
+        })}
+      </MapContainer>
+    </div>
+  )
+}
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
@@ -686,135 +717,100 @@ function CustomTooltip({ active, payload, label }: any) {
 }
 
 function MapTab() {
-  const [streets, setStreets] = useState<StreetData[]>([])
+  const [points, setPoints] = useState<CepPoint[]>([])
   const [loading, setLoading] = useState(true)
+  const [progress, setProgress] = useState(0)
 
-  const totalMembers = streets.reduce((a, s) => a + s.members, 0)
-  const totalGuests  = streets.reduce((a, s) => a + s.guests, 0)
+  const totalMembers = points.reduce((a, p) => a + p.members, 0)
+  const totalGuests  = points.reduce((a, p) => a + p.guests, 0)
   const total        = totalMembers + totalGuests
   const assocRate    = total > 0 ? Math.round(totalMembers / total * 100) : 0
 
   useEffect(() => {
-    api.get('/residents/map-data')
-      .then(r => setStreets(r.data))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await api.get<CepData[]>('/residents/map-data')
+        const data = res.data.filter(d => d.cep)
+        const resolved: CepPoint[] = []
+        for (let i = 0; i < data.length; i++) {
+          if (cancelled) return
+          const d = data[i]
+          const cep = d.cep.replace(/\D/g, '')
+          try {
+            const geo = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`)
+            if (geo.ok) {
+              const j = await geo.json()
+              const lat = j?.location?.coordinates?.latitude
+              const lng = j?.location?.coordinates?.longitude
+              if (lat && lng) resolved.push({ ...d, lat: Number(lat), lng: Number(lng) })
+            }
+          } catch { /* skip */ }
+          setProgress(Math.round((i + 1) / data.length * 100))
+        }
+        if (!cancelled) setPoints(resolved)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
   }, [])
-
-  // Ordena por total desc, top 25
-  const chartData = [...streets]
-    .sort((a, b) => (b.members + b.guests) - (a.members + a.guests))
-    .slice(0, 25)
-    .map(s => ({ name: s.street, members: s.members, guests: s.guests }))
-    .reverse() // horizontal bar: top = highest
-
-  const chartH = Math.max(300, chartData.length * 38)
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-3">
-        {[...Array(4)].map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />)}
+      <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
+        <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm">Geocodificando endereços… {progress}%</p>
+        <div className="w-48 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-1.5 bg-blue-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+        </div>
       </div>
     )
   }
 
-  if (!streets.length) {
+  if (!points.length) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-2">
         <MapPin className="w-8 h-8 opacity-30" />
-        <p className="text-sm">Nenhum morador com endereço cadastrado.</p>
+        <p className="text-sm">Nenhum morador com CEP geocodificável.</p>
       </div>
     )
   }
 
-  return (
-    <div className="flex flex-col gap-5">
+  const centerLat = points.reduce((a, p) => a + p.lat, 0) / points.length
+  const centerLng = points.reduce((a, p) => a + p.lng, 0) / points.length
 
+  return (
+    <div className="flex flex-col gap-4">
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white border border-gray-200 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Total</span>
           <span className="text-3xl font-extrabold text-gray-800">{total}</span>
-          <span className="text-xs text-gray-400">moradores c/ endereço</span>
+          <span className="text-xs text-gray-400">moradores mapeados</span>
         </div>
         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-blue-400">Associados</span>
           <span className="text-3xl font-extrabold text-blue-700">{totalMembers}</span>
-          <div className="h-1.5 bg-blue-100 rounded-full mt-1 overflow-hidden">
-            <div className="h-1.5 bg-blue-500 rounded-full transition-all" style={{ width: `${assocRate}%` }} />
-          </div>
         </div>
         <div className="bg-orange-50 border border-orange-100 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-orange-400">Não associados</span>
           <span className="text-3xl font-extrabold text-orange-600">{totalGuests}</span>
-          <div className="h-1.5 bg-orange-100 rounded-full mt-1 overflow-hidden">
-            <div className="h-1.5 bg-orange-400 rounded-full transition-all" style={{ width: `${100 - assocRate}%` }} />
-          </div>
         </div>
         <div className="bg-green-50 border border-green-100 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-green-500">Taxa assoc.</span>
           <span className="text-3xl font-extrabold text-green-700">{assocRate}%</span>
-          <span className="text-xs text-green-600">dos cadastrados</span>
         </div>
       </div>
 
-      {/* Chart */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-800">Distribuição por rua</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Top {chartData.length} ruas com mais moradores</p>
-          </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" />Associados</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-orange-400 inline-block" />Não assoc.</span>
-          </div>
-        </div>
-        <div className="px-2 py-4">
-          <ResponsiveContainer width="100%" height={chartH}>
-            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 32, top: 0, bottom: 0 }} barSize={14} barCategoryGap="25%">
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" width={170} tick={{ fontSize: 11, fill: '#4b5563' }} axisLine={false} tickLine={false}
-                tickFormatter={(v: string) => v.length > 24 ? v.slice(0, 22) + '…' : v} />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f9fafb' }} />
-              <Bar dataKey="members" name="Associados" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]}>
-                <LabelList dataKey="members" position="right" style={{ fontSize: 10, fill: '#3b82f6', fontWeight: 600 }}
-                  formatter={(v: unknown) => (typeof v === 'number' && v > 0) ? v : ''} />
-              </Bar>
-              <Bar dataKey="guests" name="Não assoc." stackId="a" fill="#fb923c" radius={[2, 2, 2, 2]}>
-                <LabelList dataKey="guests" position="right" style={{ fontSize: 10, fill: '#ea580c', fontWeight: 600 }}
-                  formatter={(v: unknown) => (typeof v === 'number' && v > 0) ? v : ''} />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      {/* Map */}
+      <LeafletMap points={points} center={[centerLat, centerLng]} />
 
-      {/* Street table summary */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-800">Todas as ruas</h3>
-        </div>
-        <div className="divide-y divide-gray-50">
-          {[...streets].sort((a, b) => (b.members + b.guests) - (a.members + a.guests)).map((s, i) => {
-            const t = s.members + s.guests
-            const pct = t > 0 ? Math.round(s.members / t * 100) : 0
-            return (
-              <div key={i} className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50/60 transition">
-                <span className="text-[10px] font-bold text-gray-300 w-5 shrink-0 text-right">{i + 1}</span>
-                <span className="flex-1 text-sm text-gray-700 truncate">{s.street}</span>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs font-semibold text-blue-600 w-6 text-right">{s.members}</span>
-                  <div className="w-20 h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-2 rounded-full" style={{ width: `${pct}%`, background: '#3b82f6' }} />
-                  </div>
-                  <span className="text-xs text-gray-400 w-6">{s.guests}</span>
-                  <span className="text-xs font-bold text-gray-600 w-7 text-right">{t}</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+      {/* Legend */}
+      <div className="flex items-center gap-4 text-xs text-gray-500 px-1">
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-500 opacity-80" />Associado</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-orange-400 opacity-80" />Não associado</span>
+        <span className="text-gray-400">· Tamanho proporcional à quantidade</span>
       </div>
     </div>
   )
