@@ -51,6 +51,7 @@ export default function ChatPage() {
   const [osFilter, setOsFilter] = useState('')
   const [osResults, setOsResults] = useState<OSSearchResult[]>([])
   const osSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const seenIds = useRef<Set<string>>(new Set())
   const [recording, setRecording] = useState(false)
   const [recordSecs, setRecordSecs] = useState(0)
   const [uploading, setUploading] = useState(false)
@@ -89,13 +90,13 @@ export default function ChatPage() {
         })
         if (res.data.length > 0) {
           lastSinceRef.current = res.data[res.data.length - 1].created_at
-          setMessages(prev => {
-            const ids = new Set(prev.map(m => m.id))
-            const fresh = res.data.filter(m => !ids.has(m.id))
-            return fresh.length ? [...prev, ...fresh] : prev
-          })
-          api.post('/chat/mark-read').catch(() => {})
-          if (atBottomRef.current) setTimeout(() => scrollToBottom(), 50)
+          const fresh = res.data.filter(m => !seenIds.current.has(m.id))
+          if (fresh.length) {
+            fresh.forEach(m => seenIds.current.add(m.id))
+            setMessages(prev => [...prev, ...fresh])
+            api.post('/chat/mark-read').catch(() => {})
+            if (atBottomRef.current) setTimeout(() => scrollToBottom(), 50)
+          }
         }
         tick++
         if (tick % 8 === 0) fetchReads()
@@ -111,6 +112,7 @@ export default function ChatPage() {
           api.get<ChatMessage[]>('/chat/messages', { params: { limit: 50 } }),
           api.get<ChatUser[]>('/chat/users'),
         ])
+        msgRes.data.forEach(m => seenIds.current.add(m.id))
         setMessages(msgRes.data)
         setUsers(userRes.data)
         setHasMore(msgRes.data.length === 50)
@@ -136,6 +138,7 @@ export default function ChatPage() {
         params: { limit: 50, before_id: messages[0].id },
       })
       setHasMore(res.data.length === 50)
+      res.data.forEach(m => seenIds.current.add(m.id))
       setMessages(prev => [...res.data, ...prev])
       setTimeout(() => { if (el) el.scrollTop = el.scrollHeight - prevH }, 50)
     } finally {
@@ -236,7 +239,10 @@ export default function ChatPage() {
         content, message_type: 'text', mention_ids: ids,
       })
       lastSinceRef.current = res.data.created_at
-      setMessages(prev => prev.some(m => m.id === res.data.id) ? prev : [...prev, res.data])
+      if (!seenIds.current.has(res.data.id)) {
+        seenIds.current.add(res.data.id)
+        setMessages(prev => [...prev, res.data])
+      }
       setTimeout(() => scrollToBottom(), 50)
     } catch {
       toast.error('Erro ao enviar mensagem')
@@ -295,7 +301,10 @@ export default function ChatPage() {
         message_type: 'audio', media_url: up.data.url,
       })
       lastSinceRef.current = res.data.created_at
-      setMessages(prev => prev.some(m => m.id === res.data.id) ? prev : [...prev, res.data])
+      if (!seenIds.current.has(res.data.id)) {
+        seenIds.current.add(res.data.id)
+        setMessages(prev => [...prev, res.data])
+      }
       setTimeout(() => scrollToBottom(), 50)
     } catch {
       toast.error('Erro ao enviar áudio')
@@ -320,7 +329,10 @@ export default function ChatPage() {
         message_type: 'photo', media_url: up.data.url,
       })
       lastSinceRef.current = res.data.created_at
-      setMessages(prev => prev.some(m => m.id === res.data.id) ? prev : [...prev, res.data])
+      if (!seenIds.current.has(res.data.id)) {
+        seenIds.current.add(res.data.id)
+        setMessages(prev => [...prev, res.data])
+      }
       setTimeout(() => scrollToBottom(), 50)
     } catch {
       toast.error('Erro ao enviar foto')
