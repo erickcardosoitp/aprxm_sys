@@ -44,17 +44,19 @@ class AuthService:
             )
             linked_ids = [str(r[0]) for r in ids_row.fetchall()]
 
-        # Fetch association name for JWT
-        assoc_name_row = await self._session.execute(
-            text("SELECT name FROM associations WHERE id = :id"),
+        # Fetch association name + is_office for JWT
+        assoc_row = await self._session.execute(
+            text("SELECT name, is_office FROM associations WHERE id = :id"),
             {"id": str(user.association_id)},
         )
-        assoc_name_result = assoc_name_row.fetchone()
-        association_name = assoc_name_result[0] if assoc_name_result else ""
+        assoc_result = assoc_row.fetchone()
+        association_name = assoc_result[0] if assoc_result else ""
+        is_office: bool = bool(assoc_result[1]) if assoc_result else False
 
         return create_access_token(
             user.id, user.association_id, user.role.value, user.full_name, linked_ids, association_name,
             expire_days=30 if remember_me else None,
+            is_office=is_office,
         )
 
     async def create_user(

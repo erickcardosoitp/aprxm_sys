@@ -23,6 +23,8 @@ class Association(SQLModel, table=True):
     logo_url: str | None = None
     presidente_user_id: UUID | None = Field(default=None, foreign_key="users.id")
     is_active: bool = Field(default=True)
+    is_office: bool = Field(default=False)
+    inventory_day_of_month: int = Field(default=1)
     plan_name: str = Field(default="basic", max_length=50)
     plan_expires_at: datetime | None = None
     # linked_association_slugs: TEXT[] — acessado via SQL raw (evita bug asyncpg+ARRAY)

@@ -10,7 +10,8 @@ interface AuthStore extends AuthState {
   associationName: string
   rememberDevice: boolean
   permissions: Permissions | null
-  setAuth: (token: string, userId: string, associationId: string, role: UserRole, fullName: string, linkedAssociationIds?: string[], associationName?: string, rememberDevice?: boolean) => void
+  isOffice: boolean
+  setAuth: (token: string, userId: string, associationId: string, role: UserRole, fullName: string, linkedAssociationIds?: string[], associationName?: string, rememberDevice?: boolean, isOffice?: boolean) => void
   clearAuth: () => void
   setPermissions: (p: Permissions) => void
   isAuthenticated: () => boolean
@@ -29,14 +30,15 @@ export const useAuthStore = create<AuthStore>()(
       associationName: '',
       rememberDevice: false,
       permissions: null,
+      isOffice: false,
 
-      setAuth: (token, userId, associationId, role, fullName, linkedAssociationIds = [], associationName = '', rememberDevice = false) => {
-        set({ token, userId, associationId, role, fullName, linkedAssociationIds, associationName, rememberDevice, permissions: null })
+      setAuth: (token, userId, associationId, role, fullName, linkedAssociationIds = [], associationName = '', rememberDevice = false, isOffice = false) => {
+        set({ token, userId, associationId, role, fullName, linkedAssociationIds, associationName, rememberDevice, permissions: null, isOffice })
       },
 
       clearAuth: () => {
         localStorage.removeItem('aprxm-auth')
-        set({ token: null, userId: null, associationId: null, role: null, fullName: null, linkedAssociationIds: [], associationName: '', rememberDevice: false, permissions: null })
+        set({ token: null, userId: null, associationId: null, role: null, fullName: null, linkedAssociationIds: [], associationName: '', rememberDevice: false, permissions: null, isOffice: false })
       },
 
       setPermissions: (permissions) => set({ permissions }),

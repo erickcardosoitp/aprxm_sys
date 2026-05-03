@@ -153,8 +153,8 @@ export default function LoginPage() {
       })
 
       const token = res.data.access_token
-      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string }>(token)
-      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess)
+      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean }>(token)
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess, payload.is_office ?? false)
       if (rememberAccess) {
         saveRecent({ email, associationId: payload.association_id, associationName: payload.association_name || selectedOrg.name || '', role: payload.role })
         setRecentLogins(loadRecent())
@@ -183,8 +183,8 @@ export default function LoginPage() {
         remember_me: rememberAccess,
       })
       const token = res.data.access_token
-      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string }>(token)
-      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess)
+      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean }>(token)
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess, payload.is_office ?? false)
       if (rememberAccess) {
         saveRecent({
           email,
