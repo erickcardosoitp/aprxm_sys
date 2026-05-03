@@ -44,6 +44,8 @@ interface InventoryRecord {
   reference_month: string | null; signed_at: string | null
   cancelled_at: string | null; signed_by_name: string | null
   cancelled_by_name: string | null
+  attributed_association_id: string | null
+  attributed_association_name: string | null
 }
 
 type Tab = 'dashboard' | 'cobrancas' | 'moradores' | 'inventario' | 'sincronizacao' | 'ti'
@@ -95,6 +97,7 @@ export default function GeralPage() {
   const [pixInput, setPixInput] = useState('')
   const [cashInput, setCashInput] = useState('')
   const [justInput, setJustInput] = useState('')
+  const [attrAssocId, setAttrAssocId] = useState<string>('')
   const [savingInv, setSavingInv] = useState(false)
 
   // Sync panel
@@ -217,6 +220,7 @@ export default function GeralPage() {
         pix_counted: parseFloat(pixInput) || 0,
         cash_counted: parseFloat(cashInput) || 0,
         justification: justInput,
+        attributed_association_id: attrAssocId || null,
       })
       await loadInvRecords()
       toast.success('Inventário concluído e assinado.')
@@ -300,6 +304,7 @@ export default function GeralPage() {
       </div>
 
       {/* Tabs */}
+      <div className="sticky top-0 z-10 bg-white pt-1 pb-1 -mx-4 px-4 sm:-mx-6 sm:px-6">
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
@@ -307,6 +312,7 @@ export default function GeralPage() {
             <Icon className="w-3.5 h-3.5" />{label}
           </button>
         ))}
+      </div>
       </div>
 
       {/* Dashboard */}
@@ -520,6 +526,27 @@ export default function GeralPage() {
                     )}
                   </div>
 
+                  {/* Atribuição de diferença — só aparece se houver quebra/sobra */}
+                  {diffVal !== null && diffVal !== 0 && (
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">
+                        Atribuir diferença a <span className="text-gray-400">(opcional)</span>
+                      </label>
+                      <select value={attrAssocId} onChange={e => setAttrAssocId(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+                        <option value="">— Sem atribuição (quebra geral) —</option>
+                        {assocs.map(a => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                      {attrAssocId && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          A diferença de {fmt(Math.abs(diffVal))} será atribuída a {assocs.find(a => a.id === attrAssocId)?.name}.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Justificativa <span className="text-red-500">*</span></label>
                     <textarea value={justInput} onChange={e => setJustInput(e.target.value)}
@@ -561,6 +588,9 @@ export default function GeralPage() {
                               <p className={`text-xs mt-0.5 ${parseFloat(r.difference) === 0 ? 'text-green-600' : parseFloat(r.difference) > 0 ? 'text-blue-600' : 'text-red-600'}`}>
                                 {parseFloat(r.difference) === 0 ? 'Equilibrado' : parseFloat(r.difference) > 0 ? `Sobra ${fmt(parseFloat(r.difference))}` : `Falta ${fmt(Math.abs(parseFloat(r.difference)))}`}
                               </p>
+                            )}
+                            {r.attributed_association_name && (
+                              <p className="text-xs text-amber-600 mt-0.5">Atribuído a {r.attributed_association_name}</p>
                             )}
                             {r.signed_by_name && <p className="text-xs text-gray-400 mt-0.5">Assinado por {r.signed_by_name}</p>}
                             {r.cancelled_by_name && <p className="text-xs text-gray-400 mt-0.5">Cancelado por {r.cancelled_by_name}</p>}

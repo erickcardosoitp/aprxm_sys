@@ -368,6 +368,7 @@ class InventoryConcludeRequest(BaseModel):
     pix_counted: float
     cash_counted: float
     justification: str
+    attributed_association_id: UUID | None = None
 
 
 def _first_of_month(d: date | None = None) -> date:
@@ -384,6 +385,17 @@ async def _expected_total(session: AsyncSession, ids_str: list[str]) -> float:
     return float(row[0]) if row else 0.0
 
 
+async def _open_sessions(session: AsyncSession, ids_str: list[str]) -> list[dict]:
+    rows = (await session.execute(text("""
+        SELECT a.name, cs.opened_at
+        FROM cash_sessions cs
+        JOIN associations a ON a.id = cs.association_id
+        WHERE cs.association_id = ANY(:ids) AND cs.status = 'open'
+        ORDER BY a.name
+    """), {"ids": ids_str})).fetchall()
+    return [{"association": r[0], "opened_at": r[1].isoformat()} for r in rows]
+
+
 @router.get("/inventory", summary="Lista inventários do Escritório")
 async def list_inventories(
     current: CurrentUser = Depends(get_current_user),
@@ -396,10 +408,13 @@ async def list_inventories(
                ir.status, ir.reference_month, ir.signed_at,
                ir.cancelled_at, ir.created_at,
                u_sign.full_name AS signed_by_name,
-               u_cancel.full_name AS cancelled_by_name
+               u_cancel.full_name AS cancelled_by_name,
+               ir.attributed_association_id,
+               a_attr.name AS attributed_association_name
         FROM inventory_records ir
         LEFT JOIN users u_sign ON u_sign.id = ir.signed_by
         LEFT JOIN users u_cancel ON u_cancel.id = ir.cancelled_by
+        LEFT JOIN associations a_attr ON a_attr.id = ir.attributed_association_id
         WHERE ir.association_id = :assoc_id
         ORDER BY ir.reference_month DESC
         LIMIT 24
@@ -420,6 +435,8 @@ async def list_inventories(
         "created_at": r[11].isoformat() if r[11] else None,
         "signed_by_name": r[12],
         "cancelled_by_name": r[13],
+        "attributed_association_id": str(r[14]) if r[14] else None,
+        "attributed_association_name": r[15],
     } for r in rows]
 
 
@@ -440,6 +457,15 @@ async def create_inventory_draft(
 
     if existing:
         return {"id": str(existing[0]), "status": existing[1], "created": False}
+
+    # Bloqueia se houver sessões abertas em qualquer associação vinculada
+    ids_str = [str(i) for i in current.linked_association_ids]
+    open_sessions = await _open_sessions(session, ids_str)
+    if open_sessions:
+        detail = "Existem sessões de caixa abertas: " + ", ".join(
+            f"{s['association']} (desde {s['opened_at'][:10]})" for s in open_sessions
+        )
+        raise HTTPException(status_code=400, detail=detail)
 
     result = (await session.execute(text("""
         INSERT INTO inventory_records (association_id, reference_month, status)
@@ -535,19 +561,26 @@ async def conclude_inventory(
     difference = total - expected
     now = datetime.now(timezone.utc)
 
+    # Valida que attributed_association_id pertence às associações vinculadas
+    if body.attributed_association_id:
+        if body.attributed_association_id not in current.linked_association_ids:
+            raise HTTPException(status_code=400, detail="Associação atribuída não vinculada ao Escritório.")
+
     await session.execute(text("""
         UPDATE inventory_records
         SET pix_counted = :pix, cash_counted = :cash, total_counted = :total,
             expected_total = :expected, difference = :diff,
             justification = :justification,
             signed_by = :signed_by, signed_at = :signed_at,
-            status = 'concluded'
+            status = 'concluded',
+            attributed_association_id = :attr_assoc
         WHERE id = :id
     """), {
         "pix": pix, "cash": cash, "total": total,
         "expected": expected, "diff": difference,
         "justification": body.justification,
         "signed_by": str(current.user_id), "signed_at": now,
+        "attr_assoc": str(body.attributed_association_id) if body.attributed_association_id else None,
         "id": str(inventory_id),
     })
     await session.commit()
