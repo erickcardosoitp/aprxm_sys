@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Building2, Users, DollarSign, AlertCircle, Package, Search, TrendingUp, RefreshCw, CheckCircle, AlertTriangle, XCircle, ClipboardList } from 'lucide-react'
+import { Building2, Users, DollarSign, AlertCircle, Package, Search, TrendingUp, RefreshCw, CheckCircle, AlertTriangle, XCircle, ClipboardList, Server } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
+import SuperAdminPage from '../superadmin/SuperAdminPage'
 
 type AssocFilter = 'all' | string
 interface LinkedAssoc { id: string; name: string; slug: string }
@@ -45,7 +46,7 @@ interface InventoryRecord {
   cancelled_by_name: string | null
 }
 
-type Tab = 'dashboard' | 'cobrancas' | 'moradores' | 'inventario' | 'sincronizacao'
+type Tab = 'dashboard' | 'cobrancas' | 'moradores' | 'inventario' | 'sincronizacao' | 'ti'
 type CobrancasFilter = 'all' | 'paid' | 'pending' | 'overdue'
 
 const fmt = (v: string | number) =>
@@ -65,6 +66,7 @@ const BADGE: Record<string, string> = {
 export default function GeralPage() {
   const linkedIds = useAuthStore(s => s.linkedAssociationIds)
   const isOffice = useAuthStore(s => s.isOffice)
+  const role = useAuthStore(s => s.role)
 
   const [tab, setTab] = useState<Tab>('dashboard')
   const [assocs, setAssocs] = useState<LinkedAssoc[]>([])
@@ -243,6 +245,7 @@ export default function GeralPage() {
     { key: 'moradores', label: 'Moradores', icon: Users },
     { key: 'inventario', label: 'Inventário', icon: ClipboardList },
     ...(isOffice ? [{ key: 'sincronizacao' as Tab, label: 'Sinc.', icon: RefreshCw }] : []),
+    ...(isOffice && role === 'superadmin' ? [{ key: 'ti' as Tab, label: 'TI', icon: Server }] : []),
   ]
 
   const AssocBadge = ({ slug, name }: { slug: string; name: string }) => (
@@ -644,6 +647,11 @@ export default function GeralPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* TI — apenas Escritório + superadmin */}
+      {tab === 'ti' && isOffice && role === 'superadmin' && (
+        <SuperAdminPage />
       )}
 
       {/* Sincronização — apenas Escritório */}
