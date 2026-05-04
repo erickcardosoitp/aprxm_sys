@@ -33,6 +33,10 @@ export const financeService = {
     payment_method_id?: string
     resident_id?: string
     cash_session_id?: string
+    is_acordo?: boolean
+    acordo_installments?: number
+    acordo_months?: number
+    acordo_entrada?: number
   }) => api.post<Transaction>('/finance/transactions', data),
 
   listOpenSessions: () =>

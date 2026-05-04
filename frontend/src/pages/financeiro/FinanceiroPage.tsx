@@ -2104,7 +2104,7 @@ export default function FinanceiroPage() {
                   <button onClick={() => {
                     const rows = sessions
                       .filter(s => {
-                        const d = s.opened_at.substring(0, 10)
+                        const d = (s.closed_at ?? s.opened_at).substring(0, 10)
                         if (sessaoFilterFrom && d < sessaoFilterFrom) return false
                         if (sessaoFilterTo && d > sessaoFilterTo) return false
                         if (sessaoFilterOp && !(s.operador_name ?? '').toLowerCase().includes(sessaoFilterOp.toLowerCase())) return false
@@ -2116,7 +2116,7 @@ export default function FinanceiroPage() {
                       const baixas = parseFloat(s.total_baixas ?? '0')
                       const diff = s.difference != null ? parseFloat(s.difference) : null
                       return [
-                        new Date(s.opened_at).toLocaleString('pt-BR'),
+                        new Date(s.closed_at ?? s.opened_at).toLocaleString('pt-BR'),
                         s.operador_name ?? '',
                         parseFloat(s.total_pix ?? '0').toFixed(2),
                         parseFloat(s.total_dinheiro ?? '0').toFixed(2),
@@ -2140,7 +2140,7 @@ export default function FinanceiroPage() {
                   <button onClick={() => {
                     const w = window.open('', '_blank')!
                     const rows = sessions.filter(s => {
-                      const d = s.opened_at.substring(0, 10)
+                      const d = (s.closed_at ?? s.opened_at).substring(0, 10)
                       if (sessaoFilterFrom && d < sessaoFilterFrom) return false
                       if (sessaoFilterTo && d > sessaoFilterTo) return false
                       if (sessaoFilterOp && !(s.operador_name ?? '').toLowerCase().includes(sessaoFilterOp.toLowerCase())) return false
@@ -2152,7 +2152,7 @@ export default function FinanceiroPage() {
                       const bruto = parseFloat(s.total_bruto ?? '0')
                       const baixas = parseFloat(s.total_baixas ?? '0')
                       const diff = s.difference != null ? parseFloat(s.difference) : null
-                      w.document.write(`<tr><td>${new Date(s.opened_at).toLocaleString('pt-BR')}</td><td>${s.operador_name ?? ''}</td><td>R$${parseFloat(s.total_pix ?? '0').toFixed(2)}</td><td>R$${parseFloat(s.total_dinheiro ?? '0').toFixed(2)}</td><td>R$${bruto.toFixed(2)}</td><td>R$${baixas.toFixed(2)}</td><td>R$${(bruto - baixas).toFixed(2)}</td><td>${s.closing_balance ? 'R$' + parseFloat(s.closing_balance).toFixed(2) : '—'}</td><td>${diff !== null ? (diff >= 0 ? '+' : '') + 'R$' + Math.abs(diff).toFixed(2) : '—'}</td><td>${s.conferido_por ?? ''}</td><td>${s.quebra_caixa ? 'R$' + parseFloat(s.quebra_caixa).toFixed(2) : '—'}</td><td>${s.origin ?? 'Sessão'}</td></tr>`)
+                      w.document.write(`<tr><td>${new Date(s.closed_at ?? s.opened_at).toLocaleString('pt-BR')}</td><td>${s.operador_name ?? ''}</td><td>R$${parseFloat(s.total_pix ?? '0').toFixed(2)}</td><td>R$${parseFloat(s.total_dinheiro ?? '0').toFixed(2)}</td><td>R$${bruto.toFixed(2)}</td><td>R$${baixas.toFixed(2)}</td><td>R$${(bruto - baixas).toFixed(2)}</td><td>${s.closing_balance ? 'R$' + parseFloat(s.closing_balance).toFixed(2) : '—'}</td><td>${diff !== null ? (diff >= 0 ? '+' : '') + 'R$' + Math.abs(diff).toFixed(2) : '—'}</td><td>${s.conferido_por ?? ''}</td><td>${s.quebra_caixa ? 'R$' + parseFloat(s.quebra_caixa).toFixed(2) : '—'}</td><td>${s.origin ?? 'Sessão'}</td></tr>`)
                     })
                     w.document.write('</table></body></html>')
                     w.document.close()
@@ -2169,7 +2169,7 @@ export default function FinanceiroPage() {
                 <div className="p-6 text-center text-gray-400 text-sm">Nenhuma sessão encontrada.</div>
               ) : (() => {
                 const filtered = sessions.filter(s => {
-                  const d = s.opened_at.substring(0, 10)
+                  const d = (s.closed_at ?? s.opened_at).substring(0, 10)
                   if (sessaoFilterFrom && d < sessaoFilterFrom) return false
                   if (sessaoFilterTo && d > sessaoFilterTo) return false
                   if (sessaoFilterOp && !(s.operador_name ?? '').toLowerCase().includes(sessaoFilterOp.toLowerCase())) return false

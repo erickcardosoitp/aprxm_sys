@@ -373,6 +373,48 @@ async def list_migration_payments(
     return [_fmt_mp(mp) for mp in items]
 
 
+class UpdateMigrationPaymentRequest(BaseModel):
+    tipo: MigrationPaymentTipo | None = None
+    valor_pago: Decimal | None = None
+    data_pagamento: date | None = None
+
+
+@router.patch("/migration/residents/{resident_id}/{competencia}", summary="Atualizar registro de migração")
+async def update_migration_payment(
+    resident_id: UUID,
+    competencia: str,
+    body: UpdateMigrationPaymentRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text
+    row = (await session.execute(
+        text("SELECT id FROM migration_payments WHERE association_id=:aid AND resident_id=:rid AND competencia=:comp"),
+        {"aid": str(current.association_id), "rid": str(resident_id), "comp": competencia},
+    )).fetchone()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Registro de migração não encontrado.")
+    updates: list[str] = []
+    params: dict = {"aid": str(current.association_id), "rid": str(resident_id), "comp": competencia}
+    if body.tipo is not None:
+        updates.append("tipo = :tipo")
+        params["tipo"] = body.tipo.value
+    if body.valor_pago is not None:
+        updates.append("valor_pago = :valor_pago")
+        params["valor_pago"] = float(body.valor_pago)
+    if body.data_pagamento is not None:
+        updates.append("data_pagamento = :data_pagamento")
+        params["data_pagamento"] = body.data_pagamento
+    if updates:
+        await session.execute(
+            text(f"UPDATE migration_payments SET {', '.join(updates)} WHERE association_id=:aid AND resident_id=:rid AND competencia=:comp"),
+            params,
+        )
+        await session.commit()
+    return {"updated": True, "competencia": competencia}
+
+
 @router.delete("/migration/residents/{resident_id}/{competencia}", summary="Remover registro de migração")
 async def delete_migration_payment(
     resident_id: UUID,

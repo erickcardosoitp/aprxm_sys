@@ -85,7 +85,7 @@ class TransactionRequest(BaseModel):
     cash_session_id: UUID | None = None
     payment_status: str | None = None  # "paid" | "pending"
     is_acordo: bool = False
-    acordo_installments: int = Field(default=2, ge=2, le=12)
+    acordo_installments: int = Field(default=2, ge=1, le=12)
     acordo_months: int = Field(default=1, ge=1, le=24)
     acordo_entrada: Decimal | None = None
 

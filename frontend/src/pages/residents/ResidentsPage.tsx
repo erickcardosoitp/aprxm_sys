@@ -655,7 +655,7 @@ function DependentForm({ onSave, onCancel }: {
 // ─── Resident Profile Modal ────────────────────────────────────────────────────
 
 interface MensalidadeEntry {
-  id: string; reference_month: string; due_date: string; amount: string; status: string; paid_at: string | null; transaction_id: string | null
+  id: string | null; reference_month: string; due_date: string | null; amount: string; status: string; paid_at: string | null; transaction_id: string | null; origem?: string; tipo?: string
 }
 
 interface InadimplenciaEntry {
@@ -698,6 +698,9 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [loading, setLoading] = useState(true)
   const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_de: '', quitado_ate: '', mode: 'single' as 'single' | 'bulk' | 'range', valor_pago: '', data_pagamento: '' })
   const [migSaving, setMigSaving] = useState(false)
+  const [editingMig, setEditingMig] = useState<string | null>(null)
+  const [editMigForm, setEditMigForm] = useState({ tipo: 'mensalidade', valor_pago: '', data_pagamento: '' })
+  const [editMigSaving, setEditMigSaving] = useState(false)
   const [assocName, setAssocName] = useState('')
   const loggedFullName = useAuthStore(s => s.fullName) ?? ''
   const [carneOperator, setCarneOperator] = useState('')
@@ -815,7 +818,26 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
     try {
       await api.delete(`/mensalidades/migration/residents/${resident.id}/${competencia}`)
       await loadMigracoes()
+      const res = await api.get<MensalidadeEntry[]>(`/mensalidades/residents/${resident.id}`)
+      setMensalidades(res.data)
     } catch { toast.error('Erro ao remover.') }
+  }
+
+  const handleMigEditSave = async (competencia: string) => {
+    setEditMigSaving(true)
+    try {
+      await api.patch(`/mensalidades/migration/residents/${resident.id}/${competencia}`, {
+        tipo: editMigForm.tipo || undefined,
+        valor_pago: editMigForm.valor_pago ? parseFloat(editMigForm.valor_pago) : undefined,
+        data_pagamento: editMigForm.data_pagamento || undefined,
+      })
+      toast.success('Registro atualizado!')
+      setEditingMig(null)
+      const res = await api.get<MensalidadeEntry[]>(`/mensalidades/residents/${resident.id}`)
+      setMensalidades(res.data)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao atualizar.')
+    } finally { setEditMigSaving(false) }
   }
 
   const handleComprovante = async (id: string) => {
@@ -868,7 +890,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
     } catch { toast.error('Comprovante não disponível.') }
   }
 
-  const STATUS_MAP: Record<string, string> = { pending: 'Pendente', paid: 'Pago', overdue: 'Inadimplente' }
+  const STATUS_MAP: Record<string, string> = { pending: 'Pendente', paid: 'Pago', overdue: 'Inadimplente', agreement: 'Em Acordo' }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50">
@@ -1043,23 +1065,72 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
               <div className="py-8 text-center text-gray-400 text-sm">Nenhuma mensalidade registrada.</div>
             ) : (
               <ul className="flex flex-col gap-2">
-                {mensalidades.map((m) => (
-                  <li key={m.id} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">{m.reference_month}</p>
-                      <p className="text-xs text-gray-500">{m.due_date ? `Venc: ${safeDate(m.due_date)} · ` : ''}R$ {parseFloat(m.amount).toFixed(2)}</p>
-                      <span className={`text-xs font-medium ${m.status === 'paid' ? 'text-green-600' : m.status === 'overdue' ? 'text-red-600' : 'text-amber-600'}`}>
-                        {STATUS_MAP[m.status] ?? m.status}
-                      </span>
-                    </div>
-                    {m.status === 'paid' && (
-                      <button onClick={() => handleComprovante(m.id)}
-                        className="flex items-center gap-1 text-xs text-[#26619c] hover:underline shrink-0">
-                        <FileText className="w-3.5 h-3.5" /> Comprovante
-                      </button>
-                    )}
-                  </li>
-                ))}
+                {mensalidades.map((m) => {
+                  const isMig = m.origem === 'migracao'
+                  const key = m.id ?? `mig-${m.reference_month}`
+                  if (isMig && editingMig === m.reference_month) {
+                    return (
+                      <li key={key} className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 flex flex-col gap-2">
+                        <p className="text-xs font-semibold text-amber-800">{m.reference_month} — Editar migração</p>
+                        <select value={editMigForm.tipo} onChange={e => setEditMigForm(f => ({ ...f, tipo: e.target.value }))}
+                          className="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none">
+                          <option value="mensalidade">Mensalidade</option>
+                          <option value="acordo">Acordo</option>
+                        </select>
+                        <input type="number" step="0.01" placeholder="Valor pago (R$)" value={editMigForm.valor_pago}
+                          onChange={e => setEditMigForm(f => ({ ...f, valor_pago: e.target.value }))}
+                          className="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none" />
+                        <input type="date" value={editMigForm.data_pagamento}
+                          onChange={e => setEditMigForm(f => ({ ...f, data_pagamento: e.target.value }))}
+                          className="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none" />
+                        <div className="flex gap-2">
+                          <button onClick={() => handleMigEditSave(m.reference_month)} disabled={editMigSaving}
+                            className="flex-1 text-xs bg-amber-600 text-white rounded-lg py-1.5 font-medium disabled:opacity-50">
+                            {editMigSaving ? 'Salvando…' : 'Salvar'}
+                          </button>
+                          <button onClick={() => setEditingMig(null)}
+                            className="flex-1 text-xs border border-amber-300 text-amber-700 rounded-lg py-1.5 font-medium">
+                            Cancelar
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  }
+                  return (
+                    <li key={key} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-gray-800">{m.reference_month}</p>
+                          {isMig && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">Migração</span>}
+                        </div>
+                        <p className="text-xs text-gray-500">{m.due_date ? `Venc: ${safeDate(m.due_date)} · ` : ''}R$ {parseFloat(m.amount).toFixed(2)}</p>
+                        <span className={`text-xs font-medium ${m.status === 'paid' ? 'text-green-600' : m.status === 'overdue' ? 'text-red-600' : m.status === 'agreement' ? 'text-purple-600' : 'text-amber-600'}`}>
+                          {STATUS_MAP[m.status] ?? m.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isMig && (
+                          <button onClick={() => {
+                            setEditingMig(m.reference_month)
+                            setEditMigForm({ tipo: m.tipo ?? 'mensalidade', valor_pago: m.amount !== '0.00' ? m.amount : '', data_pagamento: m.paid_at ? m.paid_at.substring(0, 10) : '' })
+                          }} className="text-xs text-amber-600 hover:underline">Editar</button>
+                        )}
+                        {isMig && (
+                          <button onClick={() => handleMigDelete(m.reference_month)}
+                            className="text-gray-300 hover:text-red-500 transition">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {!isMig && m.status === 'paid' && m.id && (
+                          <button onClick={() => handleComprovante(m.id!)}
+                            className="flex items-center gap-1 text-xs text-[#26619c] hover:underline">
+                            <FileText className="w-3.5 h-3.5" /> Comprovante
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             )}
             </>
@@ -1262,13 +1333,16 @@ export default function ResidentsPage() {
   const load = async () => {
     try {
       const params: Record<string, string> = {}
-      if (search.trim().length >= 2) {
-        params.q = search.trim()
+      const q = search.trim()
+      if (q.length >= 2) {
+        params.q = q
+        if (activeTab === 'visitantes') params.type = 'guest'
+        else if (activeTab !== 'atualizacoes') params.type = 'member'
       } else {
         if (activeTab === 'visitantes') params.type = 'guest'
         else params.type = 'member'
-        if (filterStatus) params.status = filterStatus
       }
+      if (filterStatus) params.status = filterStatus
       const res = await api.get<Resident[]>('/residents', { params })
       setResidents(res.data)
     } catch {

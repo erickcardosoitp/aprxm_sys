@@ -98,6 +98,7 @@ export default function GeralPage() {
   const [cashInput, setCashInput] = useState('')
   const [justInput, setJustInput] = useState('')
   const [attrAssocId, setAttrAssocId] = useState<string>('')
+  const [quebraIdentificada, setQuebraIdentificada] = useState(false)
   const [savingInv, setSavingInv] = useState(false)
 
   // Sync panel
@@ -526,23 +527,35 @@ export default function GeralPage() {
                     )}
                   </div>
 
-                  {/* Atribuição de diferença — só aparece se houver quebra/sobra */}
+                  {/* Quebra / Sobra — só aparece se houver diferença */}
                   {diffVal !== null && diffVal !== 0 && (
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">
-                        Atribuir diferença a <span className="text-gray-400">(opcional)</span>
+                    <div className="flex flex-col gap-2">
+                      <div className={`rounded-lg px-3 py-2 text-xs font-medium ${diffVal > 0 ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                        {diffVal > 0 ? 'Sobra' : 'Falta'} de {fmt(Math.abs(diffVal))} detectada no cofre.
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" checked={quebraIdentificada} onChange={e => { setQuebraIdentificada(e.target.checked); if (!e.target.checked) setAttrAssocId('') }}
+                          className="w-4 h-4 rounded accent-amber-600" />
+                        <span className="text-sm font-medium text-amber-800">Quebra Identificada</span>
                       </label>
-                      <select value={attrAssocId} onChange={e => setAttrAssocId(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
-                        <option value="">— Sem atribuição (quebra geral) —</option>
-                        {assocs.map(a => (
-                          <option key={a.id} value={a.id}>{a.name}</option>
-                        ))}
-                      </select>
-                      {attrAssocId && (
-                        <p className="text-xs text-amber-600 mt-1">
-                          A diferença de {fmt(Math.abs(diffVal))} será atribuída a {assocs.find(a => a.id === attrAssocId)?.name}.
-                        </p>
+                      {quebraIdentificada ? (
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Atribuir à associação</label>
+                          <select value={attrAssocId} onChange={e => setAttrAssocId(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+                            <option value="">— Selecione a associação —</option>
+                            {assocs.map(a => (
+                              <option key={a.id} value={a.id}>{a.name}</option>
+                            ))}
+                          </select>
+                          {attrAssocId && (
+                            <p className="text-xs text-amber-600 mt-1">
+                              Diferença de {fmt(Math.abs(diffVal))} atribuída a {assocs.find(a => a.id === attrAssocId)?.name}.
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">Quebra Não Identificada — descreva na justificativa.</p>
                       )}
                     </div>
                   )}

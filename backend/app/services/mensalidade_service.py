@@ -206,6 +206,7 @@ class MensalidadeService:
             Mensalidade.association_id == association_id,
             Mensalidade.resident_id == resident_id,
             Mensalidade.status != MensalidadeStatus.paid,
+            Mensalidade.status != MensalidadeStatus.agreement,
             Mensalidade.due_date < grace_cutoff,
         )
         result = await self._session.execute(stmt)
@@ -219,6 +220,7 @@ class MensalidadeService:
             .where(
                 Mensalidade.association_id == association_id,
                 Mensalidade.status != MensalidadeStatus.paid,
+                Mensalidade.status != MensalidadeStatus.agreement,
                 Mensalidade.due_date < grace_cutoff,
             )
             .order_by(Mensalidade.due_date.asc())
