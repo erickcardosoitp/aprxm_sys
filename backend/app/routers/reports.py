@@ -153,7 +153,10 @@ async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_s
     p: dict = {"aid": aid}
     if date_from: conds.append("p.received_at::date >= :df"); p["df"] = date.fromisoformat(date_from)
     if date_to: conds.append("p.received_at::date <= :dt"); p["dt"] = date.fromisoformat(date_to)
-    if pkg_status: conds.append("p.status = :st"); p["st"] = pkg_status
+    if pkg_status == 'awaiting':
+        conds.append("p.status IN ('received', 'notified')")
+    elif pkg_status:
+        conds.append("p.status = :st"); p["st"] = pkg_status
     if operator_ids:
         placeholders = ", ".join(f":op{i}" for i in range(len(operator_ids)))
         conds.append(f"p.received_by::text IN ({placeholders})")
