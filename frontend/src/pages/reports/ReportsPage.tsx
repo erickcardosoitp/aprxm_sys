@@ -41,7 +41,7 @@ interface FiltersState {
   res_status: string
   q: string
   pkg_status: string
-  operator_id: string
+  operator_ids: string[]
   so_status: string
   so_priority: string
   category: string
@@ -56,7 +56,7 @@ const DEFAULT_FILTERS: FiltersState = {
   tx_type: '', payment_method: '',
   res_type: '', res_status: '', q: '',
   pkg_status: '',
-  operator_id: '',
+  operator_ids: [],
   so_status: '', so_priority: '', category: '',
   men_status: '', ref_month: '',
   task_status: '', task_priority: '',
@@ -68,7 +68,10 @@ function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string
   const date = () => { d('date_from'); d('date_to') }
   if (mod === 'finance')        { date(); d('tx_type'); d('payment_method') }
   if (mod === 'residents')      { d('res_type'); d('res_status'); d('q') }
-  if (mod === 'packages')       { date(); d('pkg_status'); d('operator_id') }
+  if (mod === 'packages') {
+    date(); d('pkg_status')
+    if (f.operator_ids.length) p['operator_ids'] = f.operator_ids as any
+  }
   if (mod === 'service-orders') { date(); d('so_status'); d('so_priority'); d('category') }
   if (mod === 'mensalidades')   { date(); d('men_status'); d('ref_month') }
   if (mod === 'daily-records')  { date(); d('task_status'); d('task_priority') }
@@ -151,33 +154,51 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
   )
 
   if (mod === 'packages') return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {dateRangeFields}
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Status</label>
-        <div className="relative">
-          <select value={filters.pkg_status} onChange={set('pkg_status')} className={selectCls}>
-            <option value="">Todos</option>
-            <option value="received">Recebido</option>
-            <option value="notified">Notificado</option>
-            <option value="delivered">Entregue</option>
-            <option value="returned">Devolvido</option>
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {dateRangeFields}
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Status</label>
+          <div className="relative">
+            <select value={filters.pkg_status} onChange={set('pkg_status')} className={selectCls}>
+              <option value="">Todos</option>
+              <option value="received">Recebido</option>
+              <option value="notified">Notificado</option>
+              <option value="delivered">Entregue</option>
+              <option value="returned">Devolvido</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
         </div>
       </div>
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Operador</label>
-        <div className="relative">
-          <select value={filters.operator_id} onChange={set('operator_id')} className={selectCls}>
-            <option value="">Todos</option>
-            {operators.map(o => (
-              <option key={o.id} value={o.id}>{o.full_name}</option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+      {operators.length > 0 && (
+        <div>
+          <label className="block text-xs text-gray-500 mb-2">Operadores</label>
+          <div className="flex flex-wrap gap-2">
+            {operators.map(o => {
+              const checked = filters.operator_ids.includes(o.id)
+              return (
+                <label key={o.id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition select-none ${
+                  checked ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#26619c]/40'
+                }`}>
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={checked}
+                    onChange={() => setFilters(f => ({
+                      ...f,
+                      operator_ids: checked
+                        ? f.operator_ids.filter(id => id !== o.id)
+                        : [...f.operator_ids, o.id],
+                    }))}
+                  />
+                  {o.full_name}
+                </label>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 
