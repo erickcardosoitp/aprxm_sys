@@ -51,7 +51,11 @@ def _xlsx(wb: Workbook, name: str) -> Response:
 
 
 def _s(v: Any) -> str:
-    return str(v) if v is not None else "—"
+    s = str(v) if v is not None else "—"
+    # Excel/openpyxl rejeita strings começando com =, +, -, @ (formula injection)
+    if s and s[0] in ('+', '-', '=', '@'):
+        s = "'" + s
+    return s
 
 
 # ─── Financeiro ───────────────────────────────────────────────────────────────
