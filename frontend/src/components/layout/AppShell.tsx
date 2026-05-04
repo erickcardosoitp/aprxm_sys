@@ -74,6 +74,7 @@ export function AppShell() {
   const notifRef = useRef<HTMLDivElement>(null)
   const [pushPerm, setPushPerm] = useState<NotificationPermission | 'unsupported'>('default')
 
+  const isOffice     = useAuthStore((s) => s.isOffice)
   const isSuperAdmin = role === 'superadmin' || role === 'admin_master'
   const isAdmin      = role === 'admin' || role === 'diretoria' || role === 'conselho' || isSuperAdmin
 
@@ -81,11 +82,12 @@ export function AppShell() {
     const storedToken = useAuthStore.getState().token
     if (storedToken && !useAuthStore.getState().associationName) {
       try {
-        const payload = jwtDecode<{ sub: string; association_id: string; role: string; full_name: string; linked_association_ids?: string[]; association_name?: string }>(storedToken)
+        const payload = jwtDecode<{ sub: string; association_id: string; role: string; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean }>(storedToken)
         if (payload.association_name) {
           useAuthStore.getState().setAuth(
             storedToken, payload.sub, payload.association_id, payload.role as UserRole,
             payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name,
+            false, payload.is_office ?? false,
           )
         }
       } catch { /* token inválido */ }
@@ -235,14 +237,19 @@ export function AppShell() {
     return permissions[module]?.can_view ?? false
   }
 
-  const navItems: NavItem[] = [{ to: '/overview', label: 'Visão', icon: BarChart2 }]
-  for (const { module, item } of MODULE_NAV) {
-    if (canView(module)) navItems.push(item)
-  }
-  navItems.push(REPORTS_NAV)
-  if (permissions?.settings?.can_view || isSuperAdmin) navItems.push(SETTINGS_NAV)
-  if (isAdmin) { navItems.push(ADMIN_NAV); navItems.push(LOGS_NAV) }
-  if (isSuperAdmin) navItems.push(SUPERADMIN_NAV)
+  const navItems: NavItem[] = isOffice
+    ? [{ to: '/geral', label: 'Escritório', icon: Building2 }]
+    : (() => {
+        const items: NavItem[] = [{ to: '/overview', label: 'Visão', icon: BarChart2 }]
+        for (const { module, item } of MODULE_NAV) {
+          if (canView(module)) items.push(item)
+        }
+        items.push(REPORTS_NAV)
+        if (permissions?.settings?.can_view || isSuperAdmin) items.push(SETTINGS_NAV)
+        if (isAdmin) { items.push(ADMIN_NAV); items.push(LOGS_NAV) }
+        if (isSuperAdmin) items.push(SUPERADMIN_NAV)
+        return items
+      })()
 
   const handleLogout = () => { clearAuth(); navigate('/login') }
 
@@ -264,8 +271,8 @@ export function AppShell() {
     try {
       const res = await api.post<{ access_token: string }>('/auth/switch-association', { association_id: assocId })
       const token = res.data.access_token
-      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string }>(token)
-      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '')
+      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean }>(token)
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', false, payload.is_office ?? false)
       setMenuOpen(false)
       navigate('/')
       toast.success(`Ambiente: ${payload.association_name}`)

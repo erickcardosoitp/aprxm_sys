@@ -51,6 +51,12 @@ function RequireAggregator({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function RequireNotOffice({ children }: { children: React.ReactNode }) {
+  const isOffice = useAuthStore((s) => s.isOffice)
+  if (isOffice) return <Navigate to="/geral" replace />
+  return <>{children}</>
+}
+
 function RequireModule({ module, children }: { module: string; children: React.ReactNode }) {
   const role = useAuthStore((s) => s.role)
   const permissions = useAuthStore((s) => s.permissions)
@@ -78,18 +84,18 @@ export default function App() {
           }
         >
           <Route index element={<RedirectByRole />} />
-          <Route path="overview"       element={<OverviewPage />} />
-          <Route path="finance"        element={<RequireModule module="finance"><FinancePage /></RequireModule>} />
-          <Route path="packages"       element={<RequireModule module="packages"><PackagesPage /></RequireModule>} />
-          <Route path="service-orders" element={<RequireModule module="service_orders"><ServiceOrdersPage /></RequireModule>} />
-          <Route path="residents"      element={<RequireModule module="residents"><ResidentsPage /></RequireModule>} />
-          <Route path="admin"          element={<RequireAdmin><AdminPage /></RequireAdmin>} />
-          <Route path="settings"       element={<RequireModule module="settings"><SettingsPage /></RequireModule>} />
-          <Route path="financeiro"     element={<RequireModule module="settings"><FinanceiroPage /></RequireModule>} />
-          <Route path="reports"        element={<ReportsPage />} />
+          <Route path="overview"       element={<RequireNotOffice><OverviewPage /></RequireNotOffice>} />
+          <Route path="finance"        element={<RequireNotOffice><RequireModule module="finance"><FinancePage /></RequireModule></RequireNotOffice>} />
+          <Route path="packages"       element={<RequireNotOffice><RequireModule module="packages"><PackagesPage /></RequireModule></RequireNotOffice>} />
+          <Route path="service-orders" element={<RequireNotOffice><RequireModule module="service_orders"><ServiceOrdersPage /></RequireModule></RequireNotOffice>} />
+          <Route path="residents"      element={<RequireNotOffice><RequireModule module="residents"><ResidentsPage /></RequireModule></RequireNotOffice>} />
+          <Route path="admin"          element={<RequireNotOffice><RequireAdmin><AdminPage /></RequireAdmin></RequireNotOffice>} />
+          <Route path="settings"       element={<RequireNotOffice><RequireModule module="settings"><SettingsPage /></RequireModule></RequireNotOffice>} />
+          <Route path="financeiro"     element={<RequireNotOffice><RequireModule module="settings"><FinanceiroPage /></RequireModule></RequireNotOffice>} />
+          <Route path="reports"        element={<RequireNotOffice><ReportsPage /></RequireNotOffice>} />
           <Route path="geral"          element={<RequireAggregator><GeralPage /></RequireAggregator>} />
           <Route path="superadmin"     element={<RequireSuperAdmin><SuperAdminPage /></RequireSuperAdmin>} />
-          <Route path="logs"           element={<RequireAdmin><LogsPage /></RequireAdmin>} />
+          <Route path="logs"           element={<RequireNotOffice><RequireAdmin><LogsPage /></RequireAdmin></RequireNotOffice>} />
           <Route path="chat"           element={<ChatPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

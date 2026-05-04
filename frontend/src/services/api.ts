@@ -17,6 +17,18 @@ function getDeviceToken(): string {
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? '/api/v1',
   headers: { 'Content-Type': 'application/json' },
+  paramsSerializer: (params) => {
+    const parts: string[] = []
+    for (const [key, val] of Object.entries(params)) {
+      if (val === undefined || val === null) continue
+      if (Array.isArray(val)) {
+        val.forEach(v => parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(v)}`))
+      } else {
+        parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(val as string)}`)
+      }
+    }
+    return parts.join('&')
+  },
 })
 
 api.interceptors.request.use((config) => {
