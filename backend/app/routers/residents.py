@@ -455,9 +455,8 @@ async def update_resident(
     from datetime import datetime
     resident.updated_at = datetime.utcnow()
     session.add(resident)
-
-
-
+    await session.commit()
+    await session.refresh(resident)
     return _serialize(resident)
 
 
