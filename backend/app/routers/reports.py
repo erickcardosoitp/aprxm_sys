@@ -148,12 +148,13 @@ async def export_residents(
 
 # ─── Encomendas ───────────────────────────────────────────────────────────────
 
-async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_status=None):
+async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_status=None, operator_id=None):
     conds = ["p.association_id = :aid"]
     p: dict = {"aid": aid}
     if date_from: conds.append("p.received_at::date >= :df"); p["df"] = date.fromisoformat(date_from)
     if date_to: conds.append("p.received_at::date <= :dt"); p["dt"] = date.fromisoformat(date_to)
     if pkg_status: conds.append("p.status = :st"); p["st"] = pkg_status
+    if operator_id: conds.append("p.received_by = :op::uuid"); p["op"] = operator_id
     w = " AND ".join(conds)
     rows = (await session.execute(text(f"""
         SELECT p.tracking_code, r.full_name, p.unit, p.block,
@@ -171,20 +172,22 @@ async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_s
 
 @router.get("/packages/preview")
 async def preview_packages(
-    date_from: str | None = None, date_to: str | None = None, pkg_status: str | None = None,
+    date_from: str | None = None, date_to: str | None = None,
+    pkg_status: str | None = None, operator_id: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    return await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status)
+    return await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status, operator_id)
 
 
 @router.get("/packages")
 async def export_packages(
-    date_from: str | None = None, date_to: str | None = None, pkg_status: str | None = None,
+    date_from: str | None = None, date_to: str | None = None,
+    pkg_status: str | None = None, operator_id: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    rows = await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status)
+    rows = await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status, operator_id)
     wb, ws = _mk("Encomendas")
     cols = list(rows[0].keys()) if rows else []
     _headers(ws, cols)

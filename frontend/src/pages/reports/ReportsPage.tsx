@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Download, DollarSign, Users, Package, FileText, CreditCard, ClipboardList, Search, ChevronDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
@@ -41,6 +41,7 @@ interface FiltersState {
   res_status: string
   q: string
   pkg_status: string
+  operator_id: string
   so_status: string
   so_priority: string
   category: string
@@ -55,6 +56,7 @@ const DEFAULT_FILTERS: FiltersState = {
   tx_type: '', payment_method: '',
   res_type: '', res_status: '', q: '',
   pkg_status: '',
+  operator_id: '',
   so_status: '', so_priority: '', category: '',
   men_status: '', ref_month: '',
   task_status: '', task_priority: '',
@@ -66,17 +68,18 @@ function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string
   const date = () => { d('date_from'); d('date_to') }
   if (mod === 'finance')        { date(); d('tx_type'); d('payment_method') }
   if (mod === 'residents')      { d('res_type'); d('res_status'); d('q') }
-  if (mod === 'packages')       { date(); d('pkg_status') }
+  if (mod === 'packages')       { date(); d('pkg_status'); d('operator_id') }
   if (mod === 'service-orders') { date(); d('so_status'); d('so_priority'); d('category') }
   if (mod === 'mensalidades')   { date(); d('men_status'); d('ref_month') }
   if (mod === 'daily-records')  { date(); d('task_status'); d('task_priority') }
   return p
 }
 
-function FilterPanel({ mod, filters, setFilters }: {
+function FilterPanel({ mod, filters, setFilters, operators }: {
   mod: ModuleKey
   filters: FiltersState
   setFilters: React.Dispatch<React.SetStateAction<FiltersState>>
+  operators: { id: string; full_name: string }[]
 }) {
   const set = (k: keyof FiltersState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setFilters(f => ({ ...f, [k]: e.target.value }))
@@ -148,7 +151,7 @@ function FilterPanel({ mod, filters, setFilters }: {
   )
 
   if (mod === 'packages') return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       {dateRangeFields}
       <div>
         <label className="block text-xs text-gray-500 mb-1">Status</label>
@@ -159,6 +162,18 @@ function FilterPanel({ mod, filters, setFilters }: {
             <option value="notified">Notificado</option>
             <option value="delivered">Entregue</option>
             <option value="returned">Devolvido</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Operador</label>
+        <div className="relative">
+          <select value={filters.operator_id} onChange={set('operator_id')} className={selectCls}>
+            <option value="">Todos</option>
+            {operators.map(o => (
+              <option key={o.id} value={o.id}>{o.full_name}</option>
+            ))}
           </select>
           <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
         </div>
@@ -300,6 +315,13 @@ export default function ReportsPage() {
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [operators, setOperators] = useState<{ id: string; full_name: string }[]>([])
+
+  useEffect(() => {
+    api.get('/admin/users', { params: { active_only: true } })
+      .then(r => setOperators(r.data))
+      .catch(() => {})
+  }, [])
 
   const mod = MODULES.find(m => m.key === selected)!
 
@@ -384,7 +406,7 @@ export default function ReportsPage() {
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Filtros</p>
-        <FilterPanel mod={selected} filters={filters} setFilters={setFilters} />
+        <FilterPanel mod={selected} filters={filters} setFilters={setFilters} operators={operators} />
 
         <div className="flex gap-2 mt-4">
           <button
