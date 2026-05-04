@@ -1249,7 +1249,7 @@ export default function PackagesPage() {
   }
 
   useEffect(() => {
-    const t = setTimeout(loadPackages, filterQ ? 1200 : 0)
+    const t = setTimeout(loadPackages, filterQ ? 300 : 0)
     return () => clearTimeout(t)
   }, [filterStatus, filterQ, filterDateFrom, filterDateTo])
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
@@ -1469,6 +1469,11 @@ export default function PackagesPage() {
             </span>
             {pkg.received_by_name && <span className="text-xs text-gray-400">· <span className="text-gray-500">{pkg.received_by_name}</span></span>}
             {pkg.delivered_by_name && <span className="text-xs text-gray-400">· Entregue: <span className="text-gray-500">{pkg.delivered_by_name}</span></span>}
+            {(pkg.status === 'received' || pkg.status === 'notified') && (() => {
+              const days = Math.floor((Date.now() - new Date(pkg.received_at).getTime()) / 86400000)
+              if (days < 1) return null
+              return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${days >= 7 ? 'bg-red-100 text-red-700' : days >= 3 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{days}d</span>
+            })()}
           </div>
           {(pkg.resident_address_street || pkg.resident_cep) && (
             <p className="text-xs text-gray-400 mt-0.5">
@@ -1745,8 +1750,8 @@ export default function PackagesPage() {
             <DebouncedInput
               ref={filterInputRef}
               onSearch={v => startTransition(() => setFilterQ(v))}
-              delay={1200}
-              placeholder="Buscar nome, rastreio, unidade…"
+              delay={300}
+              placeholder="Buscar nome, rastreio, unidade ou CPF…"
               className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c] bg-white"
             />
           </div>

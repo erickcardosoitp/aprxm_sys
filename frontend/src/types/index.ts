@@ -13,6 +13,7 @@ export type UserRole =
   | 'operator'
   | 'viewer'
 
+
 export interface AuthState {
   token: string | null
   userId: string | null

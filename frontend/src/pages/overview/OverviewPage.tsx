@@ -654,7 +654,7 @@ function OverviewTab() {
 interface CepData { cep: string; street: string; members: number; guests: number }
 interface CepPoint extends CepData { lat: number; lng: number }
 
-function LeafletMap({ points, center }: { points: CepPoint[]; center: [number, number] }) {
+function LeafletMap({ points, center, showMembers, showGuests }: { points: CepPoint[]; center: [number, number]; showMembers: boolean; showGuests: boolean }) {
   const divRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
 
@@ -667,21 +667,21 @@ function LeafletMap({ points, center }: { points: CepPoint[]; center: [number, n
       attribution: '&copy; OpenStreetMap contributors',
     }).addTo(map)
     points.forEach(p => {
-      if (p.members > 0) {
+      if (showMembers && p.members > 0) {
         L.circleMarker([p.lat, p.lng], {
           radius: 4 + Math.sqrt(p.members) * 3,
           fillColor: '#3b82f6', color: '#2563eb', fillOpacity: 0.7, weight: 1,
-        }).bindPopup(`<b>${p.street || p.cep}</b><br/>Associados: ${p.members}`).addTo(map)
+        }).bindPopup(`<b>${p.street || p.cep}</b><br/>Associados e Dep.: ${p.members}`).addTo(map)
       }
-      if (p.guests > 0) {
+      if (showGuests && p.guests > 0) {
         L.circleMarker([p.lat + 0.0001, p.lng + 0.0001], {
           radius: 4 + Math.sqrt(p.guests) * 3,
           fillColor: '#fb923c', color: '#ea580c', fillOpacity: 0.7, weight: 1,
-        }).bindPopup(`<b>${p.street || p.cep}</b><br/>Não associados: ${p.guests}`).addTo(map)
+        }).bindPopup(`<b>${p.street || p.cep}</b><br/>Visitantes: ${p.guests}`).addTo(map)
       }
     })
     return () => { map.remove(); mapRef.current = null }
-  }, [points, center])
+  }, [points, center, showMembers, showGuests])
 
   return (
     <div ref={divRef} className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: 420 }} />
@@ -721,11 +721,43 @@ function CustomTooltip({ active, payload, label }: any) {
   )
 }
 
+async function geocodeCep(cep: string, streetHint: string): Promise<{ lat: number; lng: number } | null> {
+  const clean = cep.replace(/\D/g, '')
+  try {
+    const geo = await fetch(`https://brasilapi.com.br/api/cep/v2/${clean}`)
+    if (geo.ok) {
+      const j = await geo.json()
+      const lat = j?.location?.coordinates?.latitude ? Number(j.location.coordinates.latitude) : null
+      const lng = j?.location?.coordinates?.longitude ? Number(j.location.coordinates.longitude) : null
+      if (lat && lng) return { lat, lng }
+      // Nominatim fallback using street + city + state from BrasilAPI
+      const parts = [streetHint || j?.street, j?.neighborhood, j?.city, j?.state, 'Brasil'].filter(Boolean)
+      if (parts.length >= 2) {
+        await new Promise(r => setTimeout(r, 250)) // respect Nominatim 1 req/s
+        const nom = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(parts.join(', '))}&format=json&limit=1`,
+          { headers: { 'User-Agent': 'APRXM/1.0' } }
+        )
+        if (nom.ok) {
+          const rs = await nom.json()
+          if (rs[0]) return { lat: Number(rs[0].lat), lng: Number(rs[0].lon) }
+        }
+      }
+    }
+  } catch { /* skip */ }
+  return null
+}
+
 function MapTab() {
   const [points, setPoints] = useState<CepPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState(0)
+  const [showMembers, setShowMembers] = useState(true)
+  const [showGuests, setShowGuests] = useState(true)
 
+  const visiblePoints = points.filter(p =>
+    (showMembers && p.members > 0) || (showGuests && p.guests > 0)
+  )
   const totalMembers = points.reduce((a, p) => a + p.members, 0)
   const totalGuests  = points.reduce((a, p) => a + p.guests, 0)
   const total        = totalMembers + totalGuests
@@ -741,16 +773,8 @@ function MapTab() {
         for (let i = 0; i < data.length; i++) {
           if (cancelled) return
           const d = data[i]
-          const cep = d.cep.replace(/\D/g, '')
-          try {
-            const geo = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`)
-            if (geo.ok) {
-              const j = await geo.json()
-              const lat = j?.location?.coordinates?.latitude
-              const lng = j?.location?.coordinates?.longitude
-              if (lat && lng) resolved.push({ ...d, lat: Number(lat), lng: Number(lng) })
-            }
-          } catch { /* skip */ }
+          const coords = await geocodeCep(d.cep, d.street)
+          if (coords) resolved.push({ ...d, ...coords })
           setProgress(Math.round((i + 1) / data.length * 100))
         }
         if (!cancelled) setPoints(resolved)
@@ -782,8 +806,8 @@ function MapTab() {
     )
   }
 
-  const centerLat = points.reduce((a, p) => a + p.lat, 0) / points.length
-  const centerLng = points.reduce((a, p) => a + p.lng, 0) / points.length
+  const centerLat = points.reduce((a, p) => a + p.lat, 0) / (points.length || 1)
+  const centerLng = points.reduce((a, p) => a + p.lng, 0) / (points.length || 1)
 
   return (
     <div className="flex flex-col gap-4">
@@ -795,11 +819,11 @@ function MapTab() {
           <span className="text-xs text-gray-400">moradores mapeados</span>
         </div>
         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-blue-400">Associados</span>
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-blue-400">Assoc. e Dep.</span>
           <span className="text-3xl font-extrabold text-blue-700">{totalMembers}</span>
         </div>
         <div className="bg-orange-50 border border-orange-100 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-orange-400">Não associados</span>
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-orange-400">Visitantes</span>
           <span className="text-3xl font-extrabold text-orange-600">{totalGuests}</span>
         </div>
         <div className="bg-green-50 border border-green-100 rounded-2xl p-4 flex flex-col gap-1 shadow-sm">
@@ -808,15 +832,27 @@ function MapTab() {
         </div>
       </div>
 
-      {/* Map */}
-      <LeafletMap points={points} center={[centerLat, centerLng]} />
-
-      {/* Legend */}
-      <div className="flex items-center gap-4 text-xs text-gray-500 px-1">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-500 opacity-80" />Associado</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-orange-400 opacity-80" />Não associado</span>
-        <span className="text-gray-400">· Tamanho proporcional à quantidade</span>
+      {/* Filters */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setShowMembers(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${showMembers ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-200 text-gray-500'}`}
+        >
+          <span className="w-2 h-2 rounded-full bg-current shrink-0" />
+          Associados e Dependentes
+        </button>
+        <button
+          onClick={() => setShowGuests(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${showGuests ? 'bg-orange-400 border-orange-400 text-white' : 'bg-white border-gray-200 text-gray-500'}`}
+        >
+          <span className="w-2 h-2 rounded-full bg-current shrink-0" />
+          Visitantes
+        </button>
+        <span className="text-xs text-gray-400 ml-1">· tamanho proporcional à quantidade</span>
       </div>
+
+      {/* Map */}
+      <LeafletMap points={visiblePoints} center={[centerLat, centerLng]} showMembers={showMembers} showGuests={showGuests} />
     </div>
   )
 }
