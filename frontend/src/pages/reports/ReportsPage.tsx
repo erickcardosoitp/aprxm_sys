@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Download, DollarSign, Users, Package, FileText, CreditCard, ClipboardList, Search, ChevronDown } from 'lucide-react'
+import { Download, DollarSign, Users, Package, FileText, CreditCard, ClipboardList, Search, ChevronDown, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
@@ -181,7 +181,12 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">CEP</label>
-          <input type="text" placeholder="00000-000" value={filters.cep} onChange={set('cep')} className={inputCls} maxLength={9} />
+          <input type="text" placeholder="00000-000" value={filters.cep}
+            onChange={e => {
+              const v = e.target.value.replace(/\D/g, '').slice(0, 8)
+              setFilters(f => ({ ...f, cep: v.length > 5 ? `${v.slice(0,5)}-${v.slice(5)}` : v }))
+            }}
+            className={inputCls} maxLength={9} />
         </div>
       </div>
       {operators.length > 0 && (
@@ -308,15 +313,23 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
   return null
 }
 
-// ─── Packages KPIs ─────────────────────────────────────────────────────────────
+// ─── Packages KPIs + Grouped Table ────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, string> = {
   received: 'Na portaria', notified: 'Notificado', delivered: 'Entregue',
   returned: 'Devolvido', reversed: 'Estornado',
 }
+const STATUS_VALUES: Record<string, string[]> = {
+  awaiting: ['received', 'notified'],
+  received: ['received'], notified: ['notified'],
+  delivered: ['delivered'], returned: ['returned'],
+}
 
-function PackagesKpis({ rows }: { rows: Record<string, unknown>[] }) {
-  const total = rows.length
+function PackagesKpis({ rows, activeFilter, onFilter }: {
+  rows: Record<string, unknown>[]
+  activeFilter: string
+  onFilter: (f: string) => void
+}) {
   const byStatus: Record<string, number> = {}
   const byOperator: Record<string, number> = {}
   const byStreet: Record<string, number> = {}
@@ -331,26 +344,25 @@ function PackagesKpis({ rows }: { rows: Record<string, unknown>[] }) {
   const topStreets = Object.entries(byStreet).sort((a, b) => b[1] - a[1]).slice(0, 5)
   const topOps = Object.entries(byOperator).sort((a, b) => b[1] - a[1]).slice(0, 5)
   const awaiting = (byStatus['received'] ?? 0) + (byStatus['notified'] ?? 0)
+  const total = rows.length
+
+  const kpis = [
+    { key: 'awaiting', label: 'Aguardando', value: awaiting, bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-400' },
+    { key: 'delivered', label: 'Entregues', value: byStatus['delivered'] ?? 0, bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-400' },
+    { key: 'returned', label: 'Devolvidos', value: byStatus['returned'] ?? 0, bg: 'bg-orange-50', text: 'text-orange-700', ring: 'ring-orange-400' },
+    { key: '', label: 'Total', value: total, bg: 'bg-purple-50', text: 'text-purple-700', ring: 'ring-purple-400' },
+  ]
 
   return (
     <div className="mb-4 flex flex-col gap-3">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <div className="bg-blue-50 rounded-lg p-3">
-          <p className="text-[10px] uppercase tracking-wide text-blue-700 font-semibold">Aguardando</p>
-          <p className="text-2xl font-bold text-blue-700">{awaiting}</p>
-        </div>
-        <div className="bg-emerald-50 rounded-lg p-3">
-          <p className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">Entregues</p>
-          <p className="text-2xl font-bold text-emerald-700">{byStatus['delivered'] ?? 0}</p>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-3">
-          <p className="text-[10px] uppercase tracking-wide text-gray-600 font-semibold">Devolvidos</p>
-          <p className="text-2xl font-bold text-gray-700">{byStatus['returned'] ?? 0}</p>
-        </div>
-        <div className="bg-purple-50 rounded-lg p-3">
-          <p className="text-[10px] uppercase tracking-wide text-purple-700 font-semibold">Total</p>
-          <p className="text-2xl font-bold text-purple-700">{total}</p>
-        </div>
+        {kpis.map(k => (
+          <button key={k.key} onClick={() => onFilter(activeFilter === k.key ? '' : k.key)}
+            className={`${k.bg} rounded-lg p-3 text-left transition ring-2 ${activeFilter === k.key ? k.ring : 'ring-transparent'} hover:ring-2 hover:${k.ring}`}>
+            <p className={`text-[10px] uppercase tracking-wide font-semibold ${k.text}`}>{k.label}</p>
+            <p className={`text-2xl font-bold ${k.text}`}>{k.value}</p>
+          </button>
+        ))}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="border border-gray-100 rounded-lg p-3">
@@ -387,6 +399,63 @@ function PackagesKpis({ rows }: { rows: Record<string, unknown>[] }) {
           </ul>
         </div>
       </div>
+    </div>
+  )
+}
+
+function PackagesGroupedTable({ rows }: { rows: Record<string, unknown>[] }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  if (!rows.length) return <div className="text-center py-16 text-gray-400 text-sm">Nenhum registro encontrado.</div>
+
+  const cols = Object.keys(rows[0]).filter(c => c !== 'Rua' && c !== 'CEP')
+  const groups: Record<string, { cep: string; rows: Record<string, unknown>[] }> = {}
+  for (const r of rows) {
+    const street = String(r['Rua'] ?? '(sem rua)')
+    if (!groups[street]) groups[street] = { cep: String(r['CEP'] ?? ''), rows: [] }
+    groups[street].rows.push(r)
+  }
+  const sorted = Object.entries(groups).sort((a, b) => b[1].rows.length - a[1].rows.length)
+
+  return (
+    <div className="flex flex-col gap-1">
+      {sorted.map(([street, g]) => {
+        const isOpen = !!open[street]
+        return (
+          <div key={street} className="border border-gray-200 rounded-xl overflow-hidden">
+            <button onClick={() => setOpen(s => ({ ...s, [street]: !s[street] }))}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition text-left">
+              <div className="flex items-center gap-2 min-w-0">
+                <ChevronRight className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                <span className="font-medium text-gray-800 text-sm truncate">{street}</span>
+                {g.cep && g.cep !== '—' && <span className="text-xs text-gray-400 shrink-0">{g.cep}</span>}
+              </div>
+              <span className="ml-3 shrink-0 text-sm font-bold text-[#26619c] bg-blue-50 px-2 py-0.5 rounded-full">{g.rows.length}</span>
+            </button>
+            {isOpen && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="bg-[#1a3f6f] text-white">
+                      {cols.map(c => <th key={c} className="px-3 py-2 text-left font-semibold whitespace-nowrap">{c}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {g.rows.map((row, i) => (
+                      <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                        {cols.map(c => (
+                          <td key={c} className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[180px] truncate">
+                            {String(row[c] ?? '—')}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -433,6 +502,7 @@ export default function ReportsPage() {
   const [previewing, setPreviewing] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [operators, setOperators] = useState<{ id: string; full_name: string }[]>([])
+  const [pkgStatusFilter, setPkgStatusFilter] = useState('')
 
   useEffect(() => {
     api.get('/admin/users', { params: { active_only: true } })
@@ -445,6 +515,7 @@ export default function ReportsPage() {
   const handleModuleChange = (key: ModuleKey) => {
     setSelected(key)
     setRows(null)
+    setPkgStatusFilter('')
   }
 
   const handlePreview = async () => {
@@ -552,20 +623,33 @@ export default function ReportsPage() {
       </div>
 
       {/* Preview */}
-      {rows !== null && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Prévia — {mod.label}
-            </p>
-            <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-3 py-1">
-              {rows.length} {rows.length === 1 ? 'registro' : 'registros'}
-            </span>
+      {rows !== null && (() => {
+        const visibleRows = selected === 'packages' && pkgStatusFilter
+          ? rows.filter(r => {
+              const statuses = STATUS_VALUES[pkgStatusFilter] ?? [pkgStatusFilter]
+              return statuses.includes(String(r['Status'] ?? ''))
+            })
+          : rows
+        return (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Prévia — {mod.label}
+              </p>
+              <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-3 py-1">
+                {visibleRows.length}{pkgStatusFilter ? ` de ${rows.length}` : ''} {rows.length === 1 ? 'registro' : 'registros'}
+              </span>
+            </div>
+            {selected === 'packages' && rows.length > 0 && (
+              <PackagesKpis rows={rows} activeFilter={pkgStatusFilter} onFilter={setPkgStatusFilter} />
+            )}
+            {selected === 'packages'
+              ? <PackagesGroupedTable rows={visibleRows} />
+              : <PreviewTable rows={visibleRows} />
+            }
           </div>
-          {selected === 'packages' && rows.length > 0 && <PackagesKpis rows={rows} />}
-          <PreviewTable rows={rows} />
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
