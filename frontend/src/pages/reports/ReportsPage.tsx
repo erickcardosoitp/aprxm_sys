@@ -162,9 +162,9 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
           <div className="relative">
             <select value={filters.pkg_status} onChange={set('pkg_status')} className={selectCls}>
               <option value="">Todos</option>
-              <option value="awaiting">Aguardando retirada</option>
-              <option value="received">Recebido</option>
-              <option value="notified">Notificado</option>
+              <option value="awaiting">Aguardando retirada (todos)</option>
+              <option value="received">Na portaria (não notificado)</option>
+              <option value="notified">Notificado (aguardando retirada)</option>
               <option value="delivered">Entregue</option>
               <option value="returned">Devolvido</option>
             </select>
