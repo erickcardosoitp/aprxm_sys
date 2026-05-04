@@ -81,7 +81,7 @@ function FilterPanel({ mod, filters, setFilters }: {
   const set = (k: keyof FiltersState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setFilters(f => ({ ...f, [k]: e.target.value }))
 
-  const DateRange = () => (
+  const dateRangeFields = (
     <>
       <div>
         <label className="block text-xs text-gray-500 mb-1">De</label>
@@ -96,7 +96,7 @@ function FilterPanel({ mod, filters, setFilters }: {
 
   if (mod === 'finance') return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <DateRange />
+      {dateRangeFields}
       <div>
         <label className="block text-xs text-gray-500 mb-1">Tipo</label>
         <div className="relative">
@@ -149,7 +149,7 @@ function FilterPanel({ mod, filters, setFilters }: {
 
   if (mod === 'packages') return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-      <DateRange />
+      {dateRangeFields}
       <div>
         <label className="block text-xs text-gray-500 mb-1">Status</label>
         <div className="relative">
@@ -168,7 +168,7 @@ function FilterPanel({ mod, filters, setFilters }: {
 
   if (mod === 'service-orders') return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <DateRange />
+      {dateRangeFields}
       <div>
         <label className="block text-xs text-gray-500 mb-1">Status</label>
         <div className="relative">
@@ -204,7 +204,7 @@ function FilterPanel({ mod, filters, setFilters }: {
 
   if (mod === 'mensalidades') return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <DateRange />
+      {dateRangeFields}
       <div>
         <label className="block text-xs text-gray-500 mb-1">Status</label>
         <div className="relative">
@@ -227,7 +227,7 @@ function FilterPanel({ mod, filters, setFilters }: {
 
   if (mod === 'daily-records') return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <DateRange />
+      {dateRangeFields}
       <div>
         <label className="block text-xs text-gray-500 mb-1">Status</label>
         <div className="relative">
