@@ -62,9 +62,9 @@ const DEFAULT_FILTERS: FiltersState = {
   task_status: '', task_priority: '',
 }
 
-function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string> {
-  const p: Record<string, string> = {}
-  const d = (k: keyof FiltersState) => { if (f[k]) p[k] = f[k] }
+function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string | string[]> {
+  const p: Record<string, string | string[]> = {}
+  const d = (k: keyof FiltersState) => { if (f[k]) p[k] = f[k] as string }
   const date = () => { d('date_from'); d('date_to') }
   if (mod === 'finance')        { date(); d('tx_type'); d('payment_method') }
   if (mod === 'residents')      { d('res_type'); d('res_status'); d('q') }
