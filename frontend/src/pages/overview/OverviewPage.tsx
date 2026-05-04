@@ -652,7 +652,7 @@ function OverviewTab() {
 // ── Map Tab ───────────────────────────────────────────────────────────────────
 
 interface CepData { cep: string; street: string; members: number; guests: number }
-interface CepPoint extends CepData { lat: number; lng: number }
+interface CepPoint extends CepData { segments: [number, number][][]; lat: number; lng: number }
 
 function LeafletMap({ points, center, showMembers, showGuests }: { points: CepPoint[]; center: [number, number]; showMembers: boolean; showGuests: boolean }) {
   const divRef = useRef<HTMLDivElement>(null)
@@ -661,30 +661,35 @@ function LeafletMap({ points, center, showMembers, showGuests }: { points: CepPo
   useEffect(() => {
     if (!divRef.current) return
     if (mapRef.current) { mapRef.current.remove(); mapRef.current = null }
-    const map = L.map(divRef.current).setView(center, 13)
+    const map = L.map(divRef.current).setView(center, 14)
     mapRef.current = map
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
     }).addTo(map)
     points.forEach(p => {
+      const label = p.street || p.cep
       if (showMembers && p.members > 0) {
-        L.circleMarker([p.lat, p.lng], {
-          radius: 4 + Math.sqrt(p.members) * 3,
-          fillColor: '#3b82f6', color: '#2563eb', fillOpacity: 0.7, weight: 1,
-        }).bindPopup(`<b>${p.street || p.cep}</b><br/>Associados e Dep.: ${p.members}`).addTo(map)
+        const w = 3 + Math.min(Math.sqrt(p.members) * 1.5, 10)
+        p.segments.forEach(seg => {
+          L.polyline(seg, { color: '#3b82f6', weight: w, opacity: 0.85 })
+            .bindPopup(`<b>${label}</b><br/>Assoc. e Dep.: <b>${p.members}</b>`)
+            .addTo(map)
+        })
       }
       if (showGuests && p.guests > 0) {
-        L.circleMarker([p.lat + 0.0001, p.lng + 0.0001], {
-          radius: 4 + Math.sqrt(p.guests) * 3,
-          fillColor: '#fb923c', color: '#ea580c', fillOpacity: 0.7, weight: 1,
-        }).bindPopup(`<b>${p.street || p.cep}</b><br/>Visitantes: ${p.guests}`).addTo(map)
+        const w = 3 + Math.min(Math.sqrt(p.guests) * 1.5, 10)
+        p.segments.forEach(seg => {
+          L.polyline(seg, { color: '#fb923c', weight: w, opacity: 0.85 })
+            .bindPopup(`<b>${label}</b><br/>Visitantes: <b>${p.guests}</b>`)
+            .addTo(map)
+        })
       }
     })
     return () => { map.remove(); mapRef.current = null }
   }, [points, center, showMembers, showGuests])
 
   return (
-    <div ref={divRef} className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: 420 }} />
+    <div ref={divRef} className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: 440 }} />
   )
 }
 
@@ -721,31 +726,50 @@ function CustomTooltip({ active, payload, label }: any) {
   )
 }
 
-async function geocodeCep(cep: string, streetHint: string): Promise<{ lat: number; lng: number } | null> {
+async function resolveStreetGeometry(cep: string, streetHint: string): Promise<{ segments: [number, number][][]; lat: number; lng: number } | null> {
   const clean = cep.replace(/\D/g, '')
   try {
-    const geo = await fetch(`https://brasilapi.com.br/api/cep/v2/${clean}`)
-    if (geo.ok) {
-      const j = await geo.json()
-      const lat = j?.location?.coordinates?.latitude ? Number(j.location.coordinates.latitude) : null
-      const lng = j?.location?.coordinates?.longitude ? Number(j.location.coordinates.longitude) : null
-      if (lat && lng) return { lat, lng }
-      // Nominatim fallback using street + city + state from BrasilAPI
-      const parts = [streetHint || j?.street, j?.neighborhood, j?.city, j?.state, 'Brasil'].filter(Boolean)
-      if (parts.length >= 2) {
-        await new Promise(r => setTimeout(r, 250)) // respect Nominatim 1 req/s
-        const nom = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(parts.join(', '))}&format=json&limit=1`,
-          { headers: { 'User-Agent': 'APRXM/1.0' } }
-        )
-        if (nom.ok) {
-          const rs = await nom.json()
-          if (rs[0]) return { lat: Number(rs[0].lat), lng: Number(rs[0].lon) }
-        }
-      }
+    // Step 1: resolve street name + city via BrasilAPI
+    const geoRes = await fetch(`https://brasilapi.com.br/api/cep/v2/${clean}`)
+    if (!geoRes.ok) return null
+    const geoData = await geoRes.json()
+    const street = streetHint || geoData?.street || ''
+    const city   = geoData?.city   || ''
+    const state  = geoData?.state  || ''
+    if (!street || !city) return null
+
+    // Step 2: query Overpass for the street's polyline geometry
+    await new Promise(r => setTimeout(r, 300)) // avoid hammering Overpass
+    const query = `[out:json][timeout:20];area["name"="${city}"]["place"~"city|town|municipality"]->.c;way["name"="${street}"]["highway"](area.c);out geom;`
+    const ovRes = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`,
+    })
+    if (!ovRes.ok) return null
+    const ovData = await ovRes.json()
+    const ways: any[] = (ovData.elements ?? []).filter((e: any) => e.type === 'way' && e.geometry?.length > 1)
+    if (!ways.length) {
+      // Fallback: try state-scoped query (handles cities sharing names)
+      await new Promise(r => setTimeout(r, 300))
+      const q2 = `[out:json][timeout:20];area["name"="${state}"]["admin_level"="4"]->.s;area["name"="${city}"][admin_level~"7|8"](area.s)->.c;way["name"="${street}"]["highway"](area.c);out geom;`
+      const ov2 = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(q2)}`,
+      })
+      if (!ov2.ok) return null
+      const d2 = await ov2.json()
+      ways.push(...(d2.elements ?? []).filter((e: any) => e.type === 'way' && e.geometry?.length > 1))
     }
-  } catch { /* skip */ }
-  return null
+    if (!ways.length) return null
+
+    const segments: [number, number][][] = ways.map(w =>
+      w.geometry.map((pt: any) => [pt.lat, pt.lon] as [number, number])
+    )
+    const firstPt = segments[0][0]
+    return { segments, lat: firstPt[0], lng: firstPt[1] }
+  } catch { return null }
 }
 
 function MapTab() {
@@ -773,8 +797,8 @@ function MapTab() {
         for (let i = 0; i < data.length; i++) {
           if (cancelled) return
           const d = data[i]
-          const coords = await geocodeCep(d.cep, d.street)
-          if (coords) resolved.push({ ...d, ...coords })
+          const geo = await resolveStreetGeometry(d.cep, d.street)
+          if (geo) resolved.push({ ...d, ...geo })
           setProgress(Math.round((i + 1) / data.length * 100))
         }
         if (!cancelled) setPoints(resolved)
