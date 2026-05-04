@@ -609,7 +609,7 @@ export default function PackagesPage() {
   const [detailDependents, setDetailDependents] = useState<{ id: string; full_name: string; phone_primary?: string }[]>([])
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({})
   const [editPkg, setEditPkg] = useState<Package | null>(null)
-  const [editPkgForm, setEditPkgForm] = useState({ sender_name: '', carrier_name: '', tracking_code: '', object_type: '', notes: '' })
+  const [editPkgForm, setEditPkgForm] = useState({ sender_name: '', carrier_name: '', tracking_code: '', object_type: '', notes: '', resident_cep: '' })
   const [savingEditPkg, setSavingEditPkg] = useState(false)
   const [photoPreviewUrls, setPhotoPreviewUrls] = useState<{ url: string; label?: string }[] | null>(null)
 
@@ -1537,7 +1537,7 @@ export default function PackagesPage() {
             </button>
           )}
           {isAdmin && (
-            <button onClick={e => { e.stopPropagation(); setEditPkg(pkg); setEditPkgForm({ sender_name: pkg.sender_name ?? '', carrier_name: pkg.carrier_name ?? '', tracking_code: pkg.tracking_code ?? '', object_type: pkg.object_type ?? '', notes: pkg.notes ?? '' }) }}
+            <button onClick={e => { e.stopPropagation(); setEditPkg(pkg); setEditPkgForm({ sender_name: pkg.sender_name ?? '', carrier_name: pkg.carrier_name ?? '', tracking_code: pkg.tracking_code ?? '', object_type: pkg.object_type ?? '', notes: pkg.notes ?? '', resident_cep: pkg.resident_cep ?? '' }) }}
               className="text-xs text-gray-400 hover:text-[#26619c] hover:bg-gray-100 px-2 py-1 rounded-lg transition">
               Editar
             </button>
@@ -2172,6 +2172,13 @@ export default function PackagesPage() {
                     className={inputCls} placeholder={label} />
                 </div>
               ))}
+              {editPkg?.resident_id && (
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">CEP do morador</label>
+                  <input value={editPkgForm.resident_cep} onChange={e => setEditPkgForm(f => ({ ...f, resident_cep: e.target.value }))}
+                    className={inputCls} placeholder="00000-000" maxLength={9} />
+                </div>
+              )}
             </div>
             <div className="flex gap-3 px-5 pb-5">
               <button onClick={() => setEditPkg(null)}
@@ -2180,7 +2187,19 @@ export default function PackagesPage() {
                 if (!editPkg) return
                 setSavingEditPkg(true)
                 try {
-                  await api.patch(`/packages/${editPkg.id}/info`, editPkgForm)
+                  const pkgFields = ['sender_name', 'carrier_name', 'tracking_code', 'object_type', 'notes'] as const
+                  const orig: Record<string, string> = {
+                    sender_name: editPkg.sender_name ?? '', carrier_name: editPkg.carrier_name ?? '',
+                    tracking_code: editPkg.tracking_code ?? '', object_type: editPkg.object_type ?? '', notes: editPkg.notes ?? '',
+                  }
+                  const payload: Record<string, string | null> = {}
+                  for (const k of pkgFields) {
+                    if (editPkgForm[k] !== orig[k]) payload[k] = editPkgForm[k] || null
+                  }
+                  if (Object.keys(payload).length) await api.patch(`/packages/${editPkg.id}/info`, payload)
+                  if (editPkg.resident_id && editPkgForm.resident_cep !== (editPkg.resident_cep ?? '')) {
+                    await api.put(`/residents/${editPkg.resident_id}`, { address_cep: editPkgForm.resident_cep || null })
+                  }
                   toast.success('Encomenda atualizada.')
                   setEditPkg(null)
                   loadPackages()
