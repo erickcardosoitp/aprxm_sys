@@ -42,6 +42,8 @@ interface FiltersState {
   q: string
   pkg_status: string
   operator_ids: string[]
+  street: string
+  cep: string
   so_status: string
   so_priority: string
   category: string
@@ -57,6 +59,8 @@ const DEFAULT_FILTERS: FiltersState = {
   res_type: '', res_status: '', q: '',
   pkg_status: '',
   operator_ids: [],
+  street: '',
+  cep: '',
   so_status: '', so_priority: '', category: '',
   men_status: '', ref_month: '',
   task_status: '', task_priority: '',
@@ -69,7 +73,7 @@ function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string
   if (mod === 'finance')        { date(); d('tx_type'); d('payment_method') }
   if (mod === 'residents')      { d('res_type'); d('res_status'); d('q') }
   if (mod === 'packages') {
-    date(); d('pkg_status')
+    date(); d('pkg_status'); d('street'); d('cep')
     if (f.operator_ids.length) p['operator_ids'] = f.operator_ids as any
   }
   if (mod === 'service-orders') { date(); d('so_status'); d('so_priority'); d('category') }
@@ -170,6 +174,14 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
             </select>
             <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
           </div>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Rua</label>
+          <input type="text" placeholder="Ex.: Vaz Lobo" value={filters.street} onChange={set('street')} className={inputCls} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">CEP</label>
+          <input type="text" placeholder="00000-000" value={filters.cep} onChange={set('cep')} className={inputCls} maxLength={9} />
         </div>
       </div>
       {operators.length > 0 && (
@@ -294,6 +306,89 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
   )
 
   return null
+}
+
+// ─── Packages KPIs ─────────────────────────────────────────────────────────────
+
+const STATUS_LABELS: Record<string, string> = {
+  received: 'Na portaria', notified: 'Notificado', delivered: 'Entregue',
+  returned: 'Devolvido', reversed: 'Estornado',
+}
+
+function PackagesKpis({ rows }: { rows: Record<string, unknown>[] }) {
+  const total = rows.length
+  const byStatus: Record<string, number> = {}
+  const byOperator: Record<string, number> = {}
+  const byStreet: Record<string, number> = {}
+  for (const r of rows) {
+    const st = String(r['Status'] ?? '')
+    byStatus[st] = (byStatus[st] ?? 0) + 1
+    const op = String(r['Recebido por'] ?? '—')
+    byOperator[op] = (byOperator[op] ?? 0) + 1
+    const street = String(r['Rua'] ?? '—')
+    byStreet[street] = (byStreet[street] ?? 0) + 1
+  }
+  const topStreets = Object.entries(byStreet).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  const topOps = Object.entries(byOperator).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  const awaiting = (byStatus['received'] ?? 0) + (byStatus['notified'] ?? 0)
+
+  return (
+    <div className="mb-4 flex flex-col gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="bg-blue-50 rounded-lg p-3">
+          <p className="text-[10px] uppercase tracking-wide text-blue-700 font-semibold">Aguardando</p>
+          <p className="text-2xl font-bold text-blue-700">{awaiting}</p>
+        </div>
+        <div className="bg-emerald-50 rounded-lg p-3">
+          <p className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">Entregues</p>
+          <p className="text-2xl font-bold text-emerald-700">{byStatus['delivered'] ?? 0}</p>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-3">
+          <p className="text-[10px] uppercase tracking-wide text-gray-600 font-semibold">Devolvidos</p>
+          <p className="text-2xl font-bold text-gray-700">{byStatus['returned'] ?? 0}</p>
+        </div>
+        <div className="bg-purple-50 rounded-lg p-3">
+          <p className="text-[10px] uppercase tracking-wide text-purple-700 font-semibold">Total</p>
+          <p className="text-2xl font-bold text-purple-700">{total}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="border border-gray-100 rounded-lg p-3">
+          <p className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-2">Por status</p>
+          <ul className="flex flex-col gap-1">
+            {Object.entries(byStatus).map(([s, c]) => (
+              <li key={s} className="flex justify-between text-xs">
+                <span className="text-gray-700">{STATUS_LABELS[s] ?? s}</span>
+                <span className="font-bold text-gray-900">{c}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="border border-gray-100 rounded-lg p-3">
+          <p className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-2">Top operadores</p>
+          <ul className="flex flex-col gap-1">
+            {topOps.map(([n, c]) => (
+              <li key={n} className="flex justify-between text-xs">
+                <span className="text-gray-700 truncate pr-2">{n}</span>
+                <span className="font-bold text-gray-900">{c}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="border border-gray-100 rounded-lg p-3">
+          <p className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-2">Top ruas</p>
+          <ul className="flex flex-col gap-1">
+            {topStreets.map(([s, c]) => (
+              <li key={s} className="flex justify-between text-xs">
+                <span className="text-gray-700 truncate pr-2">{s}</span>
+                <span className="font-bold text-gray-900">{c}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ─── Preview table ─────────────────────────────────────────────────────────────
@@ -467,6 +562,7 @@ export default function ReportsPage() {
               {rows.length} {rows.length === 1 ? 'registro' : 'registros'}
             </span>
           </div>
+          {selected === 'packages' && rows.length > 0 && <PackagesKpis rows={rows} />}
           <PreviewTable rows={rows} />
         </div>
       )}

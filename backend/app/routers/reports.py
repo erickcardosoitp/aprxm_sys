@@ -148,7 +148,7 @@ async def export_residents(
 
 # ─── Encomendas ───────────────────────────────────────────────────────────────
 
-async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_status=None, operator_ids=None):
+async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_status=None, operator_ids=None, street=None, cep=None):
     conds = ["p.association_id = :aid"]
     p: dict = {"aid": aid}
     if date_from: conds.append("p.received_at::date >= :df"); p["df"] = date.fromisoformat(date_from)
@@ -161,9 +161,16 @@ async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_s
         placeholders = ", ".join(f":op{i}" for i in range(len(operator_ids)))
         conds.append(f"p.received_by::text IN ({placeholders})")
         for i, oid in enumerate(operator_ids): p[f"op{i}"] = oid
+    if street:
+        conds.append("r.address_street ILIKE :street")
+        p["street"] = f"%{street}%"
+    if cep:
+        conds.append("regexp_replace(r.address_cep, '[^0-9]', '', 'g') = regexp_replace(:cep, '[^0-9]', '', 'g')")
+        p["cep"] = cep
     w = " AND ".join(conds)
     rows = (await session.execute(text(f"""
-        SELECT p.tracking_code, r.full_name, p.unit, p.block,
+        SELECT p.tracking_code, r.full_name, r.address_street, r.address_cep,
+               p.unit, p.block,
                p.status, p.carrier_name, p.received_at::date, p.delivered_at::date,
                p.delivery_fee_amount, u.full_name
         FROM packages p
@@ -171,7 +178,7 @@ async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_s
         LEFT JOIN users u ON u.id = p.received_by
         WHERE {w} ORDER BY p.received_at DESC
     """), p)).fetchall()
-    cols = ["Código Rastreio","Destinatário","Unidade","Bloco","Status","Transportadora",
+    cols = ["Código Rastreio","Destinatário","Rua","CEP","Unidade","Bloco","Status","Transportadora",
             "Recebido em","Entregue em","Taxa (R$)","Recebido por"]
     return [dict(zip(cols, [_s(v) for v in r])) for r in rows]
 
@@ -181,10 +188,11 @@ async def preview_packages(
     date_from: str | None = None, date_to: str | None = None,
     pkg_status: str | None = None,
     operator_ids: list[str] | None = Query(default=None),
+    street: str | None = None, cep: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    return await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status, operator_ids)
+    return await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status, operator_ids, street, cep)
 
 
 @router.get("/packages")
@@ -192,10 +200,11 @@ async def export_packages(
     date_from: str | None = None, date_to: str | None = None,
     pkg_status: str | None = None,
     operator_ids: list[str] | None = Query(default=None),
+    street: str | None = None, cep: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    rows = await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status, operator_ids)
+    rows = await _query_packages(session, str(current.association_id), date_from, date_to, pkg_status, operator_ids, street, cep)
     wb, ws = _mk("Encomendas")
     cols = list(rows[0].keys()) if rows else []
     _headers(ws, cols)
