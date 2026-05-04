@@ -649,6 +649,54 @@ async def count_packages(
     return {"received": r[0], "notified": r[1], "delivered": r[2], "returned": r[3], "reversed": r[4], "total": r[5]}
 
 
+@router.get("/by-address", summary="Encomendas aguardando retirada agrupadas por rua/CEP")
+async def packages_by_address(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    rows = (await session.execute(text("""
+        SELECT
+            COALESCE(r.address_street, '(sem rua)') AS street,
+            COALESCE(r.address_cep, '(sem CEP)')   AS cep,
+            COALESCE(r.address_neighborhood, '')    AS neighborhood,
+            p.id::text,
+            r.full_name,
+            COALESCE(p.unit, p.block, '')           AS unit,
+            p.tracking_code,
+            p.carrier_name,
+            p.status,
+            p.received_at::date::text
+        FROM packages p
+        LEFT JOIN residents r ON r.id = p.resident_id
+        WHERE p.association_id = :aid
+          AND p.status IN ('received', 'notified')
+        ORDER BY r.address_street NULLS LAST, r.full_name
+    """), {"aid": str(current.association_id)})).fetchall()
+
+    by_street: dict = {}
+    by_cep: dict = {}
+    for row in rows:
+        street, cep, neighborhood, pkg_id, name, unit, tracking, carrier, status, recv = row
+        key = street
+        if key not in by_street:
+            by_street[key] = {"street": street, "cep": cep, "neighborhood": neighborhood, "count": 0, "packages": []}
+        by_street[key]["count"] += 1
+        by_street[key]["packages"].append({
+            "id": pkg_id, "resident": name, "unit": unit,
+            "tracking_code": tracking, "carrier": carrier,
+            "status": status, "received_at": recv,
+        })
+        by_cep[cep] = by_cep.get(cep, 0) + 1
+
+    street_list = sorted(by_street.values(), key=lambda x: -x["count"])
+    cep_list = sorted([{"cep": k, "count": v} for k, v in by_cep.items()], key=lambda x: -x["count"])
+    return {
+        "total_awaiting": len(rows),
+        "by_street": street_list,
+        "by_cep": cep_list,
+    }
+
+
 @router.get("/report", summary="Relatório de encomendas por período")
 async def packages_report(
     date_from: str,

@@ -156,10 +156,12 @@ async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_s
     if pkg_status: conds.append("p.status = :st"); p["st"] = pkg_status
     w = " AND ".join(conds)
     rows = (await session.execute(text(f"""
-        SELECT p.tracking_code, p.recipient_name, p.recipient_unit, p.recipient_block,
-               p.status, p.carrier, p.received_at::date, p.delivered_at::date,
-               p.delivery_fee, u.full_name
-        FROM packages p LEFT JOIN users u ON u.id = p.received_by
+        SELECT p.tracking_code, r.full_name, p.unit, p.block,
+               p.status, p.carrier_name, p.received_at::date, p.delivered_at::date,
+               p.delivery_fee_amount, u.full_name
+        FROM packages p
+        LEFT JOIN residents r ON r.id = p.resident_id
+        LEFT JOIN users u ON u.id = p.received_by
         WHERE {w} ORDER BY p.received_at DESC
     """), p)).fetchall()
     cols = ["Código Rastreio","Destinatário","Unidade","Bloco","Status","Transportadora",

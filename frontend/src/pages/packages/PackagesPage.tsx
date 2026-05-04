@@ -2,7 +2,7 @@ import { startTransition, useEffect, useRef, useState } from 'react'
 import DebouncedInput, { type DebouncedInputHandle } from '../../components/ui/DebouncedInput'
 import { useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, Barcode, Camera, FileText, MessageCircle, Package as PackageIcon, Plus,
+  AlertTriangle, Barcode, Camera, FileText, MapPin, MessageCircle, Package as PackageIcon, Plus,
   Search, Shield, User, UserX, List, Columns, Workflow, X, ChevronDown, Layers, Truck, Pencil, Trash2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -739,6 +739,20 @@ export default function PackagesPage() {
   const [reportTo, setReportTo] = useState(new Date().toISOString().slice(0, 10))
   const [reportData, setReportData] = useState<any>(null)
   const [loadingReport, setLoadingReport] = useState(false)
+
+  const [showAddrReport, setShowAddrReport] = useState(false)
+  const [addrReportData, setAddrReportData] = useState<any>(null)
+  const [loadingAddrReport, setLoadingAddrReport] = useState(false)
+  const [addrReportStreet, setAddrReportStreet] = useState<string | null>(null)
+
+  const loadAddrReport = async () => {
+    setLoadingAddrReport(true)
+    try {
+      const res = await api.get('/packages/by-address')
+      setAddrReportData(res.data)
+    } catch { toast.error('Erro ao carregar relatório por endereço') }
+    finally { setLoadingAddrReport(false) }
+  }
 
   const loadReport = async () => {
     setLoadingReport(true)
@@ -1582,6 +1596,11 @@ export default function PackagesPage() {
             className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition"
             title="Relatório">
             <FileText className="w-4 h-4" /><span className="hidden sm:inline">Relatório</span>
+          </button>
+          <button onClick={() => { setShowAddrReport(true); loadAddrReport() }}
+            className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition"
+            title="Por Rua/CEP">
+            <MapPin className="w-4 h-4" /><span className="hidden sm:inline">Por Rua</span>
           </button>
           <button
             onClick={() => { setBulkDeliveryPersonName(fullName ?? ''); setShowBulkDeliver(true); setBulkStep('select') }}
@@ -3612,6 +3631,89 @@ export default function PackagesPage() {
                     </div>
                   )}
                 </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Address Report Modal */}
+      {showAddrReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl mx-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-900">Encomendas por Rua / CEP</h3>
+                {addrReportData && (
+                  <p className="text-xs text-gray-500 mt-0.5">{addrReportData.total_awaiting} aguardando retirada</p>
+                )}
+              </div>
+              <button onClick={() => { setShowAddrReport(false); setAddrReportStreet(null) }}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-5 flex flex-col gap-4 overflow-y-auto">
+              {loadingAddrReport && (
+                <div className="flex justify-center py-8">
+                  <div className="w-6 h-6 border-2 border-[#26619c] border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              {addrReportData && !loadingAddrReport && (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Por CEP</p>
+                    <div className="flex flex-wrap gap-2">
+                      {addrReportData.by_cep.map((c: any) => (
+                        <span key={c.cep} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
+                          {c.cep} <span className="font-bold">{c.count}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Por Rua</p>
+                    <div className="flex flex-col gap-2">
+                      {addrReportData.by_street.map((s: any) => (
+                        <div key={s.street} className="border border-gray-100 rounded-xl overflow-hidden">
+                          <button
+                            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition"
+                            onClick={() => setAddrReportStreet(addrReportStreet === s.street ? null : s.street)}
+                          >
+                            <div className="min-w-0">
+                              <span className="font-medium text-gray-800 text-sm">{s.street}</span>
+                              {s.neighborhood && <span className="text-xs text-gray-400 ml-2">{s.neighborhood}</span>}
+                              {s.cep !== '(sem CEP)' && <span className="text-xs text-gray-400 ml-2">{s.cep}</span>}
+                            </div>
+                            <span className="text-sm font-bold text-[#26619c] shrink-0 ml-3">{s.count}</span>
+                          </button>
+                          {addrReportStreet === s.street && (
+                            <div className="border-t border-gray-100 divide-y divide-gray-50">
+                              {s.packages.map((p: any) => (
+                                <div key={p.id} className="px-4 py-2.5 flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-gray-800 truncate">{p.resident ?? '—'}</p>
+                                    <p className="text-xs text-gray-400">
+                                      {p.unit && `Unid. ${p.unit} · `}{p.carrier ?? ''}
+                                      {p.tracking_code && ` · ${p.tracking_code}`}
+                                    </p>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                      p.status === 'notified' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                                    }`}>
+                                      {p.status === 'notified' ? 'Notificado' : 'Recebido'}
+                                    </span>
+                                    <p className="text-xs text-gray-400 mt-0.5">{p.received_at}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </div>
