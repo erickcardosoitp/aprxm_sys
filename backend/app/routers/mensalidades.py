@@ -69,35 +69,52 @@ async def cron_generate(
     from datetime import datetime
 
     secret = os.environ.get("CRON_SECRET", "")
-    auth = request.headers.get("x-cron-secret", "")
-    if not secret or auth != secret:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=401, detail="Não autorizado.")
+    if secret:
+        auth = request.headers.get("x-cron-secret", "")
+        if auth != secret:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Não autorizado.")
 
     now = datetime.utcnow()
     ref = now.strftime("%Y-%m")
     rows = (await session.execute(text("""
-        SELECT a.id, COALESCE(s.default_mensalidade_amount, 0),
+        SELECT a.id,
+               COALESCE(s.default_mensalidade_amount, 0),
                (SELECT u.id FROM users u WHERE u.association_id = a.id
                 AND u.role IN ('admin','admin_master','superadmin')
                 AND u.is_active = TRUE LIMIT 1)
         FROM associations a
         LEFT JOIN association_settings s ON s.association_id = a.id
         WHERE a.is_active = TRUE
-          AND COALESCE(s.default_mensalidade_amount, 0) > 0
     """))).fetchall()
 
     total_created = 0
     svc = MensalidadeService(session)
-    for assoc_id, amount, admin_id in rows:
+    for assoc_id, configured_amount, admin_id in rows:
         if not admin_id:
             continue
+
+        amount = Decimal(str(configured_amount)) if configured_amount and configured_amount > 0 else None
+
+        # Fallback: use the most recent mensalidade amount for this association
+        if not amount or amount <= 0:
+            row = (await session.execute(text("""
+                SELECT amount FROM mensalidades
+                WHERE association_id = :aid
+                ORDER BY created_at DESC LIMIT 1
+            """), {"aid": str(assoc_id)})).fetchone()
+            if row:
+                amount = Decimal(str(row[0]))
+
+        if not amount or amount <= 0:
+            continue
+
         try:
             result = await svc.generate_month(
                 association_id=assoc_id,
                 reference_month=ref,
                 due_day=10,
-                amount=Decimal(str(amount)),
+                amount=amount,
                 created_by=admin_id,
             )
             total_created += result.get("created", 0)
