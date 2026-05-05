@@ -34,7 +34,7 @@ export interface Session {
   origin?: string; association_name?: string
   operador_name?: string; conferido_por?: string
   total_pix?: string; total_dinheiro?: string
-  total_bruto?: string; total_baixas?: string
+  total_bruto?: string; total_baixas?: string; total_expense?: string
   quebra_caixa?: string | null
   malote_sent_at?: string | null
   quebra_responsavel?: string | null

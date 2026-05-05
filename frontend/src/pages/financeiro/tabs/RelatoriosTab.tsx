@@ -154,7 +154,8 @@ export default function RelatoriosTab() {
   const printSessionReport = (s: Session) => {
     const bruto = parseFloat(s.total_bruto ?? '0')
     const baixas = parseFloat(s.total_baixas ?? '0')
-    const liquido = bruto - baixas
+    const expense = parseFloat(s.total_expense ?? '0')
+    const liquido = bruto - baixas - expense
     const diff = s.difference != null ? parseFloat(s.difference) : null
     const fmtR = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     const fmtDT = (d: string) => new Date(d).toLocaleString('pt-BR')
@@ -307,13 +308,14 @@ export default function RelatoriosTab() {
               const data = filtered.map(s => {
                 const bruto = parseFloat(s.total_bruto ?? '0')
                 const baixas = parseFloat(s.total_baixas ?? '0')
+                const expense = parseFloat(s.total_expense ?? '0')
                 const diff = s.difference != null ? parseFloat(s.difference) : null
                 return [
                   new Date(s.closed_at ?? s.opened_at).toLocaleString('pt-BR'),
                   s.operador_name ?? '',
                   parseFloat(s.total_pix ?? '0').toFixed(2),
                   parseFloat(s.total_dinheiro ?? '0').toFixed(2),
-                  bruto.toFixed(2), baixas.toFixed(2), (bruto - baixas).toFixed(2),
+                  bruto.toFixed(2), baixas.toFixed(2), (bruto - baixas - expense).toFixed(2),
                   s.closing_balance ? parseFloat(s.closing_balance).toFixed(2) : '',
                   diff !== null ? diff.toFixed(2) : '',
                   s.conferido_por ?? '', s.quebra_caixa ? parseFloat(s.quebra_caixa).toFixed(2) : '',
@@ -334,8 +336,9 @@ export default function RelatoriosTab() {
               filtered.forEach(s => {
                 const bruto = parseFloat(s.total_bruto ?? '0')
                 const baixas = parseFloat(s.total_baixas ?? '0')
+                const expense = parseFloat(s.total_expense ?? '0')
                 const diff = s.difference != null ? parseFloat(s.difference) : null
-                w.document.write(`<tr><td>${new Date(s.closed_at ?? s.opened_at).toLocaleString('pt-BR')}</td><td>${s.operador_name ?? ''}</td><td>R$${parseFloat(s.total_pix ?? '0').toFixed(2)}</td><td>R$${parseFloat(s.total_dinheiro ?? '0').toFixed(2)}</td><td>R$${bruto.toFixed(2)}</td><td>R$${baixas.toFixed(2)}</td><td>R$${(bruto - baixas).toFixed(2)}</td><td>${s.closing_balance ? 'R$' + parseFloat(s.closing_balance).toFixed(2) : '—'}</td><td>${diff !== null ? (diff >= 0 ? '+' : '') + 'R$' + Math.abs(diff).toFixed(2) : '—'}</td><td>${s.conferido_por ?? ''}</td><td>${s.quebra_caixa ? 'R$' + parseFloat(s.quebra_caixa).toFixed(2) : '—'}</td><td>${s.origin ?? 'Sessão'}</td></tr>`)
+                w.document.write(`<tr><td>${new Date(s.closed_at ?? s.opened_at).toLocaleString('pt-BR')}</td><td>${s.operador_name ?? ''}</td><td>R$${parseFloat(s.total_pix ?? '0').toFixed(2)}</td><td>R$${parseFloat(s.total_dinheiro ?? '0').toFixed(2)}</td><td>R$${bruto.toFixed(2)}</td><td>R$${baixas.toFixed(2)}</td><td>R$${(bruto - baixas - expense).toFixed(2)}</td><td>${s.closing_balance ? 'R$' + parseFloat(s.closing_balance).toFixed(2) : '—'}</td><td>${diff !== null ? (diff >= 0 ? '+' : '') + 'R$' + Math.abs(diff).toFixed(2) : '—'}</td><td>${s.conferido_por ?? ''}</td><td>${s.quebra_caixa ? 'R$' + parseFloat(s.quebra_caixa).toFixed(2) : '—'}</td><td>${s.origin ?? 'Sessão'}</td></tr>`)
               })
               w.document.write('</table></body></html>')
               w.document.close()
@@ -364,7 +367,8 @@ export default function RelatoriosTab() {
                 {filtered.map(s => {
                   const bruto = parseFloat(s.total_bruto ?? '0')
                   const baixas = parseFloat(s.total_baixas ?? '0')
-                  const liquido = bruto - baixas
+                  const expense = parseFloat(s.total_expense ?? '0')
+                  const liquido = bruto - baixas - expense
                   const diff = s.difference != null ? parseFloat(s.difference) : null
                   const isManual = s.origin === 'Manual'
                   return (
