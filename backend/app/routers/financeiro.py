@@ -71,12 +71,14 @@ async def get_summary(
     for r in breakdown_result.fetchall():
         income_by_type[r[0] or "other"] = float(r[1])
 
-    # Contas a receber: mensalidades pendentes
+    # Contas a receber: mensalidades pendentes de associados ativos
     cr_result = await session.execute(
         text("""
-            SELECT COALESCE(SUM(amount), 0), COUNT(*)
-            FROM mensalidades
-            WHERE association_id = :aid AND status = 'pending'
+            SELECT COALESCE(SUM(m.amount), 0), COUNT(*)
+            FROM mensalidades m
+            JOIN residents r ON r.id = m.resident_id
+            WHERE m.association_id = :aid AND m.status = 'pending'
+              AND r.type = 'member' AND r.status = 'active'
         """),
         {"aid": str(current.association_id)},
     )

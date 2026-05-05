@@ -262,6 +262,7 @@ class MensalidadeService:
                 Mensalidade.status != MensalidadeStatus.agreement,
                 Mensalidade.due_date < grace_cutoff,
                 Resident.type == ResidentType.member,
+                Resident.status == "active",
             )
             .order_by(Mensalidade.due_date.asc())
         )
@@ -309,6 +310,7 @@ class MensalidadeService:
                 Mensalidade.status == MensalidadeStatus.pending,
                 Mensalidade.due_date >= grace_cutoff,
                 Resident.type == ResidentType.member,
+                Resident.status == "active",
             )
             .order_by(Mensalidade.due_date.asc())
         )
