@@ -812,7 +812,8 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
                 {history.map((m, idx) => {
                   const isPaid = m.status === 'paid'
                   const isMig = m.origem === 'migracao'
-                  const isOverdue = !isPaid && m.due_date && new Date(m.due_date) < new Date()
+                  const graceCutoff = new Date(); graceCutoff.setDate(graceCutoff.getDate() - 2)
+                  const isOverdue = !isPaid && m.due_date && new Date(m.due_date) < graceCutoff
                   return (
                     <li key={m.id ?? `mig-${idx}`} className="px-4 py-3 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">

@@ -124,6 +124,54 @@ async def cron_generate(
     return {"reference_month": ref, "total_created": total_created}
 
 
+@router.post("/cron-check-overdue", summary="Cron diário: verifica inadimplentes por associação")
+async def cron_check_overdue(
+    request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    import os
+    from fastapi import Request
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+
+    secret = os.environ.get("CRON_SECRET", "")
+    if secret:
+        auth = request.headers.get("x-cron-secret", "")
+        if auth != secret:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Não autorizado.")
+
+    rows = (await session.execute(text("""
+        SELECT a.id, a.name, COALESCE(s.delinquency_grace_days, 2)
+        FROM associations a
+        LEFT JOIN association_settings s ON s.association_id = a.id
+        WHERE a.is_active = TRUE
+    """))).fetchall()
+
+    summary = []
+    for assoc_id, assoc_name, grace_days in rows:
+        cutoff = (datetime.utcnow().date() - timedelta(days=grace_days)).isoformat()
+        result = (await session.execute(text("""
+            SELECT COUNT(DISTINCT m.resident_id), COUNT(m.id), COALESCE(SUM(m.amount), 0)
+            FROM mensalidades m
+            JOIN residents res ON res.id = m.resident_id
+            WHERE m.association_id = :aid
+              AND m.status = 'pending'
+              AND m.due_date < :cutoff
+              AND res.type = 'member'
+              AND res.status = 'active'
+        """), {"aid": str(assoc_id), "cutoff": cutoff})).fetchone()
+        summary.append({
+            "association": assoc_name,
+            "unique_delinquents": result[0],
+            "total_records": result[1],
+            "total_amount": float(result[2]),
+            "cutoff_date": cutoff,
+        })
+
+    return {"checked_at": datetime.utcnow().isoformat(), "associations": summary}
+
+
 @router.post("/generate-month", summary="Gerar mensalidades pendentes para todos os associados ativos do mês")
 async def generate_month(
     body: GenerateMonthRequest,
