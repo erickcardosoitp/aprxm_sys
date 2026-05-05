@@ -537,7 +537,8 @@ async def register_transaction(
         cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
         if not can_pick_session and cash.opened_by != current.user_id:
             raise HTTPException(status_code=403, detail="Você não pode lançar em sessão de outro operador.")
-        if not current.is_admin and cash.device_token and x_device_token and cash.device_token != x_device_token:
+        is_own_session = cash.opened_by == current.user_id
+        if not current.is_admin and not is_own_session and cash.device_token and x_device_token and cash.device_token != x_device_token:
             raise HTTPException(status_code=403, detail="Dispositivo não autorizado para esta sessão.")
     else:
         try:
