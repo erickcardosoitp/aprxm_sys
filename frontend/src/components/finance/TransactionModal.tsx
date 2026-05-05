@@ -120,6 +120,9 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [categoryId, setCategoryId] = useState('')
   const [paymentMethodId, setPaymentMethodId] = useState('')
+  const [splitEnabled, setSplitEnabled] = useState(false)
+  const [paymentMethodId2, setPaymentMethodId2] = useState('')
+  const [amount2Split, setAmount2Split] = useState('')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
 
@@ -440,13 +443,19 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
             return ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(m)-1] + '/' + y
           }).join(', ')}`
         : description.trim()
-      const txPayload = {
+      const isSplit = splitEnabled && paymentMethodId2 && parseFloat(amount2Split) > 0
+      const a2 = isSplit ? parseFloat(amount2Split) : 0
+      const a1 = isSplit ? parseFloat(amount) - a2 : parseFloat(amount)
+
+      if (isSplit && (isNaN(a2) || a2 <= 0 || a1 <= 0)) {
+        toast.error('Valor inválido para pagamento dividido.'); setSaving(false); return
+      }
+
+      const basePayload = {
         type: txType,
-        amount: parseFloat(amount),
         description: mensalidadeDesc,
         income_subtype: txType === 'income' ? incomeSubtype : undefined,
         category_id: categoryId || undefined,
-        payment_method_id: paymentMethodId || undefined,
         resident_id: resident?.id || undefined,
         cash_session_id: selectedSessionId || undefined,
         is_acordo: isAcordo || undefined,
@@ -454,8 +463,23 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         acordo_months: isAcordo ? acordoMonths : undefined,
         acordo_entrada: isAcordo && acordoEntrada ? parseFloat(acordoEntrada) : undefined,
       }
+
+      const txPayload = {
+        ...basePayload,
+        amount: isSplit ? a1 : parseFloat(amount),
+        payment_method_id: paymentMethodId || undefined,
+        description: isSplit ? `${mensalidadeDesc} (1/2)` : mensalidadeDesc,
+      }
       try {
         await financeService.registerTransaction(txPayload)
+        if (isSplit) {
+          await financeService.registerTransaction({
+            ...basePayload,
+            amount: a2,
+            payment_method_id: paymentMethodId2,
+            description: `${mensalidadeDesc} (2/2)`,
+          })
+        }
       } catch (e: any) {
         if (e.response?.data?.detail === 'NO_SESSION') {
           setSaving(false)
@@ -1097,8 +1121,15 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                     </div>
                   )}
                   {paymentMethods.length > 0 && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Forma de pagamento</label>
+                    <div className="flex flex-col gap-2">
+                      <label className="block text-xs font-medium text-gray-600">
+                        {splitEnabled ? '1ª forma de pagamento' : 'Forma de pagamento'}
+                        {splitEnabled && amount && amount2Split && parseFloat(amount2Split) > 0 && (
+                          <span className="ml-1 text-gray-400 font-normal">
+                            (R$ {(parseFloat(amount) - parseFloat(amount2Split)).toFixed(2)})
+                          </span>
+                        )}
+                      </label>
                       <div className="flex flex-wrap gap-2">
                         {paymentMethods.map((m) => (
                           <button key={m.id} type="button" onClick={() => setPaymentMethodId(m.id === paymentMethodId ? '' : m.id)}
@@ -1109,6 +1140,50 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                           </button>
                         ))}
                       </div>
+                      <label className="flex items-center gap-2 cursor-pointer select-none mt-1">
+                        <input
+                          type="checkbox"
+                          checked={splitEnabled}
+                          onChange={e => { setSplitEnabled(e.target.checked); setPaymentMethodId2(''); setAmount2Split('') }}
+                          className="w-4 h-4 rounded accent-[#26619c]"
+                        />
+                        <span className="text-xs text-gray-600">Pagamento dividido (2 formas)</span>
+                      </label>
+                      {splitEnabled && (
+                        <div className="flex flex-col gap-2 border border-gray-100 rounded-xl p-3 bg-gray-50">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              2ª forma
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              {paymentMethods.map((m) => (
+                                <button key={m.id} type="button" onClick={() => setPaymentMethodId2(m.id === paymentMethodId2 ? '' : m.id)}
+                                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                                    paymentMethodId2 === m.id ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600 hover:border-indigo-400'
+                                  }`}>
+                                  {m.name}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Valor da 2ª forma (R$)</label>
+                            <input
+                              type="number" min="0.01" step="0.01"
+                              value={amount2Split}
+                              onChange={e => setAmount2Split(e.target.value)}
+                              placeholder="0,00"
+                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            />
+                          </div>
+                          {amount && parseFloat(amount2Split) > 0 && (
+                            <p className="text-xs text-gray-500">
+                              1ª: R$ {(parseFloat(amount) - parseFloat(amount2Split)).toFixed(2)}
+                              {' · '}2ª: R$ {parseFloat(amount2Split).toFixed(2)}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                   {txType === 'expense' && (
