@@ -282,4 +282,5 @@ export interface CashSessionSummary {
   total_dinheiro?: string
   total_bruto?: string
   total_baixas?: string
+  total_expense?: string
 }

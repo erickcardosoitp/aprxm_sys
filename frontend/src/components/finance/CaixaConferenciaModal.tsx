@@ -11,7 +11,7 @@ interface Session {
   opened_at: string; closed_at: string | null
   operador_name?: string; conferido_por?: string
   total_pix?: string; total_dinheiro?: string
-  total_bruto?: string; total_baixas?: string
+  total_bruto?: string; total_baixas?: string; total_expense?: string
   quebra_caixa?: string | null
   malote_sent_at?: string | null
   blind_pix?: string | null
@@ -88,9 +88,10 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
 
   const bruto = parseFloat(session.total_bruto ?? '0')
   const baixas = parseFloat(session.total_baixas ?? '0')
+  const expense = parseFloat(session.total_expense ?? '0')
   const pix = parseFloat(session.total_pix ?? '0')
   const dinheiro = parseFloat(session.total_dinheiro ?? '0')
-  const liquido = bruto - baixas
+  const liquido = bruto - baixas - expense
   const contagem = parseFloat(contagemInput || '0')
   const diferenca = contagemInput !== '' && !isNaN(contagem) ? contagem - liquido : null
 
@@ -452,7 +453,8 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
               <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-1.5 text-xs">
                 <p className="text-xs font-semibold text-gray-700 mb-1">Resumo final</p>
                 <div className="flex justify-between"><span className="text-gray-500">Bruto lançado</span><span className="font-medium">{fmt(bruto)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Saídas / Sangrias</span><span className="font-medium text-red-600">-{fmt(baixas)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Sangrias</span><span className="font-medium text-red-600">-{fmt(baixas)}</span></div>
+                {expense > 0 && <div className="flex justify-between"><span className="text-gray-500">Despesas</span><span className="font-medium text-red-600">-{fmt(expense)}</span></div>}
                 <div className="flex justify-between border-t border-gray-200 pt-1.5"><span className="font-medium text-gray-700">Líquido esperado</span><span className="font-bold text-gray-900">{fmt(liquido)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">PIX (conciliar separado)</span><span className="font-medium text-blue-600">{fmt(pix)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Dinheiro esperado</span><span className="font-medium">{fmt(dinheiro)}</span></div>

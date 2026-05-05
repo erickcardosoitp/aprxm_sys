@@ -977,7 +977,10 @@ class FinanceService:
                          ELSE COALESCE(SUM(CASE WHEN t.type = 'sangria'
                               AND (t.reversed_at IS NULL AND t.is_reversal = false)
                               THEN t.amount ELSE 0 END), 0)
-                    END AS total_baixas
+                    END AS total_baixas,
+                    COALESCE(SUM(CASE WHEN t.type = 'expense'
+                         AND (t.reversed_at IS NULL AND t.is_reversal = false)
+                         THEN t.amount ELSE 0 END), 0) AS total_expense
                 FROM cash_sessions cs
                 LEFT JOIN users u_open   ON u_open.id   = cs.opened_by
                 LEFT JOIN users u_close  ON u_close.id  = cs.closed_by
@@ -1017,6 +1020,7 @@ class FinanceService:
                 "total_dinheiro": str(round(float(r[19]), 2)),
                 "total_bruto": str(round(float(r[20]), 2)),
                 "total_baixas": str(round(float(r[21]), 2)),
+                "total_expense": str(round(float(r[22]), 2)),
             }
             for r in rows
         ]
