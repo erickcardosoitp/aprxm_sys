@@ -7,6 +7,11 @@ export const fmtDate = (s: string) => {
     ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
+export const fmtDateOnly = (s: string) => {
+  const [y, m, d] = s.slice(0, 10).split('-')
+  return `${d}/${m}/${y.slice(2)}`
+}
+
 export const fmtRef = (ref: string) => {
   const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
   const [y, m] = ref.split('-')

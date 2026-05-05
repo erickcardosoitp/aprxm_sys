@@ -50,7 +50,7 @@ export interface ManualSessionForm {
 }
 
 export interface Mensalidade {
-  id: string | null; resident_id: string; reference_month: string
+  id: string | null; resident_id: string; resident_name?: string; reference_month: string
   due_date: string | null; amount: string; status: string
   paid_at: string | null; transaction_id: string | null; notes: string | null
   origem?: 'sistema' | 'migracao'; tipo?: string
@@ -75,7 +75,7 @@ export interface BoxMovement {
 export interface Conferente { id: string; full_name: string; role: string }
 
 export interface DelinquentItem {
-  id: string; resident_id: string; reference_month: string
+  id: string; resident_id: string; resident_name?: string; reference_month: string
   due_date: string; amount: string; months_overdue: number
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertCircle, Plus, Search, X, Users } from 'lucide-react'
 import api from '../../../services/api'
 import toast from 'react-hot-toast'
-import { fmt, fmtDate } from '../utils/formatters'
+import { fmt, fmtDate, fmtDateOnly } from '../utils/formatters'
 import { printCarne as printCarneUtil } from '../../../utils/printCarne'
 import { useFinanceiro } from '../contexts/FinanceiroContext'
 import type { Mensalidade, DelinquentItem, PaidItem } from '../types/financeiro'
@@ -84,8 +84,9 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
       ])
       setPendingMensalidades(pendingRes.data)
       setDelinquent(delinqRes.data)
-      const allIds = [...new Set([...pendingRes.data.map(m => m.resident_id), ...delinqRes.data.map(d => d.resident_id)])]
-      const names = await loadResidentNames(allIds)
+      const names: Record<string, string> = {}
+      pendingRes.data.forEach(m => { if (m.resident_name) names[m.resident_id] = m.resident_name })
+      delinqRes.data.forEach(d => { if (d.resident_name) names[d.resident_id] = d.resident_name })
       setPendingNames(names)
       setDelinquentNames(names)
     } catch { } finally { setLoadingCobrancas(false) }
@@ -536,7 +537,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
                 <li key={m.id} className="px-4 py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-800 truncate">{pendingNames[m.resident_id] ?? '…'}</p>
-                    <p className="text-xs text-gray-500">Ref: {m.reference_month} · Venc: {m.due_date ? fmtDate(m.due_date) : '—'}</p>
+                    <p className="text-xs text-gray-500">Ref: {m.reference_month} · Venc: {m.due_date ? fmtDateOnly(m.due_date) : '—'}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-sm font-bold text-blue-700">{fmt(m.amount)}</span>
@@ -576,7 +577,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-800 truncate">{delinquentNames[d.resident_id] ?? '…'}</p>
-                      <p className="text-xs text-gray-500">Ref: {d.reference_month} · Venc: {fmtDate(d.due_date)}</p>
+                      <p className="text-xs text-gray-500">Ref: {d.reference_month} · Venc: {fmtDateOnly(d.due_date)}</p>
                       <span className="text-xs text-red-600 font-medium">
                         {d.months_overdue} {d.months_overdue === 1 ? 'mês' : 'meses'} em atraso
                       </span>

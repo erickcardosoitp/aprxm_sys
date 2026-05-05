@@ -242,10 +242,13 @@ class MensalidadeService:
         return result.scalar_one_or_none() is not None
 
     async def list_delinquent(self, association_id: UUID) -> list[dict]:
+        from app.models.resident import Resident
+        from sqlmodel import select as sa_select
         today = date.today()
         grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
         stmt = (
-            select(Mensalidade)
+            sa_select(Mensalidade, Resident.full_name)
+            .join(Resident, Resident.id == Mensalidade.resident_id)
             .where(
                 Mensalidade.association_id == association_id,
                 Mensalidade.status != MensalidadeStatus.paid,
@@ -255,16 +258,17 @@ class MensalidadeService:
             .order_by(Mensalidade.due_date.asc())
         )
         result = await self._session.execute(stmt)
-        rows = result.scalars().all()
+        rows = result.all()
 
         delinquent = []
-        for m in rows:
+        for m, full_name in rows:
             months_overdue = (
                 (today.year - m.due_date.year) * 12 + (today.month - m.due_date.month)
             )
             delinquent.append({
                 "id": str(m.id),
                 "resident_id": str(m.resident_id),
+                "resident_name": full_name,
                 "reference_month": m.reference_month,
                 "due_date": str(m.due_date),
                 "amount": str(m.amount),
@@ -274,10 +278,13 @@ class MensalidadeService:
 
     async def list_pending(self, association_id: UUID) -> list[dict]:
         """Mensalidades pendentes dentro do período de carência configurado."""
+        from app.models.resident import Resident
+        from sqlmodel import select as sa_select
         today = date.today()
         grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
         stmt = (
-            select(Mensalidade)
+            sa_select(Mensalidade, Resident.full_name)
+            .join(Resident, Resident.id == Mensalidade.resident_id)
             .where(
                 Mensalidade.association_id == association_id,
                 Mensalidade.status == MensalidadeStatus.pending,
@@ -286,18 +293,19 @@ class MensalidadeService:
             .order_by(Mensalidade.due_date.asc())
         )
         result = await self._session.execute(stmt)
-        rows = result.scalars().all()
+        rows = result.all()
         return [
             {
                 "id": str(m.id),
                 "resident_id": str(m.resident_id),
+                "resident_name": full_name,
                 "reference_month": m.reference_month,
                 "due_date": str(m.due_date),
                 "amount": str(m.amount),
                 "status": m.status,
                 "notes": m.notes,
             }
-            for m in rows
+            for m, full_name in rows
         ]
 
     async def generate_month(
