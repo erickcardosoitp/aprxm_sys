@@ -1337,14 +1337,9 @@ export default function ResidentsPage() {
     try {
       const params: Record<string, string> = {}
       const q = search.trim()
-      if (q.length >= 2) {
-        params.q = q
-        if (activeTab === 'visitantes') params.type = 'guest'
-        else if (activeTab !== 'atualizacoes') params.type = 'member'
-      } else {
-        if (activeTab === 'visitantes') params.type = 'guest'
-        else params.type = 'member'
-      }
+      const typeByTab: Record<string, string> = { associados: 'member', dependentes: 'dependent', visitantes: 'guest' }
+      if (activeTab in typeByTab) params.type = typeByTab[activeTab]
+      if (q.length >= 2) params.q = q
       if (filterStatus) params.status = filterStatus
       const res = await api.get<Resident[]>('/residents', { params })
       setResidents(res.data)
