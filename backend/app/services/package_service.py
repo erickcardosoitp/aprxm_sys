@@ -108,9 +108,9 @@ class PackageService:
         )
         is_active_member = self._is_active_member(resident)
 
-        # Delinquent members (overdue > 2 days) also pay the fee
+        # Delinquent members (overdue > 2 days) also pay the fee — dependents never delinquent
         is_delinquent = False
-        if is_active_member and resident:
+        if is_active_member and resident and resident.type == ResidentType.member:
             from app.services.mensalidade_service import MensalidadeService
             mens_svc = MensalidadeService(self._session)
             is_delinquent = await mens_svc.has_delinquent_mensalidade(association_id, resident.id)
@@ -209,7 +209,7 @@ class PackageService:
     def _is_active_member(resident: Resident | None) -> bool:
         if not resident:
             return False
-        return resident.type == ResidentType.member and resident.status == ResidentStatus.active
+        return resident.type in (ResidentType.member, ResidentType.dependent) and resident.status == ResidentStatus.active
 
     async def list_packages(
         self,

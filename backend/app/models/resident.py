@@ -16,8 +16,9 @@ except ImportError:
 
 
 class ResidentType(str, Enum):
-    member = "member"
-    guest = "guest"
+    member = "member"       # Associado — paga mensalidade
+    dependent = "dependent" # Dependente — vinculado a um member, não paga mensalidade nem taxa
+    guest = "guest"         # Visitante — não associado, paga taxa de entrega
 
 
 class ResidentStatus(str, Enum):

@@ -9,7 +9,7 @@ import { useAuthStore } from '../../store/authStore'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TYPE_LABELS: Record<ResidentType, string> = { member: 'Associado', guest: 'Visitante' }
+const TYPE_LABELS: Record<ResidentType, string> = { member: 'Associado', dependent: 'Dependente', guest: 'Visitante' }
 
 type ResidentTab = 'associados' | 'dependentes' | 'visitantes' | 'atualizacoes'
 const TAB_LABELS: Record<ResidentTab, string> = { associados: 'Associados', dependentes: 'Dependentes', visitantes: 'Visitantes', atualizacoes: 'Atualizações' }
@@ -740,7 +740,8 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
     setConvertLoading(true)
     try {
       const payload: Record<string, any> = {
-        type: 'member', status: 'active',
+        type: convertType === 'dependent' ? 'dependent' : 'member',
+        status: 'active',
         is_member_confirmed: true, terms_accepted: true, lgpd_accepted: true,
       }
       if (convertCpf.trim()) payload.cpf = convertCpf.trim()
@@ -902,7 +903,9 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
               <p className="text-xs text-gray-400">{currentResident.unit ? `Unid. ${currentResident.unit}` : ''}{currentResident.block ? ` / Bl. ${currentResident.block}` : ''}</p>
               {currentResident.type === 'guest'
                 ? <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-medium">Visitante</span>
-                : <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{(currentResident as any).responsible_id ? 'Dependente' : 'Associado'}</span>
+                : currentResident.type === 'dependent'
+                  ? <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-medium">Dependente</span>
+                  : <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">Associado</span>
               }
             </div>
           </div>
@@ -1359,13 +1362,12 @@ export default function ResidentsPage() {
 
   const loadCounts = async () => {
     try {
-      const [members, guests] = await Promise.all([
+      const [members, deps, guests] = await Promise.all([
         api.get<Resident[]>('/residents', { params: { type: 'member', status: 'active' } }),
+        api.get<Resident[]>('/residents', { params: { type: 'dependent', status: 'active' } }),
         api.get<Resident[]>('/residents', { params: { type: 'guest', status: 'active' } }),
       ])
-      const assoc = members.data.filter((r: Resident) => !r.responsible_id).length
-      const dep = members.data.filter((r: Resident) => !!r.responsible_id).length
-      setCounts({ associados: assoc, dependentes: dep, visitantes: guests.data.length })
+      setCounts({ associados: members.data.length, dependentes: deps.data.length, visitantes: guests.data.length })
     } catch { /* silent */ }
   }
 
@@ -1376,8 +1378,9 @@ export default function ResidentsPage() {
   const isSearching = search.trim().length >= 2
   const displayedResidents = residents.filter(r => {
     if (!isSearching) {
-      if (activeTab === 'associados') { if (r.type !== 'member' || r.responsible_id) return false }
-      else if (activeTab === 'dependentes') { if (r.type !== 'member' || !r.responsible_id) return false }
+      if (activeTab === 'associados') { if (r.type !== 'member') return false }
+      else if (activeTab === 'dependentes') { if (r.type !== 'dependent') return false }
+      else if (activeTab === 'visitantes') { if (r.type !== 'guest') return false }
     }
     if (filterDelinquent && !delinquentIds.has(r.id)) return false
     return true
@@ -1417,7 +1420,7 @@ export default function ResidentsPage() {
 
   const handleSaveDependent = async (form: DepFormState) => {
     const payload = {
-      type: 'member' as const,
+      type: 'dependent' as const,
       full_name: form.full_name,
       cpf: form.cpf || null,
       date_of_birth: form.date_of_birth || null,
@@ -1612,7 +1615,7 @@ export default function ResidentsPage() {
                       {activeTab === 'associados' && <CompletionBadge pct={calcCompletion(r)} />}
                     </div>
                     <p className="text-xs text-gray-400">
-                      {r.responsible_id ? 'Dependente' : TYPE_LABELS[r.type]}
+                      {TYPE_LABELS[r.type] ?? r.type}
                       {r.unit ? ` · Unid. ${r.unit}` : ''}
                       {r.block ? ` / Bl. ${r.block}` : ''}
                       {r.cpf ? ` · ${maskCpf(r.cpf)}` : ''}

@@ -88,7 +88,7 @@ export interface PaymentMethod {
 
 // --- Residents ---
 
-export type ResidentType = 'member' | 'guest'
+export type ResidentType = 'member' | 'dependent' | 'guest'
 export type ResidentStatus = 'active' | 'inactive' | 'suspended'
 
 export interface Resident {
