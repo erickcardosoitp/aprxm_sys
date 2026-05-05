@@ -84,6 +84,7 @@ class CashSession(SQLModel, table=True):
     quebra_caixa: Decimal | None = Field(default=None, decimal_places=2, max_digits=12)
     reviewed_by: UUID | None = Field(default=None, foreign_key="users.id")
     device_token: str | None = Field(default=None, max_length=64)
+    malote_sent_at: datetime | None = None
     opened_at: datetime = Field(default_factory=datetime.utcnow)
     closed_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
