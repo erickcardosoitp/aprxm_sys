@@ -24,6 +24,7 @@ interface TxReview {
   description: string; transaction_at: string; is_sangria: boolean
   created_by_name?: string; conferido: boolean; observacao?: string | null
   payment_method_name?: string | null; reversed_at?: string | null
+  resident_name?: string | null
 }
 
 interface CashBox {
@@ -361,9 +362,11 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0 flex-1">
                               <p className="text-sm text-gray-700 truncate">
-                                {tx.income_subtype && tx.description.includes(' — ')
-                                  ? tx.description.split(' — ').slice(1).join(' — ')
-                                  : tx.description}
+                                {tx.resident_name
+                                  ? tx.resident_name
+                                  : tx.income_subtype && tx.description.includes(' — ')
+                                    ? tx.description.split(' — ').slice(1).join(' — ')
+                                    : tx.description}
                               </p>
                               {tx.created_by_name && (
                                 <p className="text-[10px] text-gray-400 truncate">· {tx.created_by_name}</p>

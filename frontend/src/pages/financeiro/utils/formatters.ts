@@ -13,7 +13,8 @@ export const fmtRef = (ref: string) => {
   return `${MONTHS[parseInt(m) - 1]}/${y}`
 }
 
-export const parseTxName = (desc: string, subtype: string | null | undefined): string => {
+export const parseTxName = (desc: string, subtype: string | null | undefined, residentName?: string | null): string => {
+  if (residentName) return residentName
   if (subtype && desc.includes(' — ')) return desc.split(' — ').slice(1).join(' — ')
   if (desc.startsWith('Estorno: ') && desc.includes(' — ')) {
     const rest = desc.replace('Estorno: ', '')

@@ -24,6 +24,7 @@ export interface Tx {
   reversed_at?: string
   payment_method_name?: string | null
   created_by_name?: string | null
+  resident_name?: string | null
 }
 
 export interface Session {

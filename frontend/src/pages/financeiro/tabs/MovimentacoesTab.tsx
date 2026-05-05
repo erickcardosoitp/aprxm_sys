@@ -238,7 +238,7 @@ export default function MovimentacoesTab({ period, setPeriod }: Props) {
                     )}
                   </div>
                   <p className="text-sm font-medium truncate text-gray-800">
-                    {parseTxName(t.description, t.income_subtype)}
+                    {parseTxName(t.description, t.income_subtype, t.resident_name)}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     {fmtDate(t.transaction_at)}

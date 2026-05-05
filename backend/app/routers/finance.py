@@ -830,10 +830,13 @@ async def list_transactions(
                    t.transaction_at, t.is_sangria, t.approval_status,
                    t.is_reversal, t.reversed_at, t.payment_method_id,
                    pm.name AS payment_method_name,
-                   u.full_name AS created_by_name
+                   u.full_name AS created_by_name,
+                   res.full_name AS resident_name
             FROM transactions t
             LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
             LEFT JOIN users u ON u.id = t.created_by
+            LEFT JOIN mensalidades men ON men.transaction_id = t.id
+            LEFT JOIN residents res ON res.id = men.resident_id
             WHERE {filters}
             ORDER BY t.transaction_at DESC
         """),
@@ -855,6 +858,7 @@ async def list_transactions(
             "payment_method_id": str(r[10]) if r[10] else None,
             "payment_method_name": r[11],
             "created_by_name": r[12],
+            "resident_name": r[13],
         }
         for r in rows
     ]
@@ -1248,10 +1252,13 @@ async def get_audit_trail(
                    u.full_name AS creator_name,
                    t.reversed_by, ur.full_name AS reverser_name, t.reversed_at,
                    t.reversed_at IS NOT NULL AS is_reversed,
-                   COUNT(*) OVER() AS total_count
+                   COUNT(*) OVER() AS total_count,
+                   res.full_name AS resident_name
             FROM transactions t
             JOIN users u ON u.id = t.created_by
             LEFT JOIN users ur ON ur.id = t.reversed_by
+            LEFT JOIN mensalidades men ON men.transaction_id = t.id
+            LEFT JOIN residents res ON res.id = men.resident_id
             WHERE {where}
             ORDER BY t.transaction_at DESC
             LIMIT :lim OFFSET :off
@@ -1275,6 +1282,7 @@ async def get_audit_trail(
                 "reverser_name": r[13],
                 "reversed_at": str(r[14]) if r[14] else None,
                 "is_reversed": r[15],
+                "resident_name": r[17],
             }
             for r in rows
         ],
@@ -1450,12 +1458,15 @@ async def get_session_transactions(
                r.observacao,
                t.payment_method_id,
                pm.name AS payment_method_name,
-               t.reversed_at
+               t.reversed_at,
+               res.full_name AS resident_name
           FROM transactions t
           LEFT JOIN users u ON u.id = t.created_by
           LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
           LEFT JOIN session_transaction_reviews r
                  ON r.transaction_id = t.id AND r.cash_session_id = :sid
+          LEFT JOIN mensalidades men ON men.transaction_id = t.id
+          LEFT JOIN residents res ON res.id = men.resident_id
          WHERE t.cash_session_id = :sid AND t.association_id = :aid
          ORDER BY t.transaction_at
     """), {"sid": session_id, "aid": str(current.association_id)})).fetchall()
@@ -1467,6 +1478,7 @@ async def get_session_transactions(
         "payment_method_id": str(r[11]) if r[11] else None,
         "payment_method_name": r[12],
         "reversed_at": str(r[13]) if r[13] else None,
+        "resident_name": r[14],
     } for r in rows]
 
 
