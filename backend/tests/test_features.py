@@ -212,3 +212,177 @@ class TestMensalidadeBlockedByMigration:
                     )
 
         asyncio.get_event_loop().run_until_complete(run())
+
+
+# ── FinanceService: unit tests for Week-1 fixes ──────────────────────────────
+
+class TestFinanceServiceWeek1:
+    """Tests covering Week-1 fixes in FinanceService."""
+
+    def _make_svc(self):
+        from app.services.finance_service import FinanceService
+        session = AsyncMock()
+        session.add = MagicMock()
+        session.flush = AsyncMock()
+        session.execute = AsyncMock()
+        return FinanceService(session), session
+
+    def test_get_open_session_raises_cash_session_error_not_found(self):
+        """get_open_session must raise CashSessionError (never a generic Exception)."""
+        import asyncio
+        from app.core.exceptions import CashSessionError
+        svc, session = self._make_svc()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.first.return_value = None
+        session.execute.return_value = mock_result
+
+        async def run():
+            with pytest.raises(CashSessionError):
+                await svc.get_open_session(association_id=uuid4())
+        asyncio.get_event_loop().run_until_complete(run())
+
+    def test_reverse_already_reversed_raises_cash_session_error(self):
+        """reverse_transaction must reject a transaction already reversed."""
+        import asyncio
+        from datetime import datetime
+        from app.core.exceptions import CashSessionError
+        from app.models.finance import Transaction, TransactionType
+        svc, session = self._make_svc()
+        tx = Transaction(
+            id=uuid4(), association_id=uuid4(),
+            type=TransactionType.income, amount=Decimal("50.00"),
+            description="Test", created_by=uuid4(),
+            reversed_at=datetime.utcnow(),
+        )
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = tx
+        session.execute.return_value = mock_result
+
+        async def run():
+            with pytest.raises(CashSessionError, match="já foi estornada"):
+                await svc.reverse_transaction(
+                    transaction_id=tx.id, association_id=tx.association_id,
+                    reversed_by=uuid4(), reason="Teste",
+                )
+        asyncio.get_event_loop().run_until_complete(run())
+
+    def test_reverse_reversal_raises(self):
+        """Cannot reverse a reversal."""
+        import asyncio
+        from app.core.exceptions import CashSessionError
+        from app.models.finance import Transaction, TransactionType
+        svc, session = self._make_svc()
+        tx = Transaction(
+            id=uuid4(), association_id=uuid4(),
+            type=TransactionType.income, amount=Decimal("50.00"),
+            description="Estorno: X", created_by=uuid4(),
+            is_reversal=True,
+        )
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = tx
+        session.execute.return_value = mock_result
+
+        async def run():
+            with pytest.raises(CashSessionError, match="estornar um estorno"):
+                await svc.reverse_transaction(
+                    transaction_id=tx.id, association_id=tx.association_id,
+                    reversed_by=uuid4(), reason="Teste",
+                )
+        asyncio.get_event_loop().run_until_complete(run())
+
+    def test_perform_sangria_requires_photo(self):
+        """perform_sangria must reject empty receipt_photo_url."""
+        import asyncio
+        from app.core.exceptions import CashSessionError
+        svc, session = self._make_svc()
+
+        async def run():
+            with pytest.raises(CashSessionError, match="Foto do recibo"):
+                await svc.perform_sangria(
+                    association_id=uuid4(), opened_by=uuid4(),
+                    amount=Decimal("50.00"), reason="Teste",
+                    destination="Cofre", receipt_photo_url="",
+                )
+        asyncio.get_event_loop().run_until_complete(run())
+
+    def test_credit_cash_box_not_found_raises(self):
+        """credit_cash_box raises NotFoundError when box does not exist."""
+        import asyncio
+        from app.core.exceptions import NotFoundError
+        svc, session = self._make_svc()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = None
+        session.execute.return_value = mock_result
+
+        async def run():
+            with pytest.raises(NotFoundError):
+                await svc.credit_cash_box(
+                    association_id=uuid4(), cash_box_id=uuid4(),
+                    amount=Decimal("100.00"), description="Test", created_by=uuid4(),
+                )
+        asyncio.get_event_loop().run_until_complete(run())
+
+    def test_send_to_malote_not_closed_raises(self):
+        """send_to_malote rejects sessions not in 'closed' status."""
+        import asyncio
+        from app.core.exceptions import UnprocessableError
+        svc, session = self._make_svc()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = ("open", Decimal("100.00"), None)
+        session.execute.return_value = mock_result
+
+        async def run():
+            with pytest.raises(UnprocessableError, match="fechada"):
+                await svc.send_to_malote(session_id=uuid4(), association_id=uuid4(), sent_by=uuid4())
+        asyncio.get_event_loop().run_until_complete(run())
+
+    def test_send_to_malote_already_sent_raises(self):
+        """send_to_malote rejects session already sent to malote."""
+        import asyncio
+        from datetime import datetime
+        from app.core.exceptions import UnprocessableError
+        svc, session = self._make_svc()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = ("closed", Decimal("100.00"), datetime.utcnow())
+        session.execute.return_value = mock_result
+
+        async def run():
+            with pytest.raises(UnprocessableError, match="já enviado"):
+                await svc.send_to_malote(session_id=uuid4(), association_id=uuid4(), sent_by=uuid4())
+        asyncio.get_event_loop().run_until_complete(run())
+
+    def test_send_to_malote_zero_balance_raises(self):
+        """send_to_malote rejects sessions with zero closing_balance."""
+        import asyncio
+        from app.core.exceptions import UnprocessableError
+        svc, session = self._make_svc()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = ("closed", Decimal("0.00"), None)
+        session.execute.return_value = mock_result
+
+        async def run():
+            with pytest.raises(UnprocessableError, match="inválido"):
+                await svc.send_to_malote(session_id=uuid4(), association_id=uuid4(), sent_by=uuid4())
+        asyncio.get_event_loop().run_until_complete(run())
+
+    def test_compute_expected_balance_returns_decimal(self):
+        """_compute_expected_balance must return Decimal, not float."""
+        import asyncio
+        from app.models.finance import CashSession, Transaction, TransactionType
+        svc, session = self._make_svc()
+        cash = CashSession(id=uuid4(), association_id=uuid4(), opening_balance=Decimal("100.00"))
+        tx1 = Transaction(type=TransactionType.income, amount=Decimal("50.00"),
+                          reversed_at=None, is_reversal=False, description="T1")
+        tx2 = Transaction(type=TransactionType.expense, amount=Decimal("10.00"),
+                          reversed_at=None, is_reversal=False, description="T2")
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [tx1, tx2]
+        session.execute.return_value = mock_result
+
+        async def run():
+            expected, bruto, baixas = await svc._compute_expected_balance(cash)
+            assert isinstance(expected, Decimal), "expected deve ser Decimal"
+            assert isinstance(bruto, Decimal), "bruto deve ser Decimal"
+            assert expected == Decimal("140.00")
+            assert bruto == Decimal("50.00")
+        asyncio.get_event_loop().run_until_complete(run())

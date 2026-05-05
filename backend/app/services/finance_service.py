@@ -855,3 +855,405 @@ class FinanceService:
         stmt = stmt.order_by(Transaction.transaction_at.desc())
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    # ------------------------------------------------------------------
+    # Cash Box Operations
+    # ------------------------------------------------------------------
+
+    async def credit_cash_box(
+        self,
+        association_id: UUID,
+        cash_box_id: UUID,
+        amount: Decimal,
+        description: str,
+        created_by: UUID,
+    ) -> Decimal:
+        """Credits a cash box and records the movement. Returns new balance."""
+        row = (await self._session.execute(
+            sa_text("SELECT id, balance FROM cash_boxes WHERE id=:id AND association_id=:aid AND is_active=true"),
+            {"id": str(cash_box_id), "aid": str(association_id)},
+        )).fetchone()
+        if not row:
+            from app.core.exceptions import NotFoundError
+            raise NotFoundError("Caixinha")
+        new_bal = Decimal(str(row[1])) + amount
+        await self._session.execute(
+            sa_text("UPDATE cash_boxes SET balance=:b, updated_at=NOW() WHERE id=:id"),
+            {"b": str(new_bal), "id": str(cash_box_id)},
+        )
+        await self._session.execute(
+            sa_text("""
+                INSERT INTO cash_box_movements
+                    (id, association_id, cash_box_id, amount, movement_type, description, created_by)
+                VALUES (gen_random_uuid(), :aid, :bid, :amt, 'credit', :desc, :usr)
+            """),
+            {"aid": str(association_id), "bid": str(cash_box_id),
+             "amt": str(amount), "desc": description, "usr": str(created_by)},
+        )
+        return new_bal
+
+    async def send_to_malote(
+        self,
+        session_id: UUID,
+        association_id: UUID,
+        sent_by: UUID,
+    ) -> dict:
+        """Transfers closing_balance from a closed session to the malote cash box."""
+        cs = (await self._session.execute(
+            sa_text("SELECT status, closing_balance, malote_sent_at FROM cash_sessions WHERE id=:id AND association_id=:aid"),
+            {"id": str(session_id), "aid": str(association_id)},
+        )).fetchone()
+        if not cs:
+            from app.core.exceptions import NotFoundError
+            raise NotFoundError("Sessão")
+        if cs[0] != "closed":
+            from app.core.exceptions import UnprocessableError
+            raise UnprocessableError("Sessão deve estar fechada.")
+        if cs[2] is not None:
+            from app.core.exceptions import UnprocessableError
+            raise UnprocessableError("Dinheiro já enviado para o malote.")
+        if cs[1] is None or Decimal(str(cs[1])) <= 0:
+            from app.core.exceptions import UnprocessableError
+            raise UnprocessableError("Valor de fechamento (conf. cega) inválido.")
+
+        malote = (await self._session.execute(
+            sa_text("SELECT id, balance FROM cash_boxes WHERE association_id=:aid AND is_malote=true AND is_active=true ORDER BY created_at LIMIT 1"),
+            {"aid": str(association_id)},
+        )).fetchone()
+        if not malote:
+            from app.core.exceptions import NotFoundError
+            raise NotFoundError("Caixinha malote")
+
+        amount = Decimal(str(cs[1]))
+        new_bal = await self.credit_cash_box(
+            association_id=association_id,
+            cash_box_id=malote[0],
+            amount=amount,
+            description=f"Malote — sessão {str(session_id)[:8]}",
+            created_by=sent_by,
+        )
+        await self._session.execute(
+            sa_text("UPDATE cash_sessions SET malote_sent_at=NOW() WHERE id=:id AND association_id=:aid"),
+            {"id": str(session_id), "aid": str(association_id)},
+        )
+        return {"ok": True, "amount": str(amount), "malote_balance": str(new_bal)}
+
+    # ------------------------------------------------------------------
+    # Read-heavy queries (extracted from router)
+    # ------------------------------------------------------------------
+
+    async def list_sessions(self, association_id: UUID, user_id: UUID, is_conferente: bool) -> list[dict]:
+        uid_filter = "" if is_conferente else "AND cs.opened_by = :uid"
+        params: dict = {"aid": str(association_id)}
+        if not is_conferente:
+            params["uid"] = str(user_id)
+        result = await self._session.execute(
+            sa_text(f"""
+                SELECT
+                    cs.id, cs.status, cs.opened_at, cs.closed_at,
+                    cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.difference,
+                    u_open.full_name AS operador_name, u_close.full_name AS fechado_por,
+                    u_review.full_name AS conferido_por, cs.origin, a.name AS association_name,
+                    cs.quebra_caixa, cs.malote_sent_at, cs.quebra_responsavel,
+                    cs.quebra_assinatura_url, cs.quebra_apurada_at,
+                    CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_pix, 0)
+                         ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
+                              AND (t.reversed_at IS NULL AND t.is_reversal = false)
+                              AND pm.name ILIKE '%pix%' THEN t.amount ELSE 0 END), 0)
+                    END AS total_pix,
+                    CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_dinheiro, 0)
+                         ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
+                              AND (t.reversed_at IS NULL AND t.is_reversal = false)
+                              AND (pm.name ILIKE '%dinheiro%' OR pm.name ILIKE '%espécie%'
+                                   OR pm.name ILIKE '%especie%' OR t.payment_method_id IS NULL)
+                              THEN t.amount ELSE 0 END), 0)
+                    END AS total_dinheiro,
+                    CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_total_bruto, 0)
+                         ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
+                              AND (t.reversed_at IS NULL AND t.is_reversal = false)
+                              THEN t.amount ELSE 0 END), 0)
+                    END AS total_bruto,
+                    CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_total_baixas, 0)
+                         ELSE COALESCE(SUM(CASE WHEN t.type = 'sangria'
+                              AND (t.reversed_at IS NULL AND t.is_reversal = false)
+                              THEN t.amount ELSE 0 END), 0)
+                    END AS total_baixas
+                FROM cash_sessions cs
+                LEFT JOIN users u_open   ON u_open.id   = cs.opened_by
+                LEFT JOIN users u_close  ON u_close.id  = cs.closed_by
+                LEFT JOIN users u_review ON u_review.id = cs.reviewed_by
+                LEFT JOIN associations a ON a.id = cs.association_id
+                LEFT JOIN transactions t
+                    ON t.cash_session_id = cs.id AND t.association_id = cs.association_id
+                LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+                WHERE cs.association_id = :aid {uid_filter}
+                GROUP BY cs.id, cs.status, cs.opened_at, cs.closed_at,
+                         cs.opening_balance, cs.closing_balance, cs.expected_balance,
+                         cs.difference, u_open.full_name, u_close.full_name, u_review.full_name,
+                         cs.origin, a.name, cs.quebra_caixa, cs.malote_sent_at, cs.manual_pix,
+                         cs.manual_dinheiro, cs.manual_total_bruto, cs.manual_total_baixas,
+                         cs.quebra_responsavel, cs.quebra_assinatura_url, cs.quebra_apurada_at
+                ORDER BY cs.opened_at DESC
+            """),
+            params,
+        )
+        rows = result.fetchall()
+        return [
+            {
+                "id": str(r[0]), "status": r[1],
+                "opened_at": str(r[2]), "closed_at": str(r[3]) if r[3] else None,
+                "opening_balance": str(r[4]),
+                "closing_balance": str(r[5]) if r[5] is not None else None,
+                "expected_balance": str(r[6]) if r[6] is not None else None,
+                "difference": str(r[7]) if r[7] is not None else None,
+                "operador_name": r[8], "fechado_por": r[9], "conferido_por": r[10],
+                "origin": r[11] or "Sessão de Caixa",
+                "association_name": r[12],
+                "quebra_caixa": str(round(float(r[13]), 2)) if r[13] is not None else None,
+                "malote_sent_at": str(r[14]) if r[14] is not None else None,
+                "quebra_responsavel": r[15], "quebra_assinatura_url": r[16],
+                "quebra_apurada_at": str(r[17]) if r[17] is not None else None,
+                "total_pix": str(round(float(r[18]), 2)),
+                "total_dinheiro": str(round(float(r[19]), 2)),
+                "total_bruto": str(round(float(r[20]), 2)),
+                "total_baixas": str(round(float(r[21]), 2)),
+            }
+            for r in rows
+        ]
+
+    async def get_tesouraria(self, association_id: UUID) -> dict:
+        aid = str(association_id)
+        open_rows = (await self._session.execute(sa_text("""
+            SELECT cs.id, cs.opened_at, cs.opening_balance, u.full_name AS operador,
+                   COALESCE(cs.opening_balance, 0)
+                   + COALESCE((SELECT SUM(t.amount) FROM transactions t
+                               WHERE t.cash_session_id=cs.id AND t.type='income'
+                                 AND t.reversed_at IS NULL AND t.is_reversal=false), 0)
+                   - COALESCE((SELECT SUM(t.amount) FROM transactions t
+                               WHERE t.cash_session_id=cs.id AND t.type IN ('expense','sangria')
+                                 AND t.reversed_at IS NULL AND t.is_reversal=false), 0) AS expected
+              FROM cash_sessions cs
+              LEFT JOIN users u ON u.id = cs.opened_by
+             WHERE cs.association_id=:aid AND cs.status='open'
+             ORDER BY cs.opened_at DESC
+        """), {"aid": aid})).fetchall()
+
+        conf_rows = (await self._session.execute(sa_text("""
+            SELECT cs.id, cs.opened_at, cs.closing_balance, cs.expected_balance,
+                   cs.difference, u.full_name AS operador,
+                   COALESCE((SELECT SUM(t.amount) FROM transactions t
+                              WHERE t.association_id = cs.association_id AND t.type = 'sangria'
+                                AND t.description = CONCAT('Repasse para caixinha — sessão ', cs.id::text)
+                                AND t.reversed_at IS NULL AND t.is_reversal = false), 0) AS already_transferred,
+                   COALESCE((SELECT SUM(t.amount) FROM transactions t
+                             JOIN payment_methods pm ON pm.id = t.payment_method_id
+                              WHERE t.cash_session_id = cs.id AND t.type = 'income'
+                                AND pm.name ILIKE '%%pix%%'
+                                AND t.reversed_at IS NULL AND t.is_reversal = false), 0) AS total_pix_income
+              FROM cash_sessions cs
+              LEFT JOIN users u ON u.id = cs.opened_by
+             WHERE cs.association_id=:aid AND cs.status='conferido'
+             ORDER BY cs.opened_at DESC
+        """), {"aid": aid})).fetchall()
+
+        pap_row = (await self._session.execute(sa_text("""
+            SELECT COALESCE(SUM(p.amount),0), COUNT(*)
+              FROM porta_a_porta_payments p
+              JOIN porta_a_porta_leads l ON l.id = p.lead_id
+             WHERE l.association_id=:aid AND p.status='paid'
+               AND DATE(p.paid_at) = CURRENT_DATE
+               AND NOT EXISTS (
+                   SELECT 1 FROM transactions t
+                   WHERE t.description LIKE '%Porta a Porta%'
+                     AND t.association_id=:aid
+                     AND DATE(t.transaction_at) = CURRENT_DATE
+                     AND t.amount = p.amount
+               )
+        """), {"aid": aid})).fetchone()
+
+        boxes = (await self._session.execute(sa_text(
+            "SELECT id, name, balance FROM cash_boxes WHERE association_id=:aid AND is_active=true ORDER BY name"
+        ), {"aid": aid})).fetchall()
+
+        faturamento_row = (await self._session.execute(sa_text("""
+            SELECT
+              COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END), 0) AS bruto,
+              COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS saidas
+            FROM transactions t
+            WHERE t.association_id=:aid AND t.reversed_at IS NULL AND t.is_reversal=false
+              AND DATE(t.transaction_at) = CURRENT_DATE
+        """), {"aid": aid})).fetchone()
+        faturamento = round(float(faturamento_row[0]) - float(faturamento_row[1]), 2) if faturamento_row else 0.0
+
+        box_breakdown_rows = (await self._session.execute(sa_text("""
+            SELECT cbm.cash_box_id, COALESCE(pm.name, 'Dinheiro') AS pm_name,
+                   SUM(CASE WHEN cbm.movement_type='credit' THEN cbm.amount ELSE -cbm.amount END) AS total
+              FROM cash_box_movements cbm
+              LEFT JOIN transactions t ON t.description = cbm.description
+                AND t.association_id = cbm.association_id
+              LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+             WHERE cbm.association_id=:aid AND cbm.movement_type='credit'
+             GROUP BY cbm.cash_box_id, COALESCE(pm.name, 'Dinheiro')
+        """), {"aid": aid})).fetchall()
+        breakdown_by_box: dict = {}
+        for r in box_breakdown_rows:
+            bid = str(r[0])
+            if bid not in breakdown_by_box:
+                breakdown_by_box[bid] = []
+            breakdown_by_box[bid].append({"pm": r[1], "total": str(round(float(r[2]), 2))})
+
+        return {
+            "open_sessions": [{"id": str(r[0]), "opened_at": str(r[1]), "opening_balance": str(r[2]),
+                                "operador": r[3], "expected_balance": str(round(float(r[4]), 2))} for r in open_rows],
+            "conferido_sessions": [{"id": str(r[0]), "opened_at": str(r[1]),
+                                      "closing_balance": str(r[2]) if r[2] else None,
+                                      "expected_balance": str(r[3]) if r[3] else None,
+                                      "difference": str(r[4]) if r[4] else None,
+                                      "operador": r[5],
+                                      "already_transferred": str(round(float(r[6] or 0), 2)),
+                                      "remaining": str(round(max(0.0, float(r[2] or 0) - float(r[7] or 0) - float(r[6] or 0)), 2))} for r in conf_rows],
+            "pap_today": {"total": str(round(float(pap_row[0]), 2)), "count": pap_row[1]},
+            "caixinhas": [{"id": str(r[0]), "name": r[1], "balance": str(round(float(r[2]), 2)),
+                           "breakdown": breakdown_by_box.get(str(r[0]), [])} for r in boxes],
+            "total_limbo": str(round(sum(max(0.0, float(r[2] or 0) - float(r[7] or 0) - float(r[6] or 0)) for r in conf_rows), 2)),
+            "faturamento_hoje": str(faturamento),
+        }
+
+    async def get_esteira(self, association_id: UUID) -> dict:
+        aid = str(association_id)
+        fat_row = (await self._session.execute(sa_text("""
+            SELECT
+                COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) AS bruto,
+                COALESCE(SUM(CASE WHEN type IN ('expense','sangria')
+                                   AND description NOT LIKE 'Repasse para caixinha%%'
+                                   THEN amount ELSE 0 END), 0) AS baixas
+              FROM transactions
+             WHERE association_id = :aid AND reversed_at IS NULL AND is_reversal = false
+        """), {"aid": aid})).fetchone()
+        bruto = round(float(fat_row[0]), 2)
+        baixas = round(float(fat_row[1]), 2)
+        liquido = round(bruto - baixas, 2)
+
+        open_row = (await self._session.execute(sa_text("""
+            SELECT COUNT(DISTINCT cs.id),
+                   COALESCE(SUM(cs.opening_balance), 0)
+                   + COALESCE(SUM(CASE WHEN tx.type='income' AND tx.reversed_at IS NULL AND tx.is_reversal=false
+                                        THEN tx.amount ELSE 0 END), 0)
+                   - COALESCE(SUM(CASE WHEN tx.type IN ('expense','sangria') AND tx.reversed_at IS NULL AND tx.is_reversal=false
+                                        THEN tx.amount ELSE 0 END), 0)
+              FROM cash_sessions cs
+              LEFT JOIN transactions tx ON tx.cash_session_id = cs.id AND tx.association_id = cs.association_id
+             WHERE cs.association_id = :aid AND cs.status = 'open'
+        """), {"aid": aid})).fetchone()
+        em_abertos = round(float(open_row[1]), 2)
+
+        closed_row = (await self._session.execute(sa_text("""
+            SELECT COUNT(*), COALESCE(SUM(closing_balance), 0)
+              FROM cash_sessions WHERE association_id = :aid AND status = 'closed'
+        """), {"aid": aid})).fetchone()
+        no_malote = round(float(closed_row[1]), 2)
+
+        conf_closing = (await self._session.execute(sa_text("""
+            SELECT COALESCE(SUM(closing_balance), 0), COUNT(*)
+              FROM cash_sessions WHERE association_id = :aid AND status = 'conferido'
+        """), {"aid": aid})).fetchone()
+        ja_transferido = (await self._session.execute(sa_text("""
+            SELECT COALESCE(SUM(amount), 0) FROM transactions
+             WHERE association_id = :aid AND type = 'sangria'
+               AND description LIKE 'Repasse para caixinha%%'
+               AND reversed_at IS NULL AND is_reversal = false AND cash_session_id IS NULL
+        """), {"aid": aid})).fetchone()
+        a_repassar = round(max(0.0, float(conf_closing[0]) - float(ja_transferido[0])), 2)
+
+        boxes_rows = (await self._session.execute(sa_text(
+            "SELECT name, balance FROM cash_boxes WHERE association_id = :aid AND is_active = true ORDER BY name"
+        ), {"aid": aid})).fetchall()
+        nas_caixinhas = round(sum(float(r[1]) for r in boxes_rows), 2)
+
+        total_localizado = round(em_abertos + no_malote + a_repassar + nas_caixinhas, 2)
+        diferenca = round(liquido - total_localizado, 2)
+
+        pix_pend = (await self._session.execute(sa_text(
+            "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM bank_statements WHERE association_id = :aid AND conciliado = false"
+        ), {"aid": aid})).fetchone()
+        pix_done = (await self._session.execute(sa_text(
+            "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM bank_statements WHERE association_id = :aid AND conciliado = true"
+        ), {"aid": aid})).fetchone()
+
+        return {
+            "faturamento": {"bruto": str(bruto), "baixas": str(baixas), "liquido": str(liquido)},
+            "localizacao": {
+                "em_abertos": {"sessoes": int(open_row[0]), "total": str(em_abertos)},
+                "no_malote": {"sessoes": int(closed_row[0]), "total": str(no_malote)},
+                "a_repassar": {"sessoes": int(conf_closing[1]), "total": str(a_repassar)},
+                "nas_caixinhas": {
+                    "total": str(nas_caixinhas),
+                    "boxes": [{"name": r[0], "saldo": str(round(float(r[1]), 2))} for r in boxes_rows],
+                },
+                "total_localizado": str(total_localizado),
+                "diferenca": str(diferenca),
+            },
+            "pix": {
+                "pendente": {"count": int(pix_pend[0]), "total": str(round(float(pix_pend[1]), 2))},
+                "conciliado": {"count": int(pix_done[0]), "total": str(round(float(pix_done[1]), 2))},
+            },
+        }
+
+    async def list_pix_pending(self, association_id: UUID, incluir_enviados: bool = False) -> list[dict]:
+        batched_filter = "" if incluir_enviados else """
+            AND NOT EXISTS (
+                SELECT 1 FROM reconciliations r2
+                JOIN bank_statements bs2 ON bs2.id = r2.statement_id
+                WHERE r2.transaction_id = t.id AND bs2.batched_at IS NOT NULL
+            )"""
+        rows = (await self._session.execute(sa_text(f"""
+            SELECT * FROM (
+                SELECT DISTINCT ON (t.id)
+                    t.id, t.amount, t.description, t.transaction_at, t.reversed_at,
+                    r.full_name AS resident_name,
+                    rec.status AS recon_status, rec.score,
+                    bs.id AS statement_id, bs.bank, bs.name AS payer_name,
+                    cs.opened_at AS session_opened_at, cs.id AS session_id,
+                    u_op.full_name AS operador_name, u_rev.full_name AS conferente_name,
+                    bs.batched_at, t.resident_id, pkg.delivered_to_name
+                FROM transactions t
+                JOIN payment_methods pm ON pm.id = t.payment_method_id
+                LEFT JOIN residents r ON r.id = t.resident_id
+                LEFT JOIN reconciliations rec ON rec.transaction_id = t.id
+                LEFT JOIN bank_statements bs ON bs.id = rec.statement_id
+                LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
+                LEFT JOIN users u_op ON u_op.id = cs.opened_by
+                LEFT JOIN users u_rev ON u_rev.id = cs.reviewed_by
+                LEFT JOIN packages pkg ON pkg.id = t.package_id
+                WHERE t.association_id = :aid AND t.type = 'income'
+                  AND pm.name ILIKE '%pix%%' {batched_filter}
+                ORDER BY t.id, rec.status NULLS LAST, bs.batched_at NULLS FIRST
+            ) sub
+            ORDER BY sub.transaction_at DESC LIMIT 300
+        """), {"aid": str(association_id)})).fetchall()
+
+        def _derive_status(r) -> str:
+            if r[4]:
+                return "cancelado"
+            if r[15]:
+                return "enviado_caixinha"
+            rs = r[6]
+            if rs in ("automatico", "manual"):
+                return "conciliado"
+            if rs == "sugestao":
+                return "pendente"
+            return "nao_conciliado"
+
+        return [{
+            "id": str(r[0]), "amount": str(r[1]), "description": r[2],
+            "date": str(r[3])[:10], "status": _derive_status(r),
+            "recon_score": r[7], "resident_name": r[5],
+            "bank_statement_id": str(r[8]) if r[8] else None,
+            "bank": r[9], "payer_name": r[10],
+            "session_opened_at": str(r[11]) if r[11] else None,
+            "session_id": str(r[12]) if r[12] else None,
+            "operador_name": r[13], "conferente_name": r[14],
+            "batched_at": str(r[15]) if r[15] else None,
+            "resident_id": str(r[16]) if r[16] else None,
+            "delivered_to_name": r[17],
+        } for r in rows]
