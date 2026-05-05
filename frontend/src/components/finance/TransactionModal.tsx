@@ -437,11 +437,15 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
       const isMensalidade = txType === 'income' && incomeSubtype === 'mensalidade'
       if (!amount || (!isMensalidade && !description.trim())) return
-      const mensalidadeDesc = isMensalidade && mensalidadeMonths.length > 0
-        ? `Mensalidade — ${[...mensalidadeMonths].sort().map(ym => {
+      const monthsLabel = isMensalidade && mensalidadeMonths.length > 0
+        ? [...mensalidadeMonths].sort().map(ym => {
             const [y, m] = ym.split('-')
             return ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(m)-1] + '/' + y
-          }).join(', ')}`
+          }).join(', ')
+        : null
+      const residentSuffix = resident ? ` — ${resident.full_name}` : ''
+      const mensalidadeDesc = isMensalidade && monthsLabel
+        ? `Mensalidade ${monthsLabel}${residentSuffix}`
         : description.trim()
       const isSplit = splitEnabled && paymentMethodId2 && parseFloat(amount2Split) > 0
       const a2 = isSplit ? parseFloat(amount2Split) : 0
