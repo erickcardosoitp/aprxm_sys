@@ -324,6 +324,8 @@ CREATE TABLE mensalidades (
 
     paid_at             TIMESTAMPTZ,
     transaction_id      UUID                REFERENCES transactions (id) ON DELETE SET NULL,
+    transaction_id_2    UUID                REFERENCES transactions (id) ON DELETE SET NULL,
+    amount_2            NUMERIC(10, 2)      CHECK (amount_2 > 0),
     notes               TEXT,
 
     created_by          UUID                NOT NULL REFERENCES users (id),

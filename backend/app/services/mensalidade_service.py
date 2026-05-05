@@ -56,14 +56,16 @@ class MensalidadeService:
         paid_by: UUID,
         payment_method_id: UUID | None = None,
         auto_next: bool = True,
+        payment_method_id_2: UUID | None = None,
+        amount_2: Decimal | None = None,
     ) -> dict:
         """
         Pay a mensalidade:
         1. Validates open cash session exists
-        2. Creates income Transaction linked to the mensalidade
+        2. Creates 1 or 2 income Transactions (split payment support)
         3. Marks mensalidade as paid
         4. Optionally creates next month's mensalidade (pending)
-        Returns {"mensalidade": Mensalidade, "transaction": Transaction, "next": Mensalidade | None}
+        Returns {"mensalidade": Mensalidade, "transaction": Transaction, "transaction_2": Transaction | None, "next": Mensalidade | None}
         """
         from app.services.finance_service import FinanceService
         from app.models.finance import TransactionType, IncomeSubtype
@@ -72,6 +74,15 @@ class MensalidadeService:
         m = await self._get(mensalidade_id, association_id)
         if m.status == MensalidadeStatus.paid:
             raise UnprocessableError("Mensalidade já está paga.")
+
+        is_split = payment_method_id_2 is not None and amount_2 is not None and amount_2 > Decimal("0")
+
+        if is_split:
+            if amount_2 >= m.amount:
+                raise UnprocessableError("O valor da 2ª forma de pagamento deve ser menor que o total.")
+            amount_1 = m.amount - amount_2
+        else:
+            amount_1 = m.amount
 
         # Ensure open cash session
         finance_svc = FinanceService(self._session)
@@ -84,24 +95,42 @@ class MensalidadeService:
         )
         resident = res_result.scalar_one_or_none()
         resident_name = resident.full_name if resident else str(m.resident_id)
+        desc_base = f"Mensalidade {m.reference_month} — {resident_name}"
 
-        # Create income transaction
+        # Create primary transaction
         tx = await finance_svc.register_transaction(
             association_id=association_id,
             cash_session_id=cash_session.id,
             tx_type=TransactionType.income,
-            amount=m.amount,
-            description=f"Mensalidade {m.reference_month} — {resident_name}",
+            amount=amount_1,
+            description=desc_base if not is_split else f"{desc_base} (1/2)",
             created_by=paid_by,
             income_subtype=IncomeSubtype.mensalidade,
             payment_method_id=payment_method_id,
             resident_id=m.resident_id,
         )
 
+        # Create secondary transaction if split
+        tx2 = None
+        if is_split:
+            tx2 = await finance_svc.register_transaction(
+                association_id=association_id,
+                cash_session_id=cash_session.id,
+                tx_type=TransactionType.income,
+                amount=amount_2,
+                description=f"{desc_base} (2/2)",
+                created_by=paid_by,
+                income_subtype=IncomeSubtype.mensalidade,
+                payment_method_id=payment_method_id_2,
+                resident_id=m.resident_id,
+            )
+
         # Mark mensalidade as paid
         m.status = MensalidadeStatus.paid
         m.paid_at = datetime.utcnow()
         m.transaction_id = tx.id
+        m.transaction_id_2 = tx2.id if tx2 else None
+        m.amount_2 = amount_2 if is_split else None
         m.updated_at = datetime.utcnow()
         self._session.add(m)
 
@@ -112,7 +141,7 @@ class MensalidadeService:
         if auto_next:
             next_m = await self._create_next_month(m, paid_by)
 
-        return {"mensalidade": m, "transaction": tx, "next": next_m}
+        return {"mensalidade": m, "transaction": tx, "transaction_2": tx2, "next": next_m}
 
     async def pay(
         self,
