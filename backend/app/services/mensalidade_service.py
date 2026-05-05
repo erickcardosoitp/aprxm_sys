@@ -242,7 +242,7 @@ class MensalidadeService:
         return result.scalar_one_or_none() is not None
 
     async def list_delinquent(self, association_id: UUID) -> list[dict]:
-        from app.models.resident import Resident
+        from app.models.resident import Resident, ResidentType
         from sqlmodel import select as sa_select
         today = date.today()
         grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
@@ -261,6 +261,7 @@ class MensalidadeService:
                 Mensalidade.status != MensalidadeStatus.paid,
                 Mensalidade.status != MensalidadeStatus.agreement,
                 Mensalidade.due_date < grace_cutoff,
+                Resident.type == ResidentType.member,
             )
             .order_by(Mensalidade.due_date.asc())
         )
@@ -289,7 +290,7 @@ class MensalidadeService:
 
     async def list_pending(self, association_id: UUID) -> list[dict]:
         """Mensalidades pendentes dentro do período de carência configurado."""
-        from app.models.resident import Resident
+        from app.models.resident import Resident, ResidentType
         from sqlmodel import select as sa_select
         today = date.today()
         grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
@@ -307,6 +308,7 @@ class MensalidadeService:
                 Mensalidade.association_id == association_id,
                 Mensalidade.status == MensalidadeStatus.pending,
                 Mensalidade.due_date >= grace_cutoff,
+                Resident.type == ResidentType.member,
             )
             .order_by(Mensalidade.due_date.asc())
         )

@@ -541,13 +541,18 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <p className="text-sm font-semibold text-gray-800">
-              A Receber ({cobrancasSearch
-                ? pendingMensalidades.filter(m => {
-                    const q = cobrancasSearch.toLowerCase()
-                    return (m.resident_name ?? pendingNames[m.resident_id] ?? '').toLowerCase().includes(q)
-                      || (m.address_street ?? '').toLowerCase().includes(q)
-                  }).length
-                : pendingMensalidades.length})
+              A Receber ({
+                new Set(
+                  (cobrancasSearch
+                    ? pendingMensalidades.filter(m => {
+                        const q = cobrancasSearch.toLowerCase()
+                        return (m.resident_name ?? pendingNames[m.resident_id] ?? '').toLowerCase().includes(q)
+                          || (m.address_street ?? '').toLowerCase().includes(q)
+                      })
+                    : pendingMensalidades
+                  ).map(m => m.resident_id)
+                ).size
+              } associados)
             </p>
             {loadingCobrancas && <span className="text-xs text-gray-400">Carregando…</span>}
           </div>
@@ -607,13 +612,18 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
           <div className="px-4 py-3 border-b border-gray-100 bg-red-50">
             <p className="text-sm font-semibold text-red-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
-              Inadimplentes ({cobrancasSearch
-                ? delinquent.filter(d => {
-                    const q = cobrancasSearch.toLowerCase()
-                    return (d.resident_name ?? delinquentNames[d.resident_id] ?? '').toLowerCase().includes(q)
-                      || (d.address_street ?? '').toLowerCase().includes(q)
-                  }).length
-                : delinquent.length})
+              Inadimplentes ({
+                new Set(
+                  (cobrancasSearch
+                    ? delinquent.filter(d => {
+                        const q = cobrancasSearch.toLowerCase()
+                        return (d.resident_name ?? delinquentNames[d.resident_id] ?? '').toLowerCase().includes(q)
+                          || (d.address_street ?? '').toLowerCase().includes(q)
+                      })
+                    : delinquent
+                  ).map(d => d.resident_id)
+                ).size
+              } moradores)
             </p>
             {delinquent.length > 0 && (
               <p className="text-xs text-red-500 mt-0.5">
