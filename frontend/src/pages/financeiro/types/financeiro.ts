@@ -54,6 +54,8 @@ export interface Mensalidade {
   due_date: string | null; amount: string; status: string
   paid_at: string | null; transaction_id: string | null; notes: string | null
   origem?: 'sistema' | 'migracao'; tipo?: string
+  phone_primary?: string | null; address_street?: string | null
+  address_number?: string | null; unit?: string | null
 }
 
 export interface TxReview {
@@ -77,6 +79,8 @@ export interface Conferente { id: string; full_name: string; role: string }
 export interface DelinquentItem {
   id: string; resident_id: string; resident_name?: string; reference_month: string
   due_date: string; amount: string; months_overdue: number
+  phone_primary?: string | null; address_street?: string | null
+  address_number?: string | null; unit?: string | null
 }
 
 export interface ReconciliationItem {

@@ -247,7 +247,14 @@ class MensalidadeService:
         today = date.today()
         grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
         stmt = (
-            sa_select(Mensalidade, Resident.full_name)
+            sa_select(
+                Mensalidade,
+                Resident.full_name,
+                Resident.phone_primary,
+                Resident.address_street,
+                Resident.address_number,
+                Resident.unit,
+            )
             .join(Resident, Resident.id == Mensalidade.resident_id)
             .where(
                 Mensalidade.association_id == association_id,
@@ -261,7 +268,7 @@ class MensalidadeService:
         rows = result.all()
 
         delinquent = []
-        for m, full_name in rows:
+        for m, full_name, phone, street, number, unit in rows:
             months_overdue = (
                 (today.year - m.due_date.year) * 12 + (today.month - m.due_date.month)
             )
@@ -269,6 +276,10 @@ class MensalidadeService:
                 "id": str(m.id),
                 "resident_id": str(m.resident_id),
                 "resident_name": full_name,
+                "phone_primary": phone,
+                "address_street": street,
+                "address_number": number,
+                "unit": unit,
                 "reference_month": m.reference_month,
                 "due_date": str(m.due_date),
                 "amount": str(m.amount),
@@ -283,7 +294,14 @@ class MensalidadeService:
         today = date.today()
         grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
         stmt = (
-            sa_select(Mensalidade, Resident.full_name)
+            sa_select(
+                Mensalidade,
+                Resident.full_name,
+                Resident.phone_primary,
+                Resident.address_street,
+                Resident.address_number,
+                Resident.unit,
+            )
             .join(Resident, Resident.id == Mensalidade.resident_id)
             .where(
                 Mensalidade.association_id == association_id,
@@ -299,13 +317,17 @@ class MensalidadeService:
                 "id": str(m.id),
                 "resident_id": str(m.resident_id),
                 "resident_name": full_name,
+                "phone_primary": phone,
+                "address_street": street,
+                "address_number": number,
+                "unit": unit,
                 "reference_month": m.reference_month,
                 "due_date": str(m.due_date),
                 "amount": str(m.amount),
                 "status": m.status,
                 "notes": m.notes,
             }
-            for m, full_name in rows
+            for m, full_name, phone, street, number, unit in rows
         ]
 
     async def generate_month(

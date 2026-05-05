@@ -180,6 +180,28 @@ async def list_delinquent(
     return await svc.list_delinquent(current.association_id)
 
 
+@router.get("/delinquent/by-street", summary="Inadimplentes agrupados por rua")
+async def delinquent_by_street(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    svc = MensalidadeService(session)
+    items = await svc.list_delinquent(current.association_id)
+    groups: dict[str, list] = {}
+    for item in items:
+        street = item.get("address_street") or "Sem rua"
+        groups.setdefault(street, []).append(item)
+    return [
+        {
+            "street": street,
+            "count": len(residents),
+            "total_amount": str(sum(float(r["amount"]) for r in residents)),
+            "residents": sorted(residents, key=lambda x: x["resident_name"] or ""),
+        }
+        for street, residents in sorted(groups.items())
+    ]
+
+
 @router.get("/residents/{resident_id}", summary="Histórico por morador")
 async def list_by_resident(
     resident_id: UUID,

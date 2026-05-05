@@ -41,6 +41,44 @@ export default function RelatoriosTab() {
   const [apuracaoSig, setApuracaoSig] = useState<string | null>(null)
   const [savingApuracao, setSavingApuracao] = useState(false)
 
+  // Inadimplentes por rua
+  const [delinqByStreet, setDelinqByStreet] = useState<{ street: string; count: number; total_amount: string; residents: any[] }[] | null>(null)
+  const [loadingDelinqStreet, setLoadingDelinqStreet] = useState(false)
+  const [delinqStreetOpen, setDelinqStreetOpen] = useState<string | null>(null)
+
+  const loadDelinqByStreet = async () => {
+    setLoadingDelinqStreet(true)
+    try {
+      const res = await api.get('/mensalidades/delinquent/by-street')
+      setDelinqByStreet(res.data)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao gerar relatório.')
+    } finally { setLoadingDelinqStreet(false) }
+  }
+
+  const exportDelinqStreetXLSX = () => {
+    if (!delinqByStreet) return
+    const rows: any[] = []
+    delinqByStreet.forEach(g => {
+      g.residents.forEach(r => {
+        rows.push({
+          Rua: g.street,
+          Morador: r.resident_name,
+          Telefone: r.phone_primary ?? '',
+          Número: r.address_number ?? '',
+          Unidade: r.unit ?? '',
+          'Mês Ref': r.reference_month,
+          'Meses Atraso': r.months_overdue,
+          'Valor': parseFloat(r.amount),
+        })
+      })
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Inadimplentes por Rua')
+    XLSX.writeFile(wb, `inadimplentes-por-rua-${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
   // Mensalidades report
   const [reportFromMonth, setReportFromMonth] = useState(() => {
     const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -513,6 +551,72 @@ export default function RelatoriosTab() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Inadimplentes por Rua */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-800">Inadimplentes por Rua</h3>
+          {delinqByStreet && (
+            <button onClick={exportDelinqStreetXLSX}
+              className="flex items-center gap-1 text-xs text-[#26619c] border border-[#26619c]/30 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition">
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+            </button>
+          )}
+        </div>
+        <div className="p-4 flex flex-col gap-3">
+          <button onClick={loadDelinqByStreet} disabled={loadingDelinqStreet}
+            className="bg-[#26619c] hover:bg-[#1a4f87] disabled:opacity-50 text-white py-2 rounded-xl text-sm font-medium transition">
+            {loadingDelinqStreet ? 'Carregando…' : 'Gerar Relatório'}
+          </button>
+          {delinqByStreet && delinqByStreet.length === 0 && (
+            <p className="text-center text-sm text-gray-400 py-4">Nenhum inadimplente encontrado.</p>
+          )}
+          {delinqByStreet && delinqByStreet.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-gray-500">{delinqByStreet.reduce((s, g) => s + g.count, 0)} inadimplentes em {delinqByStreet.length} ruas</p>
+              {delinqByStreet.map(g => (
+                <div key={g.street} className="border border-gray-100 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setDelinqStreetOpen(o => o === g.street ? null : g.street)}
+                    className="w-full px-3 py-2.5 flex items-center justify-between text-left bg-gray-50 hover:bg-gray-100 transition">
+                    <span className="text-sm font-medium text-gray-800">{g.street}</span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs text-red-600 font-medium">{g.count} {g.count === 1 ? 'morador' : 'moradores'}</span>
+                      <span className="text-xs text-gray-500">{fmt(g.total_amount)}</span>
+                      <span className="text-gray-400 text-xs">{delinqStreetOpen === g.street ? '▲' : '▼'}</span>
+                    </div>
+                  </button>
+                  {delinqStreetOpen === g.street && (
+                    <ul className="divide-y divide-gray-100">
+                      {g.residents.map((r: any) => {
+                        const phone = r.phone_primary?.replace(/\D/g, '')
+                        const waLink = phone ? `https://wa.me/55${phone}` : null
+                        return (
+                          <li key={r.id} className="px-3 py-2.5 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm text-gray-800 truncate">{r.resident_name}</p>
+                              <p className="text-xs text-gray-400">{[r.address_number, r.unit].filter(Boolean).join(' · ')} · Ref: {r.reference_month} · {r.months_overdue}m atraso</p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-sm font-bold text-red-600">{fmt(r.amount)}</span>
+                              {waLink && (
+                                <a href={waLink} target="_blank" rel="noreferrer"
+                                  className="p-1 text-green-500 hover:text-green-700 rounded transition">
+                                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.116 1.523 5.847L0 24l6.332-1.5A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.815 9.815 0 01-5.004-1.368l-.36-.213-3.726.882.924-3.638-.234-.373A9.818 9.818 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182c5.43 0 9.818 4.388 9.818 9.818 0 5.43-4.388 9.818-9.818 9.818z"/></svg>
+                                </a>
+                              )}
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

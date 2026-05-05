@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Plus, Search, X, Users } from 'lucide-react'
+import { AlertCircle, Plus, Search, X, Users, MessageCircle, MapPin } from 'lucide-react'
 import api from '../../../services/api'
 import toast from 'react-hot-toast'
 import { fmt, fmtDate, fmtDateOnly } from '../utils/formatters'
@@ -22,6 +22,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
   const [pendingNames, setPendingNames] = useState<Record<string, string>>({})
   const [delinquent, setDelinquent] = useState<DelinquentItem[]>([])
   const [delinquentNames, setDelinquentNames] = useState<Record<string, string>>({})
+  const [cobrancasSearch, setCobrancasSearch] = useState('')
   const [loadingCobrancas, setLoadingCobrancas] = useState(false)
   const [payingId, setPayingId] = useState<string | null>(null)
 
@@ -383,6 +384,19 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
         ))}
       </div>
 
+      {(cobrancasView === 'pendentes' || cobrancasView === 'inadimplentes') && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Filtrar por nome ou rua…"
+            value={cobrancasSearch}
+            onChange={e => setCobrancasSearch(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#26619c]/30"
+          />
+        </div>
+      )}
+
       <div className="flex gap-2 flex-wrap">
         <button onClick={() => { setShowCreateForm(!showCreateForm); setShowGenMonth(false); setShowDeleteMonth(false) }}
           className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-[#26619c]/40 rounded-xl py-2.5 text-sm text-[#26619c] hover:bg-blue-50 transition min-w-[120px]">
@@ -526,30 +540,63 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
       {cobrancasView === 'pendentes' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <p className="text-sm font-semibold text-gray-800">A Receber ({pendingMensalidades.length})</p>
+            <p className="text-sm font-semibold text-gray-800">
+              A Receber ({cobrancasSearch
+                ? pendingMensalidades.filter(m => {
+                    const q = cobrancasSearch.toLowerCase()
+                    return (m.resident_name ?? pendingNames[m.resident_id] ?? '').toLowerCase().includes(q)
+                      || (m.address_street ?? '').toLowerCase().includes(q)
+                  }).length
+                : pendingMensalidades.length})
+            </p>
             {loadingCobrancas && <span className="text-xs text-gray-400">Carregando…</span>}
           </div>
           {!loadingCobrancas && pendingMensalidades.length === 0 ? (
             <div className="p-6 text-center text-gray-400 text-sm">Nenhuma mensalidade pendente.</div>
           ) : (
             <ul className="divide-y divide-gray-100">
-              {pendingMensalidades.map(m => (
-                <li key={m.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-800 truncate">{pendingNames[m.resident_id] ?? '…'}</p>
-                    <p className="text-xs text-gray-500">Ref: {m.reference_month} · Venc: {m.due_date ? fmtDateOnly(m.due_date) : '—'}</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-sm font-bold text-blue-700">{fmt(m.amount)}</span>
-                    <button
-                      disabled={!openSession || payingId === m.id}
-                      onClick={() => m.id && handlePayMensalidade(m.id, { name: pendingNames[m.resident_id] ?? '' }, parseFloat(m.amount))}
-                      className="text-xs bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg transition">
-                      {payingId === m.id ? '…' : 'Pagar'}
-                    </button>
-                  </div>
-                </li>
-              ))}
+              {pendingMensalidades
+                .filter(m => {
+                  if (!cobrancasSearch) return true
+                  const q = cobrancasSearch.toLowerCase()
+                  return (m.resident_name ?? pendingNames[m.resident_id] ?? '').toLowerCase().includes(q)
+                    || (m.address_street ?? '').toLowerCase().includes(q)
+                })
+                .map(m => {
+                  const name = m.resident_name ?? pendingNames[m.resident_id] ?? '…'
+                  const phone = m.phone_primary?.replace(/\D/g, '')
+                  const waLink = phone ? `https://wa.me/55${phone}` : null
+                  const address = [m.address_street, m.address_number, m.unit].filter(Boolean).join(', ')
+                  return (
+                    <li key={m.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-800 truncate">{name}</p>
+                        {address && (
+                          <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3 shrink-0" />{address}
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-500 mt-0.5">Ref: {m.reference_month} · Venc: {m.due_date ? fmtDateOnly(m.due_date) : '—'}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {waLink && (
+                          <a href={waLink} target="_blank" rel="noreferrer"
+                            title={`WhatsApp: ${m.phone_primary}`}
+                            className="p-1.5 text-green-500 hover:text-green-700 hover:bg-green-50 rounded-lg transition">
+                            <MessageCircle className="w-4 h-4" />
+                          </a>
+                        )}
+                        <span className="text-sm font-bold text-blue-700">{fmt(m.amount)}</span>
+                        <button
+                          disabled={!openSession || payingId === m.id}
+                          onClick={() => m.id && handlePayMensalidade(m.id, { name }, parseFloat(m.amount))}
+                          className="text-xs bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg transition">
+                          {payingId === m.id ? '…' : 'Pagar'}
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
             </ul>
           )}
         </div>
@@ -560,7 +607,13 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
           <div className="px-4 py-3 border-b border-gray-100 bg-red-50">
             <p className="text-sm font-semibold text-red-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
-              Inadimplentes ({delinquent.length})
+              Inadimplentes ({cobrancasSearch
+                ? delinquent.filter(d => {
+                    const q = cobrancasSearch.toLowerCase()
+                    return (d.resident_name ?? delinquentNames[d.resident_id] ?? '').toLowerCase().includes(q)
+                      || (d.address_street ?? '').toLowerCase().includes(q)
+                  }).length
+                : delinquent.length})
             </p>
             {delinquent.length > 0 && (
               <p className="text-xs text-red-500 mt-0.5">
@@ -572,34 +625,59 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
             <div className="p-6 text-center text-gray-400 text-sm">Nenhum inadimplente.</div>
           ) : (
             <ul className="divide-y divide-gray-100">
-              {delinquent.map(d => (
-                <li key={d.id} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-800 truncate">{delinquentNames[d.resident_id] ?? '…'}</p>
-                      <p className="text-xs text-gray-500">Ref: {d.reference_month} · Venc: {fmtDateOnly(d.due_date)}</p>
-                      <span className="text-xs text-red-600 font-medium">
-                        {d.months_overdue} {d.months_overdue === 1 ? 'mês' : 'meses'} em atraso
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      <span className="text-sm font-bold text-gray-800">{fmt(d.amount)}</span>
-                      <div className="flex gap-1">
-                        <button onClick={() => loadResidentHistory(d.resident_id)}
-                          className="text-xs text-[#26619c] hover:underline flex items-center gap-1">
-                          <Users className="w-3 h-3" /> Histórico
-                        </button>
-                        <button
-                          onClick={() => handlePayMensalidade(d.id, { name: delinquentNames[d.resident_id] ?? '' }, parseFloat(d.amount as any))}
-                          disabled={!openSession || payingId === d.id}
-                          className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-2 py-1 rounded-lg transition">
-                          {payingId === d.id ? '…' : 'Pagar'}
-                        </button>
+              {delinquent
+                .filter(d => {
+                  if (!cobrancasSearch) return true
+                  const q = cobrancasSearch.toLowerCase()
+                  return (d.resident_name ?? delinquentNames[d.resident_id] ?? '').toLowerCase().includes(q)
+                    || (d.address_street ?? '').toLowerCase().includes(q)
+                })
+                .map(d => {
+                  const name = d.resident_name ?? delinquentNames[d.resident_id] ?? '…'
+                  const phone = d.phone_primary?.replace(/\D/g, '')
+                  const waLink = phone ? `https://wa.me/55${phone}` : null
+                  const address = [d.address_street, d.address_number, d.unit].filter(Boolean).join(', ')
+                  return (
+                    <li key={d.id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-800 truncate">{name}</p>
+                          {address && (
+                            <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3 shrink-0" />{address}
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-500 mt-0.5">Ref: {d.reference_month} · Venc: {fmtDateOnly(d.due_date)}</p>
+                          <span className="text-xs text-red-600 font-medium">
+                            {d.months_overdue} {d.months_overdue === 1 ? 'mês' : 'meses'} em atraso
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <span className="text-sm font-bold text-gray-800">{fmt(d.amount)}</span>
+                          <div className="flex gap-1 items-center">
+                            {waLink && (
+                              <a href={waLink} target="_blank" rel="noreferrer"
+                                title={`WhatsApp: ${d.phone_primary}`}
+                                className="p-1.5 text-green-500 hover:text-green-700 hover:bg-green-50 rounded-lg transition">
+                                <MessageCircle className="w-4 h-4" />
+                              </a>
+                            )}
+                            <button onClick={() => loadResidentHistory(d.resident_id)}
+                              className="text-xs text-[#26619c] hover:underline flex items-center gap-1">
+                              <Users className="w-3 h-3" /> Histórico
+                            </button>
+                            <button
+                              onClick={() => handlePayMensalidade(d.id, { name }, parseFloat(d.amount as any))}
+                              disabled={!openSession || payingId === d.id}
+                              className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-2 py-1 rounded-lg transition">
+                              {payingId === d.id ? '…' : 'Pagar'}
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </li>
-              ))}
+                    </li>
+                  )
+                })}
             </ul>
           )}
         </div>
