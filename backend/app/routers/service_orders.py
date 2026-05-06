@@ -217,7 +217,7 @@ async def add_comment(
 
     assoc_ids_comment, _ = await _get_group_assoc_ids(str(current.association_id), session)
     so_row = (await session.execute(text("""
-        SELECT order_number, title, created_by, assigned_to, association_id FROM service_orders
+        SELECT number, title, created_by, assigned_to, association_id FROM service_orders
         WHERE id = :id AND association_id = ANY(:aids)
     """), {"id": str(so_id), "aids": [str(x) for x in assoc_ids_comment]})).fetchone()
 
