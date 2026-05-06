@@ -187,17 +187,21 @@ async def list_proof_of_residence(
         desc = r[2] or ""
         r_name = r[7]  # from residents JOIN (NULL if resident_id is NULL)
         r_cpf = r[9]
-        if not r_name:
-            try:
-                meta = _json.loads(desc)
-                r_name = meta.get("name") or r_name
-                r_cpf = meta.get("cpf") or r_cpf
-            except (_json.JSONDecodeError, TypeError):
+        display_desc = desc
+        try:
+            meta = _json.loads(desc)
+            label = meta.get("label", "Comprovante de Residência")
+            name = meta.get("name", "")
+            display_desc = f"{label} — {name}" if name else label
+            r_name = r_name or name
+            r_cpf = r_cpf or meta.get("cpf")
+        except (_json.JSONDecodeError, TypeError):
+            if not r_name:
                 parts = desc.split(" — ", 1)
                 if len(parts) == 2:
                     r_name = parts[1]
         return {
-            "id": str(r[0]), "amount": str(r[1]), "description": desc,
+            "id": str(r[0]), "amount": str(r[1]), "description": display_desc,
             "created_at": str(r[3]), "reference_number": r[4],
             "reversed_at": str(r[5]) if r[5] else None,
             "payment_method": r[6], "resident_name": r_name,
