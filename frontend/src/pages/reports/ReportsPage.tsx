@@ -493,32 +493,67 @@ function MensalidadesKpis({ rows }: { rows: Record<string, unknown>[] }) {
 // ─── Preview table ─────────────────────────────────────────────────────────────
 
 function PreviewTable({ rows }: { rows: Record<string, unknown>[] }) {
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
+  const [showToggler, setShowToggler] = useState(false)
+
   if (!rows.length) return (
     <div className="text-center py-16 text-gray-400 text-sm">Nenhum registro encontrado.</div>
   )
-  const cols = Object.keys(rows[0])
+  const allCols = Object.keys(rows[0])
+  const cols = allCols.filter(c => !hidden.has(c))
+
+  const toggle = (c: string) => setHidden(prev => {
+    const next = new Set(prev)
+    next.has(c) ? next.delete(c) : next.add(c)
+    return next
+  })
+
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200">
-      <table className="min-w-full text-xs">
-        <thead>
-          <tr className="bg-[#1a3f6f] text-white">
-            {cols.map(c => (
-              <th key={c} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {rows.map((row, i) => (
-            <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-end">
+        <button
+          onClick={() => setShowToggler(v => !v)}
+          className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>
+          Colunas {hidden.size > 0 && <span className="ml-1 bg-[#26619c] text-white rounded-full px-1.5 py-0.5 text-[10px]">{hidden.size}</span>}
+        </button>
+      </div>
+      {showToggler && (
+        <div className="flex flex-wrap gap-1.5 p-3 bg-gray-50 rounded-xl border border-gray-200">
+          {allCols.map(c => (
+            <button
+              key={c}
+              onClick={() => toggle(c)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition ${hidden.has(c) ? 'bg-white border-gray-300 text-gray-400 line-through' : 'bg-[#26619c] border-[#26619c] text-white'}`}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="min-w-full text-xs">
+          <thead>
+            <tr className="bg-[#1a3f6f] text-white">
               {cols.map(c => (
-                <td key={c} className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[200px] truncate">
-                  {String(row[c] ?? '—')}
-                </td>
+                <th key={c} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{c}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map((row, i) => (
+              <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                {cols.map(c => (
+                  <td key={c} className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[300px] truncate">
+                    {String(row[c] ?? '—')}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
