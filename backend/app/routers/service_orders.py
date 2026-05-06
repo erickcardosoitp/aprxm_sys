@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -155,13 +155,34 @@ async def update_so(
     return {"id": str(so.id), "number": so.number, "status": so.status}
 
 
+_STATUS_EMAIL_TRIGGER = {"in_progress", "resolved", "cancelled"}
+_STATUS_PT = {"in_progress": "Em andamento", "resolved": "Concluída", "cancelled": "Cancelada"}
+_NOTIFY_EMAIL = "celiapx@institutotiapretinha.org"
+
+
+def _send_status_pdf_email(pdf_bytes: bytes, number: int, title: str, status: str) -> None:
+    from app.services.email_service import send_email
+    status_pt = _STATUS_PT.get(status, status)
+    html = f"""
+<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+  <h2 style="color:#1a3f6f">📋 OS #{number:04d} — {status_pt}</h2>
+  <p><strong>{title}</strong></p>
+  <p style="color:#6b7280;font-size:13px">O PDF da ordem de serviço está em anexo.</p>
+  <p style="color:#6b7280;font-size:13px">APRXM — Sistema de Gestão Comunitária</p>
+</div>"""
+    send_email(_NOTIFY_EMAIL, f"OS #{number:04d} — {status_pt}", html,
+               pdf_attachment=pdf_bytes, pdf_filename=f"OS-{number:04d}.pdf")
+
+
 @router.patch("/{so_id}/status", summary="Atualizar status da OS")
 async def update_status(
     so_id: UUID,
     body: UpdateStatusRequest,
+    background_tasks: BackgroundTasks,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    import asyncio as _aio
     svc = ServiceOrderService(session)
     assoc_ids, _ = await _get_group_assoc_ids(str(current.association_id), session)
     so = await svc.update_status(
@@ -174,6 +195,12 @@ async def update_status(
         cancellation_reason=body.cancellation_reason,
         association_ids=assoc_ids,
     )
+    if body.status.value in _STATUS_EMAIL_TRIGGER:
+        try:
+            pdf_bytes = await svc.generate_pdf(so_id, current.association_id, assoc_ids)
+            background_tasks.add_task(_send_status_pdf_email, pdf_bytes, so.number, so.title, body.status.value)
+        except Exception:
+            pass
     return {"id": str(so.id), "number": so.number, "status": so.status}
 
 

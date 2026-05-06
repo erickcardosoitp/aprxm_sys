@@ -1,22 +1,28 @@
 from __future__ import annotations
 
 import smtplib
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from app.config import get_settings
 
 
-def send_email(to: str, subject: str, html: str) -> None:
+def send_email(to: str, subject: str, html: str, pdf_attachment: bytes | None = None, pdf_filename: str = "documento.pdf") -> None:
     s = get_settings()
     if not s.smtp_user or not s.smtp_password:
         return
 
-    msg = MIMEMultipart("alternative")
+    msg = MIMEMultipart("mixed" if pdf_attachment else "alternative")
     msg["Subject"] = subject
     msg["From"] = s.smtp_from
     msg["To"] = to
     msg.attach(MIMEText(html, "html", "utf-8"))
+
+    if pdf_attachment:
+        part = MIMEApplication(pdf_attachment, _subtype="pdf")
+        part.add_header("Content-Disposition", "attachment", filename=pdf_filename)
+        msg.attach(part)
 
     with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=10) as srv:
         srv.starttls()
