@@ -81,22 +81,6 @@ export default function RelatoriosTab() {
     XLSX.writeFile(wb, `inadimplentes-por-rua-${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
-  // Mensalidades report
-  const [reportFromMonth, setReportFromMonth] = useState(() => {
-    const now = new Date(); const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`
-  })
-  const [reportToMonth, setReportToMonth] = useState(() => {
-    const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })
-  const [reportCep, setReportCep] = useState('')
-  const [reportPaidFrom, setReportPaidFrom] = useState('')
-  const [reportPaidTo, setReportPaidTo] = useState('')
-  const [reportPaymentMethod, setReportPaymentMethod] = useState('')
-  const [reportOrigem, setReportOrigem] = useState('all')
-  const [reportStatusFilter, setReportStatusFilter] = useState('all')
-  const [report, setReport] = useState<{ from_month: string; to_month: string; total: number; paid_count: number; pending_count: number; paid_sistema_count: number; paid_migracao_count: number; total_paid: string; total_pending: string; total_migracao: string; items: any[] } | null>(null)
-  const [loadingReport, setLoadingReport] = useState(false)
 
   // Edit tx (from review modal)
   const [editTarget, setEditTarget] = useState<Tx | null>(null)
@@ -224,37 +208,6 @@ export default function RelatoriosTab() {
       setManualReviewedBy('')
       loadSessions()
     } catch { /* ignore */ } finally { setSavingManual(false) }
-  }
-
-  const loadReport = async () => {
-    setLoadingReport(true)
-    try {
-      const params: Record<string, string> = { from_month: reportFromMonth, to_month: reportToMonth }
-      if (reportCep) params.cep = reportCep
-      if (reportPaidFrom) params.paid_from = reportPaidFrom
-      if (reportPaidTo) params.paid_to = reportPaidTo
-      if (reportPaymentMethod) params.payment_method_id = reportPaymentMethod
-      if (reportOrigem !== 'all') params.origem = reportOrigem
-      if (reportStatusFilter !== 'all') params.status = reportStatusFilter
-      const res = await api.get('/mensalidades/report', { params })
-      setReport(res.data)
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao gerar relatório.')
-    } finally { setLoadingReport(false) }
-  }
-
-  const exportReportCSV = () => {
-    if (!report) return
-    const header = 'Morador,Mês Ref,Vencimento,Valor,Status,Pago em,Forma Pgto,Origem'
-    const rows = report.items.map(i =>
-      `"${i.resident_name ?? ''}",${i.reference_month},${i.due_date ?? ''},${i.amount},${i.status === 'paid' ? 'Pago' : 'Pendente'},${i.paid_at ?? ''},"${i.payment_method_name ?? ''}",${i.origem === 'sistema' ? 'Sistema' : 'Migração'}`
-    )
-    const csv = [header, ...rows].join('\n')
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = `mensalidades_${report.from_month}_${report.to_month}.csv`
-    a.click(); URL.revokeObjectURL(url)
   }
 
   const handleEditTx = async () => {
@@ -533,143 +486,6 @@ export default function RelatoriosTab() {
             </table>
           </div>
         )}
-      </div>
-
-      {/* Relatório de Mensalidades */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-800">Relatório de Mensalidades</h3>
-        </div>
-        <div className="p-4 flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Mês de</label>
-              <input type="month" value={reportFromMonth} onChange={e => setReportFromMonth(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Mês até</label>
-              <input type="month" value={reportToMonth} onChange={e => setReportToMonth(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Pago de</label>
-              <input type="date" value={reportPaidFrom} onChange={e => setReportPaidFrom(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Pago até</label>
-              <input type="date" value={reportPaidTo} onChange={e => setReportPaidTo(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">CEP</label>
-              <input type="text" placeholder="ex: 21" value={reportCep} onChange={e => setReportCep(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Forma de Pagamento</label>
-              <select value={reportPaymentMethod} onChange={e => setReportPaymentMethod(e.target.value)} className={inputCls}>
-                <option value="">Todas</option>
-                {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Origem</label>
-              <select value={reportOrigem} onChange={e => setReportOrigem(e.target.value)} className={inputCls}>
-                <option value="all">Todas</option>
-                <option value="sistema">Sistema</option>
-                <option value="migracao">Migração</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Status</label>
-              <select value={reportStatusFilter} onChange={e => setReportStatusFilter(e.target.value)} className={inputCls}>
-                <option value="all">Todos</option>
-                <option value="paid">Pago</option>
-                <option value="pending">Pendente</option>
-              </select>
-            </div>
-          </div>
-          <button onClick={loadReport} disabled={loadingReport}
-            className="bg-[#26619c] hover:bg-[#1a4f87] disabled:opacity-50 text-white py-2 rounded-xl text-sm font-medium transition">
-            {loadingReport ? 'Gerando…' : 'Gerar Relatório'}
-          </button>
-          {report && (
-            <div className="flex flex-col gap-2">
-              <div className="grid grid-cols-3 gap-2">
-                <div className="bg-green-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-green-600">Pagos</p>
-                  <p className="text-lg font-bold text-green-700">{report.paid_count}</p>
-                  <p className="text-xs text-green-600">{fmt(report.total_paid)}</p>
-                </div>
-                <div className="bg-red-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-red-500">Pendentes</p>
-                  <p className="text-lg font-bold text-red-600">{report.pending_count}</p>
-                  <p className="text-xs text-red-500">{fmt(report.total_pending)}</p>
-                </div>
-                <div className="bg-blue-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-blue-500">Total</p>
-                  <p className="text-lg font-bold text-blue-700">{report.total}</p>
-                  <p className="text-xs text-blue-500">registros</p>
-                </div>
-                <div className="bg-indigo-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-indigo-600">Sistema</p>
-                  <p className="text-lg font-bold text-indigo-700">{report.paid_sistema_count}</p>
-                  <p className="text-xs text-indigo-500">pagos</p>
-                </div>
-                <div className="bg-purple-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-purple-600">Migração</p>
-                  <p className="text-lg font-bold text-purple-700">{report.paid_migracao_count}</p>
-                  <p className="text-xs text-purple-500">{fmt(report.total_migracao)}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-500">R$ Total pago</p>
-                  <p className="text-sm font-bold text-gray-800">{fmt(report.total_paid)}</p>
-                  <p className="text-xs text-gray-400">sistema + migração</p>
-                </div>
-              </div>
-              <button onClick={exportReportCSV}
-                className="flex items-center justify-center gap-2 border border-[#26619c] text-[#26619c] py-2 rounded-xl text-sm font-medium hover:bg-blue-50 transition">
-                <Upload className="w-4 h-4" />
-                Exportar CSV
-              </button>
-              <div className="max-h-72 overflow-y-auto rounded-lg border border-gray-200">
-                <table className="w-full text-xs min-w-[700px]">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Morador</th>
-                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Mês Ref.</th>
-                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Vencimento</th>
-                      <th className="text-right px-3 py-2 text-gray-500 font-medium">Valor</th>
-                      <th className="text-center px-3 py-2 text-gray-500 font-medium">Status</th>
-                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Pago em</th>
-                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Forma Pgto</th>
-                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Origem</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {report.items.map(i => (
-                      <tr key={i.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-gray-700 truncate max-w-[130px]">{i.resident_name}</td>
-                        <td className="px-3 py-2 text-gray-500">{i.reference_month}</td>
-                        <td className="px-3 py-2 text-gray-500">{i.due_date ? new Date(i.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-                        <td className="px-3 py-2 text-right font-medium text-gray-800">{fmt(i.amount)}</td>
-                        <td className="px-3 py-2 text-center">
-                          <span className={`px-1.5 py-0.5 rounded-full font-medium text-xs ${i.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                            {i.status === 'paid' ? 'Pago' : 'Pendente'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-gray-500">{i.paid_at ? new Date(i.paid_at).toLocaleDateString('pt-BR') : '—'}</td>
-                        <td className="px-3 py-2 text-gray-500">{i.payment_method_name ?? '—'}</td>
-                        <td className="px-3 py-2">
-                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${i.origem === 'sistema' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
-                            {i.origem === 'sistema' ? 'Sistema' : 'Migração'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Inadimplentes por Rua */}

@@ -273,8 +273,8 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
         </div>
       </div>
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Mês ref. (YYYY-MM)</label>
-        <input type="text" placeholder="2025-01" value={filters.ref_month} onChange={set('ref_month')} className={inputCls} />
+        <label className="block text-xs text-gray-500 mb-1">Mês ref.</label>
+        <input type="month" value={filters.ref_month} onChange={set('ref_month')} className={inputCls} />
       </div>
     </div>
   )
@@ -460,6 +460,36 @@ function PackagesGroupedTable({ rows }: { rows: Record<string, unknown>[] }) {
   )
 }
 
+// ─── Mensalidades KPIs ────────────────────────────────────────────────────────
+
+function MensalidadesKpis({ rows }: { rows: Record<string, unknown>[] }) {
+  let paid = 0, pending = 0, overdue = 0, totalPaid = 0
+  for (const r of rows) {
+    const st = String(r['Status'] ?? '')
+    if (st === 'Pago') { paid++; totalPaid += parseFloat(String(r['Valor (R$)'] ?? '0')) }
+    else if (st === 'Pendente') pending++
+    else if (st === 'Em atraso') overdue++
+  }
+  const fmtR = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  const kpis = [
+    { label: 'Pagos', value: paid, sub: fmtR(totalPaid), bg: 'bg-green-50', text: 'text-green-700', sub2: 'text-green-600' },
+    { label: 'Pendentes', value: pending, sub: null, bg: 'bg-yellow-50', text: 'text-yellow-700', sub2: '' },
+    { label: 'Em atraso', value: overdue, sub: null, bg: 'bg-red-50', text: 'text-red-700', sub2: '' },
+    { label: 'Total', value: rows.length, sub: null, bg: 'bg-blue-50', text: 'text-blue-700', sub2: '' },
+  ]
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+      {kpis.map(k => (
+        <div key={k.label} className={`${k.bg} rounded-lg p-3`}>
+          <p className={`text-[10px] uppercase tracking-wide font-semibold ${k.text} opacity-70`}>{k.label}</p>
+          <p className={`text-2xl font-bold ${k.text}`}>{k.value}</p>
+          {k.sub && <p className={`text-xs font-medium ${k.sub2}`}>{k.sub}</p>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Preview table ─────────────────────────────────────────────────────────────
 
 function PreviewTable({ rows }: { rows: Record<string, unknown>[] }) {
@@ -567,9 +597,8 @@ export default function ReportsPage() {
       </div>
 
       {/* Module selector */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Tipo de relatório</p>
-        <div className="flex flex-wrap gap-2">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="flex overflow-x-auto scrollbar-none">
           {MODULES.map(m => {
             const Icon = m.icon
             const active = m.key === selected
@@ -577,10 +606,10 @@ export default function ReportsPage() {
               <button
                 key={m.key}
                 onClick={() => handleModuleChange(m.key)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition border ${
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition border-b-2 shrink-0 ${
                   active
-                    ? 'bg-[#26619c] text-white border-[#26619c]'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-[#26619c]/40 hover:text-[#26619c]'
+                    ? 'border-[#26619c] text-[#26619c] bg-blue-50/60'
+                    : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -642,6 +671,9 @@ export default function ReportsPage() {
             </div>
             {selected === 'packages' && rows.length > 0 && (
               <PackagesKpis rows={rows} activeFilter={pkgStatusFilter} onFilter={setPkgStatusFilter} />
+            )}
+            {selected === 'mensalidades' && rows.length > 0 && (
+              <MensalidadesKpis rows={rows} />
             )}
             {selected === 'packages'
               ? <PackagesGroupedTable rows={visibleRows} />

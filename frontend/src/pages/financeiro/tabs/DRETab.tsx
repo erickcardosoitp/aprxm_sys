@@ -129,7 +129,7 @@ export default function DRETab() {
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className={`grid gap-2 ${dreFilter === 'all' ? 'grid-cols-4' : 'grid-cols-2'}`}>
                 {dreFilter !== 'despesas' && (
                   <div className="bg-green-50 rounded-lg p-3 text-center">
                     <p className="text-[10px] text-green-600 font-medium mb-1">RECEITAS</p>
@@ -142,14 +142,23 @@ export default function DRETab() {
                     <p className="text-sm font-bold text-red-700">{fmt(totalDesp)}</p>
                   </div>
                 )}
-                {dreFilter === 'all' && (
-                  <div className={`rounded-lg p-3 text-center ${resultado >= 0 ? 'bg-blue-50' : 'bg-orange-50'}`}>
-                    <p className={`text-[10px] font-medium mb-1 ${resultado >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                      {resultado >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'}
-                    </p>
-                    <p className={`text-sm font-bold ${resultado >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>{fmt(Math.abs(resultado))}</p>
-                  </div>
-                )}
+                {dreFilter === 'all' && (() => {
+                  const margem = totalRec > 0 ? ((resultado / totalRec) * 100) : 0
+                  return (
+                    <>
+                      <div className={`rounded-lg p-3 text-center ${resultado >= 0 ? 'bg-blue-50' : 'bg-orange-50'}`}>
+                        <p className={`text-[10px] font-medium mb-1 ${resultado >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                          {resultado >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'}
+                        </p>
+                        <p className={`text-sm font-bold ${resultado >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>{fmt(Math.abs(resultado))}</p>
+                      </div>
+                      <div className={`rounded-lg p-3 text-center ${margem >= 0 ? 'bg-indigo-50' : 'bg-yellow-50'}`}>
+                        <p className={`text-[10px] font-medium mb-1 ${margem >= 0 ? 'text-indigo-600' : 'text-yellow-700'}`}>MARGEM</p>
+                        <p className={`text-sm font-bold ${margem >= 0 ? 'text-indigo-700' : 'text-yellow-700'}`}>{margem.toFixed(1)}%</p>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             </div>
 
