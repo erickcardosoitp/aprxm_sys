@@ -181,17 +181,31 @@ async def list_proof_of_residence(
         """),
         {"aid": str(current.association_id), "lim": limit, "off": offset},
     )
-    rows = result.fetchall()
-    return [
-        {
-            "id": str(r[0]), "amount": str(r[1]), "description": r[2],
+    import json as _json
+
+    def _parse_proof(r) -> dict:
+        desc = r[2] or ""
+        r_name = r[7]  # from residents JOIN (NULL if resident_id is NULL)
+        r_cpf = r[9]
+        if not r_name:
+            try:
+                meta = _json.loads(desc)
+                r_name = meta.get("name") or r_name
+                r_cpf = meta.get("cpf") or r_cpf
+            except (_json.JSONDecodeError, TypeError):
+                parts = desc.split(" — ", 1)
+                if len(parts) == 2:
+                    r_name = parts[1]
+        return {
+            "id": str(r[0]), "amount": str(r[1]), "description": desc,
             "created_at": str(r[3]), "reference_number": r[4],
             "reversed_at": str(r[5]) if r[5] else None,
-            "payment_method": r[6], "resident_name": r[7],
-            "unit": r[8], "cpf": r[9], "issued_by": r[10],
+            "payment_method": r[6], "resident_name": r_name,
+            "unit": r[8], "cpf": r_cpf, "issued_by": r[10],
         }
-        for r in rows
-    ]
+
+    rows = result.fetchall()
+    return [_parse_proof(r) for r in rows]
 
 
 @router.post("/proof-of-residence/{tx_id}/reissue", summary="Re-emitir comprovante corrigido (estorna o anterior)")
@@ -277,12 +291,14 @@ async def reprint_proof_of_residence(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
+    import json as _json
     from sqlalchemy import text as sa_text
     row = (await session.execute(sa_text("""
-        SELECT t.reference_number, t.resident_id, t.reversed_at, t.income_subtype
+        SELECT t.reference_number, t.resident_id, t.reversed_at, t.income_subtype,
+               t.description, t.association_id
           FROM transactions t
-         WHERE t.id = :tid AND t.association_id = :aid
-    """), {"tid": str(tx_id), "aid": str(current.association_id)})).fetchone()
+         WHERE t.id = :tid
+    """), {"tid": str(tx_id)})).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Comprovante não encontrado.")
     if row[2] is not None:
@@ -292,19 +308,47 @@ async def reprint_proof_of_residence(
 
     barcode_code = row[0] or ""
     resident_id = row[1]
+    description = row[4] or ""
+    tx_assoc_id = str(row[5])
 
-    res_row = None
-    if resident_id:
-        res_row = (await session.execute(sa_text("""
-            SELECT full_name, cpf, address_neighborhood, address_cep, address_street, address_number
-              FROM residents WHERE id = :rid
-        """), {"rid": str(resident_id)})).fetchone()
+    # Resolve resident data: prefer JSON metadata in description, fallback to residents table
+    def _s(v) -> str:
+        return str(v) if v is not None else ""
+
+    r_name = "(nao identificado)"
+    r_cpf = r_neighborhood = r_cep = r_street = r_number = ""
+
+    try:
+        meta = _json.loads(description)
+        r_name = meta.get("name") or r_name
+        r_cpf = meta.get("cpf", "")
+        r_neighborhood = meta.get("neighborhood", "")
+        r_cep = meta.get("cep", "")
+        r_street = meta.get("street", "")
+        r_number = meta.get("number", "")
+    except (_json.JSONDecodeError, TypeError):
+        # Legacy plain-text description: "Comprovante de Residência — Name"
+        parts = description.split(" — ", 1)
+        if len(parts) == 2:
+            r_name = parts[1]
+        if resident_id:
+            res_row = (await session.execute(sa_text("""
+                SELECT full_name, cpf, address_neighborhood, address_cep, address_street, address_number
+                  FROM residents WHERE id = :rid
+            """), {"rid": str(resident_id)})).fetchone()
+            if res_row:
+                r_name = _s(res_row[0]) or r_name
+                r_cpf = _s(res_row[1])
+                r_neighborhood = _s(res_row[2])
+                r_cep = _s(res_row[3])
+                r_street = _s(res_row[4])
+                r_number = _s(res_row[5])
 
     cfg = (await session.execute(sa_text("""
         SELECT assoc_logo_url, president_signature_url, president_name,
                community_name, assoc_address, assoc_cep
           FROM association_settings WHERE association_id = :aid
-    """), {"aid": str(current.association_id)})).fetchone()
+    """), {"aid": tx_assoc_id})).fetchone()
 
     if not cfg or not cfg[0] or not cfg[1]:
         raise HTTPException(status_code=422, detail="Configurações da associação incompletas.")
@@ -316,18 +360,15 @@ async def reprint_proof_of_residence(
     if logo_resp.status_code != 200 or sig_resp.status_code != 200:
         raise HTTPException(status_code=422, detail="Falha ao baixar logo/assinatura.")
 
-    def _s(v) -> str:
-        return str(v) if v is not None else ""
-
     svc = FinanceService(session)
     barcode_bytes = svc._build_barcode_image(barcode_code)
     pdf_bytes = svc._build_proof_pdf(
-        resident_name=_s(res_row[0]) or "(nao identificado)" if res_row else "(nao identificado)",
-        resident_cpf=_s(res_row[1]) if res_row else "",
-        resident_neighborhood=_s(res_row[2]) if res_row else "",
-        resident_cep=_s(res_row[3]) if res_row else "",
-        resident_address_street=_s(res_row[4]) if res_row else "",
-        resident_address_number=_s(res_row[5]) if res_row else "",
+        resident_name=r_name,
+        resident_cpf=r_cpf,
+        resident_neighborhood=r_neighborhood,
+        resident_cep=r_cep,
+        resident_address_street=r_street,
+        resident_address_number=r_number,
         community_name=cfg[3] or "",
         assoc_address=cfg[4] or "",
         assoc_cep=cfg[5] or "",

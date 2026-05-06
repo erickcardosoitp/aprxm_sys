@@ -1,3 +1,4 @@
+import json
 import random
 import string
 from datetime import datetime
@@ -608,13 +609,24 @@ class FinanceService:
         else:
             cash_session = await self.get_open_session(association_id, preferred_by=issued_by, strict_owner=True)
 
+        _proof_meta = json.dumps({
+            "label": "Comprovante de Residência" + (" (Isento)" if isento else ""),
+            "name": resident_name,
+            "cpf": resident_cpf,
+            "neighborhood": resident_neighborhood,
+            "cep": resident_cep,
+            "street": resident_address_street,
+            "number": resident_address_number,
+            "complement": resident_address_complement,
+        }, ensure_ascii=False)
+
         if isento:
             tx = await self.register_transaction(
                 association_id=association_id,
                 cash_session_id=cash_session.id,
                 tx_type=TransactionType.income,
                 amount=Decimal("0.00"),
-                description=f"Comprovante de Residência (Isento) — {resident_name}",
+                description=_proof_meta,
                 created_by=issued_by,
                 income_subtype=IncomeSubtype.proof_of_residence,
                 payment_method_id=payment_method_id,
@@ -628,7 +640,7 @@ class FinanceService:
                 cash_session_id=cash_session.id,
                 tx_type=TransactionType.income,
                 amount=amount,
-                description=f"Comprovante de Residência — {resident_name}",
+                description=_proof_meta,
                 created_by=issued_by,
                 income_subtype=IncomeSubtype.proof_of_residence,
                 payment_method_id=payment_method_id,
