@@ -316,15 +316,18 @@ async def reprint_proof_of_residence(
     if logo_resp.status_code != 200 or sig_resp.status_code != 200:
         raise HTTPException(status_code=422, detail="Falha ao baixar logo/assinatura.")
 
+    def _s(v) -> str:
+        return str(v) if v is not None else ""
+
     svc = FinanceService(session)
     barcode_bytes = svc._build_barcode_image(barcode_code)
     pdf_bytes = svc._build_proof_pdf(
-        resident_name=res_row[0] if res_row else "(nao identificado)",
-        resident_cpf=res_row[1] if res_row else "",
-        resident_neighborhood=res_row[2] if res_row else "",
-        resident_cep=res_row[3] if res_row else "",
-        resident_address_street=res_row[4] if res_row else "",
-        resident_address_number=res_row[5] if res_row else "",
+        resident_name=_s(res_row[0]) or "(nao identificado)" if res_row else "(nao identificado)",
+        resident_cpf=_s(res_row[1]) if res_row else "",
+        resident_neighborhood=_s(res_row[2]) if res_row else "",
+        resident_cep=_s(res_row[3]) if res_row else "",
+        resident_address_street=_s(res_row[4]) if res_row else "",
+        resident_address_number=_s(res_row[5]) if res_row else "",
         community_name=cfg[3] or "",
         assoc_address=cfg[4] or "",
         assoc_cep=cfg[5] or "",
