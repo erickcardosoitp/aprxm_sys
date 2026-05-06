@@ -150,7 +150,8 @@ async def update_so(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = ServiceOrderService(session)
-    so = await svc.update(so_id, current.association_id, body.model_dump(exclude_none=True))
+    assoc_ids, _ = await _get_group_assoc_ids(str(current.association_id), session)
+    so = await svc.update(so_id, current.association_id, body.model_dump(exclude_none=True), association_ids=assoc_ids)
     return {"id": str(so.id), "number": so.number, "status": so.status}
 
 
@@ -162,6 +163,7 @@ async def update_status(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = ServiceOrderService(session)
+    assoc_ids, _ = await _get_group_assoc_ids(str(current.association_id), session)
     so = await svc.update_status(
         so_id=so_id,
         association_id=current.association_id,
@@ -170,6 +172,7 @@ async def update_status(
         notes=body.notes,
         resolution_notes=body.resolution_notes,
         cancellation_reason=body.cancellation_reason,
+        association_ids=assoc_ids,
     )
     return {"id": str(so.id), "number": so.number, "status": so.status}
 
@@ -185,10 +188,11 @@ async def add_comment(
     import asyncio as _asyncio
     from app.routers.notifications import create_notification as _notif
 
+    assoc_ids_comment, _ = await _get_group_assoc_ids(str(current.association_id), session)
     so_row = (await session.execute(text("""
-        SELECT order_number, title, created_by, assigned_to FROM service_orders
-        WHERE id = :id AND association_id = :aid
-    """), {"id": str(so_id), "aid": str(current.association_id)})).fetchone()
+        SELECT order_number, title, created_by, assigned_to, association_id FROM service_orders
+        WHERE id = :id AND association_id = ANY(:aids)
+    """), {"id": str(so_id), "aids": [str(x) for x in assoc_ids_comment]})).fetchone()
 
     result = await session.execute(
         text("""
@@ -199,7 +203,7 @@ async def add_comment(
         """),
         {
             "so_id": str(so_id),
-            "assoc_id": str(current.association_id),
+            "assoc_id": str(so_row[4]) if so_row else str(current.association_id),
             "user_id": str(current.user_id),
             "comment": body.comment,
             "attachments": json.dumps(body.attachment_urls),
@@ -442,7 +446,8 @@ async def generate_pdf(
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     svc = ServiceOrderService(session)
-    pdf_bytes = await svc.generate_pdf(so_id, current.association_id)
+    assoc_ids, _ = await _get_group_assoc_ids(str(current.association_id), session)
+    pdf_bytes = await svc.generate_pdf(so_id, current.association_id, association_ids=assoc_ids)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -486,9 +491,9 @@ async def list_tasks(
                t.created_at, u.full_name AS created_by_name, t.updated_at
         FROM service_order_tasks t
         JOIN users u ON u.id = t.created_by
-        WHERE t.service_order_id = :so_id AND t.association_id = :aid
+        WHERE t.service_order_id = :so_id AND t.association_id = ANY(:aids)
         ORDER BY t.due_date ASC NULLS LAST, t.created_at ASC
-    """), {"so_id": str(so_id), "aid": str(current.association_id)})
+    """), {"so_id": str(so_id), "aids": [str(x) for x in (await _get_group_assoc_ids(str(current.association_id), session))[0]]})
     return [{
         "id": str(r[0]), "title": r[1], "notes": r[2], "priority": r[3],
         "status": r[4], "due_date": str(r[5]) if r[5] else None,
@@ -559,7 +564,8 @@ async def update_task(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import json as _json
-    sets, params = [], {"task_id": str(task_id), "so_id": str(so_id), "aid": str(current.association_id)}
+    so_assoc = (await session.execute(text("SELECT association_id FROM service_orders WHERE id = :id AND association_id = ANY(:aids)"), {"id": str(so_id), "aids": [str(x) for x in (await _get_group_assoc_ids(str(current.association_id), session))[0]]})).scalar()
+    sets, params = [], {"task_id": str(task_id), "so_id": str(so_id), "aid": str(so_assoc or current.association_id)}
     if body.title is not None: sets.append("title = :title"); params["title"] = body.title
     if body.notes is not None: sets.append("notes = :notes"); params["notes"] = body.notes
     if body.priority is not None: sets.append("priority = :priority"); params["priority"] = body.priority
@@ -582,9 +588,10 @@ async def delete_task(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    so_assoc_del = (await session.execute(text("SELECT association_id FROM service_orders WHERE id = :id AND association_id = ANY(:aids)"), {"id": str(so_id), "aids": [str(x) for x in (await _get_group_assoc_ids(str(current.association_id), session))[0]]})).scalar()
     await session.execute(text(
         "DELETE FROM service_order_tasks WHERE id = :task_id AND service_order_id = :so_id AND association_id = :aid"
-    ), {"task_id": str(task_id), "so_id": str(so_id), "aid": str(current.association_id)})
+    ), {"task_id": str(task_id), "so_id": str(so_id), "aid": str(so_assoc_del or current.association_id)})
     await session.commit()
     return {"ok": True}
 

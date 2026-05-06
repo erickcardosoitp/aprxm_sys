@@ -95,8 +95,8 @@ class ServiceOrderService:
         await self._session.flush()
         return so
 
-    async def update(self, so_id: UUID, association_id: UUID, data: dict) -> ServiceOrder:
-        so = await self._get(so_id, association_id)
+    async def update(self, so_id: UUID, association_id: UUID, data: dict, association_ids: list[UUID] | None = None) -> ServiceOrder:
+        so = await self._get(so_id, association_id, association_ids)
         for k, v in data.items():
             if hasattr(so, k):
                 setattr(so, k, v)
@@ -114,8 +114,9 @@ class ServiceOrderService:
         notes: str | None = None,
         resolution_notes: str | None = None,
         cancellation_reason: str | None = None,
+        association_ids: list[UUID] | None = None,
     ) -> ServiceOrder:
-        so = await self._get(so_id, association_id)
+        so = await self._get(so_id, association_id, association_ids)
         old_status = so.status
 
         if new_status == ServiceOrderStatus.resolved:
@@ -148,11 +149,11 @@ class ServiceOrderService:
         await self._session.flush()
         return so
 
-    async def generate_pdf(self, so_id: UUID, association_id: UUID) -> bytes:
+    async def generate_pdf(self, so_id: UUID, association_id: UUID, association_ids: list[UUID] | None = None) -> bytes:
         """Generate a PDF oficium for the service order using fpdf2."""
         from fpdf import FPDF  # type: ignore
 
-        so = await self._get(so_id, association_id)
+        so = await self._get(so_id, association_id, association_ids)
 
         pdf = FPDF()
         pdf.add_page()
@@ -189,10 +190,11 @@ class ServiceOrderService:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def _get(self, so_id: UUID, association_id: UUID) -> ServiceOrder:
+    async def _get(self, so_id: UUID, association_id: UUID, association_ids: list[UUID] | None = None) -> ServiceOrder:
+        ids = association_ids if association_ids else [association_id]
         stmt = select(ServiceOrder).where(
             ServiceOrder.id == so_id,
-            ServiceOrder.association_id == association_id,
+            ServiceOrder.association_id.in_(ids),
         )
         result = await self._session.execute(stmt)
         so = result.scalar_one_or_none()
