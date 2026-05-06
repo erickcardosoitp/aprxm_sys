@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as XLSX from 'xlsx'
 import { Download, DollarSign, Users, Package, FileText, CreditCard, ClipboardList, Search, ChevronDown, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
@@ -492,8 +493,11 @@ function MensalidadesKpis({ rows }: { rows: Record<string, unknown>[] }) {
 
 // ─── Preview table ─────────────────────────────────────────────────────────────
 
-function PreviewTable({ rows }: { rows: Record<string, unknown>[] }) {
-  const [hidden, setHidden] = useState<Set<string>>(new Set())
+function PreviewTable({ rows, hidden, onToggle }: {
+  rows: Record<string, unknown>[]
+  hidden: Set<string>
+  onToggle: (c: string) => void
+}) {
   const [showToggler, setShowToggler] = useState(false)
 
   if (!rows.length) return (
@@ -501,12 +505,6 @@ function PreviewTable({ rows }: { rows: Record<string, unknown>[] }) {
   )
   const allCols = Object.keys(rows[0])
   const cols = allCols.filter(c => !hidden.has(c))
-
-  const toggle = (c: string) => setHidden(prev => {
-    const next = new Set(prev)
-    next.has(c) ? next.delete(c) : next.add(c)
-    return next
-  })
 
   return (
     <div className="flex flex-col gap-2">
@@ -524,7 +522,7 @@ function PreviewTable({ rows }: { rows: Record<string, unknown>[] }) {
           {allCols.map(c => (
             <button
               key={c}
-              onClick={() => toggle(c)}
+              onClick={() => onToggle(c)}
               className={`text-xs px-2.5 py-1 rounded-full border transition ${hidden.has(c) ? 'bg-white border-gray-300 text-gray-400 line-through' : 'bg-[#26619c] border-[#26619c] text-white'}`}
             >
               {c}
@@ -568,6 +566,8 @@ export default function ReportsPage() {
   const [exporting, setExporting] = useState(false)
   const [operators, setOperators] = useState<{ id: string; full_name: string }[]>([])
   const [pkgStatusFilter, setPkgStatusFilter] = useState('')
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set())
+  const toggleCol = (c: string) => setHiddenCols(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n })
 
   useEffect(() => {
     api.get('/admin/users', { params: { active_only: true } })
@@ -581,11 +581,13 @@ export default function ReportsPage() {
     setSelected(key)
     setRows(null)
     setPkgStatusFilter('')
+    setHiddenCols(new Set())
   }
 
   const handlePreview = async () => {
     setPreviewing(true)
     setRows(null)
+    setHiddenCols(new Set())
     try {
       const params = filtersToParams(selected, filters)
       const res = await api.get(`/reports/${mod.endpoint}/preview`, { params })
@@ -597,28 +599,19 @@ export default function ReportsPage() {
     }
   }
 
-  const handleExport = async () => {
+  const handleExport = () => {
+    if (!rows?.length) return
     setExporting(true)
     try {
-      const params = filtersToParams(selected, filters)
-      const res = await api.get(`/reports/${mod.endpoint}`, { params, responseType: 'blob' })
-      const url = URL.createObjectURL(new Blob([res.data], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      }))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${mod.endpoint}.xlsx`
-      a.click()
-      URL.revokeObjectURL(url)
+      const visibleCols = Object.keys(rows[0]).filter(c => !hiddenCols.has(c))
+      const data = rows.map(r => Object.fromEntries(visibleCols.map(c => [c, r[c] ?? ''])))
+      const ws = XLSX.utils.json_to_sheet(data, { header: visibleCols })
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, mod.label.slice(0, 31))
+      XLSX.writeFile(wb, `${mod.endpoint}.xlsx`)
       toast.success(`${mod.label} exportado!`)
-    } catch (e: any) {
-      let msg = 'Erro ao exportar.'
-      if (e.response?.data instanceof Blob) {
-        try { const t = await e.response.data.text(); msg = JSON.parse(t)?.detail ?? msg } catch { /* noop */ }
-      } else {
-        msg = e.response?.data?.detail ?? msg
-      }
-      toast.error(msg)
+    } catch {
+      toast.error('Erro ao exportar.')
     } finally {
       setExporting(false)
     }
@@ -712,7 +705,7 @@ export default function ReportsPage() {
             )}
             {selected === 'packages'
               ? <PackagesGroupedTable rows={visibleRows} />
-              : <PreviewTable rows={visibleRows} />
+              : <PreviewTable rows={visibleRows} hidden={hiddenCols} onToggle={toggleCol} />
             }
           </div>
         )

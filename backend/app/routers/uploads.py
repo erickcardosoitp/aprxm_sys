@@ -6,7 +6,15 @@ from app.services.storage_service import StorageService
 
 router = APIRouter(prefix="/uploads", tags=["Uploads"])
 
-ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_TYPES = {
+    "image/jpeg", "image/png", "image/webp", "image/gif",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv", "text/plain",
+}
 ALLOWED_AUDIO = {"audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/aac"}
 MAX_SIZE_BYTES = 10 * 1024 * 1024
 MAX_AUDIO_BYTES = 5 * 1024 * 1024
