@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date as date_type, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -115,7 +116,7 @@ async def create_task(
            due_date, reminder_at, checklist, attachment_urls, service_order_id, service_order_title, created_by)
         VALUES
           (:aid, :title, :desc, :at, :at_name,
-           CAST(:due AS date), CAST(:reminder AS timestamptz),
+           :due, :reminder,
            CAST(:checklist AS jsonb), CAST(:attachments AS jsonb),
            :so_id, :so_title, :created_by)
         RETURNING id, title, description, assigned_to, assigned_to_name,
@@ -128,8 +129,8 @@ async def create_task(
         "desc": body.description,
         "at": str(body.assigned_to) if body.assigned_to else None,
         "at_name": body.assigned_to_name,
-        "due": body.due_date or None,
-        "reminder": body.reminder_at or None,
+        "due": date_type.fromisoformat(body.due_date) if body.due_date else None,
+        "reminder": datetime.fromisoformat(body.reminder_at) if body.reminder_at else None,
         "checklist": json.dumps(body.checklist),
         "attachments": json.dumps(body.attachment_urls),
         "so_id": str(body.service_order_id) if body.service_order_id else None,
@@ -153,8 +154,8 @@ async def update_task(
     if body.description is not None: sets.append("description = :desc"); params["desc"] = body.description
     if body.assigned_to is not None: sets.append("assigned_to = :at"); params["at"] = str(body.assigned_to)
     if body.assigned_to_name is not None: sets.append("assigned_to_name = :at_name"); params["at_name"] = body.assigned_to_name
-    if body.due_date is not None: sets.append("due_date = CAST(:due AS date)"); params["due"] = body.due_date
-    if body.reminder_at is not None: sets.append("reminder_at = CAST(:reminder AS timestamptz)"); params["reminder"] = body.reminder_at
+    if body.due_date is not None: sets.append("due_date = :due"); params["due"] = date_type.fromisoformat(body.due_date)
+    if body.reminder_at is not None: sets.append("reminder_at = :reminder"); params["reminder"] = datetime.fromisoformat(body.reminder_at)
     if body.checklist is not None: sets.append("checklist = CAST(:checklist AS jsonb)"); params["checklist"] = json.dumps(body.checklist)
     if body.attachment_urls is not None: sets.append("attachment_urls = CAST(:attachments AS jsonb)"); params["attachments"] = json.dumps(body.attachment_urls)
     if body.status is not None: sets.append("status = :status"); params["status"] = body.status
