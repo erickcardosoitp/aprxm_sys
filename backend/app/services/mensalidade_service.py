@@ -247,7 +247,7 @@ class MensalidadeService:
                   )
                 LIMIT 1
             """),
-            {"aid": str(association_id), "rid": str(resident_id), "cutoff": str(grace_cutoff)},
+            {"aid": str(association_id), "rid": str(resident_id), "cutoff": grace_cutoff},
         )
         return row.fetchone() is not None
 
@@ -274,7 +274,7 @@ class MensalidadeService:
                   )
                 ORDER BY m.due_date ASC
             """),
-            {"aid": str(association_id), "cutoff": str(grace_cutoff)},
+            {"aid": str(association_id), "cutoff": grace_cutoff},
         )
         rows = result.fetchall()
         delinquent = []
