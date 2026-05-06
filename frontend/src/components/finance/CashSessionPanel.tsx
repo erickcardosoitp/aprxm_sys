@@ -21,6 +21,7 @@ type CloseStep = 'blind' | 'troco' | 'review' | 'sign' | 'done'
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(v: number) {
+  if (!isFinite(v)) return '0,00'
   return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 

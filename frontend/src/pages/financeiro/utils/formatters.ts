@@ -1,5 +1,8 @@
-export const fmt = (v: string | number) =>
-  `R$ ${parseFloat(String(v)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+export const fmt = (v: string | number) => {
+  const n = parseFloat(String(v))
+  if (!isFinite(n)) return 'R$ 0,00'
+  return `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
 
 export const fmtDate = (s: string) => {
   const d = new Date(s)
