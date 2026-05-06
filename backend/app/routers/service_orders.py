@@ -284,6 +284,7 @@ async def list_comments(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    assoc_ids, _ = await _get_group_assoc_ids(str(current.association_id), session)
     result = await session.execute(
         text("""
             SELECT c.id, c.comment, c.attachment_urls, c.created_at,
@@ -291,10 +292,10 @@ async def list_comments(
             FROM service_order_comments c
             JOIN users u ON u.id = c.created_by
             WHERE c.service_order_id = :so_id
-              AND c.association_id = :assoc_id
+              AND c.association_id = ANY(:aids)
             ORDER BY c.created_at ASC
         """),
-        {"so_id": str(so_id), "assoc_id": str(current.association_id)},
+        {"so_id": str(so_id), "aids": [str(x) for x in assoc_ids]},
     )
     rows = result.fetchall()
     return [
@@ -465,10 +466,11 @@ async def get_so(
 ) -> dict:
     from app.models.service_order import ServiceOrder
     from sqlmodel import select
+    assoc_ids, _ = await _get_group_assoc_ids(str(current.association_id), session)
     result = await session.execute(
         select(ServiceOrder).where(
             ServiceOrder.id == so_id,
-            ServiceOrder.association_id == current.association_id,
+            ServiceOrder.association_id.in_(assoc_ids),
         )
     )
     so = result.scalar_one_or_none()
