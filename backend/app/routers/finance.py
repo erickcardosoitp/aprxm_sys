@@ -297,8 +297,8 @@ async def reprint_proof_of_residence(
     if resident_id:
         res_row = (await session.execute(sa_text("""
             SELECT full_name, cpf, address_neighborhood, address_cep, address_street, address_number
-              FROM residents WHERE id = :rid AND association_id = :aid
-        """), {"rid": str(resident_id), "aid": str(current.association_id)})).fetchone()
+              FROM residents WHERE id = :rid
+        """), {"rid": str(resident_id)})).fetchone()
 
     cfg = (await session.execute(sa_text("""
         SELECT assoc_logo_url, president_signature_url, president_name,
