@@ -359,7 +359,6 @@ async def report_by_user(
 
     result.sort(key=lambda x: (-x["total_comments"] - x["total"], x["user_name"]))
     return result
-    ]
 
 
 def _row_to_dict(r) -> dict:
