@@ -765,9 +765,10 @@ export function CashSessionPanel({ session, onRefresh, canConferencia = true }: 
 
   const mySession = session && session.opened_by === userId
   const otherSession = session && session.opened_by !== userId
+  const isAdmin = ['admin', 'admin_master', 'superadmin'].includes(role ?? '')
 
-  // ── Caixa fechado ou pertence a outro operador ─────────────────────────────
-  if (!session || otherSession) {
+  // ── Caixa fechado ou pertence a outro operador (admins sempre veem controles) ─
+  if (!session || (otherSession && !isAdmin)) {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="bg-gray-50 px-5 py-4 border-b border-gray-100">
