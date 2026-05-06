@@ -82,6 +82,58 @@ async def receive_package(
     return {"id": str(pkg.id), "status": pkg.status, "received_at": str(pkg.received_at)}
 
 
+@router.get("/{package_id}/delivery-check", summary="Verificar status do morador antes da entrega")
+async def delivery_check(
+    package_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    from app.services.mensalidade_service import MensalidadeService
+
+    row = (await session.execute(sa_text("""
+        SELECT p.resident_id, r.full_name, r.type, r.status
+          FROM packages p
+          LEFT JOIN residents r ON r.id = p.resident_id
+         WHERE p.id = :pid AND p.association_id = :aid
+    """), {"pid": str(package_id), "aid": str(current.association_id)})).fetchone()
+
+    if not row or not row[0]:
+        return {"is_member": False, "is_delinquent": False, "fee_will_apply": True, "overdue_count": 0}
+
+    resident_id, full_name, res_type, res_status = row
+    is_member = res_type == "member" and res_status == "active"
+    is_dependent = res_type == "dependent" and res_status == "active"
+    is_delinquent = False
+    overdue_count = 0
+
+    if is_member:
+        mens_svc = MensalidadeService(session)
+        is_delinquent = await mens_svc.has_delinquent_mensalidade(current.association_id, resident_id)
+        if is_delinquent:
+            from sqlalchemy import text as _t
+            from datetime import date, timedelta
+            grace = (await session.execute(sa_text(
+                "SELECT COALESCE(grace_days, 2) FROM association_settings WHERE association_id = :aid"
+            ), {"aid": str(current.association_id)})).scalar() or 2
+            cutoff = date.today() - timedelta(days=grace)
+            overdue_count = (await session.execute(sa_text("""
+                SELECT COUNT(*) FROM mensalidades
+                WHERE resident_id = :rid AND association_id = :aid
+                  AND status NOT IN ('paid', 'agreement') AND due_date < :cutoff
+            """), {"rid": str(resident_id), "aid": str(current.association_id), "cutoff": cutoff})).scalar() or 0
+
+    fee_will_apply = (not is_member and not is_dependent) or is_delinquent
+    return {
+        "resident_name": full_name,
+        "is_member": is_member,
+        "is_dependent": is_dependent,
+        "is_delinquent": is_delinquent,
+        "overdue_count": int(overdue_count),
+        "fee_will_apply": fee_will_apply,
+    }
+
+
 @router.post("/{package_id}/deliver", summary="Registrar entrega de encomenda")
 async def deliver_package(
     package_id: UUID,

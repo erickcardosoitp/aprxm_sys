@@ -592,6 +592,7 @@ export default function PackagesPage() {
   const [packages, setPackages] = useState<Package[]>([])
   const [showReceive, setShowReceive] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
+  const [deliveryCheck, setDeliveryCheck] = useState<{ is_delinquent: boolean; overdue_count: number; fee_will_apply: boolean; is_member: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
   const [packagesLoading, setPackagesLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('received')
@@ -622,6 +623,13 @@ export default function PackagesPage() {
       setDetailDependents([])
     }
   }, [detailPkg?.resident_id])
+
+  useEffect(() => {
+    if (!deliveryTarget) { setDeliveryCheck(null); return }
+    api.get<any>(`/packages/${deliveryTarget.id}/delivery-check`)
+      .then(r => setDeliveryCheck(r.data))
+      .catch(() => setDeliveryCheck(null))
+  }, [deliveryTarget?.id])
 
   // Filters
   const [filterQ, setFilterQ] = useState('')
@@ -2661,6 +2669,18 @@ export default function PackagesPage() {
                 <X className="w-5 h-5 text-gray-400" />
               </button>
             </div>
+
+            {deliveryCheck?.is_delinquent && (
+              <div className="mx-5 mt-4 bg-red-50 border border-red-300 rounded-xl px-4 py-3 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-red-800">Associado inadimplente</p>
+                  <p className="text-xs text-red-600 mt-0.5">
+                    {deliveryCheck.overdue_count} mensalidade(s) em atraso. Taxa de entrega será cobrada automaticamente.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {(() => {
               const otherPending = packages.filter(p =>
