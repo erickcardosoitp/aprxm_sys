@@ -14,6 +14,25 @@ from app.database import get_session
 router = APIRouter(prefix="/daily-tasks", tags=["Tarefas Diárias"])
 
 
+async def _group_assoc_ids(association_id: str, session: AsyncSession) -> list[str]:
+    row = (await session.execute(
+        text("SELECT chat_group FROM associations WHERE id = :aid"),
+        {"aid": association_id},
+    )).fetchone()
+    group = row[0] if row else None
+    if group:
+        rows = (await session.execute(
+            text("SELECT id FROM associations WHERE chat_group = :g"),
+            {"g": group},
+        )).fetchall()
+    else:
+        rows = (await session.execute(
+            text("SELECT id FROM associations WHERE id = :aid"),
+            {"aid": association_id},
+        )).fetchall()
+    return [str(r[0]) for r in rows]
+
+
 class CreateDailyTaskRequest(BaseModel):
     title: str
     description: str | None = None
@@ -77,8 +96,9 @@ async def list_tasks(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    filters = ["t.association_id = :aid"]
-    params: dict = {"aid": str(current.association_id)}
+    aids = await _group_assoc_ids(str(current.association_id), session)
+    filters = ["t.association_id = ANY(:aids)"]
+    params: dict = {"aids": aids}
     if assigned_to:
         filters.append("t.assigned_to = :at")
         params["at"] = str(assigned_to)
@@ -210,13 +230,14 @@ async def list_comments(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    aids = await _group_assoc_ids(str(current.association_id), session)
     rows = (await session.execute(text("""
         SELECT c.id, c.comment, c.attachment_urls, c.created_at, u.full_name
         FROM daily_task_comments c
         JOIN users u ON u.id = c.created_by
-        WHERE c.task_id = :tid AND c.association_id = :aid
+        WHERE c.task_id = :tid AND c.association_id = ANY(:aids)
         ORDER BY c.created_at ASC
-    """), {"tid": str(task_id), "aid": str(current.association_id)})).fetchall()
+    """), {"tid": str(task_id), "aids": aids})).fetchall()
     return [
         {"id": str(r[0]), "comment": r[1], "attachment_urls": r[2] or [],
          "created_at": str(r[3]), "author_name": r[4]}
@@ -244,8 +265,9 @@ async def report_by_user(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    filters = ["t.association_id = :aid"]
-    params: dict = {"aid": str(current.association_id)}
+    aids = await _group_assoc_ids(str(current.association_id), session)
+    filters = ["t.association_id = ANY(:aids)"]
+    params: dict = {"aids": aids}
     if date_from:
         filters.append("t.due_date >= CAST(:df AS date)")
         params["df"] = date_from
