@@ -272,11 +272,11 @@ async def report_by_user(
     if date_from:
         date_filter_task += " AND t.created_at >= CAST(:df AS timestamptz)"
         date_filter_comment += " AND c.created_at >= CAST(:df AS timestamptz)"
-        params["df"] = date_from
+        params["df"] = date.fromisoformat(date_from)
     if date_to:
         date_filter_task += " AND t.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
         date_filter_comment += " AND c.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
-        params["dt"] = date_to
+        params["dt"] = date.fromisoformat(date_to)
 
     # Tasks assigned to or created by user
     task_rows = (await session.execute(text(f"""
