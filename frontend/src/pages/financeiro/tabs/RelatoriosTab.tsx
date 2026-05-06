@@ -81,7 +81,8 @@ export default function RelatoriosTab() {
 
   // Mensalidades report
   const [reportFromMonth, setReportFromMonth] = useState(() => {
-    const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const now = new Date(); const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`
   })
   const [reportToMonth, setReportToMonth] = useState(() => {
     const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -401,7 +402,7 @@ export default function RelatoriosTab() {
                       <td className="px-4 py-3 whitespace-nowrap text-blue-700 font-medium">{fmt(s.total_pix ?? '0')}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-gray-700">{fmt(s.total_dinheiro ?? '0')}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-gray-800 font-semibold">{fmt(bruto)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-red-600">{fmt(baixas)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-red-600">{fmt(baixas + expense)}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-green-700 font-bold text-sm">{fmt(liquido)}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-gray-600">{s.closing_balance ? fmt(s.closing_balance) : '—'}</td>
                       <td className={`px-4 py-3 whitespace-nowrap font-bold text-sm ${diff === null ? 'text-gray-400' : diff === 0 ? 'text-green-600' : diff > 0 ? 'text-blue-600' : 'text-red-600'}`}>
@@ -532,9 +533,11 @@ export default function RelatoriosTab() {
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
                       <th className="text-left px-3 py-2 text-gray-500 font-medium">Morador</th>
-                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Mês</th>
+                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Mês Ref.</th>
+                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Vencimento</th>
                       <th className="text-right px-3 py-2 text-gray-500 font-medium">Valor</th>
                       <th className="text-center px-3 py-2 text-gray-500 font-medium">Status</th>
+                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Pago em</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -542,6 +545,7 @@ export default function RelatoriosTab() {
                       <tr key={i.id}>
                         <td className="px-3 py-2 text-gray-700 truncate max-w-[120px]">{i.resident_name}</td>
                         <td className="px-3 py-2 text-gray-500">{i.reference_month}</td>
+                        <td className="px-3 py-2 text-gray-500">{i.due_date ? new Date(i.due_date).toLocaleDateString('pt-BR') : '—'}</td>
                         <td className="px-3 py-2 text-right font-medium text-gray-800">{fmt(i.amount)}</td>
                         <td className="px-3 py-2 text-center">
                           <span className={`px-1.5 py-0.5 rounded-full font-medium text-xs ${
@@ -550,6 +554,7 @@ export default function RelatoriosTab() {
                             {i.status === 'paid' ? 'Pago' : 'Pendente'}
                           </span>
                         </td>
+                        <td className="px-3 py-2 text-gray-500 text-xs">{i.paid_at ? new Date(i.paid_at).toLocaleDateString('pt-BR') : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
