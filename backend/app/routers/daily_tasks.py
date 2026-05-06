@@ -169,6 +169,61 @@ async def update_task(
     return {"ok": True}
 
 
+class AddCommentRequest(BaseModel):
+    comment: str
+    attachment_urls: list[str] = []
+
+
+@router.post("/{task_id}/comments", summary="Adicionar acompanhamento")
+async def add_comment(
+    task_id: UUID,
+    body: AddCommentRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    import json
+    row = (await session.execute(text("""
+        INSERT INTO daily_task_comments (task_id, association_id, created_by, comment, attachment_urls)
+        VALUES (:tid, :aid, :uid, :comment, CAST(:attachments AS jsonb))
+        RETURNING id, created_at
+    """), {
+        "tid": str(task_id),
+        "aid": str(current.association_id),
+        "uid": str(current.user_id),
+        "comment": body.comment,
+        "attachments": json.dumps(body.attachment_urls),
+    })).fetchone()
+    await session.commit()
+    author = (await session.execute(
+        text("SELECT full_name FROM users WHERE id = :id"), {"id": str(current.user_id)}
+    )).scalar() or "Usuário"
+    return {
+        "id": str(row[0]), "created_at": str(row[1]),
+        "author_name": author, "comment": body.comment,
+        "attachment_urls": body.attachment_urls,
+    }
+
+
+@router.get("/{task_id}/comments", summary="Listar acompanhamentos")
+async def list_comments(
+    task_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    rows = (await session.execute(text("""
+        SELECT c.id, c.comment, c.attachment_urls, c.created_at, u.full_name
+        FROM daily_task_comments c
+        JOIN users u ON u.id = c.created_by
+        WHERE c.task_id = :tid AND c.association_id = :aid
+        ORDER BY c.created_at ASC
+    """), {"tid": str(task_id), "aid": str(current.association_id)})).fetchall()
+    return [
+        {"id": str(r[0]), "comment": r[1], "attachment_urls": r[2] or [],
+         "created_at": str(r[3]), "author_name": r[4]}
+        for r in rows
+    ]
+
+
 @router.delete("/{task_id}", summary="Excluir Tarefa Diária")
 async def delete_task(
     task_id: UUID,

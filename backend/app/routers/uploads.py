@@ -22,7 +22,7 @@ MAX_AUDIO_BYTES = 5 * 1024 * 1024
 
 @router.post("", summary="Upload de arquivo para Supabase Storage")
 async def upload_file(
-    folder: str = Form(...),
+    folder: str = Form(default="uploads"),
     file: UploadFile = File(...),
     current: CurrentUser = Depends(get_current_user),
 ) -> JSONResponse:

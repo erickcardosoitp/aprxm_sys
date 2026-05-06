@@ -1898,6 +1898,14 @@ interface GroupUser {
   assoc_name?: string
 }
 
+interface TaskComment {
+  id: string
+  comment: string
+  attachment_urls: string[]
+  created_at: string
+  author_name: string
+}
+
 function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [tasks, setTasks] = useState<DailyTask[]>([])
   const [loading, setLoading] = useState(true)
@@ -1928,6 +1936,13 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [soResults, setSOResults] = useState<any[]>([])
   const [saving, setSaving] = useState(false)
 
+  // comments
+  const [comments, setComments] = useState<Record<string, TaskComment[]>>({})
+  const [commentInput, setCommentInput] = useState('')
+  const [commentPhotos, setCommentPhotos] = useState<string[]>([])
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [savingComment, setSavingComment] = useState(false)
+
   const today = new Date().toISOString().split('T')[0]
 
   const load = async () => {
@@ -1951,6 +1966,51 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   useEffect(() => { load() }, [filterStatus])
   useEffect(() => { loadUsers() }, [])
 
+  const loadComments = async (taskId: string) => {
+    if (comments[taskId]) return
+    try {
+      const res = await api.get<TaskComment[]>(`/daily-tasks/${taskId}/comments`)
+      setComments(prev => ({ ...prev, [taskId]: res.data }))
+    } catch { /* silent */ }
+  }
+
+  const toggleExpanded = (taskId: string) => {
+    const next = expandedId === taskId ? null : taskId
+    setExpandedId(next)
+    setCommentInput('')
+    setCommentPhotos([])
+    if (next) loadComments(next)
+  }
+
+  const handleCommentPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingPhoto(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('folder', 'task-comments')
+      const res = await api.post<{ url: string }>('/uploads', fd)
+      setCommentPhotos(prev => [...prev, res.data.url])
+    } catch { toast.error('Erro ao enviar foto.') }
+    finally { setUploadingPhoto(false); e.target.value = '' }
+  }
+
+  const submitComment = async (taskId: string) => {
+    if (!commentInput.trim() && commentPhotos.length === 0) return
+    setSavingComment(true)
+    try {
+      const res = await api.post<TaskComment>(`/daily-tasks/${taskId}/comments`, {
+        comment: commentInput.trim(),
+        attachment_urls: commentPhotos,
+      })
+      setComments(prev => ({ ...prev, [taskId]: [...(prev[taskId] || []), res.data] }))
+      setCommentInput('')
+      setCommentPhotos([])
+    } catch { toast.error('Erro ao salvar acompanhamento.') }
+    finally { setSavingComment(false) }
+  }
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -1958,7 +2018,8 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const res = await api.post<{ url: string }>('/uploads', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      fd.append('folder', 'daily-tasks')
+      const res = await api.post<{ url: string }>('/uploads', fd)
       setFAttachments(prev => [...prev, res.data.url])
     } catch { toast.error('Erro ao enviar arquivo.') }
     finally { setUploadingFile(false); e.target.value = '' }
@@ -2263,7 +2324,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                 <button onClick={() => toggleDone(task)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${task.status === 'done' ? 'bg-green-500 border-green-500' : 'border-gray-400 hover:border-[#26619c]'}`}>
                   {task.status === 'done' && <span className="text-white text-[10px] font-bold">✓</span>}
                 </button>
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : task.id)}>
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpanded(task.id)}>
                   <div className="flex flex-wrap gap-1.5 mb-1">
                     {task.assigned_to_name && (
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1">
@@ -2294,7 +2355,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                     </div>
                   )}
                 </div>
-                <span className="text-gray-300 text-xs mt-1 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : task.id)}>{isExpanded ? '▲' : '▼'}</span>
+                <span className="text-gray-300 text-xs mt-1 cursor-pointer" onClick={() => toggleExpanded(task.id)}>{isExpanded ? '▲' : '▼'}</span>
               </div>
             </div>
             {isExpanded && (
@@ -2323,8 +2384,62 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                     ))}
                   </div>
                 )}
+                {/* Acompanhamentos */}
+                <div className="flex flex-col gap-2 pt-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">💬 Acompanhamentos</p>
+                  {(comments[task.id] || []).map(c => (
+                    <div key={c.id} className="bg-gray-50 rounded-lg p-2.5 flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-gray-700">{c.author_name}</span>
+                        <span className="text-[10px] text-gray-400">{new Date(c.created_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                      </div>
+                      {c.comment && <p className="text-xs text-gray-600 whitespace-pre-wrap">{c.comment}</p>}
+                      {c.attachment_urls?.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {c.attachment_urls.map((url, i) => (
+                            url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                              ? <a key={i} href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt="" className="h-16 w-16 object-cover rounded border border-gray-200" /></a>
+                              : <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">📎 {url.split('/').pop()}</a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex flex-col gap-1.5 mt-1">
+                    <textarea
+                      value={commentInput}
+                      onChange={e => setCommentInput(e.target.value)}
+                      placeholder="Adicionar acompanhamento..."
+                      rows={2}
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-[#26619c]"
+                    />
+                    {commentPhotos.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {commentPhotos.map((url, i) => (
+                          url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                            ? <img key={i} src={url} alt="" className="h-12 w-12 object-cover rounded border border-gray-200" />
+                            : <span key={i} className="text-xs text-blue-600">📎 {url.split('/').pop()}</span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <label className={`text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition flex items-center gap-1 ${uploadingPhoto ? 'opacity-50' : ''}`}>
+                        📷 {uploadingPhoto ? 'Enviando...' : 'Foto'}
+                        <input type="file" accept="image/*" className="hidden" onChange={handleCommentPhotoUpload} disabled={uploadingPhoto} />
+                      </label>
+                      <button
+                        onClick={() => submitComment(task.id)}
+                        disabled={savingComment || (!commentInput.trim() && commentPhotos.length === 0)}
+                        className="text-xs px-3 py-1.5 bg-[#26619c] text-white rounded-lg hover:bg-[#1a4a7a] disabled:opacity-40 transition"
+                      >
+                        {savingComment ? 'Salvando...' : 'Enviar'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 {canWrite && (
-                  <div className="flex gap-2 pt-1">
+                  <div className="flex gap-2 pt-1 border-t border-gray-100">
                     <button onClick={() => startEdit(task)} className="text-xs text-[#26619c] hover:underline">✏ Editar</button>
                     <button onClick={() => handleDelete(task.id)} className="text-xs text-red-500 hover:underline">🗑 Excluir</button>
                   </div>
