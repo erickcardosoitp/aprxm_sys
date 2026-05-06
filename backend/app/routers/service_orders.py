@@ -246,7 +246,7 @@ async def add_comment(
     if so_row:
         import asyncio as _aio
         from app.services.email_service import send_email
-        so_num, so_title, creator_id, assigned_id = so_row
+        so_num, so_title, creator_id, assigned_id, _so_assoc = so_row
         preview = (body.comment or "")[:120]
         notif_title = f"💬 {commenter_name} comentou na OS #{so_num}"
         notif_data = {"url": f"/service-orders/{so_id}"}
@@ -575,6 +575,7 @@ async def create_task(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import json as _json
+    from datetime import date as _date
     result = await session.execute(text("""
         INSERT INTO service_order_tasks
           (association_id, service_order_id, created_by, assigned_to, assigned_to_name,
@@ -585,7 +586,8 @@ async def create_task(
         "aid": str(current.association_id), "so_id": str(so_id), "uid": str(current.user_id),
         "at": str(body.assigned_to) if body.assigned_to else None,
         "atn": body.assigned_to_name, "title": body.title, "notes": body.notes,
-        "priority": body.priority, "status": body.status, "due": body.due_date,
+        "priority": body.priority, "status": body.status,
+        "due": _date.fromisoformat(body.due_date) if body.due_date else None,
         "checklist": _json.dumps(body.checklist),
     })
     row = result.fetchone()
