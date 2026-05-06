@@ -287,7 +287,7 @@ async def report_by_user(
             t.checklist, t.created_at, t.updated_at,
             CASE WHEN t.assigned_to = u.id THEN 'assigned' ELSE 'created' END AS relation
         FROM users u
-        JOIN daily_tasks t ON (t.assigned_to = u.id OR t.created_by = u.id)
+        JOIN daily_tasks t ON u.id = COALESCE(t.assigned_to, t.created_by)
         WHERE t.association_id = ANY(:aids)
           AND u.association_id = ANY(:aids)
           {date_filter_task}
