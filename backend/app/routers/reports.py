@@ -270,26 +270,30 @@ async def export_service_orders(
 
 # ─── Mensalidades ─────────────────────────────────────────────────────────────
 
+STATUS_PT = {"paid": "Pago", "pending": "Pendente", "overdue": "Em atraso", "agreement": "Acordo", "waived": "Isento"}
+
 async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, men_status=None, ref_month=None):
-    conds = ["m.association_id = :aid"]
+    conds = ["v.association_id = :aid"]
     p: dict = {"aid": aid}
-    if date_from: conds.append("m.due_date >= :df"); p["df"] = date.fromisoformat(date_from)
-    if date_to: conds.append("m.due_date <= :dt"); p["dt"] = date.fromisoformat(date_to)
-    if men_status: conds.append("m.status = :st"); p["st"] = men_status
-    if ref_month: conds.append("m.reference_month = :rm"); p["rm"] = ref_month
+    if date_from: conds.append("COALESCE(v.paid_at, v.due_date::timestamp)::date >= :df"); p["df"] = date.fromisoformat(date_from)
+    if date_to: conds.append("COALESCE(v.paid_at, v.due_date::timestamp)::date <= :dt"); p["dt"] = date.fromisoformat(date_to)
+    if men_status: conds.append("v.status = :st"); p["st"] = men_status
+    if ref_month: conds.append("v.reference_month = :rm"); p["rm"] = ref_month
     w = " AND ".join(conds)
     rows = (await session.execute(text(f"""
-        SELECT r.full_name, r.unit, m.reference_month, m.due_date,
-               m.amount, m.status, m.paid_at::date,
-               pm.name AS payment_method
-        FROM mensalidades m
-        JOIN residents r ON r.id = m.resident_id
-        LEFT JOIN transactions t ON t.id = m.transaction_id
-        LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
-        WHERE {w} ORDER BY m.reference_month, r.full_name
+        SELECT v.resident_name, v.reference_month, v.due_date,
+               v.amount, v.status, v.paid_at::date,
+               v.payment_method_name, v.origem
+        FROM v_mensalidades_completas v
+        WHERE {w} ORDER BY v.reference_month, v.resident_name
     """), p)).fetchall()
-    cols = ["Morador","Unidade","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento"]
-    return [dict(zip(cols, [_s(v) for v in r])) for r in rows]
+    cols = ["Morador","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento","Origem"]
+    def row_dict(r):
+        d = dict(zip(cols, [_s(v) for v in r]))
+        d["Status"] = STATUS_PT.get(d["Status"], d["Status"])
+        d["Origem"] = "Sistema" if d["Origem"] == "sistema" else "Migração"
+        return d
+    return [row_dict(r) for r in rows]
 
 
 @router.get("/mensalidades/preview")
