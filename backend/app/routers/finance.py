@@ -1001,6 +1001,7 @@ async def reopen_session(
         raise HTTPException(400, "Sessão já está aberta.")
     cash.status = "open"
     cash.closed_at = None
+    cash.closed_by = None
     cash.closing_balance = None
     cash.expected_balance = None
     cash.difference = None
@@ -1138,10 +1139,16 @@ async def correct_transaction(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from sqlmodel import select as sq_select
-    from app.models.user import User
-    user_row = await session.execute(sq_select(User).where(User.id == current.user_id))
-    user = user_row.scalar_one_or_none()
-    if not user or not verify_password(body.admin_password, user.hashed_password):
+    from app.models.user import User, UserRole
+    admin_roles = {UserRole.admin, UserRole.admin_master, UserRole.superadmin}
+    admins = await session.execute(
+        sq_select(User).where(
+            User.association_id == current.association_id,
+            User.role.in_(admin_roles),
+            User.is_active == True,
+        )
+    )
+    if not any(verify_password(body.admin_password, u.hashed_password) for u in admins.scalars().all()):
         raise HTTPException(status_code=403, detail="Senha de administrador incorreta.")
 
     from sqlalchemy import text as sa_text
@@ -1188,10 +1195,20 @@ async def reverse_transaction(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from sqlmodel import select as sq_select
-    from app.models.user import User
-    user_row = await session.execute(sq_select(User).where(User.id == current.user_id))
-    user = user_row.scalar_one_or_none()
-    if not user or not verify_password(body.admin_password, user.hashed_password):
+    from app.models.user import User, UserRole
+    admin_roles = {UserRole.admin, UserRole.admin_master, UserRole.superadmin}
+    admins = await session.execute(
+        sq_select(User).where(
+            User.association_id == current.association_id,
+            User.role.in_(admin_roles),
+            User.is_active == True,
+        )
+    )
+    authorized = any(
+        verify_password(body.admin_password, u.hashed_password)
+        for u in admins.scalars().all()
+    )
+    if not authorized:
         raise HTTPException(status_code=403, detail="Senha de administrador incorreta.")
 
     svc = FinanceService(session)
