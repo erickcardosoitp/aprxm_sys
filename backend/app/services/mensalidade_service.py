@@ -229,62 +229,69 @@ class MensalidadeService:
         self, association_id: UUID, resident_id: UUID
     ) -> bool:
         """Returns True if resident has any mensalidade overdue beyond the grace period."""
+        from sqlalchemy import text as sa_text
         today = date.today()
         grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
-        stmt = select(Mensalidade).where(
-            Mensalidade.association_id == association_id,
-            Mensalidade.resident_id == resident_id,
-            Mensalidade.status != MensalidadeStatus.paid,
-            Mensalidade.status != MensalidadeStatus.agreement,
-            Mensalidade.due_date < grace_cutoff,
+        row = await self._session.execute(
+            sa_text("""
+                SELECT 1 FROM mensalidades m
+                WHERE m.association_id = :aid
+                  AND m.resident_id = :rid
+                  AND m.status NOT IN ('paid', 'agreement')
+                  AND m.due_date < :cutoff
+                  AND NOT EXISTS (
+                    SELECT 1 FROM migration_payments mp
+                    WHERE mp.resident_id = m.resident_id
+                      AND mp.association_id = m.association_id
+                      AND mp.competencia = m.reference_month
+                  )
+                LIMIT 1
+            """),
+            {"aid": str(association_id), "rid": str(resident_id), "cutoff": str(grace_cutoff)},
         )
-        result = await self._session.execute(stmt)
-        return result.scalar_one_or_none() is not None
+        return row.fetchone() is not None
 
     async def list_delinquent(self, association_id: UUID) -> list[dict]:
-        from app.models.resident import Resident, ResidentType
-        from sqlmodel import select as sa_select
+        from sqlalchemy import text as sa_text
         today = date.today()
         grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
-        stmt = (
-            sa_select(
-                Mensalidade,
-                Resident.full_name,
-                Resident.phone_primary,
-                Resident.address_street,
-                Resident.address_number,
-                Resident.unit,
-            )
-            .join(Resident, Resident.id == Mensalidade.resident_id)
-            .where(
-                Mensalidade.association_id == association_id,
-                Mensalidade.status != MensalidadeStatus.paid,
-                Mensalidade.status != MensalidadeStatus.agreement,
-                Mensalidade.due_date < grace_cutoff,
-                Resident.type == ResidentType.member,
-                Resident.status == "active",
-            )
-            .order_by(Mensalidade.due_date.asc())
+        result = await self._session.execute(
+            sa_text("""
+                SELECT m.id, m.resident_id, m.reference_month, m.due_date, m.amount,
+                       r.full_name, r.phone_primary, r.address_street, r.address_number, r.unit
+                FROM mensalidades m
+                JOIN residents r ON r.id = m.resident_id
+                WHERE m.association_id = :aid
+                  AND m.status NOT IN ('paid', 'agreement')
+                  AND m.due_date < :cutoff
+                  AND r.type = 'member'
+                  AND r.status = 'active'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM migration_payments mp
+                    WHERE mp.resident_id = m.resident_id
+                      AND mp.association_id = m.association_id
+                      AND mp.competencia = m.reference_month
+                  )
+                ORDER BY m.due_date ASC
+            """),
+            {"aid": str(association_id), "cutoff": str(grace_cutoff)},
         )
-        result = await self._session.execute(stmt)
-        rows = result.all()
-
+        rows = result.fetchall()
         delinquent = []
-        for m, full_name, phone, street, number, unit in rows:
-            months_overdue = (
-                (today.year - m.due_date.year) * 12 + (today.month - m.due_date.month)
-            )
+        for r in rows:
+            due = r[3]
+            months_overdue = (today.year - due.year) * 12 + (today.month - due.month)
             delinquent.append({
-                "id": str(m.id),
-                "resident_id": str(m.resident_id),
-                "resident_name": full_name,
-                "phone_primary": phone,
-                "address_street": street,
-                "address_number": number,
-                "unit": unit,
-                "reference_month": m.reference_month,
-                "due_date": str(m.due_date),
-                "amount": str(m.amount),
+                "id": str(r[0]),
+                "resident_id": str(r[1]),
+                "reference_month": r[2],
+                "due_date": str(due),
+                "amount": str(r[4]),
+                "resident_name": r[5],
+                "phone_primary": r[6],
+                "address_street": r[7],
+                "address_number": r[8],
+                "unit": r[9],
                 "months_overdue": months_overdue,
             })
         return delinquent
@@ -392,12 +399,19 @@ class MensalidadeService:
         return {"created": created, "skipped": skipped, "reference_month": reference_month}
 
     async def total_pending(self, association_id: UUID) -> Decimal:
-        from sqlalchemy import text
+        from sqlalchemy import text as sa_text
         result = await self._session.execute(
-            text("""
+            sa_text("""
                 SELECT COALESCE(SUM(amount), 0)
-                FROM mensalidades
-                WHERE association_id = :aid AND status != 'paid'
+                FROM mensalidades m
+                WHERE association_id = :aid
+                  AND status != 'paid'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM migration_payments mp
+                    WHERE mp.resident_id = m.resident_id
+                      AND mp.association_id = m.association_id
+                      AND mp.competencia = m.reference_month
+                  )
             """),
             {"aid": str(association_id)},
         )
@@ -421,80 +435,122 @@ class MensalidadeService:
     async def list_paid(
         self, association_id: UUID, month: str | None = None
     ) -> list[dict]:
-        """Mensalidades pagas com nome do morador. Filtro opcional por mês (YYYY-MM)."""
-        from app.models.resident import Resident
-        from sqlalchemy import select as sa_select
-
-        stmt = (
-            sa_select(Mensalidade, Resident.full_name)
-            .join(Resident, Resident.id == Mensalidade.resident_id)
-            .where(
-                Mensalidade.association_id == association_id,
-                Mensalidade.status == MensalidadeStatus.paid,
-            )
-            .order_by(Mensalidade.paid_at.desc())
-        )
+        """Mensalidades pagas (sistema + migração). Filtro opcional por mês (YYYY-MM)."""
+        from sqlalchemy import text as sa_text
+        conditions = ["v.association_id = :aid", "v.status = 'paid'"]
+        params: dict = {"aid": str(association_id)}
         if month:
-            from sqlalchemy import func
-            year, mo = month.split("-")
-            stmt = stmt.where(
-                func.extract("year", Mensalidade.paid_at) == int(year),
-                func.extract("month", Mensalidade.paid_at) == int(mo),
-            )
-
-        result = await self._session.execute(stmt)
+            conditions.append("v.reference_month = :month")
+            params["month"] = month
+        where = " AND ".join(conditions)
+        result = await self._session.execute(
+            sa_text(f"""
+                SELECT v.id, v.resident_id, v.resident_name, v.reference_month,
+                       v.due_date, v.amount, v.paid_at, v.transaction_id, v.origem
+                FROM v_mensalidades_completas v
+                WHERE {where}
+                ORDER BY v.paid_at DESC
+            """),
+            params,
+        )
         return [
             {
-                "id": str(m.id),
-                "resident_id": str(m.resident_id),
-                "resident_name": name,
-                "reference_month": m.reference_month,
-                "due_date": str(m.due_date),
-                "amount": str(m.amount),
-                "paid_at": str(m.paid_at) if m.paid_at else None,
-                "transaction_id": str(m.transaction_id) if m.transaction_id else None,
+                "id": str(r[0]),
+                "resident_id": str(r[1]),
+                "resident_name": r[2],
+                "reference_month": r[3],
+                "due_date": str(r[4]) if r[4] else None,
+                "amount": str(r[5]),
+                "paid_at": str(r[6]) if r[6] else None,
+                "transaction_id": str(r[7]) if r[7] else None,
+                "origem": r[8],
             }
-            for m, name in result.all()
+            for r in result.fetchall()
         ]
 
     async def payment_report(
-        self, association_id: UUID, from_month: str, to_month: str
+        self,
+        association_id: UUID,
+        from_month: str,
+        to_month: str,
+        paid_from: date | None = None,
+        paid_to: date | None = None,
+        cep: str | None = None,
+        payment_method_id: UUID | None = None,
+        origem: str | None = None,
+        status_filter: str | None = None,
     ) -> dict:
-        """Relatório de mensalidades por período (qualquer status)."""
-        from app.models.resident import Resident
-        from sqlalchemy import select as sa_select
+        """Relatório de mensalidades por período — inclui migration_payments."""
+        from sqlalchemy import text as sa_text
 
-        stmt = (
-            sa_select(Mensalidade, Resident.full_name)
-            .join(Resident, Resident.id == Mensalidade.resident_id)
-            .where(
-                Mensalidade.association_id == association_id,
-                Mensalidade.reference_month >= from_month,
-                Mensalidade.reference_month <= to_month,
-            )
-            .order_by(Mensalidade.reference_month.desc(), Resident.full_name.asc())
-        )
-        result = await self._session.execute(stmt)
-        rows = result.all()
+        conditions = [
+            "v.association_id = :aid",
+            "v.reference_month >= :from_month",
+            "v.reference_month <= :to_month",
+        ]
+        params: dict = {
+            "aid": str(association_id),
+            "from_month": from_month,
+            "to_month": to_month,
+        }
+        if paid_from:
+            conditions.append("v.paid_at::date >= :paid_from")
+            params["paid_from"] = str(paid_from)
+        if paid_to:
+            conditions.append("v.paid_at::date <= :paid_to")
+            params["paid_to"] = str(paid_to)
+        if cep:
+            conditions.append("v.address_cep LIKE :cep")
+            params["cep"] = cep + "%"
+        if payment_method_id:
+            conditions.append("v.payment_method_id = :pmid")
+            params["pmid"] = str(payment_method_id)
+        if origem and origem != "all":
+            conditions.append("v.origem = :origem")
+            params["origem"] = origem
+        if status_filter and status_filter != "all":
+            if status_filter == "paid":
+                conditions.append("v.status = 'paid'")
+            else:
+                conditions.append("v.status != 'paid'")
+
+        where = " AND ".join(conditions)
+        sql = sa_text(f"""
+            SELECT v.id, v.resident_id, v.reference_month, v.due_date,
+                   v.amount, v.status, v.paid_at, v.resident_name,
+                   v.address_cep, v.origem, v.payment_method_name
+            FROM v_mensalidades_completas v
+            WHERE {where}
+            ORDER BY v.reference_month DESC, v.resident_name ASC
+        """)
+
+        result = await self._session.execute(sql, params)
+        rows = result.fetchall()
 
         items = [
             {
-                "id": str(m.id),
-                "resident_id": str(m.resident_id),
-                "resident_name": name,
-                "reference_month": m.reference_month,
-                "due_date": str(m.due_date),
-                "amount": str(m.amount),
-                "status": m.status,
-                "paid_at": str(m.paid_at) if m.paid_at else None,
+                "id": str(r[0]),
+                "resident_id": str(r[1]),
+                "reference_month": r[2],
+                "due_date": str(r[3]) if r[3] else None,
+                "amount": str(r[4]),
+                "status": str(r[5]),
+                "paid_at": str(r[6]) if r[6] else None,
+                "resident_name": r[7],
+                "address_cep": r[8],
+                "origem": r[9],
+                "payment_method_name": r[10],
             }
-            for m, name in rows
+            for r in rows
         ]
 
-        paid = [i for i in items if i["status"] == MensalidadeStatus.paid]
-        pending = [i for i in items if i["status"] != MensalidadeStatus.paid]
+        paid = [i for i in items if i["status"] == "paid"]
+        pending = [i for i in items if i["status"] != "paid"]
+        paid_sistema = [i for i in paid if i["origem"] == "sistema"]
+        paid_migracao = [i for i in paid if i["origem"] == "migracao"]
         total_paid = sum(Decimal(i["amount"]) for i in paid)
         total_pending = sum(Decimal(i["amount"]) for i in pending)
+        total_migracao = sum(Decimal(i["amount"]) for i in paid_migracao)
 
         return {
             "from_month": from_month,
@@ -502,8 +558,11 @@ class MensalidadeService:
             "total": len(items),
             "paid_count": len(paid),
             "pending_count": len(pending),
+            "paid_sistema_count": len(paid_sistema),
+            "paid_migracao_count": len(paid_migracao),
             "total_paid": str(total_paid),
             "total_pending": str(total_pending),
+            "total_migracao": str(total_migracao),
             "items": items,
         }
 

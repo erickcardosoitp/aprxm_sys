@@ -23,6 +23,8 @@ export default function RelatoriosTab() {
   const [sessaoFilterFrom, setSessaoFilterFrom] = useState('')
   const [sessaoFilterTo, setSessaoFilterTo] = useState('')
   const [sessaoFilterOp, setSessaoFilterOp] = useState('')
+  const [sessaoFilterStatus, setSessaoFilterStatus] = useState('')
+  const [sessaoFilterOrigem, setSessaoFilterOrigem] = useState('')
 
   const [reviewSession, setReviewSession] = useState<Session | null>(null)
   const [reviewTxs, setReviewTxs] = useState<TxReview[]>([])
@@ -87,7 +89,13 @@ export default function RelatoriosTab() {
   const [reportToMonth, setReportToMonth] = useState(() => {
     const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
-  const [report, setReport] = useState<{ from_month: string; to_month: string; total: number; paid_count: number; pending_count: number; total_paid: string; total_pending: string; items: any[] } | null>(null)
+  const [reportCep, setReportCep] = useState('')
+  const [reportPaidFrom, setReportPaidFrom] = useState('')
+  const [reportPaidTo, setReportPaidTo] = useState('')
+  const [reportPaymentMethod, setReportPaymentMethod] = useState('')
+  const [reportOrigem, setReportOrigem] = useState('all')
+  const [reportStatusFilter, setReportStatusFilter] = useState('all')
+  const [report, setReport] = useState<{ from_month: string; to_month: string; total: number; paid_count: number; pending_count: number; paid_sistema_count: number; paid_migracao_count: number; total_paid: string; total_pending: string; total_migracao: string; items: any[] } | null>(null)
   const [loadingReport, setLoadingReport] = useState(false)
 
   // Edit tx (from review modal)
@@ -221,7 +229,14 @@ export default function RelatoriosTab() {
   const loadReport = async () => {
     setLoadingReport(true)
     try {
-      const res = await api.get('/mensalidades/report', { params: { from_month: reportFromMonth, to_month: reportToMonth } })
+      const params: Record<string, string> = { from_month: reportFromMonth, to_month: reportToMonth }
+      if (reportCep) params.cep = reportCep
+      if (reportPaidFrom) params.paid_from = reportPaidFrom
+      if (reportPaidTo) params.paid_to = reportPaidTo
+      if (reportPaymentMethod) params.payment_method_id = reportPaymentMethod
+      if (reportOrigem !== 'all') params.origem = reportOrigem
+      if (reportStatusFilter !== 'all') params.status = reportStatusFilter
+      const res = await api.get('/mensalidades/report', { params })
       setReport(res.data)
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao gerar relatório.')
@@ -230,12 +245,12 @@ export default function RelatoriosTab() {
 
   const exportReportCSV = () => {
     if (!report) return
-    const header = 'Morador,Mês Ref,Vencimento,Valor,Status,Pago em'
+    const header = 'Morador,Mês Ref,Vencimento,Valor,Status,Pago em,Forma Pgto,Origem'
     const rows = report.items.map(i =>
-      `"${i.resident_name}",${i.reference_month},${i.due_date},${i.amount},${i.status === 'paid' ? 'Pago' : 'Pendente'},${i.paid_at ?? ''}`
+      `"${i.resident_name ?? ''}",${i.reference_month},${i.due_date ?? ''},${i.amount},${i.status === 'paid' ? 'Pago' : 'Pendente'},${i.paid_at ?? ''},"${i.payment_method_name ?? ''}",${i.origem === 'sistema' ? 'Sistema' : 'Migração'}`
     )
     const csv = [header, ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url; a.download = `mensalidades_${report.from_month}_${report.to_month}.csv`
@@ -269,8 +284,22 @@ export default function RelatoriosTab() {
     if (sessaoFilterFrom && d < sessaoFilterFrom) return false
     if (sessaoFilterTo && d > sessaoFilterTo) return false
     if (sessaoFilterOp && !(s.operador_name ?? '').toLowerCase().includes(sessaoFilterOp.toLowerCase())) return false
+    if (sessaoFilterStatus && s.status !== sessaoFilterStatus) return false
+    if (sessaoFilterOrigem) {
+      if (sessaoFilterOrigem === 'manual' && s.origin !== 'Manual') return false
+      if (sessaoFilterOrigem === 'sessao' && s.origin === 'Manual') return false
+    }
     return true
   })
+
+  const sessionTotals = filtered.reduce((acc, s) => {
+    acc.bruto += parseFloat(s.total_bruto ?? '0')
+    acc.pix += parseFloat(s.total_pix ?? '0')
+    acc.dinheiro += parseFloat(s.total_dinheiro ?? '0')
+    acc.baixas += parseFloat(s.total_baixas ?? '0')
+    acc.expense += parseFloat(s.total_expense ?? '0')
+    return acc
+  }, { bruto: 0, pix: 0, dinheiro: 0, baixas: 0, expense: 0 })
 
   const closed = sessions.filter(s => s.status === 'closed')
   const totalDiff = closed.reduce((sum, s) => sum + parseFloat(s.difference ?? '0'), 0)
@@ -304,6 +333,19 @@ export default function RelatoriosTab() {
             <input type="text" placeholder="Funcionário…"
               className="border border-gray-200 rounded-lg px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-[#26619c]/30"
               onChange={e => setSessaoFilterOp(e.target.value)} />
+            <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#26619c]/30"
+              value={sessaoFilterStatus} onChange={e => setSessaoFilterStatus(e.target.value)}>
+              <option value="">Todos status</option>
+              <option value="open">Aberto</option>
+              <option value="closed">Fechado</option>
+              <option value="conferido">Conferido</option>
+            </select>
+            <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#26619c]/30"
+              value={sessaoFilterOrigem} onChange={e => setSessaoFilterOrigem(e.target.value)}>
+              <option value="">Todas origens</option>
+              <option value="sessao">Sessão de Caixa</option>
+              <option value="manual">Manual</option>
+            </select>
             <button onClick={() => {
               const headers = ['Data','Funcionário','R$ PIX','R$ Dinheiro','R$ Bruto','R$ Baixas','R$ Líquido','Conf. Cega','Sobra/Falta','Conferido por','Quebra Caixa','Origem']
               const data = filtered.map(s => {
@@ -475,6 +517,19 @@ export default function RelatoriosTab() {
                   <tr><td colSpan={15} className="px-4 py-6 text-center text-gray-400 text-sm">Nenhuma sessão no filtro selecionado.</td></tr>
                 )}
               </tbody>
+              {filtered.length > 0 && (
+                <tfoot className="bg-gray-100 border-t-2 border-gray-300 sticky bottom-0">
+                  <tr>
+                    <td colSpan={4} className="px-4 py-2 text-xs font-bold text-gray-700">Totais ({filtered.length} sessões)</td>
+                    <td className="px-4 py-2 text-xs font-bold text-blue-700">{fmt(sessionTotals.pix)}</td>
+                    <td className="px-4 py-2 text-xs font-bold text-gray-700">{fmt(sessionTotals.dinheiro)}</td>
+                    <td className="px-4 py-2 text-xs font-bold text-gray-800">{fmt(sessionTotals.bruto)}</td>
+                    <td className="px-4 py-2 text-xs font-bold text-red-600">{fmt(sessionTotals.baixas + sessionTotals.expense)}</td>
+                    <td className="px-4 py-2 text-xs font-bold text-green-700">{fmt(sessionTotals.bruto - sessionTotals.baixas - sessionTotals.expense)}</td>
+                    <td colSpan={6}></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )}
@@ -488,16 +543,47 @@ export default function RelatoriosTab() {
         <div className="p-4 flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">De</label>
-              <input type="month" value={reportFromMonth}
-                onChange={e => setReportFromMonth(e.target.value)}
-                className={inputCls} />
+              <label className="block text-xs text-gray-500 mb-1">Mês de</label>
+              <input type="month" value={reportFromMonth} onChange={e => setReportFromMonth(e.target.value)} className={inputCls} />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Até</label>
-              <input type="month" value={reportToMonth}
-                onChange={e => setReportToMonth(e.target.value)}
-                className={inputCls} />
+              <label className="block text-xs text-gray-500 mb-1">Mês até</label>
+              <input type="month" value={reportToMonth} onChange={e => setReportToMonth(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Pago de</label>
+              <input type="date" value={reportPaidFrom} onChange={e => setReportPaidFrom(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Pago até</label>
+              <input type="date" value={reportPaidTo} onChange={e => setReportPaidTo(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">CEP</label>
+              <input type="text" placeholder="ex: 21" value={reportCep} onChange={e => setReportCep(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Forma de Pagamento</label>
+              <select value={reportPaymentMethod} onChange={e => setReportPaymentMethod(e.target.value)} className={inputCls}>
+                <option value="">Todas</option>
+                {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Origem</label>
+              <select value={reportOrigem} onChange={e => setReportOrigem(e.target.value)} className={inputCls}>
+                <option value="all">Todas</option>
+                <option value="sistema">Sistema</option>
+                <option value="migracao">Migração</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Status</label>
+              <select value={reportStatusFilter} onChange={e => setReportStatusFilter(e.target.value)} className={inputCls}>
+                <option value="all">Todos</option>
+                <option value="paid">Pago</option>
+                <option value="pending">Pendente</option>
+              </select>
             </div>
           </div>
           <button onClick={loadReport} disabled={loadingReport}
@@ -522,14 +608,29 @@ export default function RelatoriosTab() {
                   <p className="text-lg font-bold text-blue-700">{report.total}</p>
                   <p className="text-xs text-blue-500">registros</p>
                 </div>
+                <div className="bg-indigo-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-indigo-600">Sistema</p>
+                  <p className="text-lg font-bold text-indigo-700">{report.paid_sistema_count}</p>
+                  <p className="text-xs text-indigo-500">pagos</p>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-purple-600">Migração</p>
+                  <p className="text-lg font-bold text-purple-700">{report.paid_migracao_count}</p>
+                  <p className="text-xs text-purple-500">{fmt(report.total_migracao)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">R$ Total pago</p>
+                  <p className="text-sm font-bold text-gray-800">{fmt(report.total_paid)}</p>
+                  <p className="text-xs text-gray-400">sistema + migração</p>
+                </div>
               </div>
               <button onClick={exportReportCSV}
                 className="flex items-center justify-center gap-2 border border-[#26619c] text-[#26619c] py-2 rounded-xl text-sm font-medium hover:bg-blue-50 transition">
                 <Upload className="w-4 h-4" />
                 Exportar CSV
               </button>
-              <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200">
-                <table className="w-full text-xs">
+              <div className="max-h-72 overflow-y-auto rounded-lg border border-gray-200">
+                <table className="w-full text-xs min-w-[700px]">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
                       <th className="text-left px-3 py-2 text-gray-500 font-medium">Morador</th>
@@ -538,23 +639,29 @@ export default function RelatoriosTab() {
                       <th className="text-right px-3 py-2 text-gray-500 font-medium">Valor</th>
                       <th className="text-center px-3 py-2 text-gray-500 font-medium">Status</th>
                       <th className="text-left px-3 py-2 text-gray-500 font-medium">Pago em</th>
+                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Forma Pgto</th>
+                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Origem</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {report.items.map(i => (
-                      <tr key={i.id}>
-                        <td className="px-3 py-2 text-gray-700 truncate max-w-[120px]">{i.resident_name}</td>
+                      <tr key={i.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 text-gray-700 truncate max-w-[130px]">{i.resident_name}</td>
                         <td className="px-3 py-2 text-gray-500">{i.reference_month}</td>
-                        <td className="px-3 py-2 text-gray-500">{i.due_date ? new Date(i.due_date).toLocaleDateString('pt-BR') : '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{i.due_date ? new Date(i.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
                         <td className="px-3 py-2 text-right font-medium text-gray-800">{fmt(i.amount)}</td>
                         <td className="px-3 py-2 text-center">
-                          <span className={`px-1.5 py-0.5 rounded-full font-medium text-xs ${
-                            i.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                          }`}>
+                          <span className={`px-1.5 py-0.5 rounded-full font-medium text-xs ${i.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                             {i.status === 'paid' ? 'Pago' : 'Pendente'}
                           </span>
                         </td>
-                        <td className="px-3 py-2 text-gray-500 text-xs">{i.paid_at ? new Date(i.paid_at).toLocaleDateString('pt-BR') : '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{i.paid_at ? new Date(i.paid_at).toLocaleDateString('pt-BR') : '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{i.payment_method_name ?? '—'}</td>
+                        <td className="px-3 py-2">
+                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${i.origem === 'sistema' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                            {i.origem === 'sistema' ? 'Sistema' : 'Migração'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

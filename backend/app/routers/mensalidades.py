@@ -299,11 +299,22 @@ async def list_paid(
 async def payment_report(
     from_month: str = Query(..., description="Mês inicial YYYY-MM"),
     to_month: str = Query(..., description="Mês final YYYY-MM"),
+    paid_from: date | None = Query(None),
+    paid_to: date | None = Query(None),
+    cep: str | None = Query(None),
+    payment_method_id: UUID | None = Query(None),
+    origem: str | None = Query(None, description="sistema|migracao|all"),
+    status_filter: str | None = Query(None, alias="status", description="paid|pending|all"),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = MensalidadeService(session)
-    return await svc.payment_report(current.association_id, from_month, to_month)
+    return await svc.payment_report(
+        current.association_id, from_month, to_month,
+        paid_from=paid_from, paid_to=paid_to, cep=cep,
+        payment_method_id=payment_method_id, origem=origem,
+        status_filter=status_filter,
+    )
 
 
 @router.get("/{mensalidade_id}/comprovante", summary="Dados do comprovante de pagamento")
