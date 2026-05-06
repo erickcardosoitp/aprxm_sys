@@ -45,7 +45,7 @@ async def list_tasks(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    filters = ["association_id = :aid"]
+    filters = ["t.association_id = :aid"]
     params: dict = {"aid": str(current.association_id)}
     if assigned_to:
         filters.append("assigned_to = :at")
