@@ -36,6 +36,9 @@ api.interceptors.request.use((config) => {
   const token = raw ? JSON.parse(raw)?.state?.token : null
   if (token) config.headers.Authorization = `Bearer ${token}`
   config.headers['X-Device-Token'] = getDeviceToken()
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type']
+  }
   return config
 })
 
