@@ -1574,9 +1574,15 @@ async def save_session_reviews(
             "obs": rev.observacao, "rev": str(body.reviewed_by_id) if body.reviewed_by_id else None,
         })
     # Mark session as conferido and optionally update closing_balance
-    update_fields = "reviewed_by=:rev, status='conferido'"
+    # COALESCE ensures closed_by/closed_at stay filled after a reopen (constraint requires NOT NULL)
+    update_fields = (
+        "reviewed_by=:rev, status='conferido',"
+        " closed_by=COALESCE(closed_by, :cur_user),"
+        " closed_at=COALESCE(closed_at, NOW())"
+    )
     params: dict = {
         "rev": str(body.reviewed_by_id) if body.reviewed_by_id else None,
+        "cur_user": str(current.user_id),
         "sid": session_id,
         "aid": str(current.association_id),
     }
