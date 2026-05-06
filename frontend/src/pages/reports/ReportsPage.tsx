@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
-import { Download, DollarSign, Users, Package, FileText, CreditCard, ClipboardList, Search, ChevronDown, ChevronRight } from 'lucide-react'
+import { Download, DollarSign, Users, Package, FileText, CreditCard, ClipboardList, Search, ChevronDown, ChevronRight, CheckSquare, Mail, BarChart2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
-type ModuleKey = 'finance' | 'residents' | 'packages' | 'service-orders' | 'mensalidades' | 'daily-records'
+type ModuleKey = 'finance' | 'residents' | 'packages' | 'service-orders' | 'mensalidades' | 'daily-records' | 'entregas'
 
 interface ModuleDef {
   key: ModuleKey
@@ -14,12 +14,13 @@ interface ModuleDef {
 }
 
 const MODULES: ModuleDef[] = [
-  { key: 'finance',        label: 'Financeiro',       endpoint: 'finance',        icon: DollarSign },
-  { key: 'residents',      label: 'Moradores',        endpoint: 'residents',      icon: Users },
-  { key: 'packages',       label: 'Encomendas',       endpoint: 'packages',       icon: Package },
-  { key: 'service-orders', label: 'Ordens de Serviço',endpoint: 'service-orders', icon: FileText },
-  { key: 'mensalidades',   label: 'Mensalidades',     endpoint: 'mensalidades',   icon: CreditCard },
-  { key: 'daily-records',  label: 'Registros Diários',endpoint: 'daily-records',  icon: ClipboardList },
+  { key: 'finance',        label: 'Financeiro',        endpoint: 'finance',        icon: DollarSign },
+  { key: 'residents',      label: 'Moradores',         endpoint: 'residents',      icon: Users },
+  { key: 'packages',       label: 'Encomendas',        endpoint: 'packages',       icon: Package },
+  { key: 'service-orders', label: 'Ordens de Serviço', endpoint: 'service-orders', icon: FileText },
+  { key: 'mensalidades',   label: 'Mensalidades',      endpoint: 'mensalidades',   icon: CreditCard },
+  { key: 'daily-records',  label: 'Registros Diários', endpoint: 'daily-records',  icon: ClipboardList },
+  { key: 'entregas',       label: 'Entregas',          endpoint: 'entregas',       icon: CheckSquare },
 ]
 
 function firstDayOfMonth() {
@@ -32,6 +33,12 @@ const inputCls = 'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outl
 const selectCls = inputCls + ' appearance-none'
 
 // ─── Filter panels per module ─────────────────────────────────────────────────
+
+const ENT_TYPES = ['tarefas', 'checklist', 'comentarios', 'os', 'demandas'] as const
+const ENT_TYPE_LABELS: Record<string, string> = {
+  tarefas: 'Tarefas concluídas', checklist: 'Checklist', comentarios: 'Comentários',
+  os: 'OS concluídas', demandas: 'Demandas concluídas',
+}
 
 interface FiltersState {
   date_from: string
@@ -52,6 +59,8 @@ interface FiltersState {
   ref_month: string
   task_status: string
   task_priority: string
+  ent_user_id: string
+  ent_types: string[]
 }
 
 const DEFAULT_FILTERS: FiltersState = {
@@ -65,6 +74,8 @@ const DEFAULT_FILTERS: FiltersState = {
   so_status: '', so_priority: '', category: '',
   men_status: '', ref_month: '',
   task_status: '', task_priority: '',
+  ent_user_id: '',
+  ent_types: [...ENT_TYPES],
 }
 
 function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string | string[]> {
@@ -80,6 +91,11 @@ function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string
   if (mod === 'service-orders') { date(); d('so_status'); d('so_priority'); d('category') }
   if (mod === 'mensalidades')   { date(); d('men_status'); d('ref_month') }
   if (mod === 'daily-records')  { date(); d('task_status'); d('task_priority') }
+  if (mod === 'entregas') {
+    date()
+    if (f.ent_user_id) p['user_id'] = f.ent_user_id
+    if (f.ent_types.length && f.ent_types.length < ENT_TYPES.length) p['types'] = f.ent_types.join(',')
+  }
   return p
 }
 
@@ -311,7 +327,181 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
     </div>
   )
 
+  if (mod === 'entregas') return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {dateRangeFields}
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Colaborador</label>
+          <div className="relative">
+            <select
+              value={filters.ent_user_id}
+              onChange={e => setFilters(f => ({ ...f, ent_user_id: e.target.value }))}
+              className={selectCls}
+            >
+              <option value="">Todos</option>
+              {operators.map(o => <option key={o.id} value={o.id}>{o.full_name}</option>)}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Tipos de entrega</label>
+        <div className="flex flex-wrap gap-2">
+          {ENT_TYPES.map(t => {
+            const active = filters.ent_types.includes(t)
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setFilters(f => ({
+                  ...f,
+                  ent_types: active
+                    ? f.ent_types.filter(x => x !== t)
+                    : [...f.ent_types, t],
+                }))}
+                className={`text-xs px-3 py-1.5 rounded-full border font-medium transition ${
+                  active ? 'bg-[#26619c] border-[#26619c] text-white' : 'bg-white border-gray-300 text-gray-500'
+                }`}
+              >
+                {ENT_TYPE_LABELS[t]}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+
   return null
+}
+
+// ─── Entregas View ────────────────────────────────────────────────────────────
+
+interface EntregaItem {
+  type: string
+  title: string
+  date: string | null
+  ref: string | null
+}
+interface EntregaUser {
+  user_id: string
+  user_name: string
+  total: number
+  by_type: Record<string, number>
+  items: EntregaItem[]
+}
+
+const ENT_ICONS: Record<string, string> = {
+  tarefas: '●', checklist: '☑', comentarios: '💬', os: '🔧', demandas: '📋',
+}
+const ENT_COLORS: Record<string, string> = {
+  tarefas: 'bg-blue-100 text-blue-700',
+  checklist: 'bg-emerald-100 text-emerald-700',
+  comentarios: 'bg-purple-100 text-purple-700',
+  os: 'bg-orange-100 text-orange-700',
+  demandas: 'bg-pink-100 text-pink-700',
+}
+
+function EntregasSummary({ data }: { data: EntregaUser[] }) {
+  const totals = { total: 0, tarefas: 0, checklist: 0, comentarios: 0, os: 0, demandas: 0 }
+  for (const u of data) {
+    totals.total += u.total
+    for (const [k, v] of Object.entries(u.by_type)) {
+      totals[k as keyof typeof totals] = (totals[k as keyof typeof totals] || 0) + v
+    }
+  }
+  const cards = [
+    { label: 'Total', value: totals.total, bg: 'bg-gray-50', text: 'text-gray-800' },
+    { label: 'Tarefas', value: totals.tarefas, bg: 'bg-blue-50', text: 'text-blue-700' },
+    { label: 'Checklist', value: totals.checklist, bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    { label: 'Comentários', value: totals.comentarios, bg: 'bg-purple-50', text: 'text-purple-700' },
+    { label: 'OS', value: totals.os, bg: 'bg-orange-50', text: 'text-orange-700' },
+    { label: 'Demandas', value: totals.demandas, bg: 'bg-pink-50', text: 'text-pink-700' },
+  ]
+  return (
+    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
+      {cards.map(c => (
+        <div key={c.label} className={`${c.bg} rounded-xl p-3 text-center`}>
+          <p className={`text-[10px] uppercase tracking-wide font-semibold ${c.text} opacity-70`}>{c.label}</p>
+          <p className={`text-2xl font-bold ${c.text}`}>{c.value}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function EntregasUserCard({ user }: { user: EntregaUser }) {
+  const [expanded, setExpanded] = useState(false)
+  const [showAll, setShowAll] = useState(false)
+  const items = showAll ? user.items : user.items.slice(0, 5)
+  const initials = user.user_name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition text-left"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <ChevronRight className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          <div className="w-8 h-8 rounded-full bg-[#26619c] text-white flex items-center justify-center text-xs font-bold shrink-0">
+            {initials}
+          </div>
+          <span className="font-semibold text-gray-800 text-sm truncate">{user.user_name}</span>
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+            {ENT_TYPES.map(t => user.by_type[t] > 0 && (
+              <span key={t} className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${ENT_COLORS[t]}`}>
+                {ENT_ICONS[t]} {user.by_type[t]}
+              </span>
+            ))}
+          </div>
+        </div>
+        <span className="ml-3 shrink-0 text-sm font-bold text-[#26619c] bg-blue-50 px-2.5 py-0.5 rounded-full">
+          {user.total}
+        </span>
+      </button>
+      {expanded && (
+        <div className="divide-y divide-gray-100">
+          {items.map((item, i) => (
+            <div key={i} className="flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50/50">
+              <span className={`mt-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${ENT_COLORS[item.type]}`}>
+                {ENT_ICONS[item.type]} {ENT_TYPE_LABELS[item.type]}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-gray-800 truncate">{item.title}</p>
+                {item.ref && <p className="text-[11px] text-gray-400 truncate">{item.ref}</p>}
+              </div>
+              {item.date && (
+                <span className="text-[11px] text-gray-400 shrink-0 tabular-nums">
+                  {new Date(item.date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                </span>
+              )}
+            </div>
+          ))}
+          {!showAll && user.items.length > 5 && (
+            <button
+              onClick={e => { e.stopPropagation(); setShowAll(true) }}
+              className="w-full py-2 text-xs text-[#26619c] hover:bg-blue-50 transition font-medium"
+            >
+              ver mais {user.items.length - 5} itens...
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EntregasView({ data }: { data: EntregaUser[] }) {
+  if (!data.length) return <div className="text-center py-16 text-gray-400 text-sm">Nenhuma entrega encontrada no período.</div>
+  return (
+    <div className="flex flex-col gap-2">
+      <EntregasSummary data={data} />
+      {data.map(u => <EntregasUserCard key={u.user_id} user={u} />)}
+    </div>
+  )
 }
 
 // ─── Packages KPIs + Grouped Table ────────────────────────────────────────────
@@ -562,11 +752,17 @@ export default function ReportsPage() {
   const [selected, setSelected] = useState<ModuleKey>('finance')
   const [filters, setFilters] = useState<FiltersState>(DEFAULT_FILTERS)
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
+  const [entregasData, setEntregasData] = useState<EntregaUser[] | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [operators, setOperators] = useState<{ id: string; full_name: string }[]>([])
   const [pkgStatusFilter, setPkgStatusFilter] = useState('')
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set())
+  const [exportOpen, setExportOpen] = useState(false)
+  const [emailInput, setEmailInput] = useState('')
+  const [showEmailInput, setShowEmailInput] = useState(false)
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const exportRef = useRef<HTMLDivElement>(null)
   const toggleCol = (c: string) => setHiddenCols(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n })
 
   useEffect(() => {
@@ -575,23 +771,44 @@ export default function ReportsPage() {
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false)
+        setShowEmailInput(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
   const mod = MODULES.find(m => m.key === selected)!
+  const isEntregas = selected === 'entregas'
 
   const handleModuleChange = (key: ModuleKey) => {
     setSelected(key)
     setRows(null)
+    setEntregasData(null)
     setPkgStatusFilter('')
     setHiddenCols(new Set())
+    setExportOpen(false)
+    setShowEmailInput(false)
   }
 
   const handlePreview = async () => {
     setPreviewing(true)
     setRows(null)
+    setEntregasData(null)
     setHiddenCols(new Set())
     try {
       const params = filtersToParams(selected, filters)
-      const res = await api.get(`/reports/${mod.endpoint}/preview`, { params })
-      setRows(res.data)
+      if (isEntregas) {
+        const res = await api.get('/reports/entregas', { params })
+        setEntregasData(res.data)
+      } else {
+        const res = await api.get(`/reports/${mod.endpoint}/preview`, { params })
+        setRows(res.data)
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao buscar dados.')
     } finally {
@@ -614,6 +831,49 @@ export default function ReportsPage() {
       toast.error('Erro ao exportar.')
     } finally {
       setExporting(false)
+    }
+  }
+
+  const handleEntregasExport = async (fmt: 'excel' | 'pdf') => {
+    setExporting(true)
+    setExportOpen(false)
+    try {
+      const params = { ...filtersToParams(selected, filters), fmt }
+      const res = await api.get('/reports/entregas/export', { params, responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `entregas.${fmt === 'pdf' ? 'pdf' : 'xlsx'}`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Download iniciado.')
+    } catch {
+      toast.error('Erro ao exportar.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleEntregasEmail = async () => {
+    if (!emailInput.trim()) return
+    setSendingEmail(true)
+    try {
+      const params = filtersToParams(selected, filters)
+      await api.post('/reports/entregas/email', {
+        email: emailInput.trim(),
+        date_from: params.date_from || null,
+        date_to: params.date_to || null,
+        user_id: params.user_id || null,
+        types: params.types || null,
+      })
+      toast.success(`Relatório enviado para ${emailInput}`)
+      setShowEmailInput(false)
+      setEmailInput('')
+      setExportOpen(false)
+    } catch {
+      toast.error('Erro ao enviar e-mail.')
+    } finally {
+      setSendingEmail(false)
     }
   }
 
@@ -653,7 +913,7 @@ export default function ReportsPage() {
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Filtros</p>
         <FilterPanel mod={selected} filters={filters} setFilters={setFilters} operators={operators} />
 
-        <div className="flex gap-2 mt-4">
+        <div className="flex flex-wrap gap-2 mt-4">
           <button
             onClick={handlePreview}
             disabled={previewing}
@@ -665,22 +925,100 @@ export default function ReportsPage() {
             }
             Visualizar
           </button>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
-          >
-            {exporting
-              ? <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              : <Download className="w-4 h-4" />
-            }
-            Exportar Excel
-          </button>
+
+          {!isEntregas && (
+            <button
+              onClick={handleExport}
+              disabled={exporting || !rows?.length}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
+            >
+              {exporting
+                ? <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                : <Download className="w-4 h-4" />
+              }
+              Exportar Excel
+            </button>
+          )}
+
+          {isEntregas && (
+            <div className="relative" ref={exportRef}>
+              <button
+                onClick={() => { setExportOpen(v => !v); setShowEmailInput(false) }}
+                disabled={exporting}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
+              >
+                {exporting
+                  ? <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <Download className="w-4 h-4" />
+                }
+                Exportar
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {exportOpen && (
+                <div className="absolute left-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+                  <button
+                    onClick={() => handleEntregasExport('excel')}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-gray-50 transition"
+                  >
+                    <BarChart2 className="w-4 h-4 text-emerald-600" />
+                    Baixar Excel
+                  </button>
+                  <button
+                    onClick={() => handleEntregasExport('pdf')}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-gray-50 transition border-t border-gray-100"
+                  >
+                    <FileText className="w-4 h-4 text-red-500" />
+                    Baixar PDF
+                  </button>
+                  <button
+                    onClick={() => setShowEmailInput(v => !v)}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-gray-50 transition border-t border-gray-100"
+                  >
+                    <Mail className="w-4 h-4 text-[#26619c]" />
+                    Enviar por e-mail
+                  </button>
+                  {showEmailInput && (
+                    <div className="px-3 pb-3 pt-1 border-t border-gray-100 flex flex-col gap-2">
+                      <input
+                        type="email"
+                        placeholder="email@exemplo.com"
+                        value={emailInput}
+                        onChange={e => setEmailInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleEntregasEmail()}
+                        className={inputCls}
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleEntregasEmail}
+                        disabled={sendingEmail || !emailInput.trim()}
+                        className="w-full py-1.5 bg-[#26619c] text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition hover:bg-[#1a4f87]"
+                      >
+                        {sendingEmail ? 'Enviando...' : 'Enviar'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Entregas Preview */}
+      {isEntregas && entregasData !== null && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Relatório de Entregas</p>
+            <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-3 py-1">
+              {entregasData.length} colaborador{entregasData.length !== 1 ? 'es' : ''}
+            </span>
+          </div>
+          <EntregasView data={entregasData} />
+        </div>
+      )}
+
       {/* Preview */}
-      {rows !== null && (() => {
+      {!isEntregas && rows !== null && (() => {
         const visibleRows = selected === 'packages' && pkgStatusFilter
           ? rows.filter(r => {
               const statuses = STATUS_VALUES[pkgStatusFilter] ?? [pkgStatusFilter]
