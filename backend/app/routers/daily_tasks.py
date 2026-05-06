@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date as date_type, datetime
+from datetime import date, date as date_type, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -258,7 +258,7 @@ async def delete_task(
     return {"ok": True}
 
 
-@router.get("/report/by-user", summary="Relatório de entregas por colaborador")
+@router.get("/report/by-user", summary="Relatório de atividade por colaborador")
 async def report_by_user(
     date_from: str | None = None,
     date_to: str | None = None,
@@ -266,45 +266,99 @@ async def report_by_user(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     aids = await _group_assoc_ids(str(current.association_id), session)
-    filters = ["t.association_id = ANY(:aids)"]
     params: dict = {"aids": aids}
+    date_filter_task = ""
+    date_filter_comment = ""
     if date_from:
-        filters.append("t.due_date >= CAST(:df AS date)")
+        date_filter_task += " AND t.created_at >= CAST(:df AS timestamptz)"
+        date_filter_comment += " AND c.created_at >= CAST(:df AS timestamptz)"
         params["df"] = date_from
     if date_to:
-        filters.append("t.due_date <= CAST(:dt AS date)")
+        date_filter_task += " AND t.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
+        date_filter_comment += " AND c.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
         params["dt"] = date_to
-    where = " AND ".join(filters)
-    rows = (await session.execute(text(f"""
+
+    # Tasks assigned to or created by user
+    task_rows = (await session.execute(text(f"""
         SELECT
-            t.assigned_to,
-            t.assigned_to_name,
-            COUNT(*) AS total,
-            COUNT(*) FILTER (WHERE t.status = 'done') AS concluidas,
-            COUNT(*) FILTER (WHERE t.status != 'done' AND t.due_date < CURRENT_DATE) AS atrasadas,
-            ARRAY_AGG(JSON_BUILD_OBJECT(
-                'id', t.id,
-                'title', t.title,
-                'status', t.status,
-                'due_date', t.due_date,
-                'so_title', t.service_order_title,
-                'checklist', t.checklist
-            ) ORDER BY t.due_date ASC NULLS LAST) AS tasks
-        FROM daily_tasks t
-        WHERE {where} AND t.assigned_to IS NOT NULL
-        GROUP BY t.assigned_to, t.assigned_to_name
-        ORDER BY concluidas DESC
+            u.id AS user_id,
+            u.full_name AS user_name,
+            t.id, t.title, t.status, t.due_date, t.service_order_title,
+            t.checklist, t.created_at, t.updated_at,
+            CASE WHEN t.assigned_to = u.id THEN 'assigned' ELSE 'created' END AS relation
+        FROM users u
+        JOIN daily_tasks t ON (t.assigned_to = u.id OR t.created_by = u.id)
+        WHERE t.association_id = ANY(:aids)
+          AND u.association_id = ANY(:aids)
+          {date_filter_task}
+        ORDER BY u.full_name, t.created_at DESC
     """), params)).fetchall()
-    return [
-        {
-            "user_id": str(r[0]),
-            "user_name": r[1],
-            "total": r[2],
-            "concluidas": r[3],
-            "atrasadas": r[4],
-            "tasks": r[5] or [],
-        }
-        for r in rows
+
+    # Comments / acompanhamentos by user
+    comment_rows = (await session.execute(text(f"""
+        SELECT
+            c.created_by AS user_id,
+            u.full_name AS user_name,
+            c.id, c.comment, c.created_at,
+            t.id AS task_id, t.title AS task_title
+        FROM daily_task_comments c
+        JOIN users u ON u.id = c.created_by
+        JOIN daily_tasks t ON t.id = c.task_id
+        WHERE c.association_id = ANY(:aids)
+          {date_filter_comment}
+        ORDER BY c.created_at DESC
+    """), params)).fetchall()
+
+    # Group by user
+    import json as _json
+    from collections import defaultdict
+    users_map: dict = {}
+
+    for r in task_rows:
+        uid = str(r[0])
+        if uid not in users_map:
+            users_map[uid] = {"user_id": uid, "user_name": r[1], "tasks": [], "comments": []}
+        # avoid duplicate tasks (assigned+created)
+        if not any(t["id"] == str(r[2]) for t in users_map[uid]["tasks"]):
+            checklist = r[7]
+            if isinstance(checklist, str):
+                try: checklist = _json.loads(checklist)
+                except: checklist = []
+            users_map[uid]["tasks"].append({
+                "id": str(r[2]), "title": r[3], "status": r[4],
+                "due_date": str(r[5]) if r[5] else None,
+                "so_title": r[6], "checklist": checklist or [],
+                "created_at": str(r[8])[:16], "relation": r[10],
+            })
+
+    for r in comment_rows:
+        uid = str(r[0])
+        if uid not in users_map:
+            users_map[uid] = {"user_id": uid, "user_name": r[1], "tasks": [], "comments": []}
+        users_map[uid]["comments"].append({
+            "id": str(r[2]), "comment": r[3],
+            "created_at": str(r[4])[:16],
+            "task_id": str(r[5]), "task_title": r[6],
+        })
+
+    result = []
+    for entry in users_map.values():
+        tasks = entry["tasks"]
+        concluidas = sum(1 for t in tasks if t["status"] == "done")
+        atrasadas = sum(1 for t in tasks if t["status"] != "done" and t["due_date"] and t["due_date"] < str(date.today()))
+        result.append({
+            "user_id": entry["user_id"],
+            "user_name": entry["user_name"],
+            "total": len(tasks),
+            "concluidas": concluidas,
+            "atrasadas": atrasadas,
+            "tasks": tasks,
+            "comments": entry["comments"],
+            "total_comments": len(entry["comments"]),
+        })
+
+    result.sort(key=lambda x: (-x["total_comments"] - x["total"], x["user_name"]))
+    return result
     ]
 
 

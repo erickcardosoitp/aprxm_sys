@@ -2257,26 +2257,54 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
             <div className="w-full bg-gray-100 rounded-full h-2 mb-3">
               <div className="bg-[#26619c] h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
             </div>
-            <div className="flex gap-4 text-xs mb-4">
+            <div className="flex gap-4 text-xs mb-4 flex-wrap">
               <span className="text-green-600 font-medium">✓ {user.concluidas} concluída(s)</span>
               <span className="text-yellow-600 font-medium">⏳ {user.total - user.concluidas - user.atrasadas} pendente(s)</span>
               {user.atrasadas > 0 && <span className="text-red-600 font-medium">⚠ {user.atrasadas} atrasada(s)</span>}
+              {user.total_comments > 0 && <span className="text-purple-600 font-medium">💬 {user.total_comments} acompanhamento(s)</span>}
             </div>
-            <div className="flex flex-col gap-2">
-              {user.tasks.map((t: any) => (
-                <div key={t.id} className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm ${t.status === 'done' ? 'bg-green-50 border-green-200' : t.due_date && t.due_date < today ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
-                  <span className={`mt-0.5 text-base ${t.status === 'done' ? 'text-green-500' : 'text-gray-300'}`}>{t.status === 'done' ? '✓' : '○'}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className={`font-medium ${t.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{t.title}</p>
-                    <div className="flex gap-2 mt-0.5 flex-wrap">
-                      {t.due_date && <span className="text-[10px] text-gray-500">Prazo: {new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>}
-                      {t.so_title && <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{t.so_title}</span>}
-                      {t.checklist?.length > 0 && <span className="text-[10px] text-gray-500">{t.checklist.filter((c: any) => c.done).length}/{t.checklist.length} itens</span>}
+
+            {user.tasks.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tarefas</p>
+                <div className="flex flex-col gap-2">
+                  {user.tasks.map((t: any) => (
+                    <div key={t.id} className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm ${t.status === 'done' ? 'bg-green-50 border-green-200' : t.due_date && t.due_date < today ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <span className={`mt-0.5 text-base ${t.status === 'done' ? 'text-green-500' : 'text-gray-300'}`}>{t.status === 'done' ? '✓' : '○'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className={`font-medium ${t.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{t.title}</p>
+                        <div className="flex gap-2 mt-0.5 flex-wrap">
+                          {t.relation === 'created' && <span className="text-[10px] text-gray-400 italic">criou</span>}
+                          {t.due_date && <span className="text-[10px] text-gray-500">Prazo: {new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>}
+                          {t.so_title && <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{t.so_title}</span>}
+                          {t.checklist?.length > 0 && <span className="text-[10px] text-gray-500">{t.checklist.filter((c: any) => c.done).length}/{t.checklist.length} itens</span>}
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {user.comments?.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Acompanhamentos</p>
+                <div className="flex flex-col gap-2">
+                  {user.comments.map((c: any) => (
+                    <div key={c.id} className="flex items-start gap-2 px-3 py-2 rounded-lg border bg-purple-50 border-purple-200 text-sm">
+                      <span className="mt-0.5 text-purple-400">💬</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-gray-700">{c.comment}</p>
+                        <div className="flex gap-2 mt-0.5 flex-wrap">
+                          <span className="text-[10px] text-gray-500">{c.created_at?.slice(0, 16).replace('T', ' ')}</span>
+                          <span className="text-[10px] text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded">{c.task_title}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )
       })}
