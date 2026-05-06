@@ -114,6 +114,7 @@ database/schema.sql # DDL completo (enums, triggers, RLS)
 | Logistics | Package: received → notified → delivered/returned; taxa R$2.50 se não-membro |
 | Residents | `member` (CPF required) vs `guest`; `ResidentStatus` controla elegibilidade de taxa |
 | OS | ServiceOrder + PDF (fpdf2); numeração auto-incremental por tenant |
+| Mensalidades | `mensalidades` tabela principal. Pagamentos históricos (sem forma de pagamento) estão em `migration_payments` (campo `competencia`, não `reference_month`). Inadimplência usa `due_date < grace_cutoff` (não reference_month). `monthly_payment_day` no morador define o dia de vencimento; se NULL, usa padrão da geração. |
 
 ---
 
