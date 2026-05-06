@@ -753,6 +753,7 @@ const MODULES_LABELS: Record<string, string> = {
   packages: 'Encomendas',
   settings: 'Configurações',
   daily_tasks: 'Tarefas Diárias',
+  reports: 'Relatórios',
 }
 
 const ROLE_COLS: { role: string; label: string }[] = [

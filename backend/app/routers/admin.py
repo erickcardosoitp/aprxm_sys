@@ -430,18 +430,18 @@ async def run_task_now(
 
 # ── Role Permissions ─────────────────────────────────────────────────────────
 
-MODULES = ['finance', 'service_orders', 'residents', 'packages', 'settings', 'daily_tasks']
+MODULES = ['finance', 'service_orders', 'residents', 'packages', 'settings', 'daily_tasks', 'reports']
 CONFIGURABLE_ROLES = ['admin', 'conferente', 'diretoria', 'diretoria_adjunta', 'conselho', 'operator', 'viewer']
 
 _T, _F = True, False
 DEFAULT_PERMISSIONS: dict[str, dict[str, tuple[bool, bool]]] = {
-    'admin':            {'finance': (_T,_T), 'service_orders': (_T,_T), 'residents': (_T,_T), 'packages': (_T,_T), 'settings': (_T,_T), 'daily_tasks': (_T,_T)},
-    'conferente':       {'finance': (_T,_T), 'service_orders': (_T,_T), 'residents': (_T,_T), 'packages': (_T,_T), 'settings': (_T,_T), 'daily_tasks': (_T,_T)},
-    'diretoria':        {'finance': (_T,_T), 'service_orders': (_T,_T), 'residents': (_T,_T), 'packages': (_T,_T), 'settings': (_T,_F), 'daily_tasks': (_T,_T)},
-    'diretoria_adjunta':{'finance': (_T,_F), 'service_orders': (_T,_T), 'residents': (_T,_F), 'packages': (_T,_F), 'settings': (_F,_F), 'daily_tasks': (_T,_T)},
-    'conselho':         {'finance': (_T,_F), 'service_orders': (_T,_F), 'residents': (_T,_F), 'packages': (_T,_F), 'settings': (_F,_F), 'daily_tasks': (_T,_F)},
-    'operator':         {'finance': (_T,_F), 'service_orders': (_T,_F), 'residents': (_T,_F), 'packages': (_T,_T), 'settings': (_F,_F), 'daily_tasks': (_T,_F)},
-    'viewer':           {'finance': (_T,_F), 'service_orders': (_T,_F), 'residents': (_T,_F), 'packages': (_T,_F), 'settings': (_F,_F), 'daily_tasks': (_T,_F)},
+    'admin':            {'finance': (_T,_T), 'service_orders': (_T,_T), 'residents': (_T,_T), 'packages': (_T,_T), 'settings': (_T,_T), 'daily_tasks': (_T,_T), 'reports': (_T,_T)},
+    'conferente':       {'finance': (_T,_T), 'service_orders': (_T,_T), 'residents': (_T,_T), 'packages': (_T,_T), 'settings': (_T,_T), 'daily_tasks': (_T,_T), 'reports': (_T,_T)},
+    'diretoria':        {'finance': (_T,_T), 'service_orders': (_T,_T), 'residents': (_T,_T), 'packages': (_T,_T), 'settings': (_T,_F), 'daily_tasks': (_T,_T), 'reports': (_T,_T)},
+    'diretoria_adjunta':{'finance': (_T,_F), 'service_orders': (_T,_T), 'residents': (_T,_F), 'packages': (_T,_F), 'settings': (_F,_F), 'daily_tasks': (_T,_T), 'reports': (_T,_F)},
+    'conselho':         {'finance': (_T,_F), 'service_orders': (_T,_F), 'residents': (_T,_F), 'packages': (_T,_F), 'settings': (_F,_F), 'daily_tasks': (_T,_F), 'reports': (_T,_F)},
+    'operator':         {'finance': (_T,_F), 'service_orders': (_T,_F), 'residents': (_T,_F), 'packages': (_T,_T), 'settings': (_F,_F), 'daily_tasks': (_T,_F), 'reports': (_F,_F)},
+    'viewer':           {'finance': (_T,_F), 'service_orders': (_T,_F), 'residents': (_T,_F), 'packages': (_T,_F), 'settings': (_F,_F), 'daily_tasks': (_T,_F), 'reports': (_F,_F)},
 }
 
 
