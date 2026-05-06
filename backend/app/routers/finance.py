@@ -330,19 +330,30 @@ async def reprint_proof_of_residence(
         # Legacy plain-text description: "Comprovante de Residência — Name"
         parts = description.split(" — ", 1)
         if len(parts) == 2:
-            r_name = parts[1]
+            r_name = parts[1].strip()
+
+        # Try to resolve resident data by resident_id or by name match
+        res_row = None
         if resident_id:
             res_row = (await session.execute(sa_text("""
                 SELECT full_name, cpf, address_neighborhood, address_cep, address_street, address_number
                   FROM residents WHERE id = :rid
             """), {"rid": str(resident_id)})).fetchone()
-            if res_row:
-                r_name = _s(res_row[0]) or r_name
-                r_cpf = _s(res_row[1])
-                r_neighborhood = _s(res_row[2])
-                r_cep = _s(res_row[3])
-                r_street = _s(res_row[4])
-                r_number = _s(res_row[5])
+        if not res_row and r_name != "(nao identificado)":
+            res_row = (await session.execute(sa_text("""
+                SELECT full_name, cpf, address_neighborhood, address_cep, address_street, address_number
+                  FROM residents
+                 WHERE association_id = :aid
+                   AND LOWER(full_name) = LOWER(:name)
+                 LIMIT 1
+            """), {"aid": tx_assoc_id, "name": r_name})).fetchone()
+        if res_row:
+            r_name = _s(res_row[0]) or r_name
+            r_cpf = _s(res_row[1])
+            r_neighborhood = _s(res_row[2])
+            r_cep = _s(res_row[3])
+            r_street = _s(res_row[4])
+            r_number = _s(res_row[5])
 
     cfg = (await session.execute(sa_text("""
         SELECT assoc_logo_url, president_signature_url, president_name,
