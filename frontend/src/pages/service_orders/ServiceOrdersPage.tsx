@@ -1884,10 +1884,18 @@ interface DailyTask {
   reminder_at?: string
   status: 'pending' | 'done'
   checklist: { text: string; done: boolean }[]
+  attachment_urls: string[]
   service_order_id?: string
   service_order_title?: string
   creator_name?: string
   created_at: string
+}
+
+interface GroupUser {
+  id: string
+  full_name: string
+  role?: string
+  assoc_name?: string
 }
 
 function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
@@ -1902,7 +1910,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [reportTo, setReportTo] = useState(new Date().toISOString().slice(0, 10))
   const [loadingReport, setLoadingReport] = useState(false)
   const [filterStatus, setFilterStatus] = useState('')
-  const [users, setUsers] = useState<UserResult[]>([])
+  const [users, setUsers] = useState<GroupUser[]>([])
 
   const [fTitle, setFTitle] = useState('')
   const [fDesc, setFDesc] = useState('')
@@ -1912,6 +1920,8 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [fReminder, setFReminder] = useState('')
   const [fChecklist, setFChecklist] = useState<{ text: string; done: boolean }[]>([])
   const [fCheckInput, setFCheckInput] = useState('')
+  const [fAttachments, setFAttachments] = useState<string[]>([])
+  const [uploadingFile, setUploadingFile] = useState(false)
   const [fSOId, setFSOId] = useState('')
   const [fSOTitle, setFSOTitle] = useState('')
   const [soSearch, setSOSearch] = useState('')
@@ -1933,7 +1943,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
   const loadUsers = async () => {
     try {
-      const res = await api.get<UserResult[]>('/admin/users')
+      const res = await api.get<GroupUser[]>('/daily-tasks/users/group')
       setUsers(res.data)
     } catch { /* silent */ }
   }
@@ -1941,9 +1951,23 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   useEffect(() => { load() }, [filterStatus])
   useEffect(() => { loadUsers() }, [])
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingFile(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await api.post<{ url: string }>('/uploads', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      setFAttachments(prev => [...prev, res.data.url])
+    } catch { toast.error('Erro ao enviar arquivo.') }
+    finally { setUploadingFile(false); e.target.value = '' }
+  }
+
   const resetForm = () => {
     setFTitle(''); setFDesc(''); setFAssignedTo(''); setFAssignedName('')
     setFDueDate(''); setFReminder(''); setFChecklist([]); setFCheckInput('')
+    setFAttachments([])
     setFSOId(''); setFSOTitle(''); setSOSearch(''); setSOResults([])
     setShowForm(false); setEditingId(null)
   }
@@ -1952,7 +1976,8 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     setFTitle(t.title); setFDesc(t.description ?? ''); setFAssignedTo(t.assigned_to ?? '')
     setFAssignedName(t.assigned_to_name ?? ''); setFDueDate(t.due_date ?? '')
     setFReminder(t.reminder_at ? t.reminder_at.slice(0, 16) : '')
-    setFChecklist(t.checklist); setFSOId(t.service_order_id ?? ''); setFSOTitle(t.service_order_title ?? '')
+    setFChecklist(t.checklist); setFAttachments(t.attachment_urls ?? [])
+    setFSOId(t.service_order_id ?? ''); setFSOTitle(t.service_order_title ?? '')
     setEditingId(t.id); setShowForm(true)
   }
 
@@ -1977,6 +2002,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         due_date: fDueDate || undefined,
         reminder_at: fReminder || undefined,
         checklist: fChecklist,
+        attachment_urls: fAttachments,
         service_order_id: fSOId || undefined,
         service_order_title: fSOTitle || undefined,
       }
@@ -2040,7 +2066,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
             setFAssignedName(u?.full_name ?? '')
           }} className={inputCls}>
             <option value="">Sem responsável</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+            {users.map(u => <option key={u.id} value={u.id}>{u.full_name}{u.assoc_name ? ` — ${u.assoc_name}` : ''}</option>)}
           </select>
         </div>
         <div>
@@ -2092,6 +2118,23 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
               <li key={i} className="flex items-center gap-2 text-sm bg-white rounded-lg px-3 py-1.5 border border-gray-200">
                 <span className="flex-1">{item.text}</span>
                 <button onClick={() => setFChecklist(p => p.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 text-xs">✕</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div>
+        <label className="block text-xs text-gray-600 mb-1">Anexos</label>
+        <label className={`flex items-center gap-2 cursor-pointer border border-dashed border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-50 transition ${uploadingFile ? 'opacity-50 pointer-events-none' : ''}`}>
+          📎 {uploadingFile ? 'Enviando…' : 'Adicionar arquivo'}
+          <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploadingFile} />
+        </label>
+        {fAttachments.length > 0 && (
+          <ul className="flex flex-col gap-1 mt-2">
+            {fAttachments.map((url, i) => (
+              <li key={i} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs">
+                <a href={url} target="_blank" rel="noopener noreferrer" className="flex-1 text-blue-600 hover:underline truncate">{url.split('/').pop()}</a>
+                <button onClick={() => setFAttachments(p => p.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500">✕</button>
               </li>
             ))}
           </ul>
@@ -2268,6 +2311,17 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                       </li>
                     ))}
                   </ul>
+                )}
+                {task.attachment_urls?.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs text-gray-500 font-medium">Anexos</p>
+                    {task.attachment_urls.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                        📎 {url.split('/').pop()}
+                      </a>
+                    ))}
+                  </div>
                 )}
                 {canWrite && (
                   <div className="flex gap-2 pt-1">

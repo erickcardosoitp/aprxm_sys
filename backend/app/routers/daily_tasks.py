@@ -21,6 +21,7 @@ class CreateDailyTaskRequest(BaseModel):
     due_date: str | None = None
     reminder_at: str | None = None
     checklist: list[dict] = []
+    attachment_urls: list[str] = []
     service_order_id: UUID | None = None
     service_order_title: str | None = None
 
@@ -33,9 +34,39 @@ class UpdateDailyTaskRequest(BaseModel):
     due_date: str | None = None
     reminder_at: str | None = None
     checklist: list[dict] | None = None
+    attachment_urls: list[str] | None = None
     status: str | None = None
     service_order_id: UUID | None = None
     service_order_title: str | None = None
+
+
+@router.get("/users/group", summary="Usuários do grupo de associações")
+async def list_group_users(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    row = (await session.execute(
+        text("SELECT chat_group FROM associations WHERE id = :aid"),
+        {"aid": str(current.association_id)},
+    )).fetchone()
+    group = row[0] if row else None
+    if group:
+        rows = (await session.execute(text("""
+            SELECT u.id, u.full_name, u.role, a.name AS assoc_name
+            FROM users u
+            JOIN associations a ON a.id = u.association_id
+            WHERE a.chat_group = :g AND u.is_active = true
+            ORDER BY u.full_name
+        """), {"g": group})).fetchall()
+    else:
+        rows = (await session.execute(text("""
+            SELECT u.id, u.full_name, u.role, a.name AS assoc_name
+            FROM users u
+            JOIN associations a ON a.id = u.association_id
+            WHERE u.association_id = :aid AND u.is_active = true
+            ORDER BY u.full_name
+        """), {"aid": str(current.association_id)})).fetchall()
+    return [{"id": str(r[0]), "full_name": r[1], "role": r[2], "assoc_name": r[3]} for r in rows]
 
 
 @router.get("", summary="Listar Tarefas Diárias")
@@ -48,17 +79,18 @@ async def list_tasks(
     filters = ["t.association_id = :aid"]
     params: dict = {"aid": str(current.association_id)}
     if assigned_to:
-        filters.append("assigned_to = :at")
+        filters.append("t.assigned_to = :at")
         params["at"] = str(assigned_to)
     if status:
-        filters.append("status = :status")
+        filters.append("t.status = :status")
         params["status"] = status
     where = " AND ".join(filters)
     rows = (await session.execute(text(f"""
         SELECT t.id, t.title, t.description, t.assigned_to, t.assigned_to_name,
                t.due_date, t.reminder_at, t.status, t.checklist,
                t.service_order_id, t.service_order_title,
-               t.created_by, u.full_name AS creator_name, t.created_at, t.updated_at
+               t.created_by, u.full_name AS creator_name, t.created_at, t.updated_at,
+               t.attachment_urls
         FROM daily_tasks t
         LEFT JOIN users u ON u.id = t.created_by
         WHERE {where}
@@ -80,14 +112,16 @@ async def create_task(
     row = (await session.execute(text("""
         INSERT INTO daily_tasks
           (association_id, title, description, assigned_to, assigned_to_name,
-           due_date, reminder_at, checklist, service_order_id, service_order_title, created_by)
+           due_date, reminder_at, checklist, attachment_urls, service_order_id, service_order_title, created_by)
         VALUES
           (:aid, :title, :desc, :at, :at_name,
-           :due, :reminder, CAST(:checklist AS jsonb), :so_id, :so_title, :created_by)
+           CAST(:due AS date), CAST(:reminder AS timestamptz),
+           CAST(:checklist AS jsonb), CAST(:attachments AS jsonb),
+           :so_id, :so_title, :created_by)
         RETURNING id, title, description, assigned_to, assigned_to_name,
                   due_date, reminder_at, status, checklist,
                   service_order_id, service_order_title,
-                  created_by, NULL, created_at, updated_at
+                  created_by, NULL, created_at, updated_at, attachment_urls
     """), {
         "aid": str(current.association_id),
         "title": body.title,
@@ -97,6 +131,7 @@ async def create_task(
         "due": body.due_date or None,
         "reminder": body.reminder_at or None,
         "checklist": json.dumps(body.checklist),
+        "attachments": json.dumps(body.attachment_urls),
         "so_id": str(body.service_order_id) if body.service_order_id else None,
         "so_title": body.service_order_title,
         "created_by": str(current.user_id),
@@ -118,9 +153,10 @@ async def update_task(
     if body.description is not None: sets.append("description = :desc"); params["desc"] = body.description
     if body.assigned_to is not None: sets.append("assigned_to = :at"); params["at"] = str(body.assigned_to)
     if body.assigned_to_name is not None: sets.append("assigned_to_name = :at_name"); params["at_name"] = body.assigned_to_name
-    if body.due_date is not None: sets.append("due_date = :due"); params["due"] = body.due_date
-    if body.reminder_at is not None: sets.append("reminder_at = :reminder"); params["reminder"] = body.reminder_at
+    if body.due_date is not None: sets.append("due_date = CAST(:due AS date)"); params["due"] = body.due_date
+    if body.reminder_at is not None: sets.append("reminder_at = CAST(:reminder AS timestamptz)"); params["reminder"] = body.reminder_at
     if body.checklist is not None: sets.append("checklist = CAST(:checklist AS jsonb)"); params["checklist"] = json.dumps(body.checklist)
+    if body.attachment_urls is not None: sets.append("attachment_urls = CAST(:attachments AS jsonb)"); params["attachments"] = json.dumps(body.attachment_urls)
     if body.status is not None: sets.append("status = :status"); params["status"] = body.status
     if body.service_order_id is not None: sets.append("service_order_id = :so_id"); params["so_id"] = str(body.service_order_id)
     if body.service_order_title is not None: sets.append("service_order_title = :so_title"); params["so_title"] = body.service_order_title
@@ -155,10 +191,10 @@ async def report_by_user(
     filters = ["t.association_id = :aid"]
     params: dict = {"aid": str(current.association_id)}
     if date_from:
-        filters.append("t.due_date >= :df")
+        filters.append("t.due_date >= CAST(:df AS date)")
         params["df"] = date_from
     if date_to:
-        filters.append("t.due_date <= :dt")
+        filters.append("t.due_date <= CAST(:dt AS date)")
         params["dt"] = date_to
     where = " AND ".join(filters)
     rows = (await session.execute(text(f"""
@@ -211,4 +247,5 @@ def _row_to_dict(r) -> dict:
         "creator_name": r[12],
         "created_at": str(r[13]),
         "updated_at": str(r[14]),
+        "attachment_urls": r[15] or [],
     }
