@@ -283,11 +283,17 @@ async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, m
     rows = (await session.execute(text(f"""
         SELECT v.resident_name, v.reference_month, v.due_date,
                v.amount, v.status, v.paid_at::date,
-               v.payment_method_name, v.origem
+               v.payment_method_name, v.origem,
+               TRIM(CONCAT_WS(', ',
+                   NULLIF(r.address_street,''), NULLIF(r.address_number,''),
+                   NULLIF(r.address_complement,''), NULLIF(r.address_cep,'')
+               )) AS endereco,
+               r.phone_primary
         FROM v_mensalidades_completas v
+        JOIN residents r ON r.id = v.resident_id
         WHERE {w} ORDER BY v.reference_month, v.resident_name
     """), p)).fetchall()
-    cols = ["Morador","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento","Origem"]
+    cols = ["Morador","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento","Origem","Endereço","Telefone"]
     def row_dict(r):
         d = dict(zip(cols, [_s(v) for v in r]))
         d["Status"] = STATUS_PT.get(d["Status"], d["Status"])

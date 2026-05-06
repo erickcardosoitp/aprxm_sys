@@ -752,6 +752,7 @@ const MODULES_LABELS: Record<string, string> = {
   residents: 'Moradores',
   packages: 'Encomendas',
   settings: 'Configurações',
+  daily_tasks: 'Tarefas Diárias',
 }
 
 const ROLE_COLS: { role: string; label: string }[] = [
