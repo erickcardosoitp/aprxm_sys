@@ -80,11 +80,17 @@ export default function MovimentacoesTab({ period, setPeriod }: Props) {
   const totalTransferencias = transferencias.reduce((s, t) => s + parseFloat(t.amount), 0)
   const resultado = totalEntradas - totalDespesas - totalEstornos
 
+  // count shown reflects active filters (subtype + operator) for the active tab
+  const activeCount = movSubTab === 'entradas' ? rows.length : baseRows.length
+  const activeTotal = movSubTab === 'entradas'
+    ? rows.reduce((s, t) => s + parseFloat(t.amount), 0)
+    : baseRows.reduce((s, t) => s + parseFloat(t.amount), 0)
+
   const tabCfg = [
-    { key: 'entradas' as const, label: 'Receitas', total: totalEntradas, count: entradas.length, active: 'bg-green-50 border-green-400', inactive: 'bg-white border-gray-200', textActive: 'text-green-700', textInactive: 'text-green-600' },
-    { key: 'despesas' as const, label: 'Despesas', total: totalDespesas, count: despesas.length, active: 'bg-red-50 border-red-400', inactive: 'bg-white border-gray-200', textActive: 'text-red-700', textInactive: 'text-red-500' },
-    { key: 'estornos' as const, label: 'Estornos', total: totalEstornos, count: estornos.length, active: 'bg-orange-50 border-orange-400', inactive: 'bg-white border-gray-200', textActive: 'text-orange-700', textInactive: 'text-orange-500' },
-    { key: 'transferencias' as const, label: 'Sangrias/Repasses', total: totalTransferencias, count: transferencias.length, active: 'bg-indigo-50 border-indigo-400', inactive: 'bg-white border-gray-200', textActive: 'text-indigo-700', textInactive: 'text-indigo-500' },
+    { key: 'entradas' as const, label: 'Receitas', total: movSubTab === 'entradas' ? activeTotal : totalEntradas, count: movSubTab === 'entradas' ? activeCount : entradas.length, active: 'bg-green-50 border-green-400', inactive: 'bg-white border-gray-200', textActive: 'text-green-700', textInactive: 'text-green-600' },
+    { key: 'despesas' as const, label: 'Despesas', total: movSubTab === 'despesas' ? activeTotal : totalDespesas, count: movSubTab === 'despesas' ? activeCount : despesas.length, active: 'bg-red-50 border-red-400', inactive: 'bg-white border-gray-200', textActive: 'text-red-700', textInactive: 'text-red-500' },
+    { key: 'estornos' as const, label: 'Estornos', total: movSubTab === 'estornos' ? activeTotal : totalEstornos, count: movSubTab === 'estornos' ? activeCount : estornos.length, active: 'bg-orange-50 border-orange-400', inactive: 'bg-white border-gray-200', textActive: 'text-orange-700', textInactive: 'text-orange-500' },
+    { key: 'transferencias' as const, label: 'Sangrias/Repasses', total: movSubTab === 'transferencias' ? activeTotal : totalTransferencias, count: movSubTab === 'transferencias' ? activeCount : transferencias.length, active: 'bg-indigo-50 border-indigo-400', inactive: 'bg-white border-gray-200', textActive: 'text-indigo-700', textInactive: 'text-indigo-500' },
   ]
 
   const amountColor =
