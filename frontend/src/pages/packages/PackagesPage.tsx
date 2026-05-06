@@ -1391,6 +1391,13 @@ export default function PackagesPage() {
       toast.success(pkg.has_delivery_fee
         ? `Entregue! Taxa R$ ${parseFloat(pkg.delivery_fee_amount).toFixed(2)} cobrada.`
         : 'Encomenda entregue!')
+      if (pkg.possible_duplicates?.length > 0) {
+        const names = pkg.possible_duplicates.map((d: any) => d.full_name).join(', ')
+        toast(`⚠️ Possível cadastro duplicado: ${names}`, {
+          duration: 8000,
+          style: { background: '#fef3c7', color: '#92400e', fontWeight: 500 },
+        })
+      }
       const upgraded = upgradedResidentInfo
       setDeliveryTarget(null)
       resetDelivery()

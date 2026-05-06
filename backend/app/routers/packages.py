@@ -134,6 +134,28 @@ async def deliver_package(
         """), {"uid": str(current.user_id), "pid": str(pkg.id), "id": str(token_row[0])})
     await session.commit()
 
+    # Check for possible duplicate residents by name similarity
+    possible_duplicates: list[dict] = []
+    name = body.delivered_to_name.strip()
+    first_word = name.split()[0] if name else ""
+    if first_word and len(first_word) >= 3:
+        dup_rows = (await session.execute(text("""
+            SELECT id, full_name, type, status
+              FROM residents
+             WHERE association_id = :aid
+               AND LOWER(full_name) LIKE LOWER(:pat)
+               AND id != :exclude
+             LIMIT 5
+        """), {
+            "aid": str(current.association_id),
+            "pat": f"%{first_word}%",
+            "exclude": str(body.delivered_to_resident_id) if body.delivered_to_resident_id else "00000000-0000-0000-0000-000000000000",
+        })).fetchall()
+        possible_duplicates = [
+            {"id": str(r[0]), "full_name": r[1], "type": r[2], "status": r[3]}
+            for r in dup_rows
+        ]
+
     return {
         "id": str(pkg.id),
         "status": pkg.status,
@@ -141,6 +163,7 @@ async def deliver_package(
         "delivery_fee_amount": str(pkg.delivery_fee_amount) if pkg.delivery_fee_amount else None,
         "delivered_at": str(pkg.delivered_at),
         "fee_exempted": skip_fee,
+        "possible_duplicates": possible_duplicates,
     }
 
 
@@ -175,9 +198,15 @@ async def bulk_deliver_packages(
     for pkg_id in body.package_ids:
         try:
             # Peek resident to decide if fee was already charged this batch
+            # Dedup by CPF > resident_id > normalized name to avoid double-charging same person
             from app.models.package import Package as Pkg
             pkg_peek = await session.get(Pkg, pkg_id)
-            resident_key = str(pkg_peek.resident_id) if pkg_peek and pkg_peek.resident_id else (body.delivered_to_cpf or body.delivered_to_name or str(pkg_id))
+            if body.delivered_to_cpf:
+                resident_key = body.delivered_to_cpf.replace(".", "").replace("-", "").strip()
+            elif pkg_peek and pkg_peek.resident_id:
+                resident_key = str(pkg_peek.resident_id)
+            else:
+                resident_key = body.delivered_to_name.strip().lower()
             skip_fee = resident_key in fee_charged_residents
 
             pkg = await svc.deliver_package(
