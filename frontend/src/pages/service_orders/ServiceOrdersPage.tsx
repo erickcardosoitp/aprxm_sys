@@ -1199,7 +1199,7 @@ interface DetailPanelProps {
 interface PresenceUser { user_id: string; full_name: string; last_seen_at: string }
 
 function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'tasks' | 'demands'>('details')
+  const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'demands'>('details')
   const [showPrint, setShowPrint] = useState(false)
   const [comments, setComments] = useState<SOComment[]>([])
   const [commentText, setCommentText] = useState('')
@@ -1401,12 +1401,6 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                 )}
               </span>
             )}
-          </button>
-          <button
-            onClick={() => setActiveTab('tasks')}
-            className={`py-2.5 text-sm font-medium border-b-2 flex items-center gap-1.5 transition mr-4 ${activeTab === 'tasks' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent'}`}
-          >
-            📋 Registros
           </button>
           <button
             onClick={() => setActiveTab('demands')}
@@ -1744,9 +1738,6 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
             </div>
           )}
 
-          {activeTab === 'tasks' && (
-            <DailyRecordsTab soId={so.id} canWrite={canWrite} />
-          )}
           {activeTab === 'demands' && (
             <div className="pt-2">
               <DemandasBoard canWrite={canWrite} serviceOrderId={so.id} />
@@ -1776,13 +1767,530 @@ function FieldCell({ label, children }: { label: string; children: React.ReactNo
   )
 }
 
+// ─── RegistrosDiariosTab ──────────────────────────────────────────────────────
+
+interface GlobalSOTask extends SOTask {
+  service_order_id?: string
+  so_number?: number
+  so_title?: string
+  assoc_name?: string
+  assigned_to?: string
+}
+
+function RegistrosDiariosTab({ canWrite }: { canWrite: boolean }) {
+  const [tasks, setTasks] = useState<GlobalSOTask[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [filterStatus, setFilterStatus] = useState('')
+  const today = new Date().toISOString().split('T')[0]
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<GlobalSOTask[]>('/service-orders/tasks/all')
+      setTasks(res.data)
+    } catch { toast.error('Erro ao carregar registros.') }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const filtered = filterStatus ? tasks.filter(t => t.status === filterStatus) : tasks
+
+  if (loading) return <p className="text-sm text-gray-400 text-center py-10">Carregando…</p>
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3">
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white">
+          <option value="">Todos os status</option>
+          {Object.entries(TASK_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <span className="text-sm text-gray-400 ml-auto">{filtered.length} registro(s)</span>
+      </div>
+
+      {filtered.length === 0 && (
+        <p className="text-sm text-gray-400 text-center py-10">Nenhum registro encontrado.</p>
+      )}
+
+      {filtered.map(task => {
+        const isExpanded = expandedId === task.id
+        const doneCount = task.checklist.filter(i => i.done).length
+        const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
+        return (
+          <div key={task.id} className={`rounded-xl border shadow-sm overflow-hidden ${task.status === 'done' ? 'border-gray-200 bg-gray-50 opacity-75' : 'border-gray-200 bg-white'}`}>
+            <div className="p-3 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : task.id)}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${TASK_STATUS_COLORS[task.status]}`}>
+                      {TASK_STATUS_LABELS[task.status]}
+                    </span>
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                      task.priority === 'critical' ? 'bg-red-100 text-red-700' :
+                      task.priority === 'high' ? 'bg-orange-100 text-orange-700' :
+                      task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
+                    }`}>{PRIORITY_LABELS[task.priority]}</span>
+                    {task.so_number && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
+                        OS #{task.so_number} — {task.so_title}
+                      </span>
+                    )}
+                    {task.assoc_name && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">{task.assoc_name}</span>
+                    )}
+                    {task.due_date && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                        {isOverdue ? '⚠ ' : ''}Entrega: {new Date(task.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-sm font-semibold text-gray-800 ${task.status === 'done' ? 'line-through text-gray-500' : ''}`}>{task.title}</p>
+                  {task.checklist.length > 0 && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex-1 bg-gray-200 rounded-full h-1.5 max-w-[80px]">
+                        <div className="bg-[#26619c] h-1.5 rounded-full" style={{ width: `${task.checklist.length ? (doneCount / task.checklist.length) * 100 : 0}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500">{doneCount}/{task.checklist.length}</span>
+                    </div>
+                  )}
+                  {task.assigned_to_name && <p className="text-xs text-gray-400 mt-1">Responsável: {task.assigned_to_name}</p>}
+                </div>
+                <span className="text-gray-300 text-xs mt-1">{isExpanded ? '▲' : '▼'}</span>
+              </div>
+            </div>
+            {isExpanded && task.notes && (
+              <div className="border-t border-gray-100 p-3">
+                <p className="text-sm text-gray-600 whitespace-pre-wrap">{task.notes}</p>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── TarefasDiariasTab ────────────────────────────────────────────────────────
+
+interface DailyTask {
+  id: string
+  title: string
+  description?: string
+  assigned_to?: string
+  assigned_to_name?: string
+  due_date?: string
+  reminder_at?: string
+  status: 'pending' | 'done'
+  checklist: { text: string; done: boolean }[]
+  service_order_id?: string
+  service_order_title?: string
+  creator_name?: string
+  created_at: string
+}
+
+function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
+  const [tasks, setTasks] = useState<DailyTask[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [showReport, setShowReport] = useState(false)
+  const [reportData, setReportData] = useState<any[]>([])
+  const [reportFrom, setReportFrom] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10))
+  const [reportTo, setReportTo] = useState(new Date().toISOString().slice(0, 10))
+  const [loadingReport, setLoadingReport] = useState(false)
+  const [filterStatus, setFilterStatus] = useState('')
+  const [users, setUsers] = useState<UserResult[]>([])
+
+  const [fTitle, setFTitle] = useState('')
+  const [fDesc, setFDesc] = useState('')
+  const [fAssignedTo, setFAssignedTo] = useState('')
+  const [fAssignedName, setFAssignedName] = useState('')
+  const [fDueDate, setFDueDate] = useState('')
+  const [fReminder, setFReminder] = useState('')
+  const [fChecklist, setFChecklist] = useState<{ text: string; done: boolean }[]>([])
+  const [fCheckInput, setFCheckInput] = useState('')
+  const [fSOId, setFSOId] = useState('')
+  const [fSOTitle, setFSOTitle] = useState('')
+  const [soSearch, setSOSearch] = useState('')
+  const [soResults, setSOResults] = useState<any[]>([])
+  const [saving, setSaving] = useState(false)
+
+  const today = new Date().toISOString().split('T')[0]
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const params: any = {}
+      if (filterStatus) params.status = filterStatus
+      const res = await api.get<DailyTask[]>('/daily-tasks', { params })
+      setTasks(res.data)
+    } catch { toast.error('Erro ao carregar tarefas.') }
+    finally { setLoading(false) }
+  }
+
+  const loadUsers = async () => {
+    try {
+      const res = await api.get<UserResult[]>('/admin/users')
+      setUsers(res.data)
+    } catch { /* silent */ }
+  }
+
+  useEffect(() => { load() }, [filterStatus])
+  useEffect(() => { loadUsers() }, [])
+
+  const resetForm = () => {
+    setFTitle(''); setFDesc(''); setFAssignedTo(''); setFAssignedName('')
+    setFDueDate(''); setFReminder(''); setFChecklist([]); setFCheckInput('')
+    setFSOId(''); setFSOTitle(''); setSOSearch(''); setSOResults([])
+    setShowForm(false); setEditingId(null)
+  }
+
+  const startEdit = (t: DailyTask) => {
+    setFTitle(t.title); setFDesc(t.description ?? ''); setFAssignedTo(t.assigned_to ?? '')
+    setFAssignedName(t.assigned_to_name ?? ''); setFDueDate(t.due_date ?? '')
+    setFReminder(t.reminder_at ? t.reminder_at.slice(0, 16) : '')
+    setFChecklist(t.checklist); setFSOId(t.service_order_id ?? ''); setFSOTitle(t.service_order_title ?? '')
+    setEditingId(t.id); setShowForm(true)
+  }
+
+  const searchSO = async (q: string) => {
+    setSOSearch(q)
+    if (q.length < 2) { setSOResults([]); return }
+    try {
+      const res = await api.get<any[]>('/service-orders/search', { params: { q } })
+      setSOResults(res.data)
+    } catch { /* silent */ }
+  }
+
+  const handleSubmit = async () => {
+    if (!fTitle.trim()) { toast.error('Título obrigatório.'); return }
+    setSaving(true)
+    try {
+      const body: any = {
+        title: fTitle.trim(),
+        description: fDesc || undefined,
+        assigned_to: fAssignedTo || undefined,
+        assigned_to_name: fAssignedName || undefined,
+        due_date: fDueDate || undefined,
+        reminder_at: fReminder || undefined,
+        checklist: fChecklist,
+        service_order_id: fSOId || undefined,
+        service_order_title: fSOTitle || undefined,
+      }
+      if (editingId) {
+        await api.patch(`/daily-tasks/${editingId}`, body)
+        toast.success('Tarefa atualizada.')
+      } else {
+        await api.post('/daily-tasks', body)
+        toast.success('Tarefa criada.')
+      }
+      resetForm(); load()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
+    } finally { setSaving(false) }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Excluir esta tarefa?')) return
+    try {
+      await api.delete(`/daily-tasks/${id}`)
+      setTasks(prev => prev.filter(t => t.id !== id))
+    } catch { toast.error('Erro ao excluir.') }
+  }
+
+  const toggleDone = async (task: DailyTask) => {
+    const newStatus = task.status === 'done' ? 'pending' : 'done'
+    try {
+      await api.patch(`/daily-tasks/${task.id}`, { status: newStatus })
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
+    } catch { toast.error('Erro ao atualizar.') }
+  }
+
+  const toggleChecklist = async (task: DailyTask, idx: number) => {
+    const checklist = task.checklist.map((item, i) => i === idx ? { ...item, done: !item.done } : item)
+    try {
+      await api.patch(`/daily-tasks/${task.id}`, { checklist })
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, checklist } : t))
+    } catch { toast.error('Erro ao atualizar checklist.') }
+  }
+
+  const loadReport = async () => {
+    setLoadingReport(true)
+    try {
+      const res = await api.get('/daily-tasks/report/by-user', { params: { date_from: reportFrom, date_to: reportTo } })
+      setReportData(res.data)
+    } catch { toast.error('Erro ao carregar relatório.') }
+    finally { setLoadingReport(false) }
+  }
+
+  const taskForm = (
+    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-3">
+      <p className="text-xs font-semibold text-blue-800">{editingId ? 'Editar Tarefa' : 'Nova Tarefa Diária'}</p>
+      <input value={fTitle} onChange={e => setFTitle(e.target.value)} placeholder="Título *" className={inputCls} />
+      <textarea rows={2} value={fDesc} onChange={e => setFDesc(e.target.value)} placeholder="Descrição / observações" className={`${inputCls} resize-none`} />
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Responsável</label>
+          <select value={fAssignedTo} onChange={e => {
+            const u = users.find(u => u.id === e.target.value)
+            setFAssignedTo(e.target.value)
+            setFAssignedName(u?.full_name ?? '')
+          }} className={inputCls}>
+            <option value="">Sem responsável</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Prazo</label>
+          <input type="date" value={fDueDate} onChange={e => setFDueDate(e.target.value)} className={inputCls} />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-600 mb-1">Lembrete</label>
+        <input type="datetime-local" value={fReminder} onChange={e => setFReminder(e.target.value)} className={inputCls} />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-600 mb-1">O.S. vinculada (opcional)</label>
+        <div className="relative">
+          <input value={soSearch || fSOTitle} onChange={e => searchSO(e.target.value)}
+            placeholder="Buscar OS por número ou título…" className={inputCls} />
+          {soResults.length > 0 && (
+            <div className="absolute z-10 bg-white border border-gray-200 rounded-lg shadow-lg w-full mt-1 max-h-40 overflow-y-auto">
+              {soResults.map(s => (
+                <button key={s.id} type="button" onClick={() => {
+                  setFSOId(s.id); setFSOTitle(`#${s.number} — ${s.title}`)
+                  setSOSearch(''); setSOResults([])
+                }} className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-100 last:border-0">
+                  <span className="font-medium">OS #{s.number}</span> — {s.title}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {fSOId && (
+          <div className="mt-1 flex items-center gap-2">
+            <span className="text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">{fSOTitle}</span>
+            <button type="button" onClick={() => { setFSOId(''); setFSOTitle('') }} className="text-gray-400 hover:text-red-500 text-xs">✕</button>
+          </div>
+        )}
+      </div>
+      <div>
+        <label className="block text-xs text-gray-600 mb-1">Checklist</label>
+        <div className="flex gap-2 mb-2">
+          <input value={fCheckInput} onChange={e => setFCheckInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), fCheckInput.trim() && (setFChecklist(p => [...p, { text: fCheckInput.trim(), done: false }]), setFCheckInput('')))}
+            placeholder="Adicionar item…" className={inputCls} />
+          <button type="button" onClick={() => { if (fCheckInput.trim()) { setFChecklist(p => [...p, { text: fCheckInput.trim(), done: false }]); setFCheckInput('') } }}
+            className="px-3 py-2 bg-[#26619c] text-white rounded-lg text-xs shrink-0">+</button>
+        </div>
+        {fChecklist.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {fChecklist.map((item, i) => (
+              <li key={i} className="flex items-center gap-2 text-sm bg-white rounded-lg px-3 py-1.5 border border-gray-200">
+                <span className="flex-1">{item.text}</span>
+                <button onClick={() => setFChecklist(p => p.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 text-xs">✕</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={resetForm} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+        <button onClick={handleSubmit} disabled={saving} className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+          {saving ? 'Salvando…' : editingId ? 'Atualizar' : 'Criar'}
+        </button>
+      </div>
+    </div>
+  )
+
+  if (showReport) return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3">
+        <button onClick={() => setShowReport(false)} className="text-sm text-[#26619c] hover:underline flex items-center gap-1">← Voltar</button>
+        <h2 className="text-base font-semibold text-gray-800">Relatório por Colaborador</h2>
+      </div>
+      <div className="flex gap-2 items-end flex-wrap">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">De</label>
+          <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className={inputCls} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Até</label>
+          <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className={inputCls} />
+        </div>
+        <button onClick={loadReport} disabled={loadingReport}
+          className="px-4 py-2 bg-[#26619c] text-white rounded-xl text-sm font-medium disabled:opacity-50">
+          {loadingReport ? 'Carregando…' : 'Gerar'}
+        </button>
+      </div>
+
+      {reportData.length === 0 && !loadingReport && (
+        <p className="text-sm text-gray-400 text-center py-8">Clique em "Gerar" para ver o relatório.</p>
+      )}
+
+      {reportData.map(user => {
+        const pct = user.total > 0 ? Math.round((user.concluidas / user.total) * 100) : 0
+        return (
+          <div key={user.user_id} className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#26619c]/10 flex items-center justify-center">
+                  <User className="w-5 h-5 text-[#26619c]" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-800">{user.user_name}</p>
+                  <p className="text-xs text-gray-400">{user.total} tarefa(s) no período</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-[#26619c]">{pct}%</p>
+                <p className="text-xs text-gray-400">conclusão</p>
+              </div>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-2 mb-3">
+              <div className="bg-[#26619c] h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="flex gap-4 text-xs mb-4">
+              <span className="text-green-600 font-medium">✓ {user.concluidas} concluída(s)</span>
+              <span className="text-yellow-600 font-medium">⏳ {user.total - user.concluidas - user.atrasadas} pendente(s)</span>
+              {user.atrasadas > 0 && <span className="text-red-600 font-medium">⚠ {user.atrasadas} atrasada(s)</span>}
+            </div>
+            <div className="flex flex-col gap-2">
+              {user.tasks.map((t: any) => (
+                <div key={t.id} className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm ${t.status === 'done' ? 'bg-green-50 border-green-200' : t.due_date && t.due_date < today ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <span className={`mt-0.5 text-base ${t.status === 'done' ? 'text-green-500' : 'text-gray-300'}`}>{t.status === 'done' ? '✓' : '○'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-medium ${t.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{t.title}</p>
+                    <div className="flex gap-2 mt-0.5 flex-wrap">
+                      {t.due_date && <span className="text-[10px] text-gray-500">Prazo: {new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>}
+                      {t.so_title && <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{t.so_title}</span>}
+                      {t.checklist?.length > 0 && <span className="text-[10px] text-gray-500">{t.checklist.filter((c: any) => c.done).length}/{t.checklist.length} itens</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white">
+          <option value="">Todos</option>
+          <option value="pending">Pendentes</option>
+          <option value="done">Concluídas</option>
+        </select>
+        <span className="text-sm text-gray-400">{tasks.length} tarefa(s)</span>
+        <button onClick={() => { setShowReport(true); loadReport() }}
+          className="ml-auto flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
+          <FileText className="w-4 h-4" /> Relatório
+        </button>
+        {canWrite && !showForm && (
+          <button onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+            <Plus className="w-4 h-4" /> Nova Tarefa
+          </button>
+        )}
+      </div>
+
+      {showForm && taskForm}
+
+      {loading && <p className="text-sm text-gray-400 text-center py-8">Carregando…</p>}
+
+      {!loading && tasks.length === 0 && !showForm && (
+        <p className="text-sm text-gray-400 text-center py-10">Nenhuma tarefa. Crie a primeira!</p>
+      )}
+
+      {tasks.map(task => {
+        const isExpanded = expandedId === task.id
+        const doneCount = task.checklist.filter(i => i.done).length
+        const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
+        return (
+          <div key={task.id} className={`rounded-xl border shadow-sm overflow-hidden ${task.status === 'done' ? 'border-gray-200 bg-gray-50' : isOverdue ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-white'}`}>
+            <div className="p-3">
+              <div className="flex items-start gap-3">
+                <button onClick={() => toggleDone(task)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${task.status === 'done' ? 'bg-green-500 border-green-500' : 'border-gray-400 hover:border-[#26619c]'}`}>
+                  {task.status === 'done' && <span className="text-white text-[10px] font-bold">✓</span>}
+                </button>
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : task.id)}>
+                  <div className="flex flex-wrap gap-1.5 mb-1">
+                    {task.assigned_to_name && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1">
+                        👤 {task.assigned_to_name}
+                      </span>
+                    )}
+                    {task.service_order_title && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">{task.service_order_title}</span>
+                    )}
+                    {task.due_date && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                        {isOverdue ? '⚠ Atrasada — ' : ''}Prazo: {new Date(task.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                      </span>
+                    )}
+                    {task.reminder_at && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700">
+                        🔔 {new Date(task.reminder_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-sm font-semibold ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{task.title}</p>
+                  {task.checklist.length > 0 && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex-1 bg-gray-200 rounded-full h-1.5 max-w-[80px]">
+                        <div className="bg-[#26619c] h-1.5 rounded-full" style={{ width: `${(doneCount / task.checklist.length) * 100}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500">{doneCount}/{task.checklist.length}</span>
+                    </div>
+                  )}
+                </div>
+                <span className="text-gray-300 text-xs mt-1 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : task.id)}>{isExpanded ? '▲' : '▼'}</span>
+              </div>
+            </div>
+            {isExpanded && (
+              <div className="border-t border-gray-100 p-3 flex flex-col gap-3">
+                {task.description && <p className="text-sm text-gray-600 whitespace-pre-wrap">{task.description}</p>}
+                {task.checklist.length > 0 && (
+                  <ul className="flex flex-col gap-1.5">
+                    {task.checklist.map((item, i) => (
+                      <li key={i} className="flex items-center gap-2 cursor-pointer" onClick={() => toggleChecklist(task, i)}>
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${item.done ? 'bg-[#26619c] border-[#26619c]' : 'border-gray-400'}`}>
+                          {item.done && <span className="text-white text-[10px]">✓</span>}
+                        </div>
+                        <span className={`text-sm ${item.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {canWrite && (
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => startEdit(task)} className="text-xs text-[#26619c] hover:underline">✏ Editar</button>
+                    <button onClick={() => handleDelete(task.id)} className="text-xs text-red-500 hover:underline">🗑 Excluir</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ServiceOrdersPage() {
   const { role, permissions } = useAuthStore()
   const canWrite = permissions?.service_orders?.can_write ?? CAN_WRITE_ROLES.includes(role ?? '')
 
-  const [pageTab, setPageTab] = useState<'ordens' | 'demandas'>('ordens')
+  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'registros' | 'tarefas'>('ordens')
 
   const [orders, setOrders] = useState<ServiceOrder[]>([])
   const [loading, setLoading] = useState(false)
@@ -1879,9 +2387,23 @@ export default function ServiceOrdersPage() {
         >
           <LayoutDashboard className="w-4 h-4" /> Demandas
         </button>
+        <button
+          onClick={() => setPageTab('registros')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'registros' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
+        >
+          📋 Registros Diários
+        </button>
+        <button
+          onClick={() => setPageTab('tarefas')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'tarefas' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
+        >
+          ✅ Tarefas Diárias
+        </button>
       </div>
 
       {pageTab === 'demandas' && <DemandasBoard canWrite={canWrite} />}
+      {pageTab === 'registros' && <RegistrosDiariosTab canWrite={canWrite} />}
+      {pageTab === 'tarefas' && <TarefasDiariasTab canWrite={canWrite} />}
 
       {pageTab === 'ordens' && <>
       {/* KPIs */}

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, cash_boxes, chat, demands, finance, financeiro, geral, mensalidades, notifications, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers, webauthn
+from app.routers import admin, agent, auth, carriers, cash_boxes, chat, daily_tasks, demands, finance, financeiro, geral, mensalidades, notifications, packages, porta_a_porta, public, reports, residents, senso, service_orders, superadmin, uploads, transfers, webauthn
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -566,6 +566,7 @@ app.include_router(finance.router, prefix=PREFIX)
 app.include_router(packages.router, prefix=PREFIX)
 app.include_router(residents.router, prefix=PREFIX)
 app.include_router(service_orders.router, prefix=PREFIX)
+app.include_router(daily_tasks.router, prefix=PREFIX)
 app.include_router(settings_router.router, prefix=PREFIX)
 app.include_router(financeiro.router, prefix=PREFIX)
 app.include_router(mensalidades.router, prefix=PREFIX)
