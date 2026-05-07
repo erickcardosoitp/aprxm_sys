@@ -1120,13 +1120,11 @@ export default function FinancePage() {
 
           <CashSessionPanel session={session} onRefresh={loadSession} canConferencia={isConferenteOrAbove} />
 
-          {/* Lançamento sem caixa — disponível mesmo sem caixa aberto (operator+) */}
-          {(isConferenteOrAbove || role === 'operator') && (
-            <button onClick={() => { setShowOfflineExpense(true); setOfflineType('expense') }}
-              className="flex items-center justify-center gap-2 border border-gray-300 text-gray-600 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-gray-50 transition w-full">
-              <ArrowDownLeft className="w-4 h-4" /> Lançamento sem caixa
-            </button>
-          )}
+          {/* Lançamento sem caixa — disponível para todos */}
+          <button onClick={() => { setShowOfflineExpense(true); setOfflineType('expense') }}
+            className="flex items-center justify-center gap-2 border border-gray-300 text-gray-600 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-gray-50 transition w-full">
+            <ArrowDownLeft className="w-4 h-4" /> Lançamento sem caixa
+          </button>
 
           {/* Pendentes — sempre visível, mesmo sem caixa aberto */}
           {isConferenteOrAbove && pendingApprovals.length > 0 && (
