@@ -861,6 +861,7 @@ async def register_offline_transaction(
         type=body.type,
         amount=body.amount,
         description=body.description,
+        income_subtype=body.income_subtype,
         reference_number=body.reference_number,
         approval_status="pending" if body.payment_status == "pending" else "approved",
         approved_by=current.user_id if body.payment_status != "pending" else None,
@@ -869,6 +870,33 @@ async def register_offline_transaction(
     )
     session.add(tx)
     await session.flush()
+
+    # Se income_subtype == mensalidade com morador e status pago, quita a mensalidade pendente mais antiga
+    if (
+        body.income_subtype == IncomeSubtype.mensalidade
+        and body.resident_id is not None
+        and body.payment_status != "pending"
+    ):
+        from app.models.mensalidade import Mensalidade, MensalidadeStatus
+        from sqlmodel import select as sa_select
+        men_result = await session.execute(
+            sa_select(Mensalidade)
+            .where(
+                Mensalidade.association_id == current.association_id,
+                Mensalidade.resident_id == body.resident_id,
+                Mensalidade.status == MensalidadeStatus.pending,
+            )
+            .order_by(Mensalidade.reference_month.asc())
+            .limit(1)
+        )
+        men = men_result.scalar_one_or_none()
+        if men:
+            men.status = MensalidadeStatus.paid
+            men.paid_at = datetime.utcnow()
+            men.transaction_id = tx.id
+            men.updated_at = datetime.utcnow()
+            session.add(men)
+
     await session.commit()
     return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount), "offline": True}
 
