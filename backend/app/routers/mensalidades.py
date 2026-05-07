@@ -363,9 +363,15 @@ async def inadimplencia_history(
     result = await session.execute(
         text("""
             SELECT reference_month, due_date, amount, status, paid_at
-            FROM mensalidades
+            FROM mensalidades m
             WHERE association_id = :aid AND resident_id = :rid
               AND (status != 'paid' OR paid_at > due_date + INTERVAL '2 days')
+              AND NOT EXISTS (
+                SELECT 1 FROM migration_payments mp
+                WHERE mp.resident_id = m.resident_id
+                  AND mp.association_id = m.association_id
+                  AND mp.competencia = m.reference_month
+              )
             ORDER BY reference_month DESC
         """),
         {"aid": str(current.association_id), "rid": str(resident_id)},
