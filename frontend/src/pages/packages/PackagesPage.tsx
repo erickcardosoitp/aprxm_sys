@@ -1424,7 +1424,6 @@ export default function PackagesPage() {
         return
       }
       if (detail === 'NO_SESSION') {
-        if (!isConferenteOrAbove) { toast.error('Você não tem caixa aberto. Abra seu caixa antes de registrar.'); return }
         try {
           const sessRes = await financeService.listOpenSessions()
           if (sessRes.data.length === 0) { toast.error('Nenhum caixa aberto para registrar a taxa.'); return }
