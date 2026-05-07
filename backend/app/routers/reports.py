@@ -485,7 +485,7 @@ async def _query_entregas(
             SELECT u.id, u.full_name, so.title, so.number, so.updated_at::date
             FROM service_orders so
             JOIN users u ON u.id = so.created_by
-            WHERE so.association_id = ANY(:aids) AND so.status = 'concluido'
+            WHERE so.association_id = ANY(:aids) AND so.status = 'resolved'
               {dc_os}
             ORDER BY so.updated_at DESC
         """), base_no_uid)).fetchall()
