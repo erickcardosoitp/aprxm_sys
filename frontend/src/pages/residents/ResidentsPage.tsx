@@ -1300,6 +1300,7 @@ export default function ResidentsPage() {
   const [delinquentIds, setDelinquentIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [counts, setCounts] = useState({ associados: 0, dependentes: 0, visitantes: 0 })
+  const [kpis, setKpis] = useState({ sem_cep: 0, sem_telefone: 0, sem_cpf: 0, inadimplentes: 0 })
   const [promptDep, setPromptDep] = useState(false)
   const [lastSavedId, setLastSavedId] = useState<string | null>(null)
   const [updateRequests, setUpdateRequests] = useState<any[]>([])
@@ -1368,7 +1369,11 @@ export default function ResidentsPage() {
 
   useEffect(() => { if (activeTab !== 'atualizacoes') load() }, [activeTab, filterStatus, search])
   useEffect(() => { if (activeTab === 'atualizacoes') loadUpdateRequests() }, [activeTab])
-  useEffect(() => { loadDelinquents(); loadCounts() }, [])
+  useEffect(() => {
+    loadDelinquents(); loadCounts()
+    api.get<{ sem_cep: number; sem_telefone: number; sem_cpf: number; inadimplentes: number }>('/residents/kpis')
+      .then(r => setKpis(r.data)).catch(() => {})
+  }, [])
 
   const isSearching = search.trim().length >= 2
   const displayedResidents = residents.filter(r => {
@@ -1507,6 +1512,21 @@ export default function ResidentsPage() {
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{updateRequests.length}</span>
             )}
           </button>
+        ))}
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { label: 'Sem CEP',      value: kpis.sem_cep,       bg: 'bg-orange-50', text: 'text-orange-700' },
+          { label: 'Sem Telefone', value: kpis.sem_telefone,  bg: 'bg-yellow-50', text: 'text-yellow-700' },
+          { label: 'Sem CPF',      value: kpis.sem_cpf,       bg: 'bg-blue-50',   text: 'text-blue-700'   },
+          { label: 'Inadimplentes',value: kpis.inadimplentes, bg: 'bg-red-50',    text: 'text-red-700'    },
+        ].map(k => (
+          <div key={k.label} className={`${k.bg} rounded-xl p-3`}>
+            <p className={`text-[10px] uppercase tracking-wide font-semibold ${k.text} opacity-70`}>{k.label}</p>
+            <p className={`text-2xl font-bold ${k.text}`}>{k.value}</p>
+          </div>
         ))}
       </div>
 
