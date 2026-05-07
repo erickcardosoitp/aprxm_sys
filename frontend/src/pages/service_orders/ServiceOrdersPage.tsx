@@ -1767,110 +1767,6 @@ function FieldCell({ label, children }: { label: string; children: React.ReactNo
   )
 }
 
-// ─── RegistrosDiariosTab ──────────────────────────────────────────────────────
-
-interface GlobalSOTask extends SOTask {
-  service_order_id?: string
-  so_number?: number
-  so_title?: string
-  assoc_name?: string
-  assigned_to?: string
-}
-
-function RegistrosDiariosTab({ canWrite }: { canWrite: boolean }) {
-  const [tasks, setTasks] = useState<GlobalSOTask[]>([])
-  const [loading, setLoading] = useState(true)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [filterStatus, setFilterStatus] = useState('')
-  const today = new Date().toISOString().split('T')[0]
-
-  const load = async () => {
-    setLoading(true)
-    try {
-      const res = await api.get<GlobalSOTask[]>('/service-orders/tasks/all')
-      setTasks(res.data)
-    } catch { toast.error('Erro ao carregar registros.') }
-    finally { setLoading(false) }
-  }
-
-  useEffect(() => { load() }, [])
-
-  const filtered = filterStatus ? tasks.filter(t => t.status === filterStatus) : tasks
-
-  if (loading) return <p className="text-sm text-gray-400 text-center py-10">Carregando…</p>
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3">
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white">
-          <option value="">Todos os status</option>
-          {Object.entries(TASK_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <span className="text-sm text-gray-400 ml-auto">{filtered.length} registro(s)</span>
-      </div>
-
-      {filtered.length === 0 && (
-        <p className="text-sm text-gray-400 text-center py-10">Nenhum registro encontrado.</p>
-      )}
-
-      {filtered.map(task => {
-        const isExpanded = expandedId === task.id
-        const doneCount = task.checklist.filter(i => i.done).length
-        const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
-        return (
-          <div key={task.id} className={`rounded-xl border shadow-sm overflow-hidden ${task.status === 'done' ? 'border-gray-200 bg-gray-50 opacity-75' : 'border-gray-200 bg-white'}`}>
-            <div className="p-3 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : task.id)}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap gap-1.5 mb-1.5">
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${TASK_STATUS_COLORS[task.status]}`}>
-                      {TASK_STATUS_LABELS[task.status]}
-                    </span>
-                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                      task.priority === 'critical' ? 'bg-red-100 text-red-700' :
-                      task.priority === 'high' ? 'bg-orange-100 text-orange-700' :
-                      task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
-                    }`}>{PRIORITY_LABELS[task.priority]}</span>
-                    {task.so_number && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
-                        OS #{task.so_number} — {task.so_title}
-                      </span>
-                    )}
-                    {task.assoc_name && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">{task.assoc_name}</span>
-                    )}
-                    {task.due_date && (
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
-                        {isOverdue ? '⚠ ' : ''}Entrega: {new Date(task.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}
-                      </span>
-                    )}
-                  </div>
-                  <p className={`text-sm font-semibold text-gray-800 ${task.status === 'done' ? 'line-through text-gray-500' : ''}`}>{task.title}</p>
-                  {task.checklist.length > 0 && (
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <div className="flex-1 bg-gray-200 rounded-full h-1.5 max-w-[80px]">
-                        <div className="bg-[#26619c] h-1.5 rounded-full" style={{ width: `${task.checklist.length ? (doneCount / task.checklist.length) * 100 : 0}%` }} />
-                      </div>
-                      <span className="text-xs text-gray-500">{doneCount}/{task.checklist.length}</span>
-                    </div>
-                  )}
-                  {task.assigned_to_name && <p className="text-xs text-gray-400 mt-1">Responsável: {task.assigned_to_name}</p>}
-                </div>
-                <span className="text-gray-300 text-xs mt-1">{isExpanded ? '▲' : '▼'}</span>
-              </div>
-            </div>
-            {isExpanded && task.notes && (
-              <div className="border-t border-gray-100 p-3">
-                <p className="text-sm text-gray-600 whitespace-pre-wrap">{task.notes}</p>
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
 
 // ─── TarefasDiariasTab ────────────────────────────────────────────────────────
 
@@ -2487,7 +2383,7 @@ export default function ServiceOrdersPage() {
   const { role, permissions } = useAuthStore()
   const canWrite = permissions?.service_orders?.can_write ?? CAN_WRITE_ROLES.includes(role ?? '')
 
-  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'registros' | 'tarefas'>('ordens')
+  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'tarefas'>('ordens')
 
   const [orders, setOrders] = useState<ServiceOrder[]>([])
   const [loading, setLoading] = useState(false)
@@ -2585,12 +2481,6 @@ export default function ServiceOrdersPage() {
           <LayoutDashboard className="w-4 h-4" /> Demandas
         </button>
         <button
-          onClick={() => setPageTab('registros')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'registros' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
-        >
-          📋 Registros Diários
-        </button>
-        <button
           onClick={() => setPageTab('tarefas')}
           className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'tarefas' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
         >
@@ -2599,7 +2489,6 @@ export default function ServiceOrdersPage() {
       </div>
 
       {pageTab === 'demandas' && <DemandasBoard canWrite={canWrite} />}
-      {pageTab === 'registros' && <RegistrosDiariosTab canWrite={canWrite} />}
       {pageTab === 'tarefas' && <TarefasDiariasTab canWrite={canWrite} />}
 
       {pageTab === 'ordens' && <>

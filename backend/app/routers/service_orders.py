@@ -421,42 +421,6 @@ async def service_orders_report(
     }
 
 
-@router.get("/tasks/all", summary="Listar todos os Registros Diários da associação")
-async def list_all_tasks(
-    so_id: str | None = None,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    assoc_ids, assoc_names = await _get_group_assoc_ids(str(current.association_id), session)
-    aids = [str(x) for x in assoc_ids]
-    extra = "AND t.service_order_id = :so_filter" if so_id else ""
-    params: dict = {"aids": aids}
-    if so_id:
-        params["so_filter"] = so_id
-    rows = (await session.execute(text(f"""
-        SELECT t.id, t.title, t.notes, t.priority, t.status, t.due_date,
-               t.checklist, t.assigned_to, t.assigned_to_name,
-               t.created_at, u.full_name AS created_by_name, t.updated_at,
-               t.service_order_id, so.number AS so_number, so.title AS so_title,
-               a.name AS assoc_name
-        FROM service_order_tasks t
-        JOIN users u ON u.id = t.created_by
-        JOIN service_orders so ON so.id = t.service_order_id
-        JOIN associations a ON a.id = so.association_id
-        WHERE t.association_id = ANY(:aids)
-        {extra}
-        ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC
-    """), params)).fetchall()
-    return [{
-        "id": str(r[0]), "title": r[1], "notes": r[2], "priority": r[3],
-        "status": r[4], "due_date": str(r[5]) if r[5] else None,
-        "checklist": r[6] or [], "assigned_to": str(r[7]) if r[7] else None,
-        "assigned_to_name": r[8], "created_at": str(r[9]),
-        "created_by_name": r[10], "updated_at": str(r[11]),
-        "service_order_id": str(r[12]) if r[12] else None,
-        "so_number": r[13], "so_title": r[14], "assoc_name": r[15],
-    } for r in rows]
-
 
 @router.get("/{so_id}", summary="Detalhar OS")
 async def get_so(
@@ -521,7 +485,7 @@ async def generate_pdf(
     )
 
 
-# ── Registros Diários (Tasks) ─────────────────────────────────────────────────
+# ── Tasks por OS ─────────────────────────────────────────────────────────────
 
 class CreateTaskRequest(BaseModel):
     title: str

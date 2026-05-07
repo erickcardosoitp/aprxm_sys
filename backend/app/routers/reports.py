@@ -364,59 +364,6 @@ async def export_mensalidades(
     return _xlsx(wb, "mensalidades.xlsx")
 
 
-# ─── Registros Diários ────────────────────────────────────────────────────────
-
-async def _query_daily_records(session, aid: str, date_from=None, date_to=None, task_status=None, task_priority=None):
-    conds = ["t.association_id = :aid"]
-    p: dict = {"aid": aid}
-    if date_from: conds.append("t.due_date >= :df"); p["df"] = date.fromisoformat(date_from)
-    if date_to: conds.append("t.due_date <= :dt"); p["dt"] = date.fromisoformat(date_to)
-    if task_status: conds.append("t.status = :st"); p["st"] = task_status
-    if task_priority: conds.append("t.priority = :pr"); p["pr"] = task_priority
-    w = " AND ".join(conds)
-    rows = (await session.execute(text(f"""
-        SELECT so.number, so.title, t.title, t.priority, t.status,
-               t.due_date, t.notes, t.assigned_to_name, t.created_at::date,
-               (SELECT COUNT(*) FROM jsonb_array_elements(t.checklist) i WHERE (i->>'done')::boolean = true),
-               jsonb_array_length(t.checklist)
-        FROM service_order_tasks t
-        JOIN service_orders so ON so.id = t.service_order_id
-        WHERE {w} ORDER BY t.due_date NULLS LAST, so.number
-    """), p)).fetchall()
-    return [{
-        "OS Nº": _s(r[0]), "Título da OS": _s(r[1]), "Registro": _s(r[2]),
-        "Prioridade": _s(r[3]), "Status": _s(r[4]), "Data Entrega": _s(r[5]),
-        "Notas": _s(r[6]), "Responsável": _s(r[7]), "Criado em": _s(r[8]),
-        "Checklist": f"{r[9]}/{r[10]}" if r[10] else "—",
-    } for r in rows]
-
-
-@router.get("/daily-records/preview")
-async def preview_daily_records(
-    date_from: str | None = None, date_to: str | None = None,
-    task_status: str | None = None, task_priority: str | None = None,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    return await _query_daily_records(session, str(current.association_id), date_from, date_to, task_status, task_priority)
-
-
-@router.get("/daily-records")
-async def export_daily_records(
-    date_from: str | None = None, date_to: str | None = None,
-    task_status: str | None = None, task_priority: str | None = None,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> Response:
-    rows = await _query_daily_records(session, str(current.association_id), date_from, date_to, task_status, task_priority)
-    wb, ws = _mk("Registros Diários")
-    cols = list(rows[0].keys()) if rows else []
-    _headers(ws, cols)
-    for r in rows: ws.append(list(r.values()))
-    _widths(ws)
-    return _xlsx(wb, "registros_diarios.xlsx")
-
-
 # ─── Entregas ─────────────────────────────────────────────────────────────────
 
 async def _aids_for_report(session: AsyncSession, aid: str) -> list[str]:

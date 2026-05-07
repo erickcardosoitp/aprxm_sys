@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
-import { Download, DollarSign, Users, Package, FileText, CreditCard, ClipboardList, Search, ChevronDown, ChevronRight, CheckSquare, Mail, BarChart2 } from 'lucide-react'
+import { Download, DollarSign, Users, Package, FileText, CreditCard, Search, ChevronDown, ChevronRight, CheckSquare, Mail, BarChart2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
-type ModuleKey = 'finance' | 'residents' | 'packages' | 'service-orders' | 'mensalidades' | 'daily-records' | 'entregas'
+type ModuleKey = 'finance' | 'residents' | 'packages' | 'service-orders' | 'mensalidades' | 'entregas'
 
 interface ModuleDef {
   key: ModuleKey
@@ -19,7 +19,6 @@ const MODULES: ModuleDef[] = [
   { key: 'packages',       label: 'Encomendas',        endpoint: 'packages',       icon: Package },
   { key: 'service-orders', label: 'Ordens de Serviço', endpoint: 'service-orders', icon: FileText },
   { key: 'mensalidades',   label: 'Mensalidades',      endpoint: 'mensalidades',   icon: CreditCard },
-  { key: 'daily-records',  label: 'Registros Diários', endpoint: 'daily-records',  icon: ClipboardList },
   { key: 'entregas',       label: 'Entregas',          endpoint: 'entregas',       icon: CheckSquare },
 ]
 
@@ -91,7 +90,6 @@ function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string
   }
   if (mod === 'service-orders') { date(); d('so_status'); d('so_priority'); d('category') }
   if (mod === 'mensalidades')   { date(); d('men_status'); d('ref_month'); if (f.men_include_delinquent) p['include_delinquent'] = 'true' }
-  if (mod === 'daily-records')  { date(); d('task_status'); d('task_priority') }
   if (mod === 'entregas') {
     date()
     if (f.ent_user_id) p['user_id'] = f.ent_user_id
@@ -306,37 +304,6 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
         <span className="text-xs text-gray-700 font-medium">Incluir Inadimplentes</span>
         <span className="text-[10px] text-gray-400">(exibe total a quitar por morador)</span>
       </label>
-    </div>
-  )
-
-  if (mod === 'daily-records') return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {dateRangeFields}
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Status</label>
-        <div className="relative">
-          <select value={filters.task_status} onChange={set('task_status')} className={selectCls}>
-            <option value="">Todos</option>
-            <option value="open">Aberto</option>
-            <option value="pending">Pendente</option>
-            <option value="waiting_third">Ag. Terceiros</option>
-            <option value="done">Concluído</option>
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-        </div>
-      </div>
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Prioridade</label>
-        <div className="relative">
-          <select value={filters.task_priority} onChange={set('task_priority')} className={selectCls}>
-            <option value="">Todas</option>
-            <option value="low">Baixa</option>
-            <option value="medium">Média</option>
-            <option value="high">Alta</option>
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-        </div>
-      </div>
     </div>
   )
 
