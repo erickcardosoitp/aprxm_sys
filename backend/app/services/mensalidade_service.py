@@ -58,6 +58,7 @@ class MensalidadeService:
         auto_next: bool = True,
         payment_method_id_2: UUID | None = None,
         amount_2: Decimal | None = None,
+        pix_payer_name: str | None = None,
     ) -> dict:
         """
         Pay a mensalidade:
@@ -95,7 +96,8 @@ class MensalidadeService:
         )
         resident = res_result.scalar_one_or_none()
         resident_name = resident.full_name if resident else str(m.resident_id)
-        desc_base = f"Mensalidade {m.reference_month} — {resident_name}"
+        payer_suffix = f" | Pagador PIX: {pix_payer_name}" if pix_payer_name else ""
+        desc_base = f"Mensalidade {m.reference_month} — {resident_name}{payer_suffix}"
 
         # Create primary transaction
         tx = await finance_svc.register_transaction(
@@ -132,6 +134,8 @@ class MensalidadeService:
         m.transaction_id_2 = tx2.id if tx2 else None
         m.amount_2 = amount_2 if is_split else None
         m.updated_at = datetime.utcnow()
+        if pix_payer_name:
+            m.notes = f"Pagador PIX: {pix_payer_name}" + (f" | {m.notes}" if m.notes else "")
         self._session.add(m)
 
         await self._session.flush()

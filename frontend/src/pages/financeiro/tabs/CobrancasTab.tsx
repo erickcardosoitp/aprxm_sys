@@ -59,6 +59,9 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
   const [splitEnabled, setSplitEnabled] = useState(false)
   const [payPmId2, setPayPmId2] = useState('')
   const [payAmount2, setPayAmount2] = useState('')
+  const [pixPayerName, setPixPayerName] = useState('')
+  const [pixPayerMode, setPixPayerMode] = useState<'manual' | 'dependent'>('manual')
+  const [dependents, setDependents] = useState<{ id: string; full_name: string }[]>([])
 
   useEffect(() => {
     loadCobrancas()
@@ -241,7 +244,15 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
     setSplitEnabled(false)
     setPayPmId2('')
     setPayAmount2('')
+    setPixPayerName('')
+    setPixPayerMode('manual')
+    setDependents([])
     setPayPmTarget({ id, meta: residentMeta, amount })
+    if (residentMeta?.resident_id) {
+      api.get<{ id: string; full_name: string }[]>('/residents', {
+        params: { responsible_id: residentMeta.resident_id, type: 'dependent' }
+      }).then(r => setDependents(r.data)).catch(() => {})
+    }
   }
 
   const confirmPayMensalidade = async () => {
@@ -264,6 +275,9 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
         payload.payment_method_id_2 = payPmId2
         payload.amount_2 = amount2
       }
+      const selectedPmName = paymentMethods.find(p => p.id === payPmId)?.name ?? ''
+      const isPix = selectedPmName.toLowerCase().includes('pix')
+      if (isPix && pixPayerName.trim()) payload.pix_payer_name = pixPayerName.trim()
       const res = await api.post<{ mensalidade: Mensalidade; transaction: any; next_month: Mensalidade | null }>(
         `/mensalidades/${id}/pay`, payload
       )
@@ -883,6 +897,44 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
                     {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
                   </select>
                 </div>
+
+                {/* PIX payer name */}
+                {paymentMethods.find(p => p.id === payPmId)?.name?.toLowerCase().includes('pix') && (
+                  <div className="flex flex-col gap-2 border border-blue-100 rounded-xl p-3 bg-blue-50">
+                    <label className="text-xs font-medium text-blue-700">Nome Pagador PIX</label>
+                    <div className="flex gap-1 mb-1">
+                      <button
+                        type="button"
+                        onClick={() => { setPixPayerMode('manual'); setPixPayerName('') }}
+                        className={`flex-1 py-1 rounded-lg text-xs font-medium border transition ${pixPayerMode === 'manual' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}
+                      >Manual</button>
+                      <button
+                        type="button"
+                        onClick={() => { setPixPayerMode('dependent'); setPixPayerName('') }}
+                        className={`flex-1 py-1 rounded-lg text-xs font-medium border transition ${pixPayerMode === 'dependent' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}
+                      >Dependente</button>
+                    </div>
+                    {pixPayerMode === 'manual' ? (
+                      <input
+                        type="text"
+                        value={pixPayerName}
+                        onChange={e => setPixPayerName(e.target.value)}
+                        placeholder="Nome de quem fez o PIX"
+                        className="w-full border border-blue-200 rounded-xl px-3 py-2 text-sm bg-white"
+                      />
+                    ) : (
+                      <select
+                        value={pixPayerName}
+                        onChange={e => setPixPayerName(e.target.value)}
+                        className="w-full border border-blue-200 rounded-xl px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="">Selecione o dependente</option>
+                        {dependents.map(d => <option key={d.id} value={d.full_name}>{d.full_name}</option>)}
+                        {dependents.length === 0 && <option disabled>Nenhum dependente cadastrado</option>}
+                      </select>
+                    )}
+                  </div>
+                )}
 
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input

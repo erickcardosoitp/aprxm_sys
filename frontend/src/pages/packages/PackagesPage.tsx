@@ -593,6 +593,7 @@ export default function PackagesPage() {
   const [showReceive, setShowReceive] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
   const [deliveryCheck, setDeliveryCheck] = useState<{ is_delinquent: boolean; overdue_count: number; fee_will_apply: boolean; is_member: boolean } | null>(null)
+  const [delinquentIds, setDelinquentIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [packagesLoading, setPackagesLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('received')
@@ -1274,6 +1275,12 @@ export default function PackagesPage() {
     const t = setTimeout(loadPackages, filterQ ? 300 : 0)
     return () => clearTimeout(t)
   }, [filterStatus, filterQ, filterDateFrom, filterDateTo])
+
+  useEffect(() => {
+    api.get<{ resident_id: string }[]>('/mensalidades/delinquent')
+      .then(r => setDelinquentIds(new Set(r.data.map((d: any) => d.resident_id ?? d.id))))
+      .catch(() => {})
+  }, [])
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
   useEffect(() => { if (showBulkReceive && bulkRxStep === 'add') setTimeout(() => brxBarcodeRef.current?.focus(), 200) }, [showBulkReceive, bulkRxStep])
   useEffect(() => {
@@ -1482,6 +1489,9 @@ export default function PackagesPage() {
             <span className="text-sm font-semibold text-gray-800 truncate">{pkg.resident_name ?? '—'}</span>
             {pkg.unit && <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-medium shrink-0">Unid. {pkg.unit}{pkg.block ? `/Bl.${pkg.block}` : ''}</span>}
             {pkg.resident_type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">VISITANTE</span>}
+            {pkg.resident_type === 'member' && delinquentIds.has(pkg.resident_id ?? '') && (pkg.status === 'received' || pkg.status === 'notified') && (
+              <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">INADIMPLENTE</span>
+            )}
             {pkg.has_delivery_fee && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">Taxa R${parseFloat(pkg.delivery_fee_amount ?? '2.50').toFixed(2)}</span>}
           </div>
           {/* Row 2: carrier + tracking */}
