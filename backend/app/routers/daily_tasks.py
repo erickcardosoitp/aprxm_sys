@@ -158,6 +158,15 @@ async def create_task(
         "created_by": str(current.user_id),
     })).fetchone()
     await session.commit()
+    if body.assigned_to and str(body.assigned_to) != str(current.user_id):
+        from app.routers.notifications import create_notification
+        so_ctx = f' (OS: {body.service_order_title})' if body.service_order_title else ''
+        await create_notification(
+            str(current.association_id), str(body.assigned_to),
+            "📋 Nova tarefa atribuída",
+            f'Você foi atribuído(a) à tarefa "{body.title}"{so_ctx}',
+            "task",
+        )
     return _row_to_dict(row)
 
 
@@ -184,8 +193,20 @@ async def update_task(
     if not sets:
         return {"ok": True}
     sets.append("updated_at = NOW()")
-    await session.execute(text(f"UPDATE daily_tasks SET {', '.join(sets)} WHERE id = :id AND association_id = :aid"), params)
+    row = (await session.execute(
+        text(f"UPDATE daily_tasks SET {', '.join(sets)} WHERE id = :id AND association_id = :aid RETURNING title, assigned_to, service_order_title"),
+        params,
+    )).fetchone()
     await session.commit()
+    if body.assigned_to and row and str(body.assigned_to) != str(current.user_id):
+        from app.routers.notifications import create_notification
+        so_ctx = f' (OS: {row[2]})' if row[2] else ''
+        await create_notification(
+            str(current.association_id), str(body.assigned_to),
+            "📋 Tarefa atribuída a você",
+            f'Você foi atribuído(a) à tarefa "{row[0]}"{so_ctx}',
+            "task",
+        )
     return {"ok": True}
 
 

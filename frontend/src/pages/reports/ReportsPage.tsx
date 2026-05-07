@@ -57,6 +57,7 @@ interface FiltersState {
   category: string
   men_status: string
   ref_month: string
+  men_include_delinquent: boolean
   task_status: string
   task_priority: string
   ent_user_id: string
@@ -72,7 +73,7 @@ const DEFAULT_FILTERS: FiltersState = {
   street: '',
   cep: '',
   so_status: '', so_priority: '', category: '',
-  men_status: '', ref_month: '',
+  men_status: '', ref_month: '', men_include_delinquent: false,
   task_status: '', task_priority: '',
   ent_user_id: '',
   ent_types: [...ENT_TYPES],
@@ -89,7 +90,7 @@ function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string
     if (f.operator_ids.length) p['operator_ids'] = f.operator_ids as any
   }
   if (mod === 'service-orders') { date(); d('so_status'); d('so_priority'); d('category') }
-  if (mod === 'mensalidades')   { date(); d('men_status'); d('ref_month') }
+  if (mod === 'mensalidades')   { date(); d('men_status'); d('ref_month'); if (f.men_include_delinquent) p['include_delinquent'] = 'true' }
   if (mod === 'daily-records')  { date(); d('task_status'); d('task_priority') }
   if (mod === 'entregas') {
     date()
@@ -274,25 +275,37 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
   )
 
   if (mod === 'mensalidades') return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {dateRangeFields}
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Status</label>
-        <div className="relative">
-          <select value={filters.men_status} onChange={set('men_status')} className={selectCls}>
-            <option value="">Todos</option>
-            <option value="pending">Pendente</option>
-            <option value="paid">Pago</option>
-            <option value="overdue">Em atraso</option>
-            <option value="waived">Isento</option>
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {dateRangeFields}
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Status</label>
+          <div className="relative">
+            <select value={filters.men_status} onChange={set('men_status')} className={selectCls}>
+              <option value="">Todos</option>
+              <option value="pending">Pendente</option>
+              <option value="paid">Pago</option>
+              <option value="overdue">Em atraso</option>
+              <option value="waived">Isento</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Mês ref.</label>
+          <input type="month" value={filters.ref_month} onChange={set('ref_month')} className={inputCls} />
         </div>
       </div>
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Mês ref.</label>
-        <input type="month" value={filters.ref_month} onChange={set('ref_month')} className={inputCls} />
-      </div>
+      <label className="flex items-center gap-2 cursor-pointer w-fit">
+        <input
+          type="checkbox"
+          checked={filters.men_include_delinquent}
+          onChange={e => setFilters(f => ({ ...f, men_include_delinquent: e.target.checked }))}
+          className="w-4 h-4 rounded border-gray-300 text-[#26619c] accent-[#26619c]"
+        />
+        <span className="text-xs text-gray-700 font-medium">Incluir Inadimplentes</span>
+        <span className="text-[10px] text-gray-400">(exibe total a quitar por morador)</span>
+      </label>
     </div>
   )
 
@@ -654,9 +667,11 @@ function PackagesGroupedTable({ rows }: { rows: Record<string, unknown>[] }) {
 // ─── Mensalidades KPIs ────────────────────────────────────────────────────────
 
 function MensalidadesKpis({ rows }: { rows: Record<string, unknown>[] }) {
-  let paid = 0, pending = 0, overdue = 0, totalPaid = 0
+  let paid = 0, pending = 0, overdue = 0, totalPaid = 0, delinquent = 0, totalDelinquent = 0
   for (const r of rows) {
     const st = String(r['Status'] ?? '')
+    const ep = String(r['Estado Pagamento'] ?? '')
+    if (ep === 'Inadimplência') { delinquent++; totalDelinquent += parseFloat(String(r['Valor (R$)'] ?? '0')); continue }
     if (st === 'Pago') { paid++; totalPaid += parseFloat(String(r['Valor (R$)'] ?? '0')) }
     else if (st === 'Pendente') pending++
     else if (st === 'Em atraso') overdue++
@@ -666,6 +681,7 @@ function MensalidadesKpis({ rows }: { rows: Record<string, unknown>[] }) {
     { label: 'Pagos', value: paid, sub: fmtR(totalPaid), bg: 'bg-green-50', text: 'text-green-700', sub2: 'text-green-600' },
     { label: 'Pendentes', value: pending, sub: null, bg: 'bg-yellow-50', text: 'text-yellow-700', sub2: '' },
     { label: 'Em atraso', value: overdue, sub: null, bg: 'bg-red-50', text: 'text-red-700', sub2: '' },
+    ...(delinquent > 0 ? [{ label: 'Inadimplentes', value: delinquent, sub: fmtR(totalDelinquent), bg: 'bg-rose-50', text: 'text-rose-700', sub2: 'text-rose-600' }] : []),
     { label: 'Total', value: rows.length, sub: null, bg: 'bg-blue-50', text: 'text-blue-700', sub2: '' },
   ]
   return (
@@ -730,15 +746,18 @@ function PreviewTable({ rows, hidden, onToggle }: {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rows.map((row, i) => (
-              <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                {cols.map(c => (
-                  <td key={c} className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[300px] truncate">
-                    {String(row[c] ?? '—')}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {rows.map((row, i) => {
+              const isDelinquent = String(row['Estado Pagamento'] ?? '') === 'Inadimplência'
+              return (
+                <tr key={i} className={isDelinquent ? 'bg-red-50' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                  {cols.map(c => (
+                    <td key={c} className={`px-3 py-2 whitespace-nowrap max-w-[300px] truncate ${isDelinquent ? 'text-red-700 font-medium' : 'text-gray-700'}`}>
+                      {String(row[c] ?? '—')}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

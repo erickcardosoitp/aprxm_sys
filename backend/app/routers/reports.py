@@ -273,7 +273,11 @@ async def export_service_orders(
 
 STATUS_PT = {"paid": "Pago", "pending": "Pendente", "overdue": "Em atraso", "agreement": "Acordo", "waived": "Isento"}
 
-async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, men_status=None, ref_month=None):
+async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, men_status=None, ref_month=None, include_delinquent: bool = False):
+    from datetime import timedelta
+    from app.services.mensalidade_service import MensalidadeService
+    from uuid import UUID as _UUID
+
     conds = ["v.association_id = :aid"]
     p: dict = {"aid": aid}
     if date_from: conds.append("COALESCE(v.paid_at, v.due_date::timestamp)::date >= :df"); p["df"] = date.fromisoformat(date_from)
@@ -294,33 +298,64 @@ async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, m
         JOIN residents r ON r.id = v.resident_id
         WHERE {w} ORDER BY v.reference_month, v.resident_name
     """), p)).fetchall()
-    cols = ["Morador","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento","Origem","Endereço","Telefone"]
+    cols = ["Morador","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento","Origem","Endereço","Telefone","Estado Pagamento"]
     def row_dict(r):
-        d = dict(zip(cols, [_s(v) for v in r]))
+        d = dict(zip(cols[:-1], [_s(v) for v in r]))
         d["Status"] = STATUS_PT.get(d["Status"], d["Status"])
         d["Origem"] = "Sistema" if d["Origem"] == "sistema" else "Migração"
+        d["Estado Pagamento"] = "Mensalidade"
         return d
-    return [row_dict(r) for r in rows]
+    result = [row_dict(r) for r in rows]
+
+    if include_delinquent:
+        svc = MensalidadeService(session)
+        delinquent = await svc.list_delinquent(_UUID(aid))
+        # group by resident
+        from collections import defaultdict
+        grouped: dict = defaultdict(list)
+        for d in delinquent:
+            grouped[d["resident_id"]].append(d)
+        for resident_id, items in grouped.items():
+            total = sum(float(i["amount"]) for i in items)
+            months = sorted(i["reference_month"] for i in items)
+            first = items[0]
+            result.append({
+                "Morador": first["resident_name"],
+                "Mês Referência": f"{months[0]} a {months[-1]}" if len(months) > 1 else months[0],
+                "Vencimento": first["due_date"],
+                "Valor (R$)": f"{total:.2f}",
+                "Status": "Inadimplente",
+                "Pago em": "—",
+                "Forma Pagamento": "—",
+                "Origem": "—",
+                "Endereço": f"{first.get('address_street','')} {first.get('address_number','')}".strip(),
+                "Telefone": first.get("phone_primary") or "—",
+                "Estado Pagamento": "Inadimplência",
+            })
+
+    return result
 
 
 @router.get("/mensalidades/preview")
 async def preview_mensalidades(
     date_from: str | None = None, date_to: str | None = None,
     men_status: str | None = None, ref_month: str | None = None,
+    include_delinquent: bool = False,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    return await _query_mensalidades(session, str(current.association_id), date_from, date_to, men_status, ref_month)
+    return await _query_mensalidades(session, str(current.association_id), date_from, date_to, men_status, ref_month, include_delinquent)
 
 
 @router.get("/mensalidades")
 async def export_mensalidades(
     date_from: str | None = None, date_to: str | None = None,
     men_status: str | None = None, ref_month: str | None = None,
+    include_delinquent: bool = False,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    rows = await _query_mensalidades(session, str(current.association_id), date_from, date_to, men_status, ref_month)
+    rows = await _query_mensalidades(session, str(current.association_id), date_from, date_to, men_status, ref_month, include_delinquent)
     wb, ws = _mk("Mensalidades")
     cols = list(rows[0].keys()) if rows else []
     _headers(ws, cols)
