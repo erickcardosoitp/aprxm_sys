@@ -1367,13 +1367,20 @@ export default function ResidentsPage() {
     } catch { /* silent */ }
   }
 
-  useEffect(() => { if (activeTab !== 'atualizacoes') load() }, [activeTab, filterStatus, search])
-  useEffect(() => { if (activeTab === 'atualizacoes') loadUpdateRequests() }, [activeTab])
   useEffect(() => {
-    loadDelinquents(); loadCounts()
-    api.get<{ sem_cep: number; sem_telefone: number; sem_cpf: number; inadimplentes: number }>('/residents/kpis')
-      .then(r => setKpis(r.data)).catch(() => {})
-  }, [])
+    if (activeTab !== 'atualizacoes') { load(); loadKpis(activeTab) }
+  }, [activeTab, filterStatus, search])
+  useEffect(() => { if (activeTab === 'atualizacoes') loadUpdateRequests() }, [activeTab])
+  const loadKpis = (tab: ResidentTab) => {
+    const typeByTab: Record<string, string> = { associados: 'member', dependentes: 'dependent', visitantes: 'guest' }
+    const rtype = typeByTab[tab] ?? 'member'
+    api.get<{ sem_cep: number; sem_telefone: number; sem_cpf: number; inadimplentes: number }>(
+      '/residents/kpis', { params: { resident_type: rtype } }
+    ).then(r => setKpis(r.data)).catch(() => {})
+  }
+
+  useEffect(() => { loadDelinquents(); loadCounts(); loadKpis('associados') }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 
   const isSearching = search.trim().length >= 2
   const displayedResidents = residents.filter(r => {
@@ -1516,12 +1523,13 @@ export default function ResidentsPage() {
       </div>
 
       {/* KPIs */}
+      {activeTab !== 'atualizacoes' && (
       <div className="grid grid-cols-2 gap-2">
         {[
           { label: 'Sem CEP',      value: kpis.sem_cep,       bg: 'bg-orange-50', text: 'text-orange-700' },
           { label: 'Sem Telefone', value: kpis.sem_telefone,  bg: 'bg-yellow-50', text: 'text-yellow-700' },
           { label: 'Sem CPF',      value: kpis.sem_cpf,       bg: 'bg-blue-50',   text: 'text-blue-700'   },
-          { label: 'Inadimplentes',value: kpis.inadimplentes, bg: 'bg-red-50',    text: 'text-red-700'    },
+          ...(activeTab === 'associados' ? [{ label: 'Inadimplentes', value: kpis.inadimplentes, bg: 'bg-red-50', text: 'text-red-700' }] : []),
         ].map(k => (
           <div key={k.label} className={`${k.bg} rounded-xl p-3`}>
             <p className={`text-[10px] uppercase tracking-wide font-semibold ${k.text} opacity-70`}>{k.label}</p>
@@ -1529,6 +1537,7 @@ export default function ResidentsPage() {
           </div>
         ))}
       </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col gap-3">

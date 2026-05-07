@@ -396,44 +396,53 @@ async def map_data(
 
 @router.get("/kpis", summary="KPIs do módulo de moradores")
 async def residents_kpis(
+    resident_type: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from sqlalchemy import text as sa_text
     from datetime import date, timedelta
     from app.services.mensalidade_service import MensalidadeService
-    svc = MensalidadeService(session)
-    grace_days = await svc._grace_days(current.association_id)
-    grace_cutoff = date.today() - timedelta(days=grace_days)
+
+    # default: member
+    rtype = resident_type if resident_type in ("member", "guest", "dependent") else "member"
+
     row = (await session.execute(sa_text("""
         SELECT
-            COUNT(*) FILTER (WHERE (address_cep IS NULL OR address_cep = '') AND type = 'member' AND status = 'active') AS sem_cep,
-            COUNT(*) FILTER (WHERE (phone_primary IS NULL OR phone_primary = '') AND type = 'member' AND status = 'active') AS sem_telefone,
-            COUNT(*) FILTER (WHERE (cpf IS NULL OR cpf = '') AND type = 'member' AND status = 'active') AS sem_cpf
+            COUNT(*) FILTER (WHERE (address_cep IS NULL OR TRIM(address_cep) = '')) AS sem_cep,
+            COUNT(*) FILTER (WHERE (phone_primary IS NULL OR TRIM(phone_primary) = '')) AS sem_telefone,
+            COUNT(*) FILTER (WHERE (cpf IS NULL OR TRIM(cpf) = '')) AS sem_cpf
         FROM residents
-        WHERE association_id = :aid
-    """), {"aid": str(current.association_id)})).fetchone()
-    inadimplentes = (await session.execute(sa_text("""
-        SELECT COUNT(DISTINCT m.resident_id)
-        FROM mensalidades m
-        JOIN residents r ON r.id = m.resident_id
-        WHERE m.association_id = :aid
-          AND m.status NOT IN ('paid', 'agreement')
-          AND m.due_date < :cutoff
-          AND r.type = 'member'
-          AND r.status = 'active'
-          AND NOT EXISTS (
-            SELECT 1 FROM migration_payments mp
-            WHERE mp.resident_id = m.resident_id
-              AND mp.association_id = m.association_id
-              AND mp.competencia = m.reference_month
-          )
-    """), {"aid": str(current.association_id), "cutoff": grace_cutoff})).scalar()
+        WHERE association_id = :aid AND type = :rtype AND status = 'active'
+    """), {"aid": str(current.association_id), "rtype": rtype})).fetchone()
+
+    # inadimplência só faz sentido para members
+    inadimplentes = 0
+    if rtype == "member":
+        svc = MensalidadeService(session)
+        grace_days = await svc._grace_days(current.association_id)
+        grace_cutoff = date.today() - timedelta(days=grace_days)
+        inadimplentes = int((await session.execute(sa_text("""
+            SELECT COUNT(DISTINCT m.resident_id)
+            FROM mensalidades m
+            JOIN residents r ON r.id = m.resident_id
+            WHERE m.association_id = :aid
+              AND m.status NOT IN ('paid', 'agreement')
+              AND m.due_date < :cutoff
+              AND r.type = 'member' AND r.status = 'active'
+              AND NOT EXISTS (
+                SELECT 1 FROM migration_payments mp
+                WHERE mp.resident_id = m.resident_id
+                  AND mp.association_id = m.association_id
+                  AND mp.competencia = m.reference_month
+              )
+        """), {"aid": str(current.association_id), "cutoff": grace_cutoff})).scalar() or 0)
+
     return {
         "sem_cep": int(row[0]),
         "sem_telefone": int(row[1]),
         "sem_cpf": int(row[2]),
-        "inadimplentes": int(inadimplentes or 0),
+        "inadimplentes": inadimplentes,
     }
 
 
