@@ -841,7 +841,7 @@ async def list_pix_pending(
 @router.post("/transactions/offline", summary="Registrar saída externa (sem sessão ativa)")
 async def register_offline_transaction(
     body: TransactionRequest,
-    current: CurrentUser = Depends(require_admin),
+    current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Saída para pagamentos externos que não passam pelo caixa. Não afeta saldo de sessão."""
