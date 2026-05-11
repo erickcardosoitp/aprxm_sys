@@ -79,15 +79,24 @@ export function AppShell() {
   const isAdmin      = role === 'admin' || role === 'diretoria' || role === 'conselho' || isSuperAdmin
 
   const [themeColor, setThemeColor] = useState(() => localStorage.getItem('aprxm-theme') ?? '#1a3f6f')
+
+  function _applyTheme(hex: string) {
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    const root = document.documentElement
+    root.style.setProperty('--brand-header', hex)
+    root.style.setProperty('--brand-rgb', `${r}, ${g}, ${b}`)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', hex)
+  }
+
   const handleThemeChange = (hex: string) => {
     setThemeColor(hex)
     localStorage.setItem('aprxm-theme', hex)
-    document.documentElement.style.setProperty('--brand-header', hex)
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', hex)
+    _applyTheme(hex)
   }
-  useEffect(() => {
-    document.documentElement.style.setProperty('--brand-header', themeColor)
-  }, [])
+
+  useEffect(() => { _applyTheme(themeColor) }, [])
 
   useEffect(() => {
     const storedToken = useAuthStore.getState().token

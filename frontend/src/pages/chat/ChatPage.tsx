@@ -366,9 +366,9 @@ export default function ChatPage() {
   const grouped = groupByDate(messages)
 
   return (
-    <div className="flex flex-col bg-purple-950" style={{ height: 'calc(100vh - 130px)' }}>
+    <div className="flex flex-col" style={{ height: 'calc(100vh - 130px)', background: 'var(--brand-deeper)' }}>
       {/* Header */}
-      <div className="bg-purple-900 border-b border-purple-800 px-4 py-3 shrink-0">
+      <div className="px-4 py-3 shrink-0" style={{ background: 'var(--brand-dark)', borderBottom: '1px solid rgba(var(--brand-rgb), 0.4)' }}>
         <h1 className="font-semibold text-white text-sm">Chat da Associação</h1>
         <p className="text-xs text-purple-300">Histórico de 15 dias</p>
       </div>
@@ -386,7 +386,7 @@ export default function ChatPage() {
 
         {loading ? (
           <div className="flex justify-center items-center h-32">
-            <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--brand-header) transparent var(--brand-header) var(--brand-header)' }} />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 gap-2 text-purple-300">
@@ -397,9 +397,9 @@ export default function ChatPage() {
           grouped.map(({ date, msgs }) => (
             <div key={date}>
               <div className="flex items-center gap-2 my-3">
-                <div className="flex-1 h-px bg-purple-800" />
-                <span className="text-xs text-purple-400 shrink-0">{date}</span>
-                <div className="flex-1 h-px bg-purple-800" />
+                <div className="flex-1 h-px" style={{ background: 'var(--brand-dark)' }} />
+                <span className="text-xs text-white/40 shrink-0">{date}</span>
+                <div className="flex-1 h-px" style={{ background: 'var(--brand-dark)' }} />
               </div>
               {msgs.map(msg => (
                 <MessageBubble key={msg.id} msg={msg} isOwn={msg.sender_id === userId} myAssociation={associationName ?? ''} readers={reads[msg.id] ?? []} onReply={setReplyTo}
@@ -467,10 +467,10 @@ export default function ChatPage() {
 
       {/* Reply preview */}
       {replyTo && (
-        <div className="mx-3 mb-1 bg-purple-50 border border-purple-200 rounded-xl px-3 py-2 flex items-start gap-2 shrink-0">
-          <div className="w-0.5 bg-purple-400 rounded-full self-stretch shrink-0" />
+        <div className="mx-3 mb-1 rounded-xl px-3 py-2 flex items-start gap-2 shrink-0" style={{ background: 'var(--brand-surface)', border: '1px solid rgba(var(--brand-rgb), 0.3)' }}>
+          <div className="w-0.5 rounded-full self-stretch shrink-0" style={{ background: 'var(--brand-header)' }} />
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-semibold text-purple-600 mb-0.5">{replyTo.sender_name}</p>
+            <p className="text-[10px] font-semibold mb-0.5" style={{ color: 'var(--brand-header)' }}>{replyTo.sender_name}</p>
             {replyTo.message_type === 'photo' ? (
               <p className="text-xs text-gray-500">📷 Foto</p>
             ) : replyTo.message_type === 'audio' ? (
@@ -486,11 +486,11 @@ export default function ChatPage() {
       )}
 
       {/* Input bar */}
-      <div className="border-t border-purple-800 bg-purple-900 px-3 py-2 flex items-end gap-2 shrink-0">
+      <div className="px-3 py-2 flex items-end gap-2 shrink-0" style={{ background: 'var(--chat-header)', borderTop: '1px solid rgba(var(--brand-rgb), 0.4)' }}>
         <button
           onClick={() => fileRef.current?.click()}
           disabled={uploading || recording}
-          className="text-purple-400 hover:text-purple-200 p-1.5 shrink-0 disabled:opacity-40 transition"
+          className="text-white/50 hover:text-white p-1.5 shrink-0 disabled:opacity-40 transition"
         >
           <Image className="w-5 h-5" />
         </button>
@@ -504,7 +504,8 @@ export default function ChatPage() {
           placeholder={recording ? 'Gravando áudio…' : 'Mensagem… (@ usuário, # para O.S.)'}
           rows={1}
           disabled={recording || uploading}
-          className="flex-1 min-h-[40px] max-h-28 resize-none overflow-y-auto rounded-2xl border border-purple-700 px-3 py-2 text-sm focus:outline-none focus:border-purple-400 bg-purple-800 text-white placeholder-purple-400 disabled:opacity-50"
+          className="flex-1 min-h-[40px] max-h-28 resize-none overflow-y-auto rounded-2xl px-3 py-2 text-sm focus:outline-none text-white placeholder-white/30 disabled:opacity-50"
+          style={{ background: 'var(--bubble-other)', border: '1px solid rgba(var(--brand-rgb), 0.5)' }}
         />
 
         {recording ? (
@@ -519,7 +520,8 @@ export default function ChatPage() {
           <button
             onClick={sendText}
             disabled={sending}
-            className="bg-purple-600 hover:bg-purple-700 text-white rounded-full p-2.5 shrink-0 disabled:opacity-50 transition"
+            className="text-white rounded-full p-2.5 shrink-0 disabled:opacity-50 transition"
+          style={{ background: 'var(--bubble-me)' }}
           >
             <Send className="w-4 h-4" />
           </button>
@@ -527,14 +529,14 @@ export default function ChatPage() {
           <button
             onClick={toggleRecording}
             disabled={uploading}
-            className="text-purple-400 hover:text-purple-200 p-1.5 shrink-0 disabled:opacity-40 transition"
+            className="text-white/50 hover:text-white p-1.5 shrink-0 disabled:opacity-40 transition"
           >
             <Mic className="w-5 h-5" />
           </button>
         )}
 
         {uploading && (
-          <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin shrink-0" style={{ borderColor: 'var(--brand-header) transparent var(--brand-header) var(--brand-header)' }} />
         )}
       </div>
     </div>
@@ -628,7 +630,7 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
   if (msg.message_type === 'system') {
     return (
       <div className="flex justify-center my-2">
-        <span className="text-xs text-purple-300 bg-purple-800/60 px-3 py-1 rounded-full max-w-xs text-center">
+        <span className="text-xs text-white/60 px-3 py-1 rounded-full max-w-xs text-center" style={{ background: 'rgba(var(--brand-rgb), 0.3)' }}>
           {msg.content}
         </span>
       </div>
@@ -642,7 +644,7 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
       onMouseLeave={() => setHovered(false)}
     >
       {!isOwn && (
-        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-400 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1 select-none">
+        <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1 select-none" style={{ background: 'linear-gradient(135deg, var(--brand-header), var(--brand-dark))' }}>
           {msg.sender_name[0]?.toUpperCase()}
         </div>
       )}
@@ -658,17 +660,13 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
             )}
           </span>
         )}
-        <div className={`rounded-2xl px-3 py-2 ${
-          isOwn
-            ? 'bg-purple-600 text-white rounded-tr-sm'
-            : 'bg-purple-800 border border-purple-700 text-purple-50 rounded-tl-sm'
-        }`}>
+        <div className={`rounded-2xl px-3 py-2 text-white ${isOwn ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}
+          style={{ background: isOwn ? 'var(--bubble-me)' : 'var(--bubble-other)', border: isOwn ? 'none' : '1px solid rgba(var(--brand-rgb), 0.3)' }}
+        >
           {/* Quoted message */}
           {msg.reply_to_sender_name && (
-            <div className={`mb-2 rounded-xl px-2.5 py-1.5 flex gap-1.5 ${
-              isOwn ? 'bg-purple-500/40' : 'bg-purple-700/60'
-            }`}>
-              <div className="w-0.5 rounded-full shrink-0 bg-purple-300" />
+            <div className="mb-2 rounded-xl px-2.5 py-1.5 flex gap-1.5" style={{ background: 'rgba(0,0,0,0.25)' }}>
+              <div className="w-0.5 rounded-full shrink-0" style={{ background: 'rgba(255,255,255,0.5)' }} />
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold mb-0.5 text-purple-200">
                   {msg.reply_to_sender_name}
@@ -708,7 +706,7 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
           <div className={`flex items-center gap-0.5 mt-0.5 ${isOwn ? 'justify-end mr-1' : 'ml-1'}`}>
             {readers.slice(0, 5).map(r => (
               <span key={r.user_id} title={`Visto por ${r.name}`}
-                className="w-4 h-4 rounded-full bg-purple-700 text-purple-200 flex items-center justify-center text-[8px] font-bold leading-none select-none">
+                className="w-4 h-4 rounded-full text-white/80 flex items-center justify-center text-[8px] font-bold leading-none select-none" style={{ background: 'var(--brand-dark)' }}>
                 {r.name[0]?.toUpperCase()}
               </span>
             ))}
@@ -720,7 +718,7 @@ function MessageBubble({ msg, isOwn, myAssociation, readers, onReply, onDelete }
       </div>
       {/* Action buttons */}
       <div className={`self-center flex flex-col gap-0.5 transition ${hovered ? 'opacity-100' : 'opacity-0'}`}>
-        <button onClick={() => onReply(msg)} className="p-1.5 rounded-full text-purple-400 hover:text-purple-200 hover:bg-purple-800 transition" title="Responder">
+        <button onClick={() => onReply(msg)} className="p-1.5 rounded-full text-white/40 hover:text-white transition" style={{ ['--hover-bg' as string]: 'var(--brand-dark)' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--brand-dark)')} onMouseLeave={e => (e.currentTarget.style.background = '')} title="Responder">
           <Reply className="w-3.5 h-3.5" />
         </button>
         {isOwn && (

@@ -3,8 +3,35 @@
 @tailwind utilities;
 
 :root {
-  --brand-header: #1a3f6f;
+  --brand-header:  #1a3f6f;
+  --brand-rgb:     26, 63, 111;
+
+  /* Derivados via color-mix — atualizam automaticamente quando --brand-header muda */
+  --brand-dark:    color-mix(in srgb, var(--brand-header) 50%, black);
+  --brand-deeper:  color-mix(in srgb, var(--brand-header) 25%, black);
+  --brand-surface: color-mix(in srgb, var(--brand-header) 10%, white);
+
+  /* Tokens de Chat */
+  --chat-bg:      color-mix(in srgb, var(--brand-header) 25%, black);
+  --chat-header:  color-mix(in srgb, var(--brand-header) 50%, black);
+  --bubble-me:    var(--brand-header);
+  --bubble-other: color-mix(in srgb, var(--brand-header) 50%, black);
 }
+
+/* Badge dinâmico — usa brand color (Encomendas "Aguardando", etc.) */
+.badge-brand {
+  background-color: color-mix(in srgb, var(--brand-header) 12%, white);
+  color: var(--brand-header);
+}
+
+/* Refatoração cirúrgica: substitui #26619c e #1a3f6f hardcoded em todos os arquivos */
+.bg-\[\#26619c\]              { background-color: var(--brand-header) !important; }
+.bg-\[\#1a3f6f\]              { background-color: var(--brand-header) !important; }
+.text-\[\#26619c\]            { color: var(--brand-header) !important; }
+.border-\[\#26619c\]          { border-color: var(--brand-header) !important; }
+.hover\:bg-\[\#1a4f87\]:hover { background-color: var(--brand-dark) !important; }
+.focus\:ring-\[\#26619c\]     { --tw-ring-color: var(--brand-header) !important; }
+.accent-\[\#26619c\]          { accent-color: var(--brand-header) !important; }
 
 @layer base {
   html {
