@@ -185,11 +185,13 @@ async def create_resident(
             select(Resident).where(
                 Resident.association_id == current.association_id,
                 Resident.cpf == cpf_clean,
-                Resident.status != "inactive",
+                Resident.status != ResidentStatus.inactive,
             )
         )).scalar_one_or_none()
         if existing_cpf:
-            raise HTTPException(status_code=409, detail=f"CPF já cadastrado para {existing_cpf.full_name}.")
+            status_pt = {ResidentStatus.active: "ativo", ResidentStatus.suspended: "suspenso"}
+            st = status_pt.get(existing_cpf.status, existing_cpf.status.value)
+            raise HTTPException(status_code=409, detail=f"CPF já cadastrado para {existing_cpf.full_name} ({st}).")
         body = body.model_copy(update={"cpf": cpf_clean})
 
     resident = Resident(
@@ -492,11 +494,13 @@ async def update_resident(
                     Resident.association_id == current.association_id,
                     Resident.cpf == cpf_clean,
                     Resident.id != resident_id,
-                    Resident.status != "inactive",
+                    Resident.status != ResidentStatus.inactive,
                 )
             )).scalar_one_or_none()
             if existing_cpf:
-                raise HTTPException(status_code=409, detail=f"CPF já cadastrado para {existing_cpf.full_name}.")
+                status_pt = {ResidentStatus.active: "ativo", ResidentStatus.suspended: "suspenso"}
+                st = status_pt.get(existing_cpf.status, existing_cpf.status.value)
+                raise HTTPException(status_code=409, detail=f"CPF já cadastrado para {existing_cpf.full_name} ({st}).")
             data["cpf"] = cpf_clean
         else:
             data["cpf"] = None
