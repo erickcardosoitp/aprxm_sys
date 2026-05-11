@@ -49,9 +49,12 @@ export default function ConciliacaoInteligente() {
   const [confirmModal, setConfirmModal] = useState<ConfirmState | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ verde: true, amarelo: true, vermelho: false })
 
+  // Estado global de bloqueio: impede cliques duplos em qualquer operação pesada
+  const isProcessing = importing || running || approvingAll
+
   // ── Import CSV ────────────────────────────────────────────────────────────
   const handleImport = async () => {
-    if (!bankFile) { toast.error('Selecione um arquivo CSV'); return }
+    if (!bankFile || isProcessing) { toast.error('Selecione um arquivo CSV'); return }
     setImporting(true)
     try {
       const fd = new FormData()
@@ -70,6 +73,7 @@ export default function ConciliacaoInteligente() {
 
   // ── Run reconciliation ────────────────────────────────────────────────────
   const handleReconcile = async () => {
+    if (isProcessing) return
     setRunning(true)
     try {
       const res = await api.post<ReconGroup>('/financeiro/reconcile')
@@ -307,19 +311,19 @@ export default function ConciliacaoInteligente() {
           </div>
           <button
             onClick={handleImport}
-            disabled={importing || !bankFile}
+            disabled={isProcessing || !bankFile}
             className="flex items-center gap-1.5 bg-[#26619c] text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50"
           >
             <Upload size={14} />
-            {importing ? 'Importando…' : 'Importar e Conciliar'}
+            {importing ? 'Importando…' : isProcessing ? 'Aguarde…' : 'Importar e Conciliar'}
           </button>
           <button
             onClick={handleReconcile}
-            disabled={running}
+            disabled={isProcessing}
             className="flex items-center gap-1.5 border border-[#26619c] text-[#26619c] px-4 py-2 rounded-lg text-sm disabled:opacity-50"
           >
             <TrendingUp size={14} />
-            {running ? 'Analisando…' : 'Re-executar Conciliação'}
+            {running ? 'Analisando…' : isProcessing ? 'Aguarde…' : 'Re-executar Conciliação'}
           </button>
         </div>
       </div>
@@ -338,7 +342,7 @@ export default function ConciliacaoInteligente() {
               groups.automatico.length > 0 ? (
                 <button
                   onClick={approveAllVerde}
-                  disabled={approvingAll}
+                  disabled={isProcessing}
                   className="text-xs bg-green-600 text-white px-3 py-1 rounded-lg hover:bg-green-700 disabled:opacity-50"
                 >
                   {approvingAll ? '…' : 'Aprovar Tudo Verde'}

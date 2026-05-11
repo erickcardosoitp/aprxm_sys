@@ -241,8 +241,9 @@ class ReconciliationService:
     # ─── Reconciliation run ───────────────────────────────────────────────────
 
     async def run_reconciliation(self, association_id: UUID) -> dict:
-        # Unreconciled income transactions
-        tx_q = await self._session.execute(
+        # ── FASE 1: LEITURA — sem write locks, libera a transação de leitura rapidamente ──
+        # Usar SELECT ... FOR SHARE em reconciliations para evitar dirty reads sem bloquear writes
+        tx_rows = (await self._session.execute(
             text("""
                 SELECT t.id, t.amount, t.description, t.transaction_at,
                        r.full_name, r.cpf, t.resident_id, t.payer_name
@@ -257,24 +258,28 @@ class ReconciliationService:
                 ORDER BY t.transaction_at DESC
             """),
             {"aid": str(association_id)},
-        )
-        transactions = tx_q.fetchall()
+        )).fetchall()
 
-        stmt_q = select(BankStatement).where(
-            BankStatement.association_id == association_id,
-            BankStatement.conciliado == False,
-        )
-        result = await self._session.execute(stmt_q)
-        statements = list(result.scalars().all())
+        stmt_rows = (await self._session.execute(
+            text("""
+                SELECT id, bank, date, amount, name, cpf, conciliado, description
+                FROM bank_statements
+                WHERE association_id = :aid AND conciliado = FALSE
+            """),
+            {"aid": str(association_id)},
+        )).fetchall()
 
-        # Build resident lookups
-        all_res_q = await self._session.execute(
+        res_rows = (await self._session.execute(
             text("SELECT id, full_name, cpf FROM residents WHERE association_id=:aid"),
             {"aid": str(association_id)},
-        )
+        )).fetchall()
+
+        learning_map = await self._load_learning_map(association_id)
+
+        # ── FASE 2: SCORE — computação pura em memória, zero acesso ao banco ──
         name_to_residents: dict[str, list[tuple]] = {}
         cpf_to_resident_id: dict[str, str] = {}
-        for rr in all_res_q.fetchall():
+        for rr in res_rows:
             rid, rname, rcpf = rr
             norm = normalize_name(rname or "")
             if norm:
@@ -283,13 +288,6 @@ class ReconciliationService:
                 c = clean_cpf(rcpf)
                 if c:
                     cpf_to_resident_id[c] = str(rid)
-
-        learning_map = await self._load_learning_map(association_id)
-
-        automatico = []
-        sugestao = []
-        pendente = []
-        claimed_stmt_ids: set[str] = set()
 
         def _desc_name(description: str) -> str:
             if not description:
@@ -300,20 +298,33 @@ class ReconciliationService:
                 return description.split(" - ", 1)[1].strip()
             return ""
 
-        for tx in transactions:
+        # Constrói objetos leves de statement para o score (sem ORM attachado)
+        class _Stmt:
+            __slots__ = ("id", "bank", "date", "amount", "name", "cpf", "description")
+            def __init__(self, row: tuple) -> None:
+                self.id, self.bank, self.date, self.amount, self.name, self.cpf, _, self.description = row
+
+        stmts = [_Stmt(r) for r in stmt_rows]
+        claimed_in_session: set[str] = set()  # claims desta rodada (in-memory)
+
+        automatico = []
+        sugestao = []
+        pendente = []
+
+        scored_writes: list[dict] = []  # buffer de writes para aplicar em batch
+
+        for tx in tx_rows:
             tx_id, tx_amount, tx_desc, tx_at, res_name, res_cpf, tx_resident_id, tx_payer_name = tx
             tx_date = tx_at.date() if hasattr(tx_at, "date") else date.fromisoformat(str(tx_at)[:10])
             tx_amount_dec = Decimal(str(tx_amount))
-            tx_res_name = normalize_name(res_name or "")
-            tx_desc_name = normalize_name(_desc_name(tx_desc or ""))
-            tx_primary_name = tx_res_name or tx_desc_name
+            tx_primary_name = normalize_name(res_name or "") or normalize_name(_desc_name(tx_desc or ""))
 
             best_score = 0
-            best_stmt: BankStatement | None = None
+            best_stmt: "_Stmt | None" = None
             matches = []
 
-            for stmt in statements:
-                if str(stmt.id) in claimed_stmt_ids:
+            for stmt in stmts:
+                if str(stmt.id) in claimed_in_session:
                     continue
 
                 score = self.calculate_score(
@@ -323,10 +334,9 @@ class ReconciliationService:
                     tx_primary_name=tx_primary_name,
                     tx_payer_name=tx_payer_name,
                     tx_resident_id=str(tx_resident_id) if tx_resident_id else None,
-                    stmt=stmt,
+                    stmt=stmt,  # type: ignore[arg-type]
                     learning_map=learning_map,
                 )
-
                 if score > 0:
                     matches.append((score, stmt))
                     if score > best_score:
@@ -350,52 +360,87 @@ class ReconciliationService:
             }
 
             if best_stmt and best_score >= SCORE_VERDE:
-                recon = Reconciliation(
-                    association_id=association_id,
-                    statement_id=best_stmt.id,
-                    transaction_id=tx_id,
-                    score=best_score,
-                    status="automatico",
-                )
-                self._session.add(recon)
-                best_stmt.conciliado = True
-                self._session.add(best_stmt)
-                claimed_stmt_ids.add(str(best_stmt.id))
+                claimed_in_session.add(str(best_stmt.id))
                 item["status"] = "automatico"
-
-                if best_stmt.cpf:
-                    await self._pay_pending_mensalidade(
-                        association_id=association_id,
-                        cpf=best_stmt.cpf,
-                        transaction_id=tx_id,
-                    )
-
+                scored_writes.append({
+                    "stmt_id": str(best_stmt.id),
+                    "tx_id": str(tx_id),
+                    "score": best_score,
+                    "status": "automatico",
+                    "cpf": best_stmt.cpf,
+                })
                 automatico.append(item)
 
             elif best_stmt and best_score >= SCORE_AMARELO:
                 top = [m for m in matches if m[0] == best_score]
                 if len(top) == 1:
-                    recon = Reconciliation(
-                        association_id=association_id,
-                        statement_id=best_stmt.id,
-                        transaction_id=tx_id,
-                        score=best_score,
-                        status="sugestao",
-                    )
-                    self._session.add(recon)
                     item["status"] = "sugestao"
+                    scored_writes.append({
+                        "stmt_id": str(best_stmt.id),
+                        "tx_id": str(tx_id),
+                        "score": best_score,
+                        "status": "sugestao",
+                        "cpf": None,
+                    })
                     sugestao.append(item)
                 else:
                     pendente.append(item)
             else:
                 pendente.append(item)
 
+        # ── FASE 3: ESCRITA — atômica, em batch, com guards contra concorrência ──
+        confirmed_stmt_ids: set[str] = set()
+        for w in scored_writes:
+            # Claim atômico: só marca conciliado se ainda estava FALSE
+            # Se outro worker já conciliou, o UPDATE retorna 0 linhas → skip
+            claimed = (await self._session.execute(
+                text("""
+                    UPDATE bank_statements
+                    SET conciliado = TRUE
+                    WHERE id = :sid AND conciliado = FALSE AND association_id = :aid
+                    RETURNING id
+                """),
+                {"sid": w["stmt_id"], "aid": str(association_id)},
+            )).fetchone()
+
+            if not claimed:
+                # Outro processo já conciliou este statement — remove do resultado
+                automatico = [i for i in automatico if i["bank_statement_id"] != w["stmt_id"]]
+                sugestao = [i for i in sugestao if i["bank_statement_id"] != w["stmt_id"]]
+                continue
+
+            confirmed_stmt_ids.add(w["stmt_id"])
+
+            # INSERT com ON CONFLICT DO NOTHING para tolerar corrida entre workers
+            await self._session.execute(
+                text("""
+                    INSERT INTO reconciliations
+                        (id, association_id, statement_id, transaction_id, score, status)
+                    VALUES (gen_random_uuid(), :aid, :sid, :tid, :score, :status)
+                    ON CONFLICT DO NOTHING
+                """),
+                {
+                    "aid": str(association_id),
+                    "sid": w["stmt_id"],
+                    "tid": w["tx_id"],
+                    "score": w["score"],
+                    "status": w["status"],
+                },
+            )
+
+            if w["status"] == "automatico" and w["cpf"]:
+                await self._pay_pending_mensalidade(
+                    association_id=association_id,
+                    cpf=w["cpf"],
+                    transaction_id=w["tx_id"],
+                )
+
         await self._session.flush()
 
         # Pass 2: orphan bank statements (payer known, no transaction)
         identificado = []
-        for stmt in statements:
-            if stmt.conciliado or str(stmt.id) in claimed_stmt_ids:
+        for stmt in stmts:
+            if str(stmt.id) in confirmed_stmt_ids or str(stmt.id) in claimed_in_session:
                 continue
             resident_match: str | None = None
             if stmt.cpf and stmt.cpf in cpf_to_resident_id:

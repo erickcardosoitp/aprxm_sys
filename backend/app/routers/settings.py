@@ -126,6 +126,8 @@ async def get_assoc_data(
     for attempt in range(3):
         try:
             async with AsyncSessionLocal() as session:
+                # Leitura explicitamente read-only: evita lock conflicts com writes longos
+                await session.execute(text("SET LOCAL transaction_read_only = on"))
                 result = await session.execute(
                     text("SELECT name, phone, email, address_street, address_zip, slug FROM associations WHERE id = :id"),
                     {"id": str(current.association_id)},
