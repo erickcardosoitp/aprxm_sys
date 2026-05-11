@@ -28,22 +28,28 @@ class AuthService:
         self._session.add(user)
 
         # Memberships via user_association_roles (pós-migração)
-        # Prefere a associação solicitada; fallback = maior role + mais antiga
-        memberships_result = await self._session.execute(text("""
-            SELECT uar.association_id, uar.role, a.name, a.is_office
-            FROM user_association_roles uar
-            JOIN associations a ON a.id = uar.association_id
-            WHERE uar.user_id = :uid AND uar.is_active = TRUE AND a.is_active = TRUE
-            ORDER BY
-                CASE WHEN uar.association_id = :preferred THEN 0 ELSE 1 END,
-                CASE uar.role::text
-                    WHEN 'superadmin' THEN 1 WHEN 'admin_master' THEN 2
-                    WHEN 'admin' THEN 3 WHEN 'diretoria' THEN 4
-                    WHEN 'conselho' THEN 5 WHEN 'conferente' THEN 6
-                    ELSE 7 END,
-                uar.created_at
-        """), {"uid": str(user.id), "preferred": str(association_id) if association_id else str(user.association_id)})
-        memberships = memberships_result.fetchall()
+        # Guard: tabela pode não existir em cold-starts antes da migração completar
+        _uar_exists = (await self._session.execute(
+            text("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='user_association_roles'")
+        )).scalar()
+        if _uar_exists:
+            memberships_result = await self._session.execute(text("""
+                SELECT uar.association_id, uar.role, a.name, a.is_office
+                FROM user_association_roles uar
+                JOIN associations a ON a.id = uar.association_id
+                WHERE uar.user_id = :uid AND uar.is_active = TRUE AND a.is_active = TRUE
+                ORDER BY
+                    CASE WHEN uar.association_id = :preferred THEN 0 ELSE 1 END,
+                    CASE uar.role::text
+                        WHEN 'superadmin' THEN 1 WHEN 'admin_master' THEN 2
+                        WHEN 'admin' THEN 3 WHEN 'diretoria' THEN 4
+                        WHEN 'conselho' THEN 5 WHEN 'conferente' THEN 6
+                        ELSE 7 END,
+                    uar.created_at
+            """), {"uid": str(user.id), "preferred": str(association_id) if association_id else str(user.association_id)})
+            memberships = memberships_result.fetchall()
+        else:
+            memberships = []
 
         if memberships:
             primary = memberships[0]

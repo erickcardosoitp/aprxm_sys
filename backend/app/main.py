@@ -26,6 +26,34 @@ async def lifespan(app: FastAPI):
 async def _run_migrations() -> None:
     from sqlalchemy import text
     from app.database import AsyncSessionLocal
+
+    # ── PASSO 1: user_association_roles ───────────────────────────────────────
+    # Sessão própria e isolada; nunca bloqueada por outras migrações.
+    try:
+        async with AsyncSessionLocal() as s0:
+            await s0.execute(text("""
+                CREATE TABLE IF NOT EXISTS user_association_roles (
+                    user_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    association_id UUID        NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                    role           TEXT        NOT NULL DEFAULT 'operator',
+                    is_active      BOOLEAN     NOT NULL DEFAULT TRUE,
+                    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (user_id, association_id)
+                )
+            """))
+            await s0.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_uar_user ON user_association_roles(user_id)"
+            ))
+            await s0.execute(text("""
+                INSERT INTO user_association_roles (user_id, association_id, role)
+                SELECT id, association_id, role FROM users
+                ON CONFLICT (user_id, association_id) DO NOTHING
+            """))
+            await s0.commit()
+    except Exception:
+        pass  # tabela já existe ou outra instância criou simultaneamente
+
+    # ── PASSO 2: demais migrações ─────────────────────────────────────────────
     async with AsyncSessionLocal() as session:
         await session.execute(text("""
             ALTER TABLE association_settings
@@ -553,7 +581,7 @@ async def _run_migrations() -> None:
         # Migrar payer_name existente: extrair de mensalidades.notes (padrão "Pagador PIX: {nome}")
         await session.execute(text("""
             UPDATE transactions t
-            SET payer_name = REGEXP_REPLACE(m.notes, '^Pagador PIX: (.+?)( \|.*)?$', '\\1')
+            SET payer_name = REGEXP_REPLACE(m.notes, '^Pagador PIX: (.+?)( \\|.*)?$', '\\1')
             FROM mensalidades m
             WHERE m.transaction_id = t.id
               AND m.notes LIKE 'Pagador PIX:%'
@@ -583,26 +611,6 @@ async def _run_migrations() -> None:
             "ALTER TABLE daily_tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ"
         ))
 
-        # ── GLOBAL USERS: user_association_roles ──────────────────────────────
-        await session.execute(text("""
-            CREATE TABLE IF NOT EXISTS user_association_roles (
-                user_id        UUID      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                association_id UUID      NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
-                role           user_role NOT NULL DEFAULT 'operator',
-                is_active      BOOLEAN   NOT NULL DEFAULT TRUE,
-                created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (user_id, association_id)
-            )
-        """))
-        await session.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_uar_user ON user_association_roles(user_id)"
-        ))
-        # Populate from existing users (idempotente)
-        await session.execute(text("""
-            INSERT INTO user_association_roles (user_id, association_id, role)
-            SELECT id, association_id, role FROM users
-            ON CONFLICT (user_id, association_id) DO NOTHING
-        """))
         # Merge duplicate users (mesmo email, assocs diferentes)
         await session.execute(text("""
             DO $$
