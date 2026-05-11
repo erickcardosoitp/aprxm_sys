@@ -1394,12 +1394,16 @@ export default function ResidentsPage() {
   })
 
   const handleSave = async (form: FormState) => {
+    if (form.date_of_birth && !parseDateInput(form.date_of_birth)) {
+      toast.error('Data de nascimento inválida. Use o formato DD/MM/AAAA com o ano completo (ex: 1978).')
+      return
+    }
     const payload: Record<string, any> = {
       ...form,
       address_rooms: form.address_rooms ? parseInt(form.address_rooms) : null,
       household_count: form.household_count ? parseInt(form.household_count) : null,
       monthly_payment_day: form.monthly_payment_day ? parseInt(form.monthly_payment_day) : null,
-      date_of_birth: form.date_of_birth ? (parseDateInput(form.date_of_birth) ?? form.date_of_birth) : null,
+      date_of_birth: form.date_of_birth ? parseDateInput(form.date_of_birth) : null,
       move_in_date: form.move_in_date || null,
       cpf: form.cpf ? form.cpf.replace(/\D/g, '') : null,
     }
