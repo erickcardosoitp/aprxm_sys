@@ -163,7 +163,8 @@ async def create_task(
     try:
         so_ref = f' (OS: {body.service_order_title})' if body.service_order_title else ''
         responsible = body.assigned_to_name or 'equipe'
-        msg = f'📋 Tarefa criada: "{body.title}"{so_ref} → {responsible}'
+        badge = f"[{current.association_name}] " if current.association_name else ""
+        msg = f'{badge}📋 Tarefa criada: "{body.title}"{so_ref} → {responsible}'
         await post_system_message(str(current.association_id), msg, session)
     except Exception:
         pass

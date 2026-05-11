@@ -16,12 +16,14 @@ class CurrentUser:
         role: str,
         linked_association_ids: list[UUID] | None = None,
         is_office: bool = False,
+        association_name: str = "",
     ) -> None:
         self.user_id = user_id
         self.association_id = association_id
         self.role = role
         self.linked_association_ids: list[UUID] = linked_association_ids or []
         self.is_office = is_office
+        self.association_name = association_name
 
     @property
     def is_aggregator(self) -> bool:
@@ -71,6 +73,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
         role=payload["role"],
         linked_association_ids=linked_ids,
         is_office=bool(payload.get("is_office", False)),
+        association_name=payload.get("association_name", ""),
     )
 
 

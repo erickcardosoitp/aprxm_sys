@@ -25,6 +25,7 @@ class CreateUserRequest(BaseModel):
 
 class UpdateUserRequest(BaseModel):
     full_name: str | None = None
+    email: str | None = None
     phone: str | None = None
     role: UserRole | None = None
     is_active: bool | None = None
@@ -126,6 +127,13 @@ async def update_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    if body.email is not None and body.email != user.email:
+        conflict = (await session.execute(
+            select(User).where(User.email == body.email, User.id != user_id)
+        )).scalar_one_or_none()
+        if conflict:
+            raise HTTPException(status_code=409, detail="Este e-mail já está em uso por outro usuário.")
+        user.email = body.email
     if body.full_name is not None:
         user.full_name = body.full_name
     if body.phone is not None:

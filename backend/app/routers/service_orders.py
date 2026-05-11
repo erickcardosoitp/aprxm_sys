@@ -124,7 +124,8 @@ async def create_so(
         area_part = f" | Área: {body.area}" if body.area else ""
         priority_map = {"low": "Baixa", "medium": "Média", "high": "Alta", "critical": "Crítica"}
         priority_pt = priority_map.get(str(body.priority.value if hasattr(body.priority, 'value') else body.priority), str(body.priority))
-        chat_msg = f"📋 OS #{so.number} aberta: \"{body.title}\" | Prioridade: {priority_pt}{area_part}"
+        badge = f"[{current.association_name}] " if current.association_name else ""
+        chat_msg = f"{badge}📋 OS #{so.number} aberta: \"{body.title}\" | Prioridade: {priority_pt}{area_part}"
         if body.assigned_to_name:
             chat_msg += f" | Responsável: {body.assigned_to_name}"
         await post_system_message(str(current.association_id), chat_msg, session)

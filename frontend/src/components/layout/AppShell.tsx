@@ -73,6 +73,7 @@ export function AppShell() {
   const [notifs, setNotifs] = useState<AppNotification[]>([])
   const notifRef = useRef<HTMLDivElement>(null)
   const [pushPerm, setPushPerm] = useState<NotificationPermission | 'unsupported'>('default')
+  const [pushDismissed, setPushDismissed] = useState(() => localStorage.getItem('push-dismissed') === '1')
 
   const isOffice     = useAuthStore((s) => s.isOffice)
   const isSuperAdmin = role === 'superadmin' || role === 'admin_master'
@@ -315,15 +316,23 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {(pushPerm === 'default' || pushPerm === 'denied') && (
+      {!pushDismissed && (pushPerm === 'default' || pushPerm === 'denied') && (
         <div className="bg-blue-600 text-white text-xs flex flex-col items-center gap-1.5 px-4 py-2.5 text-center" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))' }}>
           {pushPerm === 'denied' ? (
-            <span>Notificações bloqueadas. Habilite nas configurações do navegador e recarregue.</span>
+            <div className="flex items-center gap-2 w-full max-w-xs justify-between">
+              <span>Notificações bloqueadas. Habilite nas configurações do navegador e recarregue.</span>
+              <button onClick={() => { localStorage.setItem('push-dismissed', '1'); setPushDismissed(true) }} className="shrink-0 text-white/70 hover:text-white underline">
+                Fechar
+              </button>
+            </div>
           ) : (
             <>
               <span>Ative as notificações para receber alertas em tempo real.</span>
               <button onClick={enablePushNotifications} className="font-semibold bg-white text-blue-600 px-4 py-1.5 rounded-lg w-full max-w-xs">
                 Ativar notificações
+              </button>
+              <button onClick={() => { localStorage.setItem('push-dismissed', '1'); setPushDismissed(true) }} className="text-white/60 hover:text-white/90 underline text-[11px]">
+                Não perguntar mais
               </button>
             </>
           )}
@@ -397,12 +406,17 @@ export function AppShell() {
                     </button>
                   )}
                 </div>
-                {pushPerm === 'default' && (
+                {pushPerm === 'default' && !pushDismissed && (
                   <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center justify-between gap-2">
                     <span className="text-xs text-blue-700">Ativar notificações push?</span>
-                    <button onClick={enablePushNotifications} className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg transition">
-                      Ativar
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={enablePushNotifications} className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg transition">
+                        Ativar
+                      </button>
+                      <button onClick={() => { localStorage.setItem('push-dismissed', '1'); setPushDismissed(true) }} className="text-xs text-blue-500 hover:text-blue-700">
+                        Não
+                      </button>
+                    </div>
                   </div>
                 )}
                 <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
