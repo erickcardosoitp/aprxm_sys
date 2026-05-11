@@ -277,7 +277,13 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
       }
       const selectedPmName = paymentMethods.find(p => p.id === payPmId)?.name ?? ''
       const isPix = selectedPmName.toLowerCase().includes('pix')
-      if (isPix && pixPayerName.trim()) payload.pix_payer_name = pixPayerName.trim()
+      if (isPix && pixPayerName.trim()) {
+        payload.pix_payer_name = pixPayerName.trim()
+        if (pixPayerMode === 'dependent') {
+          const dep = dependents.find(d => d.full_name === pixPayerName)
+          if (dep) payload.payer_entity_id = dep.id
+        }
+      }
       const res = await api.post<{ mensalidade: Mensalidade; transaction: any; next_month: Mensalidade | null }>(
         `/mensalidades/${id}/pay`, payload
       )

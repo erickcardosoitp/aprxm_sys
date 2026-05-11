@@ -30,6 +30,7 @@ class PayMensalidadeRequest(BaseModel):
     payment_method_id_2: UUID | None = None
     amount_2: Decimal | None = Field(default=None, gt=0)
     pix_payer_name: str | None = None
+    payer_entity_id: UUID | None = None
 
 
 class GenerateMonthRequest(BaseModel):
@@ -399,6 +400,7 @@ async def pay_mensalidade(
         payment_method_id_2=body.payment_method_id_2,
         amount_2=body.amount_2,
         pix_payer_name=body.pix_payer_name,
+        payer_entity_id=body.payer_entity_id,
     )
     await session.commit()
     return {

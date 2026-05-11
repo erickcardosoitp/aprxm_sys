@@ -89,6 +89,8 @@ class TransactionRequest(BaseModel):
     acordo_installments: int = Field(default=2, ge=1, le=12)
     acordo_months: int = Field(default=1, ge=1, le=24)
     acordo_entrada: Decimal | None = None
+    payer_name: str | None = None
+    payer_entity_id: UUID | None = None
 
 
 class ConferenciaRequest(BaseModel):
@@ -621,6 +623,8 @@ async def register_transaction(
         is_acordo=body.is_acordo,
         acordo_installments=body.acordo_installments,
         acordo_months=body.acordo_months,
+        payer_name=body.payer_name,
+        payer_entity_id=body.payer_entity_id,
     )
     return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
 
@@ -867,6 +871,8 @@ async def register_offline_transaction(
         approved_by=current.user_id if body.payment_status != "pending" else None,
         approved_at=datetime.utcnow() if body.payment_status != "pending" else None,
         created_by=current.user_id,
+        payer_name=body.payer_name,
+        payer_entity_id=body.payer_entity_id,
     )
     session.add(tx)
     await session.flush()

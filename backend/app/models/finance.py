@@ -114,6 +114,10 @@ class Transaction(SQLModel, table=True):
 
     income_subtype: IncomeSubtype | None = Field(default=None, sa_column=Column(SAEnum(IncomeSubtype, name='income_subtype', create_type=False), nullable=True))
 
+    # payer identification (structured — replaces free-text in description)
+    payer_name: str | None = Field(default=None)
+    payer_entity_id: UUID | None = Field(default=None, foreign_key="residents.id")
+
     package_id: UUID | None = Field(default=None, foreign_key="packages.id")
 
     # transfer between associations

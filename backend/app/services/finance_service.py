@@ -216,6 +216,8 @@ class FinanceService:
         is_acordo: bool = False,
         acordo_installments: int = 2,
         acordo_months: int = 1,
+        payer_name: str | None = None,
+        payer_entity_id: UUID | None = None,
     ) -> Transaction:
         # Expense transactions require approval before affecting balance
         approval_status = "pending" if tx_type == TransactionType.expense else None
@@ -234,6 +236,8 @@ class FinanceService:
             package_id=package_id,
             created_by=created_by,
             approval_status=approval_status,
+            payer_name=payer_name,
+            payer_entity_id=payer_entity_id,
         )
         self._session.add(tx)
         await self._session.flush()

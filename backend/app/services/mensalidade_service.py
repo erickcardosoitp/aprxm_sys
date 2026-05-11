@@ -59,6 +59,7 @@ class MensalidadeService:
         payment_method_id_2: UUID | None = None,
         amount_2: Decimal | None = None,
         pix_payer_name: str | None = None,
+        payer_entity_id: UUID | None = None,
     ) -> dict:
         """
         Pay a mensalidade:
@@ -110,6 +111,8 @@ class MensalidadeService:
             income_subtype=IncomeSubtype.mensalidade,
             payment_method_id=payment_method_id,
             resident_id=m.resident_id,
+            payer_name=pix_payer_name,
+            payer_entity_id=payer_entity_id,
         )
 
         # Create secondary transaction if split

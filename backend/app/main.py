@@ -533,6 +533,23 @@ async def _run_migrations() -> None:
             ALTER TABLE transactions ADD CONSTRAINT transactions_amount_check CHECK (amount >= 0)
         """))
 
+        # transactions: payer_name + payer_entity_id para rastreabilidade estruturada de pagadores PIX
+        for col in [
+            "payer_name TEXT",
+            "payer_entity_id UUID REFERENCES residents(id) ON DELETE SET NULL",
+        ]:
+            await session.execute(text(f"ALTER TABLE transactions ADD COLUMN IF NOT EXISTS {col}"))
+
+        # Migrar payer_name existente: extrair de mensalidades.notes (padrão "Pagador PIX: {nome}")
+        await session.execute(text("""
+            UPDATE transactions t
+            SET payer_name = REGEXP_REPLACE(m.notes, '^Pagador PIX: (.+?)( \|.*)?$', '\\1')
+            FROM mensalidades m
+            WHERE m.transaction_id = t.id
+              AND m.notes LIKE 'Pagador PIX:%'
+              AND t.payer_name IS NULL
+        """))
+
         await session.commit()
 
 
