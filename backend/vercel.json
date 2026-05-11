@@ -17,6 +17,10 @@
       "schedule": "0 11 * * *"
     },
     {
+      "path": "/api/v1/daily-tasks/reminders/trigger",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/v1/mensalidades/cron-generate",
       "schedule": "0 8 1 * *"
     },

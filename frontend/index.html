@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>APROXIMA — Gestão Comunitária</title>
+    <script>
+      (function(){
+        var c=localStorage.getItem('aprxm-theme');
+        if(c){
+          document.documentElement.style.setProperty('--brand-header',c);
+          document.write('<meta name="theme-color" content="'+c+'">');
+        }
+      })()
+    </script>
 
     <!-- PWA / Mobile -->
     <meta name="theme-color" content="#1a3f6f" />

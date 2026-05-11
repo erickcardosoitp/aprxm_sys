@@ -3,13 +3,14 @@ from __future__ import annotations
 from datetime import date, date as date_type, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.tenant import CurrentUser, get_current_user
-from app.database import get_session
+from app.database import AsyncSessionLocal, get_session
 
 router = APIRouter(prefix="/daily-tasks", tags=["Tarefas Diárias"])
 
@@ -380,6 +381,49 @@ async def report_by_user(
 
     result.sort(key=lambda x: (-x["total_comments"] - x["total"], x["user_name"]))
     return result
+
+
+@router.post("/reminders/trigger", summary="Cron: disparar lembretes de tarefas no Chat")
+async def trigger_task_reminders(
+    authorization: str | None = Header(None),
+) -> dict:
+    settings = get_settings()
+    if settings.cron_secret:
+        if authorization != f"Bearer {settings.cron_secret}":
+            raise HTTPException(401, "Não autorizado")
+
+    now_iso = datetime.utcnow().isoformat()
+    sent = 0
+
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(text("""
+            SELECT t.id, t.title, t.association_id, t.assigned_to_name,
+                   t.reminder_at, u.full_name
+            FROM daily_tasks t
+            LEFT JOIN users u ON u.id = t.assigned_to AND u.association_id = t.association_id
+            WHERE t.reminder_at <= NOW()
+              AND t.status != 'concluida'
+              AND t.reminded_at IS NULL
+        """))).fetchall()
+
+        for r in rows:
+            task_id, title, assoc_id, atn, reminder_at, full_name = r
+            responsible = atn or full_name or "equipe"
+            try:
+                from app.routers.chat import post_system_message
+                msg = f'⏰ Lembrete: tarefa "{title}" vence agora — responsável: {responsible}'
+                await post_system_message(str(assoc_id), msg, session)
+            except Exception:
+                pass
+            await session.execute(
+                text("UPDATE daily_tasks SET reminded_at = NOW() WHERE id = :id"),
+                {"id": str(task_id)},
+            )
+            sent += 1
+
+        await session.commit()
+
+    return {"sent": sent}
 
 
 def _row_to_dict(r) -> dict:

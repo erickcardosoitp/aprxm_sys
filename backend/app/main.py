@@ -578,6 +578,11 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS idx_pix_learning_assoc ON pix_learning_map(association_id)"
         ))
 
+        # daily_tasks: reminded_at para evitar duplicidade de lembretes via cron
+        await session.execute(text(
+            "ALTER TABLE daily_tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ"
+        ))
+
         # Idempotência: constraints UNIQUE para prevenir duplicatas e erros 500 em re-importação
         await session.execute(text("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_bs_dedup

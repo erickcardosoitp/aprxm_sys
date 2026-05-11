@@ -118,6 +118,19 @@ async def create_so(
         created_by=current.user_id,
         **body.model_dump(),
     )
+    # Post to chat for all members
+    try:
+        from app.routers.chat import post_system_message
+        area_part = f" | Área: {body.area}" if body.area else ""
+        priority_map = {"low": "Baixa", "medium": "Média", "high": "Alta", "critical": "Crítica"}
+        priority_pt = priority_map.get(str(body.priority.value if hasattr(body.priority, 'value') else body.priority), str(body.priority))
+        chat_msg = f"📋 OS #{so.number} aberta: \"{body.title}\" | Prioridade: {priority_pt}{area_part}"
+        if body.assigned_to_name:
+            chat_msg += f" | Responsável: {body.assigned_to_name}"
+        await post_system_message(str(current.association_id), chat_msg, session)
+    except Exception:
+        pass
+
     if body.assigned_to and str(body.assigned_to) != str(current.user_id):
         await _notif(
             str(current.association_id), str(body.assigned_to),

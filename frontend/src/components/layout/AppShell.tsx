@@ -1,6 +1,6 @@
 import { type ComponentType, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, LogOut, MessageSquare, Package, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
+import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, LogOut, MessageSquare, Package, Palette, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
@@ -77,6 +77,17 @@ export function AppShell() {
   const isOffice     = useAuthStore((s) => s.isOffice)
   const isSuperAdmin = role === 'superadmin' || role === 'admin_master'
   const isAdmin      = role === 'admin' || role === 'diretoria' || role === 'conselho' || isSuperAdmin
+
+  const [themeColor, setThemeColor] = useState(() => localStorage.getItem('aprxm-theme') ?? '#1a3f6f')
+  const handleThemeChange = (hex: string) => {
+    setThemeColor(hex)
+    localStorage.setItem('aprxm-theme', hex)
+    document.documentElement.style.setProperty('--brand-header', hex)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', hex)
+  }
+  useEffect(() => {
+    document.documentElement.style.setProperty('--brand-header', themeColor)
+  }, [])
 
   useEffect(() => {
     const storedToken = useAuthStore.getState().token
@@ -309,8 +320,8 @@ export function AppShell() {
           )}
         </div>
       )}
-      <header className="bg-[#1a3f6f] text-white flex items-center justify-between px-4 py-3 shadow"
-        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+      <header className="text-white flex items-center justify-between px-4 py-3 shadow"
+        style={{ backgroundColor: themeColor, paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
         <div className="flex flex-col leading-tight min-w-0 max-w-[55vw]">
           <span className="font-extrabold text-base tracking-tight">APRXM</span>
           {associationName && (
@@ -319,6 +330,17 @@ export function AppShell() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Theme color picker */}
+          <label className="relative p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition cursor-pointer" title="Cor do tema">
+            <Palette className="w-5 h-5" />
+            <input
+              type="color"
+              value={themeColor}
+              onChange={e => handleThemeChange(e.target.value)}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+            />
+          </label>
+
           {/* Chat */}
           <NavLink
             to="/chat"
@@ -437,9 +459,10 @@ export function AppShell() {
                           disabled={a.current || switching === a.id}
                           className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition w-full text-sm ${
                             a.current
-                              ? 'bg-blue-50 text-[#26619c] cursor-default'
+                              ? 'bg-gray-50 cursor-default'
                               : 'hover:bg-gray-50 text-gray-700 cursor-pointer disabled:opacity-50'
                           }`}
+                          style={a.current ? { color: themeColor } : undefined}
                         >
                           <Building2 className="w-4 h-4 shrink-0 opacity-60" />
                           <span className="flex-1 truncate font-medium">{a.name}</span>
@@ -481,11 +504,12 @@ export function AppShell() {
               to={to}
               className={({ isActive }) =>
                 `flex flex-col items-center justify-center gap-1 px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium transition shrink-0 min-w-[64px] min-h-[56px] sm:min-w-0 sm:min-h-0 ${
-                  isActive
-                    ? 'bg-[#26619c]/10 text-[#26619c]'
-                    : 'text-gray-400 hover:text-gray-600'
+                  isActive ? '' : 'text-gray-400 hover:text-gray-600'
                 }`
               }
+              style={({ isActive }) => isActive
+                ? { backgroundColor: themeColor + '1a', color: themeColor }
+                : undefined}
             >
               <Icon className="w-5 h-5" />
               {label}

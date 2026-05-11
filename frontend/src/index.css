@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --brand-header: #1a3f6f;
+}
+
 @layer base {
   html {
     /* Prevent pull-to-refresh and bounce scroll on iOS PWA */
