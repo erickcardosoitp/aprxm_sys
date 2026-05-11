@@ -48,6 +48,7 @@ export default function ConciliacaoInteligente() {
   const [confirming, setConfirming] = useState<Record<string, boolean>>({})
   const [confirmModal, setConfirmModal] = useState<ConfirmState | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ verde: true, amarelo: true, vermelho: false })
+  const [importWarning, setImportWarning] = useState<string | null>(null)
 
   // Estado global de bloqueio: impede cliques duplos em qualquer operação pesada
   const isProcessing = importing || running || approvingAll
@@ -56,16 +57,38 @@ export default function ConciliacaoInteligente() {
   const handleImport = async () => {
     if (!bankFile || isProcessing) { toast.error('Selecione um arquivo CSV'); return }
     setImporting(true)
+    setImportWarning(null)
     try {
       const fd = new FormData()
       fd.append('file', bankFile)
       fd.append('bank', bankType)
-      await api.post('/financeiro/bank-statements/import', fd, {
+      const res = await api.post<{
+        imported: number
+        skipped_duplicate: number
+        skipped_conciliated: number
+        total_parsed: number
+      }>('/financeiro/bank-statements/import', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      toast.success('Extrato importado!')
+      const { imported, skipped_conciliated, skipped_duplicate, total_parsed } = res.data
+      const skipped = skipped_conciliated + skipped_duplicate
+
+      if (imported === 0 && skipped > 0) {
+        toast.success(`Arquivo processado — nenhum registro novo.`)
+      } else {
+        toast.success(`${imported} registro${imported !== 1 ? 's' : ''} importado${imported !== 1 ? 's' : ''}.`)
+      }
+
+      const parts: string[] = []
+      if (skipped_conciliated > 0)
+        parts.push(`${skipped_conciliated} já conciliado${skipped_conciliated !== 1 ? 's' : ''}`)
+      if (skipped_duplicate > 0)
+        parts.push(`${skipped_duplicate} duplicado${skipped_duplicate !== 1 ? 's' : ''}`)
+      if (parts.length > 0)
+        setImportWarning(`${parts.join(' e ')} ignorado${parts.length > 1 || skipped > 1 ? 's' : ''} (de ${total_parsed} no arquivo).`)
+
       setBankFile(null)
-      handleReconcile()
+      if (imported > 0) handleReconcile()
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao importar.')
     } finally { setImporting(false) }
@@ -326,6 +349,13 @@ export default function ConciliacaoInteligente() {
             {running ? 'Analisando…' : isProcessing ? 'Aguarde…' : 'Re-executar Conciliação'}
           </button>
         </div>
+        {importWarning && (
+          <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+            <span className="shrink-0 mt-0.5">⚠️</span>
+            <span>{importWarning}</span>
+            <button onClick={() => setImportWarning(null)} className="ml-auto shrink-0 text-amber-500 hover:text-amber-700">✕</button>
+          </div>
+        )}
       </div>
 
       {/* Results */}

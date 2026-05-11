@@ -63,42 +63,83 @@ class ReconciliationService:
         association_id: UUID,
         bank: str,
         content: bytes,
-    ) -> list[BankStatement]:
-        statements = []
+    ) -> dict:
+        """
+        Importa extrato bancário de forma idempotente.
+        Re-importar o mesmo arquivo nunca gera erro 500.
+        Retorna: { imported, skipped_duplicate, skipped_conciliated, total_parsed }
+        """
+        parsed: list[BankStatement] = []
         if bank == "infinitypay":
-            statements = self._parse_infinitypay_raw(content, association_id)
+            parsed = self._parse_infinitypay_raw(content, association_id)
         else:
             text_content = content.decode("utf-8-sig", errors="replace")
             reader = csv.DictReader(io.StringIO(text_content))
             rows = list(reader)
             if bank == "itau":
-                statements = self._parse_itau(rows, association_id)
+                parsed = self._parse_itau(rows, association_id)
             elif bank == "cora":
-                statements = self._parse_cora(rows, association_id)
+                parsed = self._parse_cora(rows, association_id)
 
-        existing_q = await self._session.execute(
-            text("""
-                SELECT date, name, amount FROM bank_statements
-                WHERE association_id = :aid AND bank = :bank
-            """),
-            {"aid": str(association_id), "bank": bank},
-        )
-        existing_keys = {
-            (str(r[0]), (r[1] or "").upper(), str(r[2]))
-            for r in existing_q.fetchall()
-        }
+        imported = 0
+        skipped_duplicate = 0
+        skipped_conciliated = 0
 
-        new_statements = []
-        for stmt in statements:
-            key = (str(stmt.date), (stmt.name or "").upper(), str(stmt.amount))
-            if key not in existing_keys:
-                new_statements.append(stmt)
-                existing_keys.add(key)
+        for stmt in parsed:
+            # INSERT idempotente: ON CONFLICT na UNIQUE(association_id, bank, date, name, amount)
+            # Retorna a linha se inserida, nada se já existia
+            result = (await self._session.execute(
+                text("""
+                    INSERT INTO bank_statements
+                        (id, association_id, bank, date, amount, name, cpf, tipo, description, conciliado)
+                    VALUES (gen_random_uuid(), :aid, :bank, :date, :amount, :name, :cpf, :tipo, :desc, FALSE)
+                    ON CONFLICT (association_id, bank, date, COALESCE(name,''), amount) DO NOTHING
+                    RETURNING id, conciliado
+                """),
+                {
+                    "aid": str(association_id),
+                    "bank": bank,
+                    "date": stmt.date,
+                    "amount": stmt.amount,
+                    "name": stmt.name,
+                    "cpf": stmt.cpf,
+                    "tipo": stmt.tipo,
+                    "desc": stmt.description,
+                },
+            )).fetchone()
 
-        for stmt in new_statements:
-            self._session.add(stmt)
+            if result is None:
+                # Linha já existia — verifica se está conciliada
+                existing = (await self._session.execute(
+                    text("""
+                        SELECT conciliado FROM bank_statements
+                        WHERE association_id = :aid AND bank = :bank
+                          AND date = :date AND amount = :amount
+                          AND COALESCE(name,'') = COALESCE(:name,'')
+                        LIMIT 1
+                    """),
+                    {
+                        "aid": str(association_id),
+                        "bank": bank,
+                        "date": stmt.date,
+                        "amount": stmt.amount,
+                        "name": stmt.name,
+                    },
+                )).fetchone()
+                if existing and existing[0]:
+                    skipped_conciliated += 1
+                else:
+                    skipped_duplicate += 1
+            else:
+                imported += 1
+
         await self._session.flush()
-        return new_statements
+        return {
+            "imported": imported,
+            "skipped_duplicate": skipped_duplicate,
+            "skipped_conciliated": skipped_conciliated,
+            "total_parsed": len(parsed),
+        }
 
     # ─── Score calculation ────────────────────────────────────────────────────
 
@@ -411,13 +452,13 @@ class ReconciliationService:
 
             confirmed_stmt_ids.add(w["stmt_id"])
 
-            # INSERT com ON CONFLICT DO NOTHING para tolerar corrida entre workers
+            # ON CONFLICT (statement_id): agora referencia a UNIQUE index criada no lifespan
             await self._session.execute(
                 text("""
                     INSERT INTO reconciliations
                         (id, association_id, statement_id, transaction_id, score, status)
                     VALUES (gen_random_uuid(), :aid, :sid, :tid, :score, :status)
-                    ON CONFLICT DO NOTHING
+                    ON CONFLICT (statement_id) DO NOTHING
                 """),
                 {
                     "aid": str(association_id),

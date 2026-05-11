@@ -189,9 +189,9 @@ async def import_bank_statement(
 ) -> dict:
     content = await file.read()
     svc = ReconciliationService(session)
-    statements = await svc.import_csv(current.association_id, bank, content)
+    result = await svc.import_csv(current.association_id, bank, content)
     await session.commit()
-    return {"imported": len(statements)}
+    return result
 
 
 @router.get("/extrato", summary="Extrato financeiro por período")

@@ -578,6 +578,16 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS idx_pix_learning_assoc ON pix_learning_map(association_id)"
         ))
 
+        # Idempotência: constraints UNIQUE para prevenir duplicatas e erros 500 em re-importação
+        await session.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_bs_dedup
+            ON bank_statements (association_id, bank, date, COALESCE(name,''), amount)
+        """))
+        await session.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_reconciliations_stmt
+            ON reconciliations (statement_id)
+        """))
+
         await session.commit()
 
 
