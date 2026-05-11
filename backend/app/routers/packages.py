@@ -114,7 +114,7 @@ async def delivery_check(
             from sqlalchemy import text as _t
             from datetime import date, timedelta
             grace = (await session.execute(sa_text(
-                "SELECT COALESCE(grace_days, 2) FROM association_settings WHERE association_id = :aid"
+                "SELECT COALESCE(delinquency_grace_days, 2) FROM association_settings WHERE association_id = :aid"
             ), {"aid": str(current.association_id)})).scalar() or 2
             cutoff = date.today() - timedelta(days=grace)
             overdue_count = (await session.execute(sa_text("""
