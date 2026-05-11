@@ -293,12 +293,14 @@ async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, m
                    NULLIF(r.address_street,''), NULLIF(r.address_number,''),
                    NULLIF(r.address_complement,''), NULLIF(r.address_cep,'')
                )) AS endereco,
-               r.phone_primary
+               r.phone_primary,
+               v.resident_id::text
         FROM v_mensalidades_completas v
         JOIN residents r ON r.id = v.resident_id
         WHERE {w} ORDER BY v.reference_month, v.resident_name
     """), p)).fetchall()
-    cols = ["Morador","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento","Origem","Endereço","Telefone","Estado Pagamento"]
+    cols = ["Morador","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento","Origem","Endereço","Telefone","_rid","Estado Pagamento"]
+    _pending_statuses = {"Pendente", "Em atraso"}
     def row_dict(r):
         d = dict(zip(cols[:-1], [_s(v) for v in r]))
         d["Status"] = STATUS_PT.get(d["Status"], d["Status"])
@@ -310,14 +312,25 @@ async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, m
     if include_delinquent:
         svc = MensalidadeService(session)
         delinquent = await svc.list_delinquent(_UUID(aid))
-        # group by resident
         from collections import defaultdict
         grouped: dict = defaultdict(list)
         for d in delinquent:
             grouped[d["resident_id"]].append(d)
+
+        # Remove individual pending/overdue rows for delinquent residents
+        # (replaced below by a single consolidated row)
+        delinquent_ids = set(str(k) for k in grouped)
+        result = [
+            r for r in result
+            if not (r.get("_rid") in delinquent_ids and r["Status"] in _pending_statuses)
+        ]
+
         for resident_id, items in grouped.items():
             total = sum(float(i["amount"]) for i in items)
             months = sorted(i["reference_month"] for i in items)
+            tasks = " + ".join(
+                f"{m} pendente" for m in months
+            )
             first = items[0]
             result.append({
                 "Morador": first["resident_name"],
@@ -326,12 +339,17 @@ async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, m
                 "Valor (R$)": f"{total:.2f}",
                 "Status": "Inadimplente",
                 "Pago em": "—",
-                "Forma Pagamento": "—",
+                "Forma Pagamento": tasks,
                 "Origem": "—",
                 "Endereço": f"{first.get('address_street','')} {first.get('address_number','')}".strip(),
                 "Telefone": first.get("phone_primary") or "—",
+                "_rid": str(resident_id),
                 "Estado Pagamento": "Inadimplência",
             })
+
+    # Strip internal key before returning
+    for r in result:
+        r.pop("_rid", None)
 
     return result
 
