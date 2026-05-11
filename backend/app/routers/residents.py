@@ -579,6 +579,18 @@ async def merge_residents(
 
     sec_id_list = [str(s) for s in body.secondary_ids]
 
+    # Antes de reassignar mensalidades: deletar as dos secundários que já existem no primary
+    # para evitar UniqueViolationError em uq_mensalidade_period (association_id, resident_id, reference_month)
+    await session.execute(sa_text("""
+        DELETE FROM mensalidades
+        WHERE resident_id = ANY(:sids)
+          AND association_id = :aid
+          AND reference_month IN (
+              SELECT reference_month FROM mensalidades
+              WHERE resident_id = :pid AND association_id = :aid
+          )
+    """), {"sids": sec_id_list, "pid": str(body.primary_id), "aid": aid})
+
     # Reassign foreign keys
     for table, col in [
         ("transactions", "resident_id"),
