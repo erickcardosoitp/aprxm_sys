@@ -560,6 +560,24 @@ async def _run_migrations() -> None:
               AND t.payer_name IS NULL
         """))
 
+        # pix_learning_map: tabela de aprendizado para conciliação PIX
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS pix_learning_map (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                bank_name TEXT NOT NULL,
+                resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+                resident_name TEXT NOT NULL,
+                confirmed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                match_count INT NOT NULL DEFAULT 1,
+                last_matched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (association_id, bank_name, resident_id)
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_pix_learning_assoc ON pix_learning_map(association_id)"
+        ))
+
         await session.commit()
 
 

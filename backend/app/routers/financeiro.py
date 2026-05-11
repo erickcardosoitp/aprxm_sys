@@ -461,6 +461,172 @@ async def manual_reconcile(
     return {"ok": True}
 
 
+class PixLearningConfirmBody(BaseModel):
+    bank_statement_id: UUID
+    transaction_id: UUID
+    resident_id: UUID
+
+
+@router.post("/pix-learning/confirm")
+async def confirm_pix_learning(
+    body: PixLearningConfirmBody,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    aid = str(current.association_id)
+
+    # Fetch bank statement name
+    stmt_row = (await session.execute(
+        text("SELECT name FROM bank_statements WHERE id=:id AND association_id=:aid"),
+        {"id": str(body.bank_statement_id), "aid": aid},
+    )).fetchone()
+    if not stmt_row:
+        raise HTTPException(404, "Bank statement não encontrado.")
+    bank_name: str = stmt_row[0] or ""
+
+    # Fetch resident name
+    res_row = (await session.execute(
+        text("SELECT full_name FROM residents WHERE id=:id AND association_id=:aid"),
+        {"id": str(body.resident_id), "aid": aid},
+    )).fetchone()
+    if not res_row:
+        raise HTTPException(404, "Residente não encontrado.")
+    resident_name: str = res_row[0] or ""
+
+    svc = ReconciliationService(session)
+    await svc.record_learning(
+        association_id=current.association_id,
+        bank_name=bank_name,
+        resident_id=body.resident_id,
+        resident_name=resident_name,
+        confirmed_by=current.id,
+    )
+
+    # Upsert reconciliation as manual
+    existing = (await session.execute(
+        text("SELECT id FROM reconciliations WHERE transaction_id=:tid AND association_id=:aid LIMIT 1"),
+        {"tid": str(body.transaction_id), "aid": aid},
+    )).fetchone()
+    if existing:
+        await session.execute(
+            text("UPDATE reconciliations SET status='manual', statement_id=:sid WHERE id=:rid"),
+            {"sid": str(body.bank_statement_id), "rid": str(existing[0])},
+        )
+    else:
+        await session.execute(
+            text("""
+                INSERT INTO reconciliations (id, association_id, statement_id, transaction_id, score, status)
+                VALUES (gen_random_uuid(), :aid, :sid, :tid, 100, 'manual')
+            """),
+            {"aid": aid, "sid": str(body.bank_statement_id), "tid": str(body.transaction_id)},
+        )
+
+    # Mark statement as conciliated
+    await session.execute(
+        text("UPDATE bank_statements SET conciliado=TRUE WHERE id=:id AND association_id=:aid"),
+        {"id": str(body.bank_statement_id), "aid": aid},
+    )
+
+    await session.commit()
+    return {"ok": True}
+
+
+class RegisterOrphanAsIncomeBody(BaseModel):
+    resident_id: UUID
+    income_subtype: str = "other"
+    payment_method_id: UUID | None = None
+
+
+@router.post("/bank-statements/{statement_id}/register-as-income")
+async def register_orphan_as_income(
+    statement_id: UUID,
+    body: RegisterOrphanAsIncomeBody,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Cria uma transaction a partir de um bank_statement órfão e concilia automaticamente."""
+    aid = str(current.association_id)
+
+    stmt_row = (await session.execute(
+        text("SELECT id, amount, name, date, bank FROM bank_statements WHERE id=:id AND association_id=:aid AND conciliado=FALSE"),
+        {"id": str(statement_id), "aid": aid},
+    )).fetchone()
+    if not stmt_row:
+        raise HTTPException(404, "Statement não encontrado ou já conciliado.")
+
+    stmt_id, stmt_amount, stmt_name, stmt_date, stmt_bank = stmt_row
+
+    res_row = (await session.execute(
+        text("SELECT full_name FROM residents WHERE id=:id AND association_id=:aid"),
+        {"id": str(body.resident_id), "aid": aid},
+    )).fetchone()
+    if not res_row:
+        raise HTTPException(404, "Residente não encontrado.")
+    resident_name = res_row[0]
+
+    # Busca payment_method PIX se não informado
+    pm_id = body.payment_method_id
+    if not pm_id:
+        pm_row = (await session.execute(
+            text("SELECT id FROM payment_methods WHERE association_id=:aid AND name ILIKE '%pix%' LIMIT 1"),
+            {"aid": aid},
+        )).fetchone()
+        if pm_row:
+            pm_id = pm_row[0]
+
+    # Cria a transaction
+    tx_row = (await session.execute(
+        text("""
+            INSERT INTO transactions
+                (association_id, type, amount, description, income_subtype,
+                 resident_id, payment_method_id, payer_name, created_by, transaction_at)
+            VALUES (:aid, 'income', :amount, :desc, :subtype::income_subtype,
+                    :rid, :pmid, :pname, :cby, :txat)
+            RETURNING id
+        """),
+        {
+            "aid": aid,
+            "amount": float(stmt_amount),
+            "desc": f"PIX — {resident_name}",
+            "subtype": body.income_subtype,
+            "rid": str(body.resident_id),
+            "pmid": str(pm_id) if pm_id else None,
+            "pname": stmt_name,
+            "cby": str(current.id),
+            "txat": stmt_date,
+        },
+    )).fetchone()
+    tx_id = tx_row[0]
+
+    # Cria reconciliation
+    await session.execute(
+        text("""
+            INSERT INTO reconciliations (id, association_id, statement_id, transaction_id, score, status)
+            VALUES (gen_random_uuid(), :aid, :sid, :tid, 100, 'manual')
+        """),
+        {"aid": aid, "sid": str(statement_id), "tid": str(tx_id)},
+    )
+
+    # Marca statement conciliado
+    await session.execute(
+        text("UPDATE bank_statements SET conciliado=TRUE WHERE id=:id"),
+        {"id": str(statement_id)},
+    )
+
+    # Alimenta pix_learning_map
+    svc = ReconciliationService(session)
+    await svc.record_learning(
+        association_id=current.association_id,
+        bank_name=stmt_name or "",
+        resident_id=body.resident_id,
+        resident_name=resident_name,
+        confirmed_by=current.id,
+    )
+
+    await session.commit()
+    return {"ok": True, "transaction_id": str(tx_id)}
+
+
 @router.post("/reconcile")
 async def run_reconciliation(
     current: CurrentUser = Depends(get_current_user),

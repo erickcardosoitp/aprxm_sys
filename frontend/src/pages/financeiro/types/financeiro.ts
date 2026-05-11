@@ -85,7 +85,7 @@ export interface DelinquentItem {
 
 export interface ReconciliationItem {
   id: string; transaction_id?: string; bank: string; date: string; amount: number
-  name: string; resident?: string; cpf?: string
+  name: string; resident?: string; cpf?: string; resident_id?: string
   status: 'automatico' | 'sugestao' | 'pendente' | 'identificado'; score: number
   sale_description?: string; bank_statement_id?: string
 }

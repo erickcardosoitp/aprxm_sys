@@ -12,7 +12,7 @@ import MovimentacoesTab from './tabs/MovimentacoesTab'
 import CobrancasTab from './tabs/CobrancasTab'
 import RelatoriosTab from './tabs/RelatoriosTab'
 import TransferenciasTab from './tabs/TransferenciasTab'
-import ConciliacaoTab from './tabs/ConciliacaoTab'
+import ConciliacaoInteligente from './tabs/ConciliacaoInteligente'
 import DRETab from './tabs/DRETab'
 import EsteiraTab from './tabs/EsteiraTab'
 import PortaAPortaTab from './PortaAPortaTab'
@@ -105,7 +105,7 @@ function FinanceiroInner() {
           onRequestAdminClose={isAdmin ? setAdminCloseTarget : undefined}
         />
       )}
-      {tab === 'conciliacao' && <ConciliacaoTab />}
+      {tab === 'conciliacao' && <ConciliacaoInteligente />}
       {tab === 'porta_a_porta' && <PortaAPortaTab users={users} />}
 
       {/* Admin close modal (global) */}
