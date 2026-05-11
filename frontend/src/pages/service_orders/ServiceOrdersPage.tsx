@@ -1932,7 +1932,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const startEdit = (t: DailyTask) => {
     setFTitle(t.title); setFDesc(t.description ?? ''); setFAssignedTo(t.assigned_to ?? '')
     setFAssignedName(t.assigned_to_name ?? ''); setFDueDate(t.due_date ?? '')
-    setFReminder(t.reminder_at ? t.reminder_at.slice(0, 16) : '')
+    setFReminder(t.reminder_at ? (() => { const d = new Date(t.reminder_at!); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) })() : '')
     setFChecklist(t.checklist); setFAttachments(t.attachment_urls ?? [])
     setFSOId(t.service_order_id ?? ''); setFSOTitle(t.service_order_title ?? '')
     setEditingId(t.id); setShowForm(true)
@@ -1957,7 +1957,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         assigned_to: fAssignedTo || undefined,
         assigned_to_name: fAssignedName || undefined,
         due_date: fDueDate || undefined,
-        reminder_at: fReminder || undefined,
+        reminder_at: fReminder ? new Date(fReminder).toISOString() : undefined,
         checklist: fChecklist,
         attachment_urls: fAttachments,
         service_order_id: fSOId || undefined,
