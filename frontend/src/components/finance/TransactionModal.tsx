@@ -169,6 +169,12 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
   const [showSessionPicker, setShowSessionPicker] = useState(false)
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
 
+  // payer identification (PIX)
+  const [pixPayerName, setPixPayerName] = useState('')
+  const [pixPayerEntityId, setPixPayerEntityId] = useState('')
+  const [pixPayerMode, setPixPayerMode] = useState<'manual' | 'resident'>('manual')
+  const [pixPayerResults, setPixPayerResults] = useState<{ id: string; full_name: string }[]>([])
+
   // mensalidade — months
   const [mensalidadeMode, setMensalidadeMode] = useState<'unica' | 'multipla'>('unica')
   const [mensalidadeMonths, setMensalidadeMonths] = useState<string[]>([])
@@ -455,6 +461,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         toast.error('Valor inválido para pagamento dividido.'); setSaving(false); return
       }
 
+      const selectedPmName = paymentMethods.find(m => m.id === paymentMethodId)?.name ?? ''
+      const isPix = selectedPmName.toLowerCase().includes('pix')
       const basePayload = {
         type: txType,
         description: mensalidadeDesc,
@@ -466,6 +474,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         acordo_installments: isAcordo ? acordoInstallments : undefined,
         acordo_months: isAcordo ? acordoMonths : undefined,
         acordo_entrada: isAcordo && acordoEntrada ? parseFloat(acordoEntrada) : undefined,
+        payer_name: isPix && pixPayerName.trim() ? pixPayerName.trim() : undefined,
+        payer_entity_id: isPix && pixPayerEntityId ? pixPayerEntityId : undefined,
       }
 
       const txPayload = {
@@ -504,6 +514,8 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
         throw e
       }
       toast.success('Transação registrada!')
+      // Limpar pagador PIX para não "pendurar" na próxima transação
+      setPixPayerName(''); setPixPayerEntityId(''); setPixPayerResults([])
       onSuccess()
       onClose()
 
@@ -1190,6 +1202,63 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                       )}
                     </div>
                   )}
+                  {/* PIX payer identification */}
+                  {txType === 'income' && paymentMethods.find(m => m.id === paymentMethodId)?.name?.toLowerCase().includes('pix') && (
+                    <div className="flex flex-col gap-2 border border-blue-100 rounded-xl p-3 bg-blue-50">
+                      <label className="text-xs font-semibold text-blue-700">Nome Pagador PIX</label>
+                      <div className="flex gap-1">
+                        <button type="button" onClick={() => { setPixPayerMode('manual'); setPixPayerName(''); setPixPayerEntityId('') }}
+                          className={`flex-1 py-1 rounded-lg text-xs font-medium border transition ${pixPayerMode === 'manual' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                          Manual
+                        </button>
+                        <button type="button" onClick={() => { setPixPayerMode('resident'); setPixPayerName(''); setPixPayerEntityId('') }}
+                          className={`flex-1 py-1 rounded-lg text-xs font-medium border transition ${pixPayerMode === 'resident' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                          Buscar Morador
+                        </button>
+                      </div>
+                      {pixPayerMode === 'manual' ? (
+                        <input
+                          type="text"
+                          value={pixPayerName}
+                          onChange={e => setPixPayerName(e.target.value)}
+                          placeholder="Nome de quem fez o PIX"
+                          className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm bg-white"
+                        />
+                      ) : (
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={pixPayerName}
+                            onChange={async e => {
+                              setPixPayerName(e.target.value)
+                              setPixPayerEntityId('')
+                              if (e.target.value.length >= 3) {
+                                try {
+                                  const r = await api.get<{ id: string; full_name: string }[]>('/residents/search', { params: { q: e.target.value } })
+                                  setPixPayerResults(r.data.slice(0, 5))
+                                } catch { setPixPayerResults([]) }
+                              } else { setPixPayerResults([]) }
+                            }}
+                            placeholder="Buscar por nome..."
+                            className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm bg-white"
+                          />
+                          {pixPayerResults.length > 0 && (
+                            <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-36 overflow-y-auto">
+                              {pixPayerResults.map(r => (
+                                <button key={r.id} type="button"
+                                  onClick={() => { setPixPayerName(r.full_name); setPixPayerEntityId(r.id); setPixPayerResults([]) }}
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-100 last:border-0">
+                                  {r.full_name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {pixPayerEntityId && <p className="text-xs text-blue-600">Morador vinculado ✓</p>}
+                    </div>
+                  )}
+
                   {txType === 'expense' && (
                     <PhotoCapture label="Foto do Comprovante" onCapture={(e) => setReceiptPhotoUrl(e.url)} />
                   )}

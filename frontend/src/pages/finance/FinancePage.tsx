@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, Check, ClipboardCheck, DollarSign, FileText, List, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Scale, TrendingDown, TrendingUp, X, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
-import { TransactionModal } from '../../components/finance/TransactionModal'
+const TransactionModal = lazy(() => import('../../components/finance/TransactionModal').then(m => ({ default: m.TransactionModal })))
 import api from '../../services/api'
 import { financeService, type PendingApproval } from '../../services/finance'
 import { settingsService } from '../../services/settings'
@@ -1701,7 +1701,11 @@ export default function FinancePage() {
 
 
       {showSangria && <SangriaModal onClose={() => setShowSangria(false)} onSuccess={loadTransactions} />}
-      {showTransaction && session && <TransactionModal onClose={() => setShowTransaction(false)} onSuccess={() => { loadTransactions(); loadPendingApprovals() }} />}
+      {showTransaction && session && (
+        <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"><Loader2 className="w-8 h-8 text-white animate-spin" /></div>}>
+          <TransactionModal onClose={() => setShowTransaction(false)} onSuccess={() => { loadTransactions(); loadPendingApprovals() }} />
+        </Suspense>
+      )}
       {selectedSession && (
         <SessionDetailModal
           session={selectedSession}

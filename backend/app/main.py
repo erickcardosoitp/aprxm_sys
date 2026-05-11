@@ -533,6 +533,16 @@ async def _run_migrations() -> None:
             ALTER TABLE transactions ADD CONSTRAINT transactions_amount_check CHECK (amount >= 0)
         """))
 
+        # income_subtype: garantir que toda transação income tem subtype (CHECK, não NOT NULL — expense/sangria ficam NULL)
+        await session.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE transactions
+                    ADD CONSTRAINT chk_income_subtype_required
+                    CHECK (type != 'income' OR income_subtype IS NOT NULL);
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+
         # transactions: payer_name + payer_entity_id para rastreabilidade estruturada de pagadores PIX
         for col in [
             "payer_name TEXT",
