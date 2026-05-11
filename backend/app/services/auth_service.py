@@ -14,13 +14,11 @@ class AuthService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def authenticate(self, email: str, password: str, association_id: UUID, remember_me: bool = False) -> str:
-        stmt = select(User).where(
-            User.email == email,
-            User.association_id == association_id,
-            User.is_active == True,  # noqa: E712
+    async def authenticate(self, email: str, password: str, association_id: UUID | None = None, remember_me: bool = False) -> str:
+        # Busca global por email (sem filtro de associação)
+        result = await self._session.execute(
+            select(User).where(User.email == email, User.is_active == True)  # noqa: E712
         )
-        result = await self._session.execute(stmt)
         user = result.scalar_one_or_none()
 
         if not user or not verify_password(password, user.hashed_password):
@@ -29,32 +27,46 @@ class AuthService:
         user.last_login_at = datetime.utcnow()
         self._session.add(user)
 
-        # Resolve linked associations for aggregator accounts (raw SQL — evita bug asyncpg+ARRAY)
-        linked_ids: list[str] = []
-        slugs_row = await self._session.execute(
-            text("SELECT linked_association_slugs FROM associations WHERE id = :id"),
-            {"id": str(user.association_id)},
-        )
-        slugs_result = slugs_row.fetchone()
-        linked_slugs: list[str] = slugs_result[0] if slugs_result and slugs_result[0] else []
-        if linked_slugs:
-            ids_row = await self._session.execute(
-                text("SELECT id FROM associations WHERE slug = ANY(:slugs)"),
-                {"slugs": linked_slugs},
-            )
-            linked_ids = [str(r[0]) for r in ids_row.fetchall()]
+        # Memberships via user_association_roles (pós-migração)
+        # Prefere a associação solicitada; fallback = maior role + mais antiga
+        memberships_result = await self._session.execute(text("""
+            SELECT uar.association_id, uar.role, a.name, a.is_office
+            FROM user_association_roles uar
+            JOIN associations a ON a.id = uar.association_id
+            WHERE uar.user_id = :uid AND uar.is_active = TRUE AND a.is_active = TRUE
+            ORDER BY
+                CASE WHEN uar.association_id = :preferred THEN 0 ELSE 1 END,
+                CASE uar.role::text
+                    WHEN 'superadmin' THEN 1 WHEN 'admin_master' THEN 2
+                    WHEN 'admin' THEN 3 WHEN 'diretoria' THEN 4
+                    WHEN 'conselho' THEN 5 WHEN 'conferente' THEN 6
+                    ELSE 7 END,
+                uar.created_at
+        """), {"uid": str(user.id), "preferred": str(association_id) if association_id else str(user.association_id)})
+        memberships = memberships_result.fetchall()
 
-        # Fetch association name + is_office for JWT
-        assoc_row = await self._session.execute(
-            text("SELECT name, is_office FROM associations WHERE id = :id"),
-            {"id": str(user.association_id)},
-        )
-        assoc_result = assoc_row.fetchone()
-        association_name = assoc_result[0] if assoc_result else ""
-        is_office: bool = bool(assoc_result[1]) if assoc_result else False
+        if memberships:
+            primary = memberships[0]
+            primary_assoc_id   = primary[0]
+            primary_role       = primary[1]
+            association_name   = primary[2]
+            is_office: bool    = bool(primary[3]) if primary[3] is not None else False
+            linked_ids         = [str(m[0]) for m in memberships[1:]]
+        else:
+            # Fallback para usuários que ainda não passaram pela migração
+            assoc_row = await self._session.execute(
+                text("SELECT name, is_office FROM associations WHERE id = :id"),
+                {"id": str(user.association_id)},
+            )
+            ar = assoc_row.fetchone()
+            primary_assoc_id = user.association_id
+            primary_role     = user.role.value
+            association_name = ar[0] if ar else ""
+            is_office        = bool(ar[1]) if ar else False
+            linked_ids       = []
 
         return create_access_token(
-            user.id, user.association_id, user.role.value, user.full_name, linked_ids, association_name,
+            user.id, primary_assoc_id, primary_role, user.full_name, linked_ids, association_name,
             expire_days=30 if remember_me else None,
             is_office=is_office,
         )
@@ -80,11 +92,8 @@ class AuthService:
         await self._session.flush()
         return user
 
-    async def get_by_id(self, user_id: UUID, association_id: UUID) -> User:
-        stmt = select(User).where(
-            User.id == user_id,
-            User.association_id == association_id,
-        )
+    async def get_by_id(self, user_id: UUID, association_id: UUID | None = None) -> User:
+        stmt = select(User).where(User.id == user_id)
         result = await self._session.execute(stmt)
         user = result.scalar_one_or_none()
         if not user:

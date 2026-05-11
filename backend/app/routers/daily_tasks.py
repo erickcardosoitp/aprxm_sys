@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import AsyncSessionLocal, get_session
+from app.routers.chat import post_system_message
 
 router = APIRouter(prefix="/daily-tasks", tags=["Tarefas Diárias"])
 
@@ -158,7 +159,17 @@ async def create_task(
         "so_title": body.service_order_title,
         "created_by": str(current.user_id),
     })).fetchone()
+    # Chat: postar mensagem automática ao criar tarefa
+    try:
+        so_ref = f' (OS: {body.service_order_title})' if body.service_order_title else ''
+        responsible = body.assigned_to_name or 'equipe'
+        msg = f'📋 Tarefa criada: "{body.title}"{so_ref} → {responsible}'
+        await post_system_message(str(current.association_id), msg, session)
+    except Exception:
+        pass
+
     await session.commit()
+
     if body.assigned_to and str(body.assigned_to) != str(current.user_id):
         from app.routers.notifications import create_notification
         so_ctx = f' (OS: {body.service_order_title})' if body.service_order_title else ''

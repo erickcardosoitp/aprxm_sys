@@ -24,7 +24,7 @@ class TokenResponse(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
-    association_id: UUID
+    association_id: UUID | None = None  # opcional: se omitido, usa associação de maior role
     remember_me: bool = False
 
 
@@ -34,11 +34,10 @@ async def login(
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     """
-    Login padrão OAuth2 (usado por clientes Swagger/OpenAPI).
-    O campo `username` deve conter `email::association_id`.
+    Login OAuth2. username = email  ou  email::association_id (compatibilidade).
     """
     email, _, assoc_str = form.username.partition("::")
-    assoc_id = UUID(assoc_str)
+    assoc_id = UUID(assoc_str) if assoc_str else None
     svc = AuthService(session)
     token = await svc.authenticate(email, form.password, assoc_id)
     return TokenResponse(access_token=token)
@@ -113,21 +112,30 @@ async def my_associations(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    result = await session.execute(select(User).where(User.id == current.user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
-    stmt = (
-        select(Association, User)
-        .join(User, User.association_id == Association.id)
-        .where(User.email == user.email, User.is_active == True, Association.is_active == True)  # noqa: E712
-    )
-    rows = (await session.execute(stmt)).all()
-    return [
-        {"id": str(assoc.id), "name": assoc.name, "slug": assoc.slug, "role": u.role,
-         "current": str(assoc.id) == str(current.association_id)}
-        for assoc, u in rows
-    ]
+    from sqlalchemy import text as _t
+    rows = (await session.execute(_t("""
+        SELECT a.id, a.name, a.slug, uar.role
+        FROM user_association_roles uar
+        JOIN associations a ON a.id = uar.association_id
+        WHERE uar.user_id = :uid AND uar.is_active = TRUE AND a.is_active = TRUE
+        ORDER BY a.name
+    """), {"uid": str(current.user_id)})).fetchall()
+    # Fallback: se ainda não migrado, busca pelo email legado
+    if not rows:
+        result = await session.execute(select(User).where(User.id == current.user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+        stmt = (
+            select(Association, User)
+            .join(User, User.association_id == Association.id)
+            .where(User.email == user.email, User.is_active == True, Association.is_active == True)  # noqa: E712
+        )
+        legacy = (await session.execute(stmt)).all()
+        return [{"id": str(a.id), "name": a.name, "slug": a.slug, "role": u.role,
+                 "current": str(a.id) == str(current.association_id)} for a, u in legacy]
+    return [{"id": str(r[0]), "name": r[1], "slug": r[2], "role": r[3],
+             "current": str(r[0]) == str(current.association_id)} for r in rows]
 
 
 @router.post("/switch-association", response_model=TokenResponse, summary="Trocar de ambiente")
@@ -142,44 +150,36 @@ async def switch_association(
     if not current_user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
-    stmt = select(User).where(
-        User.email == current_user.email,
-        User.association_id == body.association_id,
-        User.is_active == True,  # noqa: E712
-    )
-    target_user = (await session.execute(stmt)).scalar_one_or_none()
-    if not target_user:
+    # Verifica acesso via user_association_roles (modelo global)
+    target_row = (await session.execute(sa_text("""
+        SELECT uar.role, a.name, a.is_office
+        FROM user_association_roles uar
+        JOIN associations a ON a.id = uar.association_id
+        WHERE uar.user_id = :uid AND uar.association_id = :aid
+          AND uar.is_active = TRUE AND a.is_active = TRUE
+    """), {"uid": str(current.user_id), "aid": str(body.association_id)})).fetchone()
+
+    if not target_row:
         raise HTTPException(status_code=403, detail="Sem acesso a este ambiente.")
 
     from datetime import datetime as dt
-    target_user.last_login_at = dt.utcnow()
-    session.add(target_user)
+    current_user.last_login_at = dt.utcnow()
+    session.add(current_user)
 
-    linked_ids: list[str] = []
-    slugs_row = await session.execute(
-        sa_text("SELECT linked_association_slugs FROM associations WHERE id = :id"),
-        {"id": str(target_user.association_id)},
-    )
-    slugs_result = slugs_row.fetchone()
-    linked_slugs: list[str] = slugs_result[0] if slugs_result and slugs_result[0] else []
-    if linked_slugs:
-        ids_row = await session.execute(
-            sa_text("SELECT id FROM associations WHERE slug = ANY(:slugs)"),
-            {"slugs": linked_slugs},
-        )
-        linked_ids = [str(r[0]) for r in ids_row.fetchall()]
-
-    assoc_name_row = await session.execute(
-        sa_text("SELECT name FROM associations WHERE id = :id"),
-        {"id": str(target_user.association_id)},
-    )
-    assoc_name_result = assoc_name_row.fetchone()
-    association_name = assoc_name_result[0] if assoc_name_result else ""
+    # Todas as outras associações do usuário
+    other_rows = (await session.execute(sa_text("""
+        SELECT uar.association_id FROM user_association_roles uar
+        JOIN associations a ON a.id = uar.association_id
+        WHERE uar.user_id = :uid AND uar.association_id != :aid
+          AND uar.is_active = TRUE AND a.is_active = TRUE
+    """), {"uid": str(current.user_id), "aid": str(body.association_id)})).fetchall()
+    linked_ids = [str(r[0]) for r in other_rows]
 
     from app.core.security import create_access_token
     token = create_access_token(
-        target_user.id, target_user.association_id, target_user.role.value,
-        target_user.full_name, linked_ids, association_name,
+        current_user.id, body.association_id, target_row[0],
+        current_user.full_name, linked_ids, target_row[1],
+        is_office=bool(target_row[2]) if target_row[2] is not None else False,
     )
     return TokenResponse(access_token=token)
 

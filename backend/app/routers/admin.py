@@ -64,14 +64,32 @@ async def create_user(
     current: CurrentUser = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    # check email uniqueness within association
-    stmt = select(User).where(
-        User.email == body.email,
-        User.association_id == current.association_id,
-    )
-    existing = (await session.execute(stmt)).scalar_one_or_none()
+    # Verificação global de email (único por sistema, não por associação)
+    existing = (await session.execute(
+        select(User).where(User.email == body.email, User.is_active == True)  # noqa: E712
+    )).scalar_one_or_none()
+
     if existing:
-        raise HTTPException(status_code=409, detail="E-mail já cadastrado nesta associação.")
+        # Usuário global já existe — verifica se já tem acesso a esta associação
+        already = (await session.execute(
+            text("SELECT 1 FROM user_association_roles WHERE user_id = :uid AND association_id = :aid"),
+            {"uid": str(existing.id), "aid": str(current.association_id)},
+        )).scalar()
+        if already:
+            raise HTTPException(status_code=409, detail="Este usuário já tem acesso a esta associação.")
+        # Adiciona membership na nova associação
+        await session.execute(
+            text("INSERT INTO user_association_roles (user_id, association_id, role) VALUES (:uid, :aid, :role)"),
+            {"uid": str(existing.id), "aid": str(current.association_id), "role": body.role},
+        )
+        await session.execute(
+            text("INSERT INTO audit_log (association_id,user_id,action,entity,entity_id,detail) VALUES (:a,:u,'add_membership','user',:eid,:d)"),
+            {"a": str(current.association_id), "u": str(current.user_id), "eid": str(existing.id), "d": f"{existing.full_name} ({body.role})"},
+        )
+        await session.commit()
+        return _serialize_user(existing)
+
+    # Usuário novo — cria globalmente e adiciona membership
     user = User(
         association_id=current.association_id,
         full_name=body.full_name,
@@ -82,6 +100,10 @@ async def create_user(
     )
     session.add(user)
     await session.flush()
+    await session.execute(
+        text("INSERT INTO user_association_roles (user_id, association_id, role) VALUES (:uid, :aid, :role)"),
+        {"uid": str(user.id), "aid": str(current.association_id), "role": body.role},
+    )
     await session.execute(
         text("INSERT INTO audit_log (association_id,user_id,action,entity,entity_id,detail) VALUES (:a,:u,'criar_usuario','user',:eid,:d)"),
         {"a": str(current.association_id), "u": str(current.user_id), "eid": str(user.id), "d": f"{user.full_name} ({user.role})"},

@@ -583,6 +583,94 @@ async def _run_migrations() -> None:
             "ALTER TABLE daily_tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ"
         ))
 
+        # ── GLOBAL USERS: user_association_roles ──────────────────────────────
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS user_association_roles (
+                user_id        UUID      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                association_id UUID      NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                role           user_role NOT NULL DEFAULT 'operator',
+                is_active      BOOLEAN   NOT NULL DEFAULT TRUE,
+                created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (user_id, association_id)
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_uar_user ON user_association_roles(user_id)"
+        ))
+        # Populate from existing users (idempotente)
+        await session.execute(text("""
+            INSERT INTO user_association_roles (user_id, association_id, role)
+            SELECT id, association_id, role FROM users
+            ON CONFLICT (user_id, association_id) DO NOTHING
+        """))
+        # Merge duplicate users (mesmo email, assocs diferentes)
+        await session.execute(text("""
+            DO $$
+            DECLARE
+                dup_email TEXT;
+                winner    UUID;
+                loser     UUID;
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM users GROUP BY email HAVING COUNT(*) > 1) THEN
+                    RETURN;
+                END IF;
+                FOR dup_email IN SELECT email FROM users GROUP BY email HAVING COUNT(*) > 1 LOOP
+                    SELECT id INTO winner FROM users WHERE email = dup_email AND is_active = TRUE
+                    ORDER BY CASE role::text
+                        WHEN 'superadmin'        THEN 1 WHEN 'admin_master' THEN 2
+                        WHEN 'admin'             THEN 3 WHEN 'diretoria'    THEN 4
+                        WHEN 'conselho'          THEN 5 WHEN 'conferente'   THEN 6
+                        WHEN 'diretoria_adjunta' THEN 7 ELSE 8
+                    END, created_at LIMIT 1;
+                    FOR loser IN SELECT id FROM users WHERE email = dup_email AND id != winner LOOP
+                        -- herdar associação do loser para o winner
+                        INSERT INTO user_association_roles (user_id, association_id, role)
+                        SELECT winner, association_id, role FROM users WHERE id = loser
+                        ON CONFLICT (user_id, association_id) DO NOTHING;
+                        -- redirecionar todos os FKs críticos
+                        UPDATE daily_tasks          SET created_by     = winner WHERE created_by     = loser;
+                        UPDATE daily_tasks          SET assigned_to    = winner WHERE assigned_to    = loser;
+                        UPDATE service_order_tasks  SET created_by     = winner WHERE created_by     = loser;
+                        UPDATE service_order_tasks  SET assigned_to    = winner WHERE assigned_to    = loser;
+                        UPDATE service_orders       SET assigned_to    = winner WHERE assigned_to    = loser;
+                        UPDATE demands              SET created_by     = winner WHERE created_by     = loser;
+                        UPDATE demands              SET assigned_to    = winner WHERE assigned_to    = loser;
+                        UPDATE transactions         SET created_by     = winner WHERE created_by     = loser;
+                        UPDATE notifications        SET user_id        = winner WHERE user_id        = loser;
+                        UPDATE chat_messages        SET sender_id      = winner WHERE sender_id      = loser;
+                        UPDATE webauthn_credentials SET user_id        = winner WHERE user_id        = loser;
+                        UPDATE webauthn_challenges  SET user_id        = winner WHERE user_id        = loser;
+                        UPDATE resident_update_requests SET reviewed_by = winner WHERE reviewed_by  = loser;
+                        UPDATE cash_sessions        SET reviewed_by    = winner WHERE reviewed_by   = loser;
+                        UPDATE pix_learning_map     SET confirmed_by   = winner WHERE confirmed_by  = loser;
+                        UPDATE porta_a_porta_leads  SET operator_id    = winner WHERE operator_id   = loser;
+                        UPDATE porta_a_porta_leads  SET commissioned_to= winner WHERE commissioned_to=loser;
+                        UPDATE porta_a_porta_commission_payments SET operator_id = winner WHERE operator_id = loser;
+                        UPDATE porta_a_porta_commission_payments SET paid_by     = winner WHERE paid_by     = loser;
+                        -- push_subscriptions: evitar conflito de endpoint
+                        INSERT INTO push_subscriptions (association_id,user_id,endpoint,p256dh,auth,created_at)
+                        SELECT association_id,winner,endpoint,p256dh,auth,created_at
+                        FROM push_subscriptions WHERE user_id = loser
+                        ON CONFLICT (user_id, endpoint) DO NOTHING;
+                        DELETE FROM push_subscriptions WHERE user_id = loser;
+                        DELETE FROM user_association_roles WHERE user_id = loser;
+                        DELETE FROM users WHERE id = loser;
+                    END LOOP;
+                END LOOP;
+            END $$;
+        """))
+        # UNIQUE em users.email (seguro após merge)
+        await session.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'uq_users_email') THEN
+                    IF NOT EXISTS (SELECT 1 FROM users GROUP BY email HAVING COUNT(*) > 1) THEN
+                        EXECUTE 'CREATE UNIQUE INDEX uq_users_email ON users(email)';
+                    END IF;
+                END IF;
+            END $$;
+        """))
+
         # Idempotência: constraints UNIQUE para prevenir duplicatas e erros 500 em re-importação
         await session.execute(text("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_bs_dedup
