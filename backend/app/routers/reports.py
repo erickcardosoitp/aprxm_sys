@@ -111,7 +111,7 @@ async def export_finance(
 # ─── Moradores ────────────────────────────────────────────────────────────────
 
 async def _query_residents(session, aid: str, res_type=None, res_status=None, q=None):
-    conds = ["association_id = :aid"]
+    conds = ["association_id = :aid", "status != 'suspended'"]
     p: dict = {"aid": aid}
     if res_type: conds.append("type = :tp"); p["tp"] = res_type
     if res_status: conds.append("status = :st"); p["st"] = res_status
@@ -297,7 +297,7 @@ async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, m
                v.resident_id::text
         FROM v_mensalidades_completas v
         JOIN residents r ON r.id = v.resident_id
-        WHERE {w} ORDER BY v.reference_month, v.resident_name
+        WHERE {w} AND r.status != 'suspended' ORDER BY v.reference_month, v.resident_name
     """), p)).fetchall()
     cols = ["Morador","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento","Origem","Endereço","Telefone","_rid","Estado Pagamento"]
     _pending_statuses = {"Pendente", "Em atraso"}
