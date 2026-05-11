@@ -39,9 +39,15 @@ export function formatDateInput(value: string): string {
   return `${d.slice(0,2)}/${d.slice(2,4)}/${d.slice(4)}`
 }
 
-/** Convert DD/MM/YYYY to YYYY-MM-DD */
+/** Convert DD/MM/YYYY (or DD/MM/YY) to YYYY-MM-DD */
 export function parseDateInput(value: string): string | null {
   const parts = value.split('/')
-  if (parts.length !== 3 || parts[2].length !== 4) return null
-  return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+  if (parts.length !== 3) return null
+  let year = parts[2]
+  if (year.length === 2) {
+    const y = parseInt(year, 10)
+    year = (y <= 30 ? 2000 + y : 1900 + y).toString()
+  }
+  if (year.length !== 4) return null
+  return `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
 }
