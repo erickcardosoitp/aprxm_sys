@@ -18,7 +18,7 @@
     },
     {
       "path": "/api/v1/daily-tasks/reminders/trigger",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/v1/mensalidades/cron-generate",
