@@ -863,6 +863,13 @@ export default function PackagesPage() {
   const [exemptionToken, setExemptionToken] = useState('')
   const [exemptionTokenError, setExemptionTokenError] = useState('')
 
+  // Pay mensalidade quick-modal (inside delivery flow)
+  const [showPayMenModal, setShowPayMenModal] = useState(false)
+  const [payMenId, setPayMenId] = useState<string | null>(null)
+  const [payMenInfo, setPayMenInfo] = useState<{ reference_month: string; amount: string } | null>(null)
+  const [payMenPmId, setPayMenPmId] = useState('')
+  const [payMenLoading, setPayMenLoading] = useState(false)
+
   // Upgrade guest to member modal
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [upgradeCpf, setUpgradeCpf] = useState('')
@@ -892,6 +899,61 @@ export default function PackagesPage() {
     } catch (e: any) {
       toast.error(apiErr(e, 'Erro ao reatribuir.'))
     } finally { setReassignLoading(false) }
+  }
+
+  const openPayMensalidadeQuick = async () => {
+    if (!deliveryTarget?.resident_id) return
+    try {
+      const res = await api.get<{ id: string; reference_month: string; amount: string }[]>(
+        `/mensalidades/residents/${deliveryTarget.resident_id}`
+      )
+      const pending = res.data.filter((m: any) => m.status === 'pending').sort((a: any, b: any) => a.reference_month.localeCompare(b.reference_month))
+      if (!pending.length) { toast.error('Nenhuma mensalidade pendente encontrada.'); return }
+      setPayMenId(pending[0].id)
+      setPayMenInfo({ reference_month: pending[0].reference_month, amount: pending[0].amount })
+      setPayMenPmId(paymentMethods[0]?.id ?? '')
+      setShowPayMenModal(true)
+    } catch { toast.error('Erro ao buscar mensalidades.') }
+  }
+
+  const confirmPayMensalidadeQuick = async () => {
+    if (!payMenId || !deliveryTarget?.resident_id || !payMenInfo) return
+    setPayMenLoading(true)
+    try {
+      // Tenta via caixa aberto; se não houver sessão, usa lançamento offline
+      try {
+        await api.post(`/mensalidades/${payMenId}/pay`, {
+          payment_method_id: payMenPmId || undefined,
+        })
+      } catch (e: any) {
+        const code = e.response?.data?.code ?? e.response?.data?.detail
+        const isNoSession = e.response?.status === 422 && (
+          String(code).includes('NO_SESSION') || String(e.response?.data?.detail).toLowerCase().includes('caixa')
+        )
+        if (!isNoSession) throw e
+        // Fallback: lançamento sem caixa — o backend agora quita a mensalidade automaticamente
+        await api.post('/finance/transactions/offline', {
+          type: 'income',
+          amount: parseFloat(payMenInfo.amount),
+          description: `Mensalidade ${payMenInfo.reference_month} — ${deliveryTarget.resident_name}`,
+          income_subtype: 'mensalidade',
+          resident_id: deliveryTarget.resident_id,
+          payment_method_id: payMenPmId || null,
+          payment_status: 'paid',
+        })
+      }
+      toast.success('Mensalidade regularizada! Taxa de entrega removida.')
+      setShowPayMenModal(false)
+      setPayMenId(null); setPayMenInfo(null)
+      const [delinqRes, checkRes] = await Promise.all([
+        api.get<{ resident_id: string }[]>('/mensalidades/delinquent').catch(() => ({ data: [] })),
+        api.get<any>(`/packages/${deliveryTarget.id}/delivery-check`).catch(() => ({ data: null })),
+      ])
+      setDelinquentIds(new Set((delinqRes.data as any[]).map((d: any) => d.resident_id ?? d.id)))
+      if (checkRes.data) setDeliveryCheck(checkRes.data)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao registrar pagamento.')
+    } finally { setPayMenLoading(false) }
   }
 
   const handleUpgradeToMember = async () => {
@@ -2680,14 +2742,22 @@ export default function PackagesPage() {
             </div>
 
             {deliveryCheck?.is_delinquent && (
-              <div className="mx-5 mt-4 bg-red-50 border border-red-300 rounded-xl px-4 py-3 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-xs font-semibold text-red-800">Associado inadimplente</p>
-                  <p className="text-xs text-red-600 mt-0.5">
-                    {deliveryCheck.overdue_count} mensalidade(s) em atraso. Taxa de entrega será cobrada automaticamente.
-                  </p>
+              <div className="mx-5 mt-4 bg-red-50 border border-red-300 rounded-xl px-4 py-3 flex flex-col gap-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-red-800">Associado inadimplente</p>
+                    <p className="text-xs text-red-600 mt-0.5">
+                      {deliveryCheck.overdue_count} mensalidade(s) em atraso. Taxa de entrega será cobrada automaticamente.
+                    </p>
+                  </div>
                 </div>
+                <button
+                  onClick={openPayMensalidadeQuick}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white text-xs font-semibold py-2 rounded-lg transition"
+                >
+                  Regularizar Mensalidade Agora
+                </button>
               </div>
             )}
 
@@ -2995,6 +3065,45 @@ export default function PackagesPage() {
               </button>
             </div>
           </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pay Mensalidade Quick Modal */}
+      {showPayMenModal && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 flex flex-col gap-3">
+            <h2 className="text-base font-semibold text-gray-800">Regularizar Mensalidade</h2>
+            {payMenInfo && (
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-800">
+                <p className="font-semibold">{deliveryTarget?.resident_name}</p>
+                <p className="text-xs text-green-600 mt-0.5">
+                  Competência: {payMenInfo.reference_month} · R$ {parseFloat(payMenInfo.amount).toFixed(2)}
+                </p>
+              </div>
+            )}
+            {paymentMethods.length > 0 && (
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Forma de pagamento</label>
+                <select
+                  value={payMenPmId}
+                  onChange={e => setPayMenPmId(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                >
+                  <option value="">Não informar</option>
+                  {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+                </select>
+              </div>
+            )}
+            <p className="text-xs text-gray-400">Após o pagamento, a taxa de entrega será removida automaticamente.</p>
+            <div className="flex gap-2">
+              <button onClick={() => { setShowPayMenModal(false); setPayMenId(null); setPayMenInfo(null) }}
+                className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600">Cancelar</button>
+              <button onClick={confirmPayMensalidadeQuick} disabled={payMenLoading}
+                className="flex-1 py-2 rounded-xl bg-green-600 text-white text-sm font-semibold disabled:opacity-50">
+                {payMenLoading ? '…' : 'Confirmar Pagamento'}
+              </button>
+            </div>
           </div>
         </div>
       )}
