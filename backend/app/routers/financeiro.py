@@ -499,7 +499,7 @@ async def confirm_pix_learning(
         bank_name=bank_name,
         resident_id=body.resident_id,
         resident_name=resident_name,
-        confirmed_by=current.id,
+        confirmed_by=current.user_id,
     )
 
     # Upsert reconciliation as manual
@@ -620,7 +620,7 @@ async def register_orphan_as_income(
         bank_name=stmt_name or "",
         resident_id=body.resident_id,
         resident_name=resident_name,
-        confirmed_by=current.id,
+        confirmed_by=current.user_id,
     )
 
     await session.commit()
