@@ -1007,13 +1007,24 @@ export default function PackagesPage() {
   const [bulkPaymentMethodId, setBulkPaymentMethodId] = useState('')
   const [bulkCashSessionId, setBulkCashSessionId] = useState('')
   const [bulkSessionPicker, setBulkSessionPicker] = useState<{ id: string; opened_by_name: string; opening_balance: string }[] | null>(null)
+  const [bulkSearch, setBulkSearch] = useState('')
 
   const resetBulk = () => {
     setShowBulkDeliver(false); setBulkStep('select'); setBulkSelected(new Set())
     setBulkRecipientName(''); setBulkSig(''); setBulkDeliveryPersonName('')
     setBulkLoading(false); setBulkResult(null); setBulkPaymentMethodId('')
-    setBulkCashSessionId(''); setBulkSessionPicker(null)
+    setBulkCashSessionId(''); setBulkSessionPicker(null); setBulkSearch('')
   }
+
+  const bulkFiltered = bulkSearch.trim()
+    ? pendingPackages.filter(p => {
+        const q = bulkSearch.toLowerCase()
+        return (p.resident_name ?? '').toLowerCase().includes(q)
+          || (p.tracking_code ?? '').toLowerCase().includes(q)
+          || (p.carrier_name ?? '').toLowerCase().includes(q)
+          || (p.unit ?? '').toLowerCase().includes(q)
+      })
+    : pendingPackages
 
   const bulkHasGuest = Array.from(bulkSelected).some(id => {
     const p = packages.find(x => x.id === id)
@@ -3129,23 +3140,40 @@ export default function PackagesPage() {
             {/* Step: select */}
             {bulkStep === 'select' && !bulkResult && (
               <>
-                <div className="p-5 flex flex-col gap-3 max-h-[60vh] overflow-y-auto">
+                <div className="px-5 pt-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <input
+                      value={bulkSearch}
+                      onChange={e => setBulkSearch(e.target.value)}
+                      placeholder="Buscar por morador, rastreio, transportadora..."
+                      className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#26619c]/30"
+                    />
+                  </div>
+                </div>
+                <div className="p-5 flex flex-col gap-3 max-h-[50vh] overflow-y-auto">
                   {pendingPackages.length === 0 ? (
                     <p className="text-sm text-gray-400 text-center py-6">Nenhuma encomenda pendente.</p>
+                  ) : bulkFiltered.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">Nenhum resultado para "{bulkSearch}".</p>
                   ) : (
                     <>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs text-gray-500">{bulkSelected.size} selecionada(s)</span>
                         <button
-                          onClick={() => setBulkSelected(bulkSelected.size === pendingPackages.length
-                            ? new Set()
-                            : new Set(pendingPackages.map(p => p.id)))}
+                          onClick={() => {
+                            const allFilteredSelected = bulkFiltered.every(p => bulkSelected.has(p.id))
+                            const next = new Set(bulkSelected)
+                            if (allFilteredSelected) bulkFiltered.forEach(p => next.delete(p.id))
+                            else bulkFiltered.forEach(p => next.add(p.id))
+                            setBulkSelected(next)
+                          }}
                           className="text-xs text-[#26619c] hover:underline"
                         >
-                          {bulkSelected.size === pendingPackages.length ? 'Desmarcar todas' : 'Selecionar todas'}
+                          {bulkFiltered.every(p => bulkSelected.has(p.id)) ? 'Desmarcar visíveis' : 'Selecionar visíveis'}
                         </button>
                       </div>
-                      {pendingPackages.map(pkg => (
+                      {bulkFiltered.map(pkg => (
                         <label key={pkg.id}
                           className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition ${bulkSelected.has(pkg.id) ? 'border-[#26619c] bg-[#26619c]/5' : 'border-gray-200 hover:border-gray-300'}`}>
                           <input
