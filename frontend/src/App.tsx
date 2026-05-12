@@ -19,6 +19,7 @@ import PublicRegisterPage from './pages/public/PublicRegisterPage'
 import PublicUpdatePage from './pages/public/PublicUpdatePage'
 import CadastroPortaAPorta from './pages/public/CadastroPortaAPorta'
 import ChatPage from './pages/chat/ChatPage'
+import HelpPage from './pages/help/HelpPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated())
@@ -97,6 +98,8 @@ export default function App() {
           <Route path="superadmin"     element={<RequireSuperAdmin><SuperAdminPage /></RequireSuperAdmin>} />
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><LogsPage /></RequireAdmin></RequireNotOffice>} />
           <Route path="chat"           element={<ChatPage />} />
+          <Route path="help"           element={<HelpPage />} />
+          <Route path="help/:slug"     element={<HelpPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

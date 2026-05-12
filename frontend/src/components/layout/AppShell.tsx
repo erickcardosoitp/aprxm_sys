@@ -1,6 +1,6 @@
 import { type ComponentType, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, LogOut, MessageSquare, Package, Palette, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
+import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, HelpCircle, LogOut, MessageSquare, Package, Palette, RotateCcw, Settings, ShieldCheck, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
@@ -23,7 +23,7 @@ function _urlBase64ToUint8Array(base64String: string): Uint8Array {
   return Uint8Array.from([...raw].map(c => c.charCodeAt(0)))
 }
 
-type NavItem = { to: string; label: string; icon: ComponentType<{ className?: string }> }
+type NavItem = { to: string; label: string; icon: ComponentType<{ className?: string }>; end?: boolean }
 
 const MODULE_NAV: { module: string; item: NavItem }[] = [
   { module: 'finance',        item: { to: '/finance',        label: 'Caixa',      icon: DollarSign } },
@@ -269,6 +269,7 @@ export function AppShell() {
         if (permissions?.settings?.can_view || isSuperAdmin) items.push(SETTINGS_NAV)
         if (isAdmin) { items.push(ADMIN_NAV); items.push(LOGS_NAV) }
         if (isSuperAdmin) items.push(SUPERADMIN_NAV)
+        items.push({ to: '/help', label: 'Ajuda', icon: HelpCircle, end: false })
         return items
       })()
 
@@ -521,10 +522,11 @@ export function AppShell() {
       {!isMonitoring && <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
         <div className="flex justify-center overflow-x-auto scrollbar-none px-2 gap-3 sm:gap-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
+              end={end !== false}
               className={({ isActive }) =>
                 `flex flex-col items-center justify-center gap-1 px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium transition shrink-0 min-w-[64px] min-h-[56px] sm:min-w-0 sm:min-h-0 ${
                   isActive ? '' : 'text-gray-400 hover:text-gray-600'
