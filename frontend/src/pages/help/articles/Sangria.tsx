@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function Sangria() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Fazer sangria</h1>
       <p>
         A sangria é a retirada de dinheiro do caixa durante o turno — por exemplo,
@@ -36,6 +37,6 @@ export default function Sangria() {
         <Link to="/help/abrir-caixa">Abrir e fechar caixa →</Link>{' | '}
         <Link to="/help/nova-transacao">Lançar transação →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

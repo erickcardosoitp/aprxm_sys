@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function CadastrarMorador() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Cadastrar morador</h1>
       <p>
         O cadastro de morador registra o titular da unidade. Existem dois tipos:{' '}
@@ -33,6 +34,6 @@ export default function CadastrarMorador() {
         Após o cadastro, você pode{' '}
         <Link to="/help/cadastrar-dependente">adicionar dependentes →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

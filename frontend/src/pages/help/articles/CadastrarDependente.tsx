@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function CadastrarDependente() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Cadastrar dependente</h1>
       <p>
         Dependentes são vinculados a um morador titular. Eles compartilham a unidade e
@@ -31,6 +32,6 @@ export default function CadastrarDependente() {
         Ainda não cadastrou o titular?{' '}
         <Link to="/help/cadastrar-morador">Veja como cadastrar um morador →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

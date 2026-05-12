@@ -526,7 +526,7 @@ export function AppShell() {
             <NavLink
               key={to}
               to={to}
-              end={end !== false}
+              end={end ?? true}
               className={({ isActive }) =>
                 `flex flex-col items-center justify-center gap-1 px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium transition shrink-0 min-w-[64px] min-h-[56px] sm:min-w-0 sm:min-h-0 ${
                   isActive ? '' : 'text-gray-400 hover:text-gray-600'

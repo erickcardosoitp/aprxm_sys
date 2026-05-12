@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function Mensalidade() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Mensalidades</h1>
 
       <p className="bg-blue-50 border border-blue-200 rounded-lg p-3 not-prose text-sm text-blue-700">
@@ -64,6 +65,6 @@ export default function Mensalidade() {
         <Link to="/help/abrir-caixa">Abrir e fechar caixa →</Link>{' | '}
         <Link to="/help/nova-transacao">Lançar transação no caixa →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

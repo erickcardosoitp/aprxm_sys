@@ -98,7 +98,7 @@ export default function App() {
           <Route path="superadmin"     element={<RequireSuperAdmin><SuperAdminPage /></RequireSuperAdmin>} />
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><LogsPage /></RequireAdmin></RequireNotOffice>} />
           <Route path="chat"           element={<ChatPage />} />
-          <Route path="help"           element={<HelpPage />} />
+          <Route path="help"           element={<Navigate to={`/help/abrir-caixa`} replace />} />
           <Route path="help/:slug"     element={<HelpPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

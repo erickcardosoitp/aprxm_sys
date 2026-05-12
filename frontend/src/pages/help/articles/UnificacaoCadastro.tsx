@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function UnificacaoCadastro() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Unificar cadastros (Mesclar moradores)</h1>
       <p>
         Use a mesclagem quando um morador foi cadastrado mais de uma vez.
@@ -41,6 +42,6 @@ export default function UnificacaoCadastro() {
         Precisa converter um dependente em associado?{' '}
         <Link to="/help/converter-dependente">Veja como converter →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

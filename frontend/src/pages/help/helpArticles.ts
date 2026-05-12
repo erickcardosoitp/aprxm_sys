@@ -25,3 +25,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
 ]
 
 export const CATEGORIES = [...new Set(HELP_ARTICLES.map((a) => a.category))]
+
+export const ARTICLES_BY_CATEGORY: Record<string, HelpArticle[]> = CATEGORIES.reduce(
+  (acc, cat) => ({ ...acc, [cat]: HELP_ARTICLES.filter((a) => a.category === cat) }),
+  {}
+)

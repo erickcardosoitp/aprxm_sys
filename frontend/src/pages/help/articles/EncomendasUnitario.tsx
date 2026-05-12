@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function EncomendasUnitario() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Receber encomenda (unitário)</h1>
       <p>Use este fluxo para registrar <strong>uma única encomenda</strong> avulsa.</p>
 
@@ -31,6 +32,6 @@ export default function EncomendasUnitario() {
         Precisa lançar várias encomendas de uma vez?{' '}
         <Link to="/help/encomendas-multiplo">Veja o fluxo de recebimento múltiplo →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

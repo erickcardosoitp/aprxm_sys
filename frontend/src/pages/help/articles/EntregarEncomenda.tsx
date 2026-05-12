@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function EntregarEncomenda() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Entregar encomenda</h1>
       <p>
         Após o morador vir buscar o pacote, registre a entrega para atualizar o status
@@ -56,6 +57,6 @@ export default function EntregarEncomenda() {
         Ainda não recebeu o pacote?{' '}
         <Link to="/help/encomendas-unitario">Veja como receber uma encomenda →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

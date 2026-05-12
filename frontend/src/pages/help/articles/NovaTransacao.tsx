@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function NovaTransacao() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Lançar transação no caixa</h1>
       <p>
         Transações registram entradas e saídas durante uma sessão de caixa aberta.
@@ -62,6 +63,6 @@ export default function NovaTransacao() {
         <Link to="/help/abrir-caixa">Abrir e fechar caixa →</Link>{' | '}
         <Link to="/help/sangria">Fazer sangria →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

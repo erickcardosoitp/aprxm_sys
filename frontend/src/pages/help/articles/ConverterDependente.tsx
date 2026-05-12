@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function ConverterDependente() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Converter dependente em associado</h1>
       <p>
         Use a conversão quando um dependente passa a ser titular de uma unidade própria
@@ -40,6 +41,6 @@ export default function ConverterDependente() {
         Precisa unificar dois cadastros duplicados?{' '}
         <Link to="/help/unificacao-cadastro">Veja como mesclar moradores →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

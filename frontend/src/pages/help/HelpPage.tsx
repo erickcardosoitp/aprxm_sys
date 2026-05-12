@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { BookOpen, ChevronDown, ChevronRight, Menu, X } from 'lucide-react'
-import { CATEGORIES, HELP_ARTICLES } from './helpArticles'
+import { ARTICLES_BY_CATEGORY, CATEGORIES, HELP_ARTICLES } from './helpArticles'
 
 const ARTICLE_COMPONENTS: Record<string, React.LazyExoticComponent<() => JSX.Element>> = {
   'abrir-caixa':           lazy(() => import('./articles/AbrirCaixa')),
@@ -20,7 +20,7 @@ const ARTICLE_COMPONENTS: Record<string, React.LazyExoticComponent<() => JSX.Ele
 
 function Sidebar({ currentSlug, onClose }: { currentSlug: string; onClose?: () => void }) {
   const [open, setOpen] = useState<Record<string, boolean>>(
-    Object.fromEntries(CATEGORIES.map((c) => [c, true]))
+    () => Object.fromEntries(CATEGORIES.map((c) => [c, true]))
   )
 
   return (
@@ -40,7 +40,7 @@ function Sidebar({ currentSlug, onClose }: { currentSlug: string; onClose?: () =
           </button>
           {open[cat] && (
             <ul className="mt-0.5 space-y-0.5">
-              {HELP_ARTICLES.filter((a) => a.category === cat).map((a) => (
+              {(ARTICLES_BY_CATEGORY[cat] ?? []).map((a) => (
                 <li key={a.slug}>
                   <Link
                     to={`/help/${a.slug}`}

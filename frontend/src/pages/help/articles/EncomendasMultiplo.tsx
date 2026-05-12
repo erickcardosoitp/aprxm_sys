@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function EncomendasMultiplo() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Receber encomendas (múltiplo)</h1>
       <p>
         Use este fluxo quando chegar um <strong>lote de volumes</strong> ao mesmo tempo — por exemplo,
@@ -33,6 +34,6 @@ export default function EncomendasMultiplo() {
         Para um único volume, use o{' '}
         <Link to="/help/encomendas-unitario">fluxo unitário →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

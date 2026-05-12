@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { ArticleWrapper } from './ArticleWrapper'
 
 export default function AbrirCaixa() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Abrir e fechar caixa</h1>
       <p>
         A sessão de caixa controla toda a movimentação financeira do turno.
@@ -48,6 +49,6 @@ export default function AbrirCaixa() {
         <Link to="/help/nova-transacao">Lançar transação no caixa →</Link>{' | '}
         <Link to="/help/sangria">Fazer sangria →</Link>
       </p>
-    </article>
+    </ArticleWrapper>
   )
 }

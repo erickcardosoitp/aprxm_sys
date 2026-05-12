@@ -1,6 +1,8 @@
+import { ArticleWrapper } from './ArticleWrapper'
+
 export default function CriarOS() {
   return (
-    <article className="prose prose-sm max-w-none">
+    <ArticleWrapper>
       <h1>Criar Ordem de Serviço (OS)</h1>
       <p>
         Ordens de Serviço registram problemas, solicitações de reparo ou demandas da comunidade.
@@ -62,6 +64,6 @@ export default function CriarOS() {
         <li>Use os filtros de <strong>status</strong> e <strong>prioridade</strong> para refinar a listagem.</li>
         <li>Alterne entre a vista <strong>Board</strong> (Kanban) e <strong>Lista</strong> conforme preferir.</li>
       </ul>
-    </article>
+    </ArticleWrapper>
   )
 }
