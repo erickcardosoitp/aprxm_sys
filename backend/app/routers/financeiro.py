@@ -201,9 +201,10 @@ async def get_extrato(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    from datetime import date as date_type
     today = datetime.utcnow().date()
-    df = date_from or today.replace(day=1).isoformat()
-    dt = date_to or today.isoformat()
+    df = date_type.fromisoformat(date_from) if date_from else today.replace(day=1)
+    dt = date_type.fromisoformat(date_to) if date_to else today
     result = await session.execute(
         text("""
             SELECT t.id, t.type, t.income_subtype, t.amount, t.description,
