@@ -15,11 +15,15 @@ class AuthService:
         self._session = session
 
     async def authenticate(self, email: str, password: str, association_id: UUID | None = None, remember_me: bool = False) -> str:
-        # Busca global por email (sem filtro de associação)
-        result = await self._session.execute(
-            select(User).where(User.email == email, User.is_active == True)  # noqa: E712
-        )
-        user = result.scalars().first()
+        # Busca por email + associação quando disponível, fallback global
+        stmt = select(User).where(User.email == email, User.is_active == True)  # noqa: E712
+        if association_id:
+            scoped = (await self._session.execute(
+                stmt.where(User.association_id == association_id)
+            )).scalars().first()
+            user = scoped or (await self._session.execute(stmt)).scalars().first()
+        else:
+            user = (await self._session.execute(stmt)).scalars().first()
 
         if not user or not verify_password(password, user.hashed_password):
             raise ForbiddenError("Credenciais inválidas.")
