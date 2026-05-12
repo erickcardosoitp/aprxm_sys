@@ -4,12 +4,18 @@ import { BookOpen, ChevronDown, ChevronRight, Menu, X } from 'lucide-react'
 import { CATEGORIES, HELP_ARTICLES } from './helpArticles'
 
 const ARTICLE_COMPONENTS: Record<string, React.LazyExoticComponent<() => JSX.Element>> = {
-  'encomendas-unitario':  lazy(() => import('./articles/EncomendasUnitario')),
-  'encomendas-multiplo':  lazy(() => import('./articles/EncomendasMultiplo')),
-  'cadastrar-morador':    lazy(() => import('./articles/CadastrarMorador')),
-  'cadastrar-dependente': lazy(() => import('./articles/CadastrarDependente')),
-  'mensalidade':          lazy(() => import('./articles/Mensalidade')),
-  'unificacao-cadastro':  lazy(() => import('./articles/UnificacaoCadastro')),
+  'abrir-caixa':           lazy(() => import('./articles/AbrirCaixa')),
+  'nova-transacao':        lazy(() => import('./articles/NovaTransacao')),
+  'sangria':               lazy(() => import('./articles/Sangria')),
+  'encomendas-unitario':   lazy(() => import('./articles/EncomendasUnitario')),
+  'encomendas-multiplo':   lazy(() => import('./articles/EncomendasMultiplo')),
+  'entregar-encomenda':    lazy(() => import('./articles/EntregarEncomenda')),
+  'cadastrar-morador':     lazy(() => import('./articles/CadastrarMorador')),
+  'cadastrar-dependente':  lazy(() => import('./articles/CadastrarDependente')),
+  'converter-dependente':  lazy(() => import('./articles/ConverterDependente')),
+  'unificacao-cadastro':   lazy(() => import('./articles/UnificacaoCadastro')),
+  'mensalidade':           lazy(() => import('./articles/Mensalidade')),
+  'criar-os':              lazy(() => import('./articles/CriarOS')),
 }
 
 function Sidebar({ currentSlug, onClose }: { currentSlug: string; onClose?: () => void }) {
