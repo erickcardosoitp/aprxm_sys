@@ -61,6 +61,11 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
   // Advance payment
   const [advanceLoading, setAdvanceLoading] = useState(false)
 
+  // Permanent due day change
+  const [showChangeDueDay, setShowChangeDueDay] = useState(false)
+  const [newDueDay, setNewDueDay] = useState('')
+  const [savingDueDay, setSavingDueDay] = useState(false)
+
   // Payment method modal
   const [payPmTarget, setPayPmTarget] = useState<{ id: string; meta?: { name: string; cpf?: string; unit?: string; resident_id?: string }; amount?: number } | null>(null)
   const [payPmId, setPayPmId] = useState('')
@@ -388,6 +393,31 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao atualizar vencimento.')
     } finally { setSavingDueDate(false) }
+  }
+
+  const handleChangeDueDay = async () => {
+    const day = parseInt(newDueDay)
+    if (!historyResidentId || !day || day < 1 || day > 31) return
+    setSavingDueDay(true)
+    try {
+      // Update resident's default payment day
+      await api.put(`/residents/${historyResidentId}`, { monthly_payment_day: day })
+      // Update all pending mensalidades for this resident
+      const pending = history.filter(m => m.status !== 'paid' && m.id && m.due_date)
+      await Promise.all(pending.map(m => {
+        const [yr, mo] = m.due_date!.split('-').map(Number)
+        const lastDay = new Date(yr, mo, 0).getDate()
+        const actualDay = Math.min(day, lastDay)
+        const newDate = `${yr}-${String(mo).padStart(2, '0')}-${String(actualDay).padStart(2, '0')}`
+        return api.patch(`/mensalidades/${m.id}/due-date`, { due_date: newDate, update_resident_day: false }).catch(() => null)
+      }))
+      toast.success(`Dia de vencimento alterado para dia ${day}.`)
+      setShowChangeDueDay(false)
+      setNewDueDay('')
+      loadResidentHistory(historyResidentId, historyResidentName ?? undefined)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao alterar vencimento.')
+    } finally { setSavingDueDay(false) }
   }
 
   const handleAdvancePayment = async () => {
@@ -842,15 +872,47 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
           )}
 
           {historyResidentId && (
-            <button
-              onClick={handleAdvancePayment}
-              disabled={advanceLoading || !openSession}
-              className="flex items-center justify-center gap-2 border-2 border-dashed border-blue-400/50 rounded-xl py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition disabled:opacity-40"
-              title={!openSession ? 'Abra o caixa para pagar' : 'Criar e pagar mês adiantado'}
-            >
-              <CalendarPlus className="w-4 h-4" />
-              {advanceLoading ? 'Criando…' : 'Pagar Mês Adiantado'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleAdvancePayment}
+                disabled={advanceLoading || !openSession}
+                className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-blue-400/50 rounded-xl py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition disabled:opacity-40"
+                title={!openSession ? 'Abra o caixa para pagar' : 'Criar e pagar mês adiantado'}
+              >
+                <CalendarPlus className="w-4 h-4" />
+                {advanceLoading ? 'Criando…' : 'Pagar Adiantado'}
+              </button>
+              <button
+                onClick={() => { setShowChangeDueDay(v => !v); setNewDueDay('') }}
+                className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed border-amber-400/50 rounded-xl py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition"
+              >
+                <Pencil className="w-4 h-4" />
+                Alterar Vencimento
+              </button>
+            </div>
+          )}
+
+          {showChangeDueDay && historyResidentId && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-3">
+              <p className="text-sm font-semibold text-amber-800">Alterar dia de vencimento permanente</p>
+              <p className="text-xs text-amber-600">Atualiza o dia padrão do morador e todas as cobranças pendentes.</p>
+              <div className="flex gap-2">
+                <input
+                  type="number" min="1" max="31"
+                  value={newDueDay}
+                  onChange={e => setNewDueDay(e.target.value)}
+                  placeholder="Dia (1–31)"
+                  className={`${inputCls} flex-1`}
+                  autoFocus
+                />
+                <button
+                  onClick={handleChangeDueDay}
+                  disabled={savingDueDay || !newDueDay}
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50">
+                  {savingDueDay ? '…' : 'Salvar'}
+                </button>
+              </div>
+            </div>
           )}
 
           {history.length > 0 && (() => {
