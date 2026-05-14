@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Plus, Search, X, Users, MessageCircle, MapPin } from 'lucide-react'
+import { AlertCircle, Plus, Search, X, Users, MessageCircle, MapPin, Pencil, CalendarPlus } from 'lucide-react'
 import api from '../../../services/api'
 import toast from 'react-hot-toast'
 import { fmt, fmtDate, fmtDateOnly } from '../utils/formatters'
@@ -52,6 +52,14 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
   const [deleteMonthVal, setDeleteMonthVal] = useState(() => new Date().toISOString().slice(0, 7))
   const [deletingMonth, setDeletingMonth] = useState(false)
   const [showDeleteMonth, setShowDeleteMonth] = useState(false)
+
+  // Edit due date
+  const [editDueDateId, setEditDueDateId] = useState<string | null>(null)
+  const [editDueDateVal, setEditDueDateVal] = useState('')
+  const [savingDueDate, setSavingDueDate] = useState(false)
+
+  // Advance payment
+  const [advanceLoading, setAdvanceLoading] = useState(false)
 
   // Payment method modal
   const [payPmTarget, setPayPmTarget] = useState<{ id: string; meta?: { name: string; cpf?: string; unit?: string; resident_id?: string }; amount?: number } | null>(null)
@@ -363,6 +371,36 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao excluir cobranças.')
     } finally { setDeletingMonth(false) }
+  }
+
+  const handleSaveDueDate = async (mensalidadeId: string, updateResident: boolean) => {
+    if (!editDueDateVal) return
+    setSavingDueDate(true)
+    try {
+      await api.patch(`/mensalidades/${mensalidadeId}/due-date`, {
+        due_date: editDueDateVal,
+        update_resident_day: updateResident,
+      })
+      toast.success(updateResident ? 'Vencimento e dia padrão atualizados.' : 'Vencimento atualizado.')
+      setEditDueDateId(null)
+      if (historyResidentId) loadResidentHistory(historyResidentId, historyResidentName ?? undefined)
+      loadCobrancas()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao atualizar vencimento.')
+    } finally { setSavingDueDate(false) }
+  }
+
+  const handleAdvancePayment = async () => {
+    if (!historyResidentId) return
+    setAdvanceLoading(true)
+    try {
+      const res = await api.post('/mensalidades/advance', { resident_id: historyResidentId })
+      toast.success(`Mensalidade ${res.data.reference_month} criada.`)
+      await loadResidentHistory(historyResidentId, historyResidentName ?? undefined)
+      handlePayMensalidade(res.data.id, { name: historyResidentName ?? '' }, parseFloat(res.data.amount))
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao criar mês adiantado.')
+    } finally { setAdvanceLoading(false) }
   }
 
   return (
@@ -803,6 +841,18 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
             </div>
           )}
 
+          {historyResidentId && (
+            <button
+              onClick={handleAdvancePayment}
+              disabled={advanceLoading || !openSession}
+              className="flex items-center justify-center gap-2 border-2 border-dashed border-blue-400/50 rounded-xl py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition disabled:opacity-40"
+              title={!openSession ? 'Abra o caixa para pagar' : 'Criar e pagar mês adiantado'}
+            >
+              <CalendarPlus className="w-4 h-4" />
+              {advanceLoading ? 'Criando…' : 'Pagar Mês Adiantado'}
+            </button>
+          )}
+
           {history.length > 0 && (() => {
             const paid = history.filter(m => m.status === 'paid').length
             const pending = history.filter(m => m.status !== 'paid').length
@@ -836,19 +886,59 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
                   const isOverdue = !isPaid && m.due_date && new Date(m.due_date) < graceCutoff
                   return (
                     <li key={m.id ?? `mig-${idx}`} className="px-4 py-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div className={`w-2 h-2 rounded-full shrink-0 ${isPaid ? 'bg-green-400' : isOverdue ? 'bg-red-400' : 'bg-amber-400'}`} />
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-gray-800">{m.reference_month}</p>
                             {isMig && <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Migração</span>}
                           </div>
-                          {isPaid && m.paid_at
-                            ? <p className="text-xs text-green-600">Pago em {fmtDate(m.paid_at)}</p>
-                            : m.due_date
-                              ? <p className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>Venc. {fmtDate(m.due_date)}</p>
-                              : <p className="text-xs text-gray-400">Histórico anterior</p>
-                          }
+                          {isPaid && m.paid_at ? (
+                            <p className="text-xs text-green-600">Pago em {fmtDate(m.paid_at)}</p>
+                          ) : m.due_date ? (
+                            editDueDateId === m.id ? (
+                              <div className="flex items-center gap-1 mt-1">
+                                <input
+                                  type="date"
+                                  value={editDueDateVal}
+                                  onChange={e => setEditDueDateVal(e.target.value)}
+                                  className="text-xs border border-gray-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#26619c]/40"
+                                  autoFocus
+                                />
+                                <button
+                                  onClick={() => handleSaveDueDate(m.id!, false)}
+                                  disabled={savingDueDate}
+                                  title="Salvar só esta cobrança"
+                                  className="text-[10px] bg-[#26619c] text-white px-1.5 py-0.5 rounded hover:bg-[#1a4f87] disabled:opacity-50">
+                                  {savingDueDate ? '…' : 'Salvar'}
+                                </button>
+                                <button
+                                  onClick={() => handleSaveDueDate(m.id!, true)}
+                                  disabled={savingDueDate}
+                                  title="Salvar e atualizar dia padrão do morador"
+                                  className="text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded hover:bg-green-700 disabled:opacity-50">
+                                  + Padrão
+                                </button>
+                                <button onClick={() => setEditDueDateId(null)} className="text-gray-400 hover:text-gray-600">
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <p className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>Venc. {fmtDate(m.due_date)}</p>
+                                {!isMig && (
+                                  <button
+                                    onClick={() => { setEditDueDateId(m.id!); setEditDueDateVal(m.due_date!) }}
+                                    className="text-gray-300 hover:text-[#26619c] transition"
+                                    title="Editar vencimento">
+                                    <Pencil className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          ) : (
+                            <p className="text-xs text-gray-400">Histórico anterior</p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

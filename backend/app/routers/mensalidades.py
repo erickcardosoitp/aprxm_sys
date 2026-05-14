@@ -39,6 +39,17 @@ class GenerateMonthRequest(BaseModel):
     amount: Decimal = Field(gt=0)
 
 
+class UpdateDueDateRequest(BaseModel):
+    due_date: date
+    update_resident_day: bool = False
+
+
+class AdvancePaymentRequest(BaseModel):
+    resident_id: UUID
+    reference_month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+    amount: Decimal | None = Field(default=None, gt=0)
+
+
 @router.delete("/by-month/{reference_month}", summary="Excluir cobranças pendentes de um mês")
 async def delete_by_month(
     reference_month: str,
@@ -190,6 +201,104 @@ async def generate_month(
     )
     await session.commit()
     return result
+
+
+@router.patch("/{mensalidade_id}/due-date", summary="Alterar data de vencimento")
+async def update_due_date(
+    mensalidade_id: UUID,
+    body: UpdateDueDateRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    row = (await session.execute(
+        sa_text("SELECT id, resident_id FROM mensalidades WHERE id = :id AND association_id = :aid"),
+        {"id": str(mensalidade_id), "aid": str(current.association_id)},
+    )).fetchone()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Mensalidade não encontrada.")
+    await session.execute(
+        sa_text("UPDATE mensalidades SET due_date = :dd WHERE id = :id"),
+        {"dd": body.due_date, "id": str(mensalidade_id)},
+    )
+    if body.update_resident_day:
+        await session.execute(
+            sa_text("UPDATE residents SET monthly_payment_day = :day WHERE id = :rid AND association_id = :aid"),
+            {"day": body.due_date.day, "rid": str(row[1]), "aid": str(current.association_id)},
+        )
+    await session.commit()
+    return {"ok": True, "due_date": str(body.due_date)}
+
+
+@router.post("/advance", summary="Criar mensalidade adiantada para o próximo mês não registrado")
+async def advance_payment(
+    body: AdvancePaymentRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as sa_text
+    from datetime import date as dt_date
+    import calendar
+
+    resident = (await session.execute(
+        sa_text("SELECT monthly_payment_day FROM residents WHERE id = :rid AND association_id = :aid AND is_active = TRUE"),
+        {"rid": str(body.resident_id), "aid": str(current.association_id)},
+    )).fetchone()
+    if not resident:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Morador não encontrado.")
+
+    if body.reference_month:
+        ref = body.reference_month
+    else:
+        # Find next month without a record
+        today = dt_date.today()
+        yr, mo = today.year, today.month
+        for _ in range(12):
+            mo += 1
+            if mo > 12:
+                mo = 1; yr += 1
+            candidate = f"{yr:04d}-{mo:02d}"
+            exists = (await session.execute(
+                sa_text("SELECT 1 FROM mensalidades WHERE association_id = :aid AND resident_id = :rid AND reference_month = :rm"),
+                {"aid": str(current.association_id), "rid": str(body.resident_id), "rm": candidate},
+            )).fetchone()
+            if not exists:
+                ref = candidate
+                break
+        else:
+            from fastapi import HTTPException
+            raise HTTPException(409, "Não foi possível determinar o próximo mês disponível.")
+
+    yr_ref, mo_ref = int(ref[:4]), int(ref[5:])
+    pay_day = resident[0] or 10
+    last_day = calendar.monthrange(yr_ref, mo_ref)[1]
+    due = dt_date(yr_ref, mo_ref, min(pay_day, last_day))
+
+    if body.amount:
+        amount = body.amount
+    else:
+        last = (await session.execute(
+            sa_text("SELECT amount FROM mensalidades WHERE association_id = :aid AND resident_id = :rid ORDER BY reference_month DESC LIMIT 1"),
+            {"aid": str(current.association_id), "rid": str(body.resident_id)},
+        )).fetchone()
+        amount = last[0] if last else 0
+        if not amount:
+            from fastapi import HTTPException
+            raise HTTPException(422, "Informe o valor da mensalidade.")
+
+    svc = MensalidadeService(session)
+    m = await svc.create(
+        association_id=current.association_id,
+        resident_id=body.resident_id,
+        reference_month=ref,
+        due_date=due,
+        amount=amount,
+        created_by=current.user_id,
+    )
+    await session.commit()
+    return _fmt(m)
 
 
 @router.post("", summary="Criar mensalidade")
