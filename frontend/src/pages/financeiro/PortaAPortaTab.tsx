@@ -149,14 +149,22 @@ function AcordoModal({ lead, onClose, onSaved }: {
 function PayModal({ lead, maloteBoxes, onClose, onSaved }: {
   lead: any; maloteBoxes: CashBox[]; onClose: () => void; onSaved: () => void
 }) {
-  const [form, setForm] = useState({ payment_method: '', malote_box_id: '', paid_at: '' })
+  const [form, setForm] = useState({ payment_method_id: '', malote_box_id: '', paid_at: '' })
   const [saving, setSaving] = useState(false)
+  const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
+  const [openSessions, setOpenSessions] = useState<{ id: string; opened_by_name: string }[]>([])
+
+  useEffect(() => {
+    api.get<{ id: string; name: string }[]>('/payment-methods').then(r => setPaymentMethods(r.data)).catch(() => {})
+    api.get<any[]>('/finance/sessions/open-picker').then(r => setOpenSessions(r.data)).catch(() => {})
+  }, [])
 
   const handleSave = async () => {
+    if (!form.payment_method_id) { toast.error('Selecione a forma de pagamento.'); return }
     setSaving(true)
     try {
       await api.post(`/porta-a-porta/leads/${lead.id}/pay`, {
-        payment_method: form.payment_method || null,
+        payment_method_id: form.payment_method_id || null,
         malote_box_id: form.malote_box_id || null,
         paid_at: form.paid_at ? new Date(form.paid_at).toISOString() : undefined,
       })
@@ -181,11 +189,26 @@ function PayModal({ lead, maloteBoxes, onClose, onSaved }: {
           <p className="text-sm font-semibold text-green-900">{lead.full_name}</p>
           <p className="text-xs text-green-600 mt-0.5">{fmt(lead.monthly_fee)} · {isAgreement ? 'Acordo' : 'À vista'}</p>
         </div>
+
+        {openSessions.length === 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">
+            ⚠️ Nenhum caixa aberto. O pagamento será registrado sem sessão.
+          </div>
+        )}
+        {openSessions.length > 0 && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 text-xs text-blue-700">
+            Caixa aberto: <strong>{openSessions[0].opened_by_name}</strong>
+            {openSessions.length > 1 && ` (+${openSessions.length - 1})`}
+          </div>
+        )}
+
         <div className="flex flex-col gap-3">
           <div>
-            <label className="text-xs text-gray-500 mb-0.5 block">Forma de pagamento</label>
-            <input placeholder="PIX, Dinheiro, Cartão…" value={form.payment_method}
-              onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className={inputCls} />
+            <label className="text-xs text-gray-500 mb-0.5 block">Forma de pagamento <span className="text-red-500">*</span></label>
+            <select value={form.payment_method_id} onChange={e => setForm(f => ({ ...f, payment_method_id: e.target.value }))} className={inputCls}>
+              <option value="">Selecione…</option>
+              {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+            </select>
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-0.5 block">Data (opcional)</label>
@@ -204,7 +227,7 @@ function PayModal({ lead, maloteBoxes, onClose, onSaved }: {
         </div>
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
-          <button onClick={handleSave} disabled={saving}
+          <button onClick={handleSave} disabled={saving || !form.payment_method_id}
             className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-bold disabled:opacity-50">
             {saving ? 'Registrando…' : 'Confirmar'}
           </button>

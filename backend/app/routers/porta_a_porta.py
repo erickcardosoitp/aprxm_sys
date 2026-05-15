@@ -79,6 +79,7 @@ class PayInstallmentIn(BaseModel):
 
 class PayLeadIn(BaseModel):
     payment_method: str | None = None
+    payment_method_id: UUID | None = None
     paid_at: datetime | None = None
     malote_box_id: UUID | None = None
 
@@ -336,7 +337,8 @@ async def pay_lead(
         .order_by(PortaAPortaPayment.installment_number)
     )).scalars().all()
 
-    paid_at = body.paid_at or datetime.utcnow()
+    raw_paid_at = body.paid_at or datetime.utcnow()
+    paid_at = raw_paid_at.replace(tzinfo=None) if raw_paid_at.tzinfo else raw_paid_at
 
     # Pay all pending installments (avista) or next pending (parcelado)
     if lead.payment_type == "avista":
@@ -450,7 +452,7 @@ async def pay_lead(
             amount=Decimal(str(paid_amount)),
             description=f"Porta a Porta — {lead.full_name}",
             income_subtype="mensalidade",
-            payment_method_id=None,
+            payment_method_id=body.payment_method_id,
             resident_id=lead.resident_id,
             approval_status="approved",
             approved_by=current.user_id,
