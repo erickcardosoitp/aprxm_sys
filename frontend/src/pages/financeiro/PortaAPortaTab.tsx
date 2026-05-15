@@ -155,7 +155,7 @@ function PayModal({ lead, maloteBoxes, onClose, onSaved }: {
   const [openSessions, setOpenSessions] = useState<{ id: string; opened_by_name: string }[]>([])
 
   useEffect(() => {
-    api.get<{ id: string; name: string }[]>('/payment-methods').then(r => setPaymentMethods(r.data)).catch(() => {})
+    api.get<{ id: string; name: string }[]>('/finance/payment-methods').then(r => setPaymentMethods(r.data)).catch(() => {})
     api.get<any[]>('/finance/sessions/open-picker').then(r => setOpenSessions(r.data)).catch(() => {})
   }, [])
 
