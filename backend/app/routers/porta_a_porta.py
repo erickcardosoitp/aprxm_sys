@@ -80,6 +80,7 @@ class PayInstallmentIn(BaseModel):
 class PayLeadIn(BaseModel):
     payment_method: str | None = None
     payment_method_id: UUID | None = None
+    cash_session_id: UUID | None = None
     paid_at: datetime | None = None
     malote_box_id: UUID | None = None
 
@@ -434,15 +435,20 @@ async def pay_lead(
             ), {"amt": float(paid_amount), "bid": str(body.malote_box_id)})
     else:
         # Register as income transaction in open cash session
-        open_session_row = (await session.execute(sa_text(
-            "SELECT id FROM cash_sessions WHERE association_id=:aid AND status='open' "
-            "AND opened_by=:uid ORDER BY opened_at DESC LIMIT 1"
-        ), {"aid": str(current.association_id), "uid": str(current.user_id)})).fetchone()
-        if not open_session_row:
+        if body.cash_session_id:
+            open_session_row = (await session.execute(sa_text(
+                "SELECT id FROM cash_sessions WHERE id=:sid AND association_id=:aid AND status='open'"
+            ), {"sid": str(body.cash_session_id), "aid": str(current.association_id)})).fetchone()
+        else:
             open_session_row = (await session.execute(sa_text(
                 "SELECT id FROM cash_sessions WHERE association_id=:aid AND status='open' "
-                "ORDER BY opened_at DESC LIMIT 1"
-            ), {"aid": str(current.association_id)})).fetchone()
+                "AND opened_by=:uid ORDER BY opened_at DESC LIMIT 1"
+            ), {"aid": str(current.association_id), "uid": str(current.user_id)})).fetchone()
+            if not open_session_row:
+                open_session_row = (await session.execute(sa_text(
+                    "SELECT id FROM cash_sessions WHERE association_id=:aid AND status='open' "
+                    "ORDER BY opened_at DESC LIMIT 1"
+                ), {"aid": str(current.association_id)})).fetchone()
 
         from app.models.finance import Transaction, TransactionType
         tx = Transaction(

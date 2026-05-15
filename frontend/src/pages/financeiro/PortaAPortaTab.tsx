@@ -149,7 +149,7 @@ function AcordoModal({ lead, onClose, onSaved }: {
 function PayModal({ lead, maloteBoxes, onClose, onSaved }: {
   lead: any; maloteBoxes: CashBox[]; onClose: () => void; onSaved: () => void
 }) {
-  const [form, setForm] = useState({ payment_method_id: '', malote_box_id: '', paid_at: '' })
+  const [form, setForm] = useState({ payment_method_id: '', cash_session_id: '', malote_box_id: '', paid_at: '' })
   const [saving, setSaving] = useState(false)
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
   const [openSessions, setOpenSessions] = useState<{ id: string; opened_by_name: string }[]>([])
@@ -165,6 +165,7 @@ function PayModal({ lead, maloteBoxes, onClose, onSaved }: {
     try {
       await api.post(`/porta-a-porta/leads/${lead.id}/pay`, {
         payment_method_id: form.payment_method_id || null,
+        cash_session_id: form.cash_session_id || null,
         malote_box_id: form.malote_box_id || null,
         paid_at: form.paid_at ? new Date(form.paid_at).toISOString() : undefined,
       })
@@ -195,10 +196,18 @@ function PayModal({ lead, maloteBoxes, onClose, onSaved }: {
             ⚠️ Nenhum caixa aberto. O pagamento será registrado sem sessão.
           </div>
         )}
-        {openSessions.length > 0 && (
+        {openSessions.length === 1 && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 text-xs text-blue-700">
-            Caixa aberto: <strong>{openSessions[0].opened_by_name}</strong>
-            {openSessions.length > 1 && ` (+${openSessions.length - 1})`}
+            Caixa: <strong>{openSessions[0].opened_by_name}</strong>
+          </div>
+        )}
+        {openSessions.length > 1 && (
+          <div>
+            <label className="text-xs text-gray-500 mb-0.5 block">Caixa de destino <span className="text-red-500">*</span></label>
+            <select value={form.cash_session_id} onChange={e => setForm(f => ({ ...f, cash_session_id: e.target.value }))} className={inputCls}>
+              <option value="">Selecione o caixa…</option>
+              {openSessions.map(s => <option key={s.id} value={s.id}>{s.opened_by_name}</option>)}
+            </select>
           </div>
         )}
 
