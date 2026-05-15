@@ -604,10 +604,23 @@ async def merge_residents(
         ("packages", "delivered_to_resident_id"),
         ("service_orders", "requester_resident_id"),
         ("residents", "responsible_id"),
+        ("porta_a_porta_leads", "resident_id"),
+        ("pix_learning_map", "resident_id"),
+        ("resident_update_requests", "resident_id"),
     ]:
         await session.execute(sa_text(
             f"UPDATE {table} SET {col} = :pid WHERE {col} = ANY(:sids) AND association_id = :aid"
         ), {"pid": str(body.primary_id), "sids": sec_id_list, "aid": aid})
+
+    # If primary is a member, fix packages that came from guest secondaries
+    primary_type = primary[12]  # type column index
+    if str(primary_type) == "member":
+        await session.execute(sa_text("""
+            UPDATE packages SET has_delivery_fee = FALSE, resident_type = 'member'
+            WHERE resident_id = :pid AND association_id = :aid
+              AND (has_delivery_fee = TRUE OR resident_type != 'member')
+              AND status NOT IN ('delivered', 'returned')
+        """), {"pid": str(body.primary_id), "aid": aid})
 
     # Apply data fill-in to primary
     if updates:
