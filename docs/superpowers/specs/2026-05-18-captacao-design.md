@@ -74,10 +74,11 @@ frontend/src/modules/captacao/
     useOpportunityFilters.ts ← filtros + debounce 500ms
     usePipelineStats.ts      ← lê /captacao/insights
   services/
-    captacao.service.ts      ← toda lógica: prompts, parsing, cache, retry
+    captacao.service.ts      ← toda lógica: prompts, parsing, cache, retry, timeouts
   constants/
     itpContext.ts            ← ITP_CONTEXT string
     captacaoFilters.ts       ← opções de filtros (areas, source_types, etc.)
+    promptTemplates.ts       ← templates de prompt por tipo de busca e documento
   utils/
     opportunityMapper.ts     ← mapeia resposta Gemini → Opportunity
     compatibility.ts         ← score → label (Excelente/Alta/Média/Baixa)
@@ -93,7 +94,7 @@ frontend/src/modules/captacao/
 ```
 useGeminiAPI()                ← estado: loading, error, data
   ↓
-captacao.service.ts           ← lógica: prompt, cache, retry, parse, validate
+captacao.service.ts           ← lógica: prompt, cache, retry, parse, validate, timeout
   ↓
 POST /captacao/search         ← backend FastAPI (Gemini com API key segura)
   ↓
@@ -188,24 +189,28 @@ class PipelineStatus(str, Enum):
     preparing = "preparing"
     submitted = "submitted"
     approved = "approved"
-    closed = "closed"
+    archived = "archived"   # renomeado de 'closed' — future-proof
     expired = "expired"
 ```
+
+> **Nota:** `archived` substitui `closed` para maior clareza semântica — uma oportunidade arquivada pode ser reaberta; "fechada" implica finalidade permanente.
 
 ### 4.4 Índices
 
 ```sql
-CREATE INDEX idx_opp_assoc          ON opportunities (association_id);
-CREATE INDEX idx_opp_pipeline       ON opportunities (association_id, pipeline_status) WHERE deleted_at IS NULL;
-CREATE INDEX idx_opp_source_type    ON opportunities (association_id, source_type)    WHERE deleted_at IS NULL;
-CREATE INDEX idx_opp_compatibility  ON opportunities (association_id, compatibility)  WHERE deleted_at IS NULL;
-CREATE INDEX idx_opp_deadline       ON opportunities (deadline)                       WHERE deleted_at IS NULL;
+CREATE INDEX idx_opp_assoc           ON opportunities (association_id);
+CREATE INDEX idx_opp_pipeline        ON opportunities (association_id, pipeline_status) WHERE deleted_at IS NULL;
+CREATE INDEX idx_opp_source_type     ON opportunities (association_id, source_type)     WHERE deleted_at IS NULL;
+CREATE INDEX idx_opp_compatibility   ON opportunities (association_id, compatibility)   WHERE deleted_at IS NULL;
+CREATE INDEX idx_opp_deadline        ON opportunities (deadline)                        WHERE deleted_at IS NULL;
 CREATE INDEX idx_pipeline_events_opp ON pipeline_events (opportunity_id);
 ```
 
 ---
 
 ## 5. Endpoints API
+
+Todos os endpoints requerem **JWT autenticado** via header `Authorization: Bearer <token>`. O `association_id` é extraído do JWT — nunca aceito como parâmetro do cliente.
 
 ```
 POST   /captacao/search
@@ -219,40 +224,51 @@ GET    /captacao/insights
 ```
 
 ### POST /captacao/search
-- Recebe: `{ query, filters: { areas, source_types, compatibility, value_range } }`
+- **Auth:** JWT obrigatório
+- Recebe: `{ request_id, query, filters: { areas, source_types, compatibility, value_range } }`
+- `request_id` — UUID gerado pelo frontend para rastreabilidade (idempotência e logs correlacionados)
 - Cache 15min por hash(query + filtros) por `association_id`
 - Rate limit: **10 req/min por usuário**
-- Timeout Gemini: **25s** → fallback `{ error: "A busca demorou mais que o esperado." }`
+- Timeout Gemini: **25s** → fallback `{ error: "A busca demorou mais que o esperado. Tente novamente." }`
 - Retry: 3x com backoff exponencial em 429/503/timeout
 - Retorna: lista de até 6 oportunidades normalizadas
-- Log: query, duração, tokens estimados, cache hit/miss, erro
+- Log: `request_id`, query, duração, tokens estimados, cache hit/miss, erro
 
 ### GET /captacao/opportunities
+- **Auth:** JWT obrigatório
 - Filtros: `pipeline_status`, `source_type`, `compatibility`, `areas`, `search`
 - Paginação: `page` + `limit` (padrão 20)
 - Sempre filtra `deleted_at IS NULL` e `association_id = current`
 
 ### GET /captacao/opportunities/{id}
+- **Auth:** JWT obrigatório
 - Retorna dados completos + `pipeline_events` (lazy load do drawer)
-- Filtra por `association_id` obrigatoriamente
+- Valida `association_id` — retorna 404 se não pertence ao tenant
 
 ### PATCH /captacao/opportunities/{id}/pipeline
+- **Auth:** JWT obrigatório
 - Body: `{ pipeline_status, notes? }`
 - Registra evento em `pipeline_events`
-- **Atualização otimista no frontend** com rollback em erro
+- **Atualização otimista no frontend** com rollback em erro de rede ou 4xx
 
 ### DELETE /captacao/opportunities/{id}
+- **Auth:** JWT obrigatório
 - Soft delete: seta `deleted_at = now()`
+- Valida `association_id`
 
 ### POST /captacao/opportunities/{id}/document
-- Body: `{ document_type: "carta" | "oficio" | "proposta" | "resumo" | "chamamento" | "projeto_esboço" }`
+- **Auth:** JWT obrigatório
+- Body: `{ document_type: DocumentType }`
 - Rate limit: **5 req/min por usuário**
-- Backend chama Gemini com prompt específico por `document_type`
+- Timeout Gemini: **30s** (documentos são maiores que buscas)
+- Backend chama Gemini com prompt do template correspondente ao `document_type`
 - Gera arquivo via `python-docx`
 - Retorna stream (`Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document`)
+- **Fallback:** se Gemini falhar após retries → HTTP 503 com `{ error: "Não foi possível gerar o documento. Tente novamente." }`
 
 ### GET /captacao/insights
-Retorna (server-side, nunca calcular no frontend):
+- **Auth:** JWT obrigatório
+- Server-side — nunca calcular no frontend
 ```json
 {
   "kpis": {
@@ -283,8 +299,9 @@ Hierarquia visual obrigatória (nessa ordem):
 3. **Prazo** — destacado com urgência visual se < 30 dias
 4. `ai_confidence` — mini progress bar inline: `████████░░ 87%`
 5. `match_reasons` — chips
-6. Título, organização, resumo (2 linhas)
-7. Ações: Salvar | Ver detalhes
+6. Título, organização
+7. **Resumo** — truncado em 2 linhas com `line-clamp-2` (Tailwind)
+8. Ações: Salvar | Ver detalhes
 
 ### Score → Label
 | Score | Label | Cor |
@@ -304,7 +321,7 @@ Hierarquia visual obrigatória (nessa ordem):
 ### PipelinePage — 3 visões
 Toggle no topo da página:
 - **`PipelineTable`** — tabela com colunas: título, org, valor, prazo, compatibility, status, ações
-- **`PipelineKanban`** — 6 colunas por status, drag-and-drop via `@dnd-kit/core` + `@dnd-kit/sortable`; atualização otimista + rollback em erro; virtualização documentada como melhoria futura
+- **`PipelineKanban`** — 7 colunas por status (inclui `expired`), drag-and-drop via `@dnd-kit/core` + `@dnd-kit/sortable`; **atualização otimista + rollback em erro**; virtualização documentada como melhoria futura
 - **`PipelineTabs`** — abas por status (com contador), lista de cards em cada aba
 
 ### InsightsPage
@@ -315,12 +332,34 @@ Toggle no topo da página:
 
 ---
 
-## 7. Segurança e Multi-tenancy
+## 7. Segurança
 
+### Multi-tenancy
 - **TODA query** no backend filtra por `association_id = current_user.association_id`
-- Chave Gemini (`GEMINI_API_KEY`) apenas no backend — nunca exposta ao frontend
-- Rate limiting por `user_id` nos endpoints de IA
-- Soft delete preserva auditoria
+- `association_id` extraído exclusivamente do JWT — nunca aceito via body/query params
+- Recursos de outro tenant retornam 404 (não 403 — para não vazar existência)
+
+### Chave de API
+- `GEMINI_API_KEY` apenas no backend — **nunca exposta ao frontend**
+- Não adicionar variável com prefixo `NEXT_PUBLIC_` ou `VITE_`
+
+### Checklist de Segurança Pré-Deploy
+- [ ] Todas as queries têm filtro `association_id`
+- [ ] `GEMINI_API_KEY` não aparece em nenhum arquivo frontend
+- [ ] Rate limiting ativo nos endpoints `/search` e `/document`
+- [ ] Soft delete implementado — nenhum `DELETE` físico
+- [ ] JWT validado em todos os endpoints via `get_current_user`
+- [ ] Inputs sanitizados antes de enviar ao Gemini (sem injeção de prompt)
+- [ ] `gemini_raw` salvo para auditoria de respostas inesperadas
+- [ ] `request_id` logado para rastreabilidade
+
+### Sanitização de Input (Anti Prompt Injection)
+Antes de enviar `query` ao Gemini, `captacao_service.py` deve:
+```python
+# Remover sequências suspeitas de injeção de prompt
+query = query.strip()[:500]  # limitar tamanho
+query = re.sub(r'(ignore|forget|disregard).*(instructions|prompt|above)', '', query, flags=re.IGNORECASE)
+```
 
 ---
 
@@ -330,6 +369,7 @@ Logar em cada chamada Gemini:
 ```python
 logger.info({
     "event": "gemini_search",
+    "request_id": request_id,
     "query": query,
     "duration_ms": duration,
     "tokens_estimated": tokens,
@@ -348,10 +388,13 @@ Cron diário no backend:
 ```sql
 UPDATE opportunities
 SET pipeline_status = 'expired', updated_at = now()
-WHERE deadline < CURRENT_DATE
-  AND pipeline_status NOT IN ('approved', 'closed', 'expired')
+WHERE deadline IS NOT NULL
+  AND deadline < CURRENT_DATE
+  AND pipeline_status NOT IN ('approved', 'archived', 'expired')
   AND deleted_at IS NULL
 ```
+
+> `AND deadline IS NOT NULL` — oportunidades sem prazo definido nunca expiram automaticamente.
 
 ---
 
@@ -361,23 +404,133 @@ Em `captacao.service.ts` (frontend, memória):
 - Chave: `SHA256(query + JSON.stringify(sortedFilters) + association_id)`
 - TTL: 15 minutos
 - Estrutura: `Map<string, { data: Opportunity[]; ts: number }>`
+- **Invalidação:** cache é limpo para a chave correspondente quando o usuário salva uma oportunidade dos resultados (evita inconsistência entre "já salva" e cache stale)
 - Evita chamadas duplicadas ao backend/Gemini
 
 ---
 
-## 11. Normalização e Validação Gemini
+## 11. Timeouts no Frontend
+
+Em `captacao.service.ts`, todas as chamadas à API usam timeout explícito via `AbortController`:
+
+```typescript
+// Busca
+const controller = new AbortController()
+const timeout = setTimeout(() => controller.abort(), 30_000) // 30s
+try {
+  const res = await api.post('/captacao/search', body, { signal: controller.signal })
+} catch (e) {
+  if (e.name === 'AbortError') throw new Error('A busca demorou mais que o esperado.')
+} finally {
+  clearTimeout(timeout)
+}
+
+// Documento
+// timeout = 35_000 (35s — geração é mais lenta)
+```
+
+Timeouts por operação:
+| Operação | Frontend timeout | Backend Gemini timeout |
+|---|---|---|
+| `/search` | 30s | 25s |
+| `/document` | 35s | 30s |
+| Outros endpoints | 10s | N/A |
+
+---
+
+## 12. Políticas de Fallback de IA
+
+### Busca (`/search`)
+| Condição | Fallback |
+|---|---|
+| Timeout (> 25s) | `{ error: "A busca demorou mais que o esperado. Tente novamente." }` |
+| Rate limit Gemini (429) | Retry 3x backoff → `{ error: "Serviço temporariamente indisponível." }` |
+| Resposta malformada | Retornar apenas itens válidos após `geminiParser`; se nenhum válido → `{ results: [], warning: "Não foi possível processar todos os resultados." }` |
+| Erro 5xx Gemini | Retry 3x → `{ error: "Erro ao conectar com o serviço de IA." }` |
+| Nenhum resultado relevante | `{ results: [], message: "Nenhuma oportunidade encontrada para os filtros informados." }` |
+
+### Geração de Documento (`/document`)
+| Condição | Fallback |
+|---|---|
+| Timeout (> 30s) | HTTP 503 + `{ error: "Não foi possível gerar o documento. Tente novamente." }` |
+| Gemini retorna texto vazio | HTTP 422 + `{ error: "O modelo não gerou conteúdo para este tipo de documento." }` |
+| Erro `python-docx` | HTTP 500 + log detalhado; frontend mostra toast de erro |
+
+---
+
+## 13. Templates de Prompt
+
+Em `promptTemplates.ts` (frontend) e espelhado no backend para geração de documentos.
+
+### Template de Busca
+```typescript
+export const SEARCH_PROMPT = (query: string, filters: SearchFilters) => `
+Você é um especialista em captação de recursos para organizações do terceiro setor brasileiro.
+
+CONTEXTO DA ORGANIZAÇÃO:
+${ITP_CONTEXT}
+
+TAREFA:
+Pesquise oportunidades de financiamento REAIS e ATUAIS que correspondam à seguinte busca:
+"${query}"
+
+FILTROS APLICADOS:
+- Áreas: ${filters.areas?.join(', ') || 'todas'}
+- Tipo: ${filters.source_types?.join(', ') || 'todos'}
+- Compatibilidade mínima: ${filters.compatibility || 'qualquer'}
+
+INSTRUÇÕES:
+1. Use Google Search para encontrar oportunidades reais e abertas
+2. Retorne EXATAMENTE um JSON array com até 6 oportunidades
+3. Priorize oportunidades com prazo aberto ou futuro
+4. Calcule score de 0-100 baseado na aderência ao ITP
+5. NÃO invente dados — use apenas informações verificáveis
+
+FORMATO DE RESPOSTA (JSON puro, sem markdown):
+[{
+  "title": "string",
+  "source_type": "public|private|incentive_law|sponsorship|foundation|grant",
+  "organization": "string",
+  "value_min": number|null,
+  "value_max": number|null,
+  "deadline": "YYYY-MM-DD"|null,
+  "compatibility": "high|medium|low",
+  "score": number,
+  "ai_confidence": number,
+  "summary": "string (max 200 chars)",
+  "match_reasons": ["string"],
+  "areas": ["string"],
+  "link": "string|null"
+}]
+`
+```
+
+### Templates de Documento (backend)
+Um template por `DocumentType`:
+- `carta` — carta de apresentação institucional (1 página)
+- `oficio` — ofício formal de solicitação
+- `proposta` — proposta de projeto resumida (3–5 páginas)
+- `resumo` — resumo institucional (1 página)
+- `chamamento` — chamamento de parceiros
+- `projeto_esboco` — esboço de projeto completo
+
+Cada template usa `ITP_CONTEXT` + dados da oportunidade + instruções específicas de formato/tom.
+
+---
+
+## 14. Normalização e Validação Gemini
 
 `geminiParser.ts` deve:
 1. Remover ` ```json ` e ` ``` ` antes do `JSON.parse`
 2. Validar campos obrigatórios: `title`, `source_type`, `compatibility`, `score`
 3. Aplicar defaults em campos ausentes: `score = 0`, `areas = []`, `match_reasons = []`
-4. Rejeitar itens com `title` vazio
+4. Rejeitar itens com `title` vazio ou `source_type` inválido
 
 `opportunityMapper.ts` deve normalizar enums para lowercase e validar contra `SourceType`/`Compatibility`.
 
 ---
 
-## 12. Libs Novas
+## 15. Libs Novas
 
 | Lib | Onde | Motivo |
 |---|---|---|
@@ -387,7 +540,7 @@ Em `captacao.service.ts` (frontend, memória):
 
 ---
 
-## 13. Sidebar / Menu
+## 16. Sidebar / Menu
 
 Arquivo: `AppShell.tsx`  
 Adicionar ao `MODULE_NAV`:
@@ -398,22 +551,23 @@ Adicionar ao `MODULE_NAV`:
 
 ---
 
-## 14. Variáveis de Ambiente
+## 17. Variáveis de Ambiente
 
-Backend `.env`:
+Backend `.env` e `.env.example`:
 ```
-GEMINI_API_KEY=AIzaSyAh8ilbyfzkr92ilzaGbqxctGKICBY61cU
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
-Não adicionar ao frontend — a chave fica exclusivamente no servidor.
+**Não adicionar ao frontend.** A chave fica exclusivamente no servidor.
 
 ---
 
-## 15. Melhorias Futuras (Documentadas, Fora de Escopo)
+## 18. Melhorias Futuras (Documentadas, Fora de Escopo)
 
-- Virtualização do `PipelineKanban` (react-virtual ou similar)
-- Geração de documentos assíncrona via job/queue
+- Virtualização do `PipelineKanban` (react-virtual ou similar) quando pipeline > 50 cards
+- Geração de documentos assíncrona via job/queue (evitar timeout em alta demanda)
 - Tabelas many-to-many para `areas` e `tags` (analytics fortes)
 - Notificações de prazo (push) via `pipeline_events`
 - Export CSV/Excel do pipeline
-- Integração com sistemas externos de editais (API FNDE, etc.)
+- Integração com sistemas externos de editais (API FNDE, SICONV, etc.)
+- `request_id` persistido no banco para deduplicação de buscas
