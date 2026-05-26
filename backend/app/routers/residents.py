@@ -207,6 +207,7 @@ async def create_resident(
 @router.get("/search", summary="Busca global de moradores (nome, telefone, endereço, CPF)")
 async def search_residents_global(
     q: str,
+    type: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
@@ -215,7 +216,7 @@ async def search_residents_global(
     if not q_clean:
         return []
     q_digits = ''.join(c for c in q_clean if c.isdigit())
-    phone_clause = "AND (REGEXP_REPLACE(phone_primary, '\\D', '', 'g') ILIKE :qdigits OR REGEXP_REPLACE(phone_secondary, '\\D', '', 'g') ILIKE :qdigits)" if q_digits else ""
+    type_clause = "AND r.type = :rtype" if type else ""
     result = await session.execute(
         sa_text(f"""
             SELECT r.id, r.full_name, r.cpf, r.phone_primary, r.phone_secondary,
@@ -224,6 +225,7 @@ async def search_residents_global(
             FROM residents r
             LEFT JOIN residents resp ON resp.id = r.responsible_id
             WHERE r.association_id = :aid
+              {type_clause}
               AND (
                 r.full_name ILIKE :q
                 OR r.cpf ILIKE :qraw
@@ -243,6 +245,7 @@ async def search_residents_global(
             "q": f"%{q_clean}%",
             "qraw": f"%{q_clean.replace('.','').replace('-','')}%",
             **( {"qdigits": f"%{q_digits}%"} if q_digits else {} ),
+            **( {"rtype": type} if type else {} ),
         },
     )
     rows = result.fetchall()

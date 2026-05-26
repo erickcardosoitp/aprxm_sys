@@ -644,7 +644,7 @@ export default function PackagesPage() {
   const responsibleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reassignTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const brxSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const SEARCH_DELAY = 1200
+  const SEARCH_DELAY = 300
 
   // Carriers & Deliverers
   const [carriers, setCarriers] = useState<{ id: string; name: string }[]>([])
@@ -786,6 +786,8 @@ export default function PackagesPage() {
   const [newResResponsibleSearch, setNewResResponsibleSearch] = useState('')
   const [newResResponsible, setNewResResponsible] = useState<Resident | null>(null)
   const [newResResponsibleResults, setNewResResponsibleResults] = useState<Resident[]>([])
+  const [duplicateMatches, setDuplicateMatches] = useState<Resident[]>([])
+  const duplicateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [tracking, setTracking] = useState('')
   const [carrier, setCarrier] = useState('')
   const [photos, setPhotos] = useState<{ url: string; label: string; taken_at: string }[]>([])
@@ -856,6 +858,7 @@ export default function PackagesPage() {
   const [pickerIdPhoto, setPickerIdPhoto] = useState('')
   const [pickerPhone, setPickerPhone] = useState('')
   const [deliveryPaymentMethodId, setDeliveryPaymentMethodId] = useState('')
+  const [deliveryPixPayerName, setDeliveryPixPayerName] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
   const [deliverySessionPicker, setDeliverySessionPicker] = useState<{ id: string; opened_by_name: string; opening_balance: string }[] | null>(null)
   type DeliverPayload = Parameters<typeof packageService.deliver>[1]
@@ -1396,6 +1399,17 @@ export default function PackagesPage() {
     } catch { }
   }
 
+  const checkDuplicates = (name: string) => {
+    if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
+    if (name.trim().length < 3) { setDuplicateMatches([]); return }
+    duplicateTimer.current = setTimeout(async () => {
+      try {
+        const res = await api.get<Resident[]>('/residents/search', { params: { q: name.trim() } })
+        setDuplicateMatches(res.data.slice(0, 5))
+      } catch { setDuplicateMatches([]) }
+    }, 400)
+  }
+
   const createGuest = async () => {
     if (!guest.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
     if (newResType === 'dependent' && !newResResponsible) { toast.error('Selecione o responsável.'); return }
@@ -1451,7 +1465,7 @@ export default function PackagesPage() {
   const resetReceive = () => {
     setShowReceive(false); setStep('recipient'); setRecipientSearch(''); recipientInputRef.current?.clear()
     setSearchResults([]); setSelectedRecipient(null); setShowGuestForm(false); setSearchEmpty(false)
-    setGuest(emptyGuest()); setTracking(''); setCarrier(''); setPhotos([])
+    setGuest(emptyGuest()); setTracking(''); setCarrier(''); setPhotos([]); setDuplicateMatches([])
     setDelivererName(''); setDelivererSig(''); setDelivererManual(false)
     setNewResType('guest'); setNewResCpf(''); setNewResResponsibleSearch(''); setNewResResponsible(null); setNewResResponsibleResults([])
   }
@@ -1469,6 +1483,7 @@ export default function PackagesPage() {
       picker_id_photo_url: pickupType === 'other' ? pickerIdPhoto || undefined : undefined,
       picker_phone: pickupType === 'other' ? pickerPhone.trim() || undefined : undefined,
       payment_method_id: deliveryPaymentMethodId || undefined,
+      payer_name: deliveryPixPayerName.trim() || undefined,
       exemption_token: exemptionToken.trim().toUpperCase() || undefined,
     }
     const payload: DeliverPayload = cash_session_id ? { ...base, cash_session_id } : base
@@ -1523,6 +1538,8 @@ export default function PackagesPage() {
     const isGuest = !deliveryTarget.resident_id || deliveryTarget.resident_type === 'guest'
     if (!recipientName || !recipientSig) { toast.error('Nome e assinatura do recebedor obrigatórios.'); return }
     if (isGuest && !deliveryPaymentMethodId && !exemptionToken.trim()) { toast.error('Informe a forma de pagamento ou um código de isenção.'); return }
+    const selectedPm = paymentMethods.find(m => m.id === deliveryPaymentMethodId)
+    if (selectedPm?.name?.toLowerCase().includes('pix') && !deliveryPixPayerName.trim()) { toast.error('Informe o nome do pagador PIX.'); return }
     if (pickupType === 'dependent' && !selectedDependent) { toast.error('Selecione um dependente.'); return }
     if (pickupType === 'other' && !pickerIdPhoto) { toast.error('Documento de identificação obrigatório para retirada por terceiros.'); return }
     await doDeliver()
@@ -1533,7 +1550,7 @@ export default function PackagesPage() {
     setProofResidenceUrl(''); setRecipientIdPhoto(''); setDeliveryPersonName('')
     setPickupType('resident'); setDependents([]); setSelectedDependent(null)
     setAddingDependent(false); setNewDepName(''); setNewDepPhone(''); setPickerIdPhoto(''); setPickerPhone('')
-    setDeliveryPaymentMethodId(''); setShowUpgrade(false); setUpgradeCpf(''); setUpgradedResidentInfo(null)
+    setDeliveryPaymentMethodId(''); setDeliveryPixPayerName(''); setShowUpgrade(false); setUpgradeCpf(''); setUpgradedResidentInfo(null)
     setExemptionToken(''); setExemptionTokenError('')
   }
 
@@ -1600,7 +1617,7 @@ export default function PackagesPage() {
                     placeholder="Buscar morador…" className="w-full text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#26619c]" />
                   <button onClick={() => { setCardReassignPkgId(null); setCardReassignSearch(''); setCardReassignResults([]) }} className="absolute right-1 top-1 text-gray-400 text-xs">✕</button>
                   {cardReassignResults.length > 0 && (
-                    <div className="absolute z-20 left-0 right-0 mt-0.5 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                    <div className="absolute z-50 left-0 right-0 mt-0.5 bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto max-h-48">
                       {cardReassignResults.map(r => (
                         <button key={r.id} type="button" onClick={() => doCardReassign(pkg.id, r.id, r.full_name)}
                           className="w-full text-left px-2 py-1.5 hover:bg-blue-50 flex flex-col border-b last:border-0 border-gray-100">
@@ -2423,7 +2440,7 @@ export default function PackagesPage() {
                 {/* Botão fixo de não associado — sempre visível */}
                 {!searchEmpty && !selectedRecipient && (
                   <button
-                    onClick={() => { setShowGuestForm(!showGuestForm); setGuest(emptyGuest()) }}
+                    onClick={() => { setShowGuestForm(!showGuestForm); setGuest(emptyGuest()); setDuplicateMatches([]) }}
                     className="w-full flex items-center gap-2 border border-dashed border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-500 hover:border-[#26619c] hover:text-[#26619c] transition mb-3"
                   >
                     <UserX className="w-4 h-4" /> Não associado / Visitante
@@ -2446,8 +2463,32 @@ export default function PackagesPage() {
                         <AlertTriangle className="w-3 h-3 shrink-0" /> Taxa de R$ 2,50 aplicada na entrega
                       </p>
                     )}
-                    <input value={guest.full_name} onChange={e => setGuest(g => ({ ...g, full_name: e.target.value }))}
-                      className={inputCls} placeholder="Nome completo *" autoFocus />
+                    <div>
+                      <input value={guest.full_name}
+                        onChange={e => { const v = e.target.value; setGuest(g => ({ ...g, full_name: v })); checkDuplicates(v) }}
+                        className={inputCls} placeholder="Nome completo *" autoFocus />
+                      {duplicateMatches.length > 0 && (
+                        <div className="mt-1.5 border border-amber-300 bg-amber-50 rounded-lg p-2">
+                          <p className="text-xs font-semibold text-amber-800 mb-1.5 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 shrink-0" /> Possível duplicata — selecione se já está cadastrado:
+                          </p>
+                          <ul className="flex flex-col gap-0.5">
+                            {duplicateMatches.map(r => (
+                              <li key={r.id}>
+                                <button type="button"
+                                  onClick={() => { setSelectedRecipient(r); setShowGuestForm(false); setDuplicateMatches([]) }}
+                                  className="w-full text-left px-2 py-1.5 rounded-md hover:bg-amber-100 flex items-center gap-2 transition">
+                                  <User className="w-3 h-3 text-amber-600 shrink-0" />
+                                  <span className="text-xs font-medium text-amber-900">{r.full_name}</span>
+                                  <span className="text-[10px] text-amber-600 ml-auto">{r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}{r.unit ? ` · Unid. ${r.unit}` : ''}</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="text-[10px] text-amber-600 mt-1.5">Não é nenhum desses? Continue preenchendo para criar novo cadastro.</p>
+                        </div>
+                      )}
+                    </div>
                     {newResType === 'member' && (
                       <>
                         <input value={newResCpf} onChange={e => setNewResCpf(e.target.value)}
@@ -3021,15 +3062,28 @@ export default function PackagesPage() {
                     )}
                   </div>
                   {!exemptionToken.trim() && paymentMethods.length > 0 && (
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa <span className="text-red-500">*</span></label>
-                      <select value={deliveryPaymentMethodId} onChange={e => setDeliveryPaymentMethodId(e.target.value)}
-                        className={inputCls}>
-                        <option value="">Selecione...</option>
-                        {paymentMethods.map(pm => (
-                          <option key={pm.id} value={pm.id}>{pm.name}</option>
-                        ))}
-                      </select>
+                    <div className="flex flex-col gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa <span className="text-red-500">*</span></label>
+                        <select value={deliveryPaymentMethodId} onChange={e => { setDeliveryPaymentMethodId(e.target.value); setDeliveryPixPayerName('') }}
+                          className={inputCls}>
+                          <option value="">Selecione...</option>
+                          {paymentMethods.map(pm => (
+                            <option key={pm.id} value={pm.id}>{pm.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {paymentMethods.find(m => m.id === deliveryPaymentMethodId)?.name?.toLowerCase().includes('pix') && (
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Nome do pagador PIX <span className="text-red-500">*</span></label>
+                          <input
+                            value={deliveryPixPayerName}
+                            onChange={e => setDeliveryPixPayerName(e.target.value)}
+                            className={inputCls}
+                            placeholder="Nome de quem fez o PIX"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

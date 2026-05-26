@@ -53,6 +53,7 @@ class DeliverPackageRequest(BaseModel):
     picker_id_photo_url: str | None = None
     picker_phone: str | None = None
     payment_method_id: UUID | None = None
+    payer_name: str | None = None
     cash_session_id: UUID | None = None
     exemption_token: str | None = None
 
@@ -172,6 +173,7 @@ async def deliver_package(
             picker_id_photo_url=body.picker_id_photo_url,
             picker_phone=body.picker_phone,
             payment_method_id=body.payment_method_id,
+            payer_name=body.payer_name,
             cash_session_id=body.cash_session_id,
             skip_fee=skip_fee,
         )

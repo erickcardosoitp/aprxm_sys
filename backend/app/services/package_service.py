@@ -95,6 +95,7 @@ class PackageService:
         picker_id_photo_url: str | None = None,
         picker_phone: str | None = None,
         payment_method_id: UUID | None = None,
+        payer_name: str | None = None,
         skip_fee: bool = False,
     ) -> Package:
         package = await self._get_package(package_id, association_id)
@@ -124,7 +125,7 @@ class PackageService:
             if cash_session_id:
                 cash_session = await self._finance.get_open_session(association_id, session_id=cash_session_id)
             else:
-                cash_session = await self._finance.get_open_session(association_id, preferred_by=delivered_by, strict_owner=True)
+                cash_session = await self._finance.get_open_session(association_id, preferred_by=delivered_by, strict_owner=False)
 
             # Try to find "Taxa de Entrega" category for this association
             cat_result = await self._session.execute(
@@ -153,6 +154,7 @@ class PackageService:
                 resident_id=effective_resident_id,
                 category_id=fee_category.id if fee_category else None,
                 payment_method_id=payment_method_id,
+                payer_name=payer_name,
             )
             package.has_delivery_fee = True
             package.delivery_fee_amount = DELIVERY_FEE

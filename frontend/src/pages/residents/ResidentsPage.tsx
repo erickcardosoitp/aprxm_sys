@@ -111,6 +111,7 @@ const EMPTY_FORM = {
   terms_accepted: false,
   lgpd_accepted: false,
   notes: '',
+  responsible_id: '',
 }
 
 type FormState = typeof EMPTY_FORM
@@ -212,8 +213,18 @@ function ResidentForm({ initial, onSave, onCancel }: {
   const [saving, setSaving] = useState(false)
   const [cepLoading, setCepLoading] = useState(false)
   const firstNameRef = useRef<HTMLInputElement>(null)
+  const [responsibleSearch, setResponsibleSearch] = useState('')
+  const [responsibleResults, setResponsibleResults] = useState<Resident[]>([])
+  const [responsibleName, setResponsibleName] = useState('')
+  const responsibleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { firstNameRef.current?.focus() }, [])
+
+  useEffect(() => {
+    if (initial?.responsible_id && initial.type === 'dependent') {
+      api.get<Resident>(`/residents/${initial.responsible_id}`).then(r => setResponsibleName(r.data.full_name)).catch(() => {})
+    }
+  }, [])
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -284,7 +295,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
           {isGuest && (
             <>
               <div className="flex gap-2">
-                {(['member', 'guest'] as ResidentType[]).map((t) => (
+                {(['member', 'dependent', 'guest'] as ResidentType[]).map((t) => (
                   <button key={t} type="button" onClick={() => set('type', t)}
                     className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${
                       form.type === t ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600'
@@ -337,7 +348,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
           {!isGuest && step === 0 && (
             <>
               <div className="flex gap-2">
-                {(['member', 'guest'] as ResidentType[]).map((t) => (
+                {(['member', 'dependent', 'guest'] as ResidentType[]).map((t) => (
                   <button key={t} type="button" onClick={() => set('type', t)}
                     className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${
                       form.type === t ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600'
@@ -346,6 +357,46 @@ function ResidentForm({ initial, onSave, onCancel }: {
                   </button>
                 ))}
               </div>
+              {form.type === 'dependent' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Responsável (membro) <span className="text-red-500">*</span></label>
+                  {form.responsible_id && responsibleName ? (
+                    <div className="flex items-center gap-2 border border-green-300 bg-green-50 rounded-lg px-3 py-2 text-sm">
+                      <span className="flex-1 font-medium text-green-800">{responsibleName}</span>
+                      <button type="button" onClick={() => { set('responsible_id', ''); setResponsibleName(''); setResponsibleSearch('') }} className="text-green-600 hover:text-red-500 text-xs">✕</button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        value={responsibleSearch}
+                        onChange={e => {
+                          const v = e.target.value
+                          setResponsibleSearch(v)
+                          if (responsibleTimer.current) clearTimeout(responsibleTimer.current)
+                          responsibleTimer.current = setTimeout(() => {
+                            if (v.length >= 3) api.get<Resident[]>(`/residents/search?q=${encodeURIComponent(v)}&type=member`).then(r => setResponsibleResults(r.data.slice(0, 6))).catch(() => setResponsibleResults([]))
+                            else setResponsibleResults([])
+                          }, 300)
+                        }}
+                        placeholder="Buscar associado por nome…"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                      />
+                      {responsibleResults.length > 0 && (
+                        <div className="absolute z-50 left-0 right-0 mt-0.5 bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto max-h-40">
+                          {responsibleResults.map(r => (
+                            <button key={r.id} type="button"
+                              onClick={() => { set('responsible_id', r.id); setResponsibleName(r.full_name); setResponsibleSearch(''); setResponsibleResults([]) }}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 flex flex-col border-b last:border-0 border-gray-100 text-sm">
+                              <span className="font-medium">{r.full_name}</span>
+                              {r.unit && <span className="text-xs text-gray-400">Unid. {r.unit}{r.block ? ` · Bl. ${r.block}` : ''}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Nome completo <span className="text-red-500">*</span></label>
                 <input ref={firstNameRef as any} value={form.full_name}
@@ -1398,6 +1449,10 @@ export default function ResidentsPage() {
       toast.error('Data de nascimento inválida. Use o formato DD/MM/AAAA com o ano completo (ex: 1978).')
       return
     }
+    if (form.type === 'dependent' && !form.responsible_id) {
+      toast.error('Selecione o responsável pelo dependente.')
+      return
+    }
     const payload: Record<string, any> = {
       ...form,
       address_rooms: form.address_rooms ? parseInt(form.address_rooms) : null,
@@ -1794,6 +1849,7 @@ export default function ResidentsPage() {
         <ResidentForm
           initial={editTarget ? {
             type: editTarget.type,
+            responsible_id: editTarget.responsible_id ?? '',
             full_name: editTarget.full_name,
             cpf: editTarget.cpf ?? '',
             date_of_birth: editTarget.date_of_birth ?? '',

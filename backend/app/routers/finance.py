@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
@@ -5,12 +6,13 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import CashSessionError
 from app.core.security import verify_password
 from app.core.tenant import CurrentUser, get_current_user, require_admin, require_conferente
-from app.database import get_session
+from app.database import AsyncSessionLocal, get_session
 from app.models.finance import CashSession, IncomeSubtype, PaymentMethod, Transaction, TransactionCategory, TransactionType
 from app.services.finance_service import FinanceService
 
@@ -585,6 +587,10 @@ async def perform_sangria(
     return {"id": str(tx.id), "amount": str(tx.amount), "type": tx.type}
 
 
+def _is_deadlock(exc: Exception) -> bool:
+    return "DeadlockDetectedError" in type(exc.__cause__).__name__ if exc.__cause__ else False
+
+
 @router.post("/transactions", summary="Registrar transação")
 async def register_transaction(
     body: TransactionRequest,
@@ -592,41 +598,69 @@ async def register_transaction(
     session: AsyncSession = Depends(get_session),
     x_device_token: str | None = Header(default=None),
 ) -> dict:
-    svc = FinanceService(session)
-    can_pick_session = current.is_conferente
-    if body.cash_session_id:
-        cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
-        if not can_pick_session and cash.opened_by != current.user_id:
-            raise HTTPException(status_code=403, detail="Você não pode lançar em sessão de outro operador.")
-        is_own_session = cash.opened_by == current.user_id
-        if not current.is_admin and not is_own_session and cash.device_token and x_device_token and cash.device_token != x_device_token:
-            raise HTTPException(status_code=403, detail="Dispositivo não autorizado para esta sessão.")
-    else:
-        try:
-            cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
-            if cash.opened_by != current.user_id:
+    async def _attempt(sess: AsyncSession) -> dict:
+        svc = FinanceService(sess)
+        can_pick_session = current.is_conferente
+        if body.cash_session_id:
+            cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
+            if not can_pick_session and cash.opened_by != current.user_id:
+                raise HTTPException(status_code=403, detail="Você não pode lançar em sessão de outro operador.")
+            is_own_session = cash.opened_by == current.user_id
+            if not current.is_admin and not is_own_session and cash.device_token and x_device_token and cash.device_token != x_device_token:
+                raise HTTPException(status_code=403, detail="Dispositivo não autorizado para esta sessão.")
+        else:
+            try:
+                cash = await svc.get_open_session(current.association_id, preferred_by=current.user_id)
+                if cash.opened_by != current.user_id:
+                    raise HTTPException(status_code=422, detail="NO_SESSION")
+            except CashSessionError:
                 raise HTTPException(status_code=422, detail="NO_SESSION")
-        except CashSessionError:
-            raise HTTPException(status_code=422, detail="NO_SESSION")
-    tx = await svc.register_transaction(
-        association_id=current.association_id,
-        cash_session_id=cash.id,
-        tx_type=body.type,
-        amount=body.amount,
-        description=body.description,
-        created_by=current.user_id,
-        income_subtype=body.income_subtype,
-        category_id=body.category_id,
-        payment_method_id=body.payment_method_id,
-        resident_id=body.resident_id,
-        reference_number=body.reference_number,
-        is_acordo=body.is_acordo,
-        acordo_installments=body.acordo_installments,
-        acordo_months=body.acordo_months,
-        payer_name=body.payer_name,
-        payer_entity_id=body.payer_entity_id,
-    )
-    return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
+        tx = await svc.register_transaction(
+            association_id=current.association_id,
+            cash_session_id=cash.id,
+            tx_type=body.type,
+            amount=body.amount,
+            description=body.description,
+            created_by=current.user_id,
+            income_subtype=body.income_subtype,
+            category_id=body.category_id,
+            payment_method_id=body.payment_method_id,
+            resident_id=body.resident_id,
+            reference_number=body.reference_number,
+            is_acordo=body.is_acordo,
+            acordo_installments=body.acordo_installments,
+            acordo_months=body.acordo_months,
+            payer_name=body.payer_name,
+            payer_entity_id=body.payer_entity_id,
+        )
+        return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
+
+    # First attempt uses the injected session (managed by get_session dependency)
+    try:
+        return await _attempt(session)
+    except HTTPException:
+        raise
+    except DBAPIError as exc:
+        if not _is_deadlock(exc):
+            raise
+        await session.rollback()
+
+    # Retry attempts with fresh sessions on deadlock
+    for attempt in range(1, 3):
+        await asyncio.sleep(0.15 * attempt)
+        async with AsyncSessionLocal() as retry_session:
+            try:
+                result = await _attempt(retry_session)
+                await retry_session.commit()
+                return result
+            except HTTPException:
+                raise
+            except DBAPIError as exc:
+                await retry_session.rollback()
+                if not _is_deadlock(exc):
+                    raise
+                if attempt == 2:
+                    raise HTTPException(status_code=503, detail="Conflito temporário no banco. Tente novamente.")
 
 
 class SyncPixRequest(BaseModel):

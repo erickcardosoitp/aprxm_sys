@@ -511,6 +511,10 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
           }
           return
         }
+        if (e.response?.status === 503) {
+          toast.error('Conflito temporário. Tente novamente em instantes.')
+          return
+        }
         throw e
       }
       toast.success('Transação registrada!')
