@@ -728,6 +728,8 @@ export default function PackagesPage() {
   const [cardReassignPkgId, setCardReassignPkgId] = useState<string | null>(null)
   const [cardReassignSearch, setCardReassignSearch] = useState('')
   const [cardReassignResults, setCardReassignResults] = useState<{ id: string; full_name: string; type: string; unit?: string; responsible_name?: string }[]>([])
+  const [cardReassignRect, setCardReassignRect] = useState<{ top: number; left: number; width: number } | null>(null)
+  const cardReassignInputRef = useRef<HTMLInputElement>(null)
   const searchCardReassign = async (q: string) => {
     setCardReassignSearch(q)
     if (q.length < 3) { setCardReassignResults([]); return }
@@ -1613,20 +1615,26 @@ export default function PackagesPage() {
             <div onClick={e => e.stopPropagation()} className="mt-1.5">
               {cardReassignPkgId === pkg.id ? (
                 <div className="relative">
-                  <input autoFocus value={cardReassignSearch} onChange={e => { const v = e.target.value; setCardReassignSearch(v); if (cardReassignTimer.current) clearTimeout(cardReassignTimer.current); cardReassignTimer.current = setTimeout(() => { if (v.length >= 3) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setCardReassignResults(r.data.slice(0, 5))).catch(() => setCardReassignResults([])); else setCardReassignResults([]) }, SEARCH_DELAY) }}
-                    placeholder="Buscar morador…" className="w-full text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#26619c]" />
-                  <button onClick={() => { setCardReassignPkgId(null); setCardReassignSearch(''); setCardReassignResults([]) }} className="absolute right-1 top-1 text-gray-400 text-xs">✕</button>
-                  {cardReassignResults.length > 0 && (
-                    <div className="absolute z-50 left-0 right-0 mt-0.5 bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto max-h-48">
-                      {cardReassignResults.map(r => (
-                        <button key={r.id} type="button" onClick={() => doCardReassign(pkg.id, r.id, r.full_name)}
-                          className="w-full text-left px-2 py-1.5 hover:bg-blue-50 flex flex-col border-b last:border-0 border-gray-100">
-                          <span className="text-xs font-semibold">{r.full_name}</span>
-                          <span className="text-[10px] text-gray-400">{r.responsible_name ? `Dep. de ${r.responsible_name}` : r.type === 'guest' ? 'Visitante' : 'Associado'}{r.unit ? ` · Unid. ${r.unit}` : ''}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <input
+                    ref={cardReassignInputRef}
+                    autoFocus
+                    value={cardReassignSearch}
+                    onFocus={e => { const r = e.currentTarget.getBoundingClientRect(); setCardReassignRect({ top: r.bottom + window.scrollY, left: r.left, width: r.width }) }}
+                    onChange={e => {
+                      const v = e.target.value
+                      setCardReassignSearch(v)
+                      const r = e.currentTarget.getBoundingClientRect()
+                      setCardReassignRect({ top: r.bottom + window.scrollY, left: r.left, width: r.width })
+                      if (cardReassignTimer.current) clearTimeout(cardReassignTimer.current)
+                      cardReassignTimer.current = setTimeout(() => {
+                        if (v.length >= 3) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setCardReassignResults(r.data.slice(0, 5))).catch(() => setCardReassignResults([]))
+                        else setCardReassignResults([])
+                      }, SEARCH_DELAY)
+                    }}
+                    placeholder="Buscar morador…"
+                    className="w-full text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#26619c]"
+                  />
+                  <button onClick={() => { setCardReassignPkgId(null); setCardReassignSearch(''); setCardReassignResults([]); setCardReassignRect(null) }} className="absolute right-1 top-1 text-gray-400 text-xs">✕</button>
                 </div>
               ) : (
                 <button onClick={() => { setCardReassignPkgId(pkg.id); setCardReassignSearch('') }} className="text-[10px] text-gray-400 hover:text-[#26619c] underline">Trocar morador</button>
@@ -1991,7 +1999,7 @@ export default function PackagesPage() {
 
       {/* List View */}
       {pageTab === 'encomendas' && viewMode === 'list' && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
           {packagesLoading
             ? <div className="flex items-center justify-center gap-2 p-8 text-gray-400 text-sm">
                 <svg className="animate-spin w-5 h-5 text-[#26619c]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -3982,6 +3990,22 @@ export default function PackagesPage() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Dropdown fixo para "Trocar morador" — fora de qualquer overflow */}
+      {cardReassignResults.length > 0 && cardReassignRect && cardReassignPkgId && (
+        <div
+          className="fixed z-[200] bg-white border border-gray-200 rounded-lg shadow-xl overflow-y-auto max-h-48"
+          style={{ top: cardReassignRect.top + 2, left: cardReassignRect.left, width: cardReassignRect.width }}
+        >
+          {cardReassignResults.map(r => (
+            <button key={r.id} type="button" onClick={() => doCardReassign(cardReassignPkgId, r.id, r.full_name)}
+              className="w-full text-left px-2 py-2.5 hover:bg-blue-50 flex flex-col border-b last:border-0 border-gray-100">
+              <span className="text-xs font-semibold">{r.full_name}</span>
+              <span className="text-[10px] text-gray-400">{(r as any).responsible_name ? `Dep. de ${(r as any).responsible_name}` : r.type === 'guest' ? 'Visitante' : 'Associado'}{r.unit ? ` · Unid. ${r.unit}` : ''}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>
