@@ -790,6 +790,16 @@ export default function PackagesPage() {
   const [newResResponsibleResults, setNewResResponsibleResults] = useState<Resident[]>([])
   const [duplicateMatches, setDuplicateMatches] = useState<Resident[]>([])
   const duplicateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // CEP gate — duplicate prevention second layer
+  const [showCepGate, setShowCepGate] = useState(false)
+  const [cepGateValue, setCepGateValue] = useState('')
+  const [cepGateStreet, setCepGateStreet] = useState('')
+  const [cepGateResidents, setCepGateResidents] = useState<Resident[]>([])
+  const [cepGateLoading, setCepGateLoading] = useState(false)
+  const [cepGateDone, setCepGateDone] = useState(false)
+  const cepGateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const [tracking, setTracking] = useState('')
   const [carrier, setCarrier] = useState('')
   const [photos, setPhotos] = useState<{ url: string; label: string; taken_at: string }[]>([])
@@ -1418,6 +1428,42 @@ export default function PackagesPage() {
     }, 400)
   }
 
+  const resetCepGate = () => {
+    setShowCepGate(false); setCepGateValue(''); setCepGateStreet('')
+    setCepGateResidents([]); setCepGateLoading(false); setCepGateDone(false)
+    if (cepGateTimer.current) clearTimeout(cepGateTimer.current)
+  }
+
+  const runCepGate = (rawCep: string) => {
+    setCepGateValue(rawCep)
+    const digits = rawCep.replace(/\D/g, '')
+    if (digits.length !== 8) {
+      setCepGateStreet(''); setCepGateResidents([]); setCepGateDone(false); setCepGateLoading(false)
+      return
+    }
+    if (cepGateTimer.current) clearTimeout(cepGateTimer.current)
+    cepGateTimer.current = setTimeout(async () => {
+      setCepGateLoading(true); setCepGateDone(false); setCepGateResidents([])
+      let street = ''
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 2000)
+        const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { signal: controller.signal })
+        clearTimeout(timeout)
+        const data = await r.json()
+        if (!data.erro) { street = data.logradouro ?? ''; setCepGateStreet(street) }
+      } catch { /* ViaCEP timeout — proceed without street filter */ }
+      try {
+        const params: Record<string, string> = { q: recipientSearch.trim() || ' ' }
+        if (street) params.street = street
+        const res = await api.get<Resident[]>('/residents/search', { params })
+        setCepGateResidents(res.data.slice(0, 5))
+      } catch { setCepGateResidents([]) }
+      setCepGateLoading(false)
+      setCepGateDone(true)
+    }, 400)
+  }
+
   const createGuest = async () => {
     if (!guest.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
     if (newResType === 'dependent' && !newResResponsible) { toast.error('Selecione o responsável.'); return }
@@ -1476,6 +1522,7 @@ export default function PackagesPage() {
     setGuest(emptyGuest()); setTracking(''); setCarrier(''); setPhotos([]); setDuplicateMatches([])
     setDelivererName(''); setDelivererSig(''); setDelivererManual(false)
     setNewResType('guest'); setNewResCpf(''); setNewResResponsibleSearch(''); setNewResResponsible(null); setNewResResponsibleResults([])
+    resetCepGate()
   }
 
   const doDeliver = async (cash_session_id?: string) => {
@@ -2441,24 +2488,70 @@ export default function PackagesPage() {
                   </div>
                 )}
 
-                {/* Sugestão de não associado — só aparece quando busca retornou vazio */}
-                {searchEmpty && !selectedRecipient && (
+                {/* Gate trigger — "Não encontrei" */}
+                {!selectedRecipient && !showCepGate && !showGuestForm && (
                   <button
-                    onClick={() => { setGuest(g => ({ ...g, full_name: recipientSearch })); setShowGuestForm(true) }}
-                    className="w-full flex items-center gap-2 border border-dashed border-orange-300 bg-orange-50 rounded-lg px-3 py-2.5 text-sm text-orange-600 hover:border-orange-400 transition mb-3"
+                    onClick={() => { resetCepGate(); setShowCepGate(true); setShowGuestForm(false); setDuplicateMatches([]) }}
+                    className="w-full flex items-center gap-2 border border-dashed border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-500 hover:border-[#26619c] hover:text-[#26619c] transition mb-3"
                   >
-                    <UserX className="w-4 h-4" /> Não encontrado — cadastrar como não associado
+                    <UserX className="w-4 h-4" /> Não encontrei o morador
                   </button>
                 )}
 
-                {/* Botão fixo de não associado — sempre visível */}
-                {!searchEmpty && !selectedRecipient && (
-                  <button
-                    onClick={() => { setShowGuestForm(!showGuestForm); setGuest(emptyGuest()); setDuplicateMatches([]) }}
-                    className="w-full flex items-center gap-2 border border-dashed border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-500 hover:border-[#26619c] hover:text-[#26619c] transition mb-3"
-                  >
-                    <UserX className="w-4 h-4" /> Não associado / Visitante
-                  </button>
+                {/* CEP Gate */}
+                {showCepGate && !showGuestForm && (
+                  <div className="border border-blue-200 bg-blue-50 rounded-xl p-4 mb-4 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5" /> Informe o CEP da etiqueta da encomenda
+                      </p>
+                      <button type="button" onClick={resetCepGate} className="text-xs text-gray-400 hover:text-gray-600">← Voltar</button>
+                    </div>
+                    <input
+                      value={cepGateValue}
+                      onChange={e => runCepGate(e.target.value)}
+                      className={`${inputCls} ${cepGateValue.replace(/\D/g, '').length > 0 && cepGateValue.replace(/\D/g, '').length < 8 ? 'border-red-300' : ''}`}
+                      placeholder="CEP (apenas números)"
+                      maxLength={9}
+                      inputMode="numeric"
+                      autoFocus
+                    />
+                    {cepGateLoading && (
+                      <p className="text-xs text-blue-600 flex items-center gap-1.5">
+                        <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                        Buscando moradores na mesma rua…
+                      </p>
+                    )}
+                    {cepGateDone && cepGateResidents.length > 0 && (
+                      <div className="border border-amber-300 bg-amber-50 rounded-lg p-2">
+                        <p className="text-xs font-semibold text-amber-800 mb-1.5 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 shrink-0" /> Possíveis cadastros na mesma rua — verifique antes de criar:
+                        </p>
+                        <ul className="flex flex-col gap-0.5">
+                          {cepGateResidents.map(r => (
+                            <li key={r.id}>
+                              <button type="button"
+                                onClick={() => { setSelectedRecipient(r); resetCepGate(); setShowGuestForm(false) }}
+                                className="w-full text-left px-2 py-1.5 rounded-md hover:bg-amber-100 flex items-center gap-2 transition">
+                                <User className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span className="text-xs font-medium text-amber-900">{r.full_name}</span>
+                                <span className="text-[10px] text-amber-600 ml-auto">{r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}{(r as any).unit ? ` · Unid. ${(r as any).unit}` : ''}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="text-[10px] text-amber-600 mt-1.5">Não é nenhum desses? Continue para criar novo cadastro.</p>
+                      </div>
+                    )}
+                    {cepGateDone && (
+                      <button
+                        onClick={() => { setShowGuestForm(true); setShowCepGate(false); setGuest(g => ({ ...g, full_name: recipientSearch, address_cep: cepGateValue.replace(/\D/g, ''), address_street: cepGateStreet })) }}
+                        className="w-full flex items-center justify-center gap-2 border border-dashed border-orange-300 bg-orange-50 rounded-lg px-3 py-2.5 text-sm text-orange-600 hover:border-orange-400 transition"
+                      >
+                        <UserX className="w-4 h-4" /> Cadastrar novo morador
+                      </button>
+                    )}
+                  </div>
                 )}
 
                 {showGuestForm && (

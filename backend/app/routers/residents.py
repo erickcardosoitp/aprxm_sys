@@ -208,6 +208,7 @@ async def create_resident(
 async def search_residents_global(
     q: str,
     type: str | None = None,
+    street: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
@@ -217,6 +218,7 @@ async def search_residents_global(
         return []
     q_digits = ''.join(c for c in q_clean if c.isdigit())
     type_clause = "AND r.type = :rtype" if type else ""
+    street_clause = "AND r.address_street ILIKE :street_pat" if street else ""
     result = await session.execute(
         sa_text(f"""
             SELECT r.id, r.full_name, r.cpf, r.phone_primary, r.phone_secondary,
@@ -226,6 +228,7 @@ async def search_residents_global(
             LEFT JOIN residents resp ON resp.id = r.responsible_id
             WHERE r.association_id = :aid
               {type_clause}
+              {street_clause}
               AND (
                 r.full_name ILIKE :q
                 OR r.cpf ILIKE :qraw
@@ -246,6 +249,7 @@ async def search_residents_global(
             "qraw": f"%{q_clean.replace('.','').replace('-','')}%",
             **( {"qdigits": f"%{q_digits}%"} if q_digits else {} ),
             **( {"rtype": type} if type else {} ),
+            **( {"street_pat": f"%{street.strip()}%"} if street else {} ),
         },
     )
     rows = result.fetchall()
