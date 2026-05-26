@@ -1013,12 +1013,15 @@ export default function PackagesPage() {
   const [bulkCashSessionId, setBulkCashSessionId] = useState('')
   const [bulkSessionPicker, setBulkSessionPicker] = useState<{ id: string; opened_by_name: string; opening_balance: string }[] | null>(null)
   const [bulkSearch, setBulkSearch] = useState('')
+  const [bulkExemptionToken, setBulkExemptionToken] = useState('')
+  const [bulkExemptionError, setBulkExemptionError] = useState('')
 
   const resetBulk = () => {
     setShowBulkDeliver(false); setBulkStep('select'); setBulkSelected(new Set())
     setBulkRecipientName(''); setBulkSig(''); setBulkDeliveryPersonName('')
     setBulkLoading(false); setBulkResult(null); setBulkPaymentMethodId('')
     setBulkCashSessionId(''); setBulkSessionPicker(null); setBulkSearch('')
+    setBulkExemptionToken(''); setBulkExemptionError('')
   }
 
   const bulkFiltered = bulkSearch.trim()
@@ -1047,11 +1050,14 @@ export default function PackagesPage() {
         delivery_person_name: bulkDeliveryPersonName || fullName || undefined,
         payment_method_id: bulkPaymentMethodId || undefined,
         cash_session_id: cash_session_id || undefined,
+        exemption_token: bulkExemptionToken.trim().toUpperCase() || undefined,
       })
       setBulkResult(res.data)
       loadPackages()
       toast.success(`${res.data.delivered} encomenda(s) entregue(s)!`)
     } catch (e: any) {
+      const detail = e?.response?.data?.detail
+      if (detail === 'TOKEN_INVALID') { setBulkExemptionError('Código inválido, expirado ou já utilizado.'); setBulkLoading(false); return }
       toast.error(apiErr(e, 'Erro na entrega múltipla.'))
     } finally {
       setBulkLoading(false)
@@ -1061,8 +1067,8 @@ export default function PackagesPage() {
   const handleBulkDeliver = async () => {
     if (!bulkRecipientName || !bulkSig) { toast.error('Nome e assinatura obrigatórios.'); return }
     if (bulkSelected.size === 0) { toast.error('Selecione ao menos uma encomenda.'); return }
-    if (bulkHasGuest && !bulkPaymentMethodId) { toast.error('Forma de pagamento obrigatória para visitante.'); return }
-    if (bulkHasGuest && !bulkCashSessionId) {
+    if (bulkHasGuest && !bulkPaymentMethodId && !bulkExemptionToken.trim()) { toast.error('Informe a forma de pagamento ou um código de isenção.'); return }
+    if (bulkHasGuest && !bulkExemptionToken.trim() && !bulkCashSessionId) {
       try {
         const sessRes = await financeService.listOpenSessions()
         if (sessRes.data.length === 0) { toast.error('Nenhum caixa aberto para registrar a taxa.'); return }
@@ -1619,12 +1625,12 @@ export default function PackagesPage() {
                     ref={cardReassignInputRef}
                     autoFocus
                     value={cardReassignSearch}
-                    onFocus={e => { const r = e.currentTarget.getBoundingClientRect(); setCardReassignRect({ top: r.bottom + window.scrollY, left: r.left, width: r.width }) }}
+                    onFocus={e => { const r = e.currentTarget.getBoundingClientRect(); setCardReassignRect({ top: r.bottom, left: r.left, width: r.width }) }}
                     onChange={e => {
                       const v = e.target.value
                       setCardReassignSearch(v)
                       const r = e.currentTarget.getBoundingClientRect()
-                      setCardReassignRect({ top: r.bottom + window.scrollY, left: r.left, width: r.width })
+                      setCardReassignRect({ top: r.bottom, left: r.left, width: r.width })
                       if (cardReassignTimer.current) clearTimeout(cardReassignTimer.current)
                       cardReassignTimer.current = setTimeout(() => {
                         if (v.length >= 3) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setCardReassignResults(r.data.slice(0, 5))).catch(() => setCardReassignResults([]))
@@ -3306,13 +3312,31 @@ export default function PackagesPage() {
                       onUpload={dataUrl => uploadService.uploadBase64(dataUrl, 'packages/signatures')}
                     />
                   </div>
-                  {bulkHasGuest && paymentMethods.length > 0 && (
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa <span className="text-red-500">*</span></label>
-                      <select value={bulkPaymentMethodId} onChange={e => setBulkPaymentMethodId(e.target.value)} className={inputCls}>
-                        <option value="">Selecione...</option>
-                        {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
-                      </select>
+                  {bulkHasGuest && (
+                    <div className="flex flex-col gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Código de isenção (opcional)</label>
+                        <input
+                          value={bulkExemptionToken}
+                          onChange={e => { setBulkExemptionToken(e.target.value.toUpperCase()); setBulkExemptionError('') }}
+                          className={`${inputCls} font-mono tracking-widest uppercase`}
+                          placeholder="Ex: A3F8C1"
+                          maxLength={8}
+                        />
+                        {bulkExemptionError && <p className="text-xs text-red-500 mt-1">{bulkExemptionError}</p>}
+                        {bulkExemptionToken.length >= 6 && !bulkExemptionError && (
+                          <p className="text-xs text-green-600 mt-1">Código informado — taxa será isenta se válido.</p>
+                        )}
+                      </div>
+                      {!bulkExemptionToken.trim() && paymentMethods.length > 0 && (
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Forma de pagamento da taxa <span className="text-red-500">*</span></label>
+                          <select value={bulkPaymentMethodId} onChange={e => setBulkPaymentMethodId(e.target.value)} className={inputCls}>
+                            <option value="">Selecione...</option>
+                            {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3320,7 +3344,7 @@ export default function PackagesPage() {
                   <button onClick={() => setBulkStep('select')} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">← Voltar</button>
                   <button
                     onClick={handleBulkDeliver}
-                    disabled={bulkLoading || !bulkSig || !bulkRecipientName || (bulkHasGuest && !bulkPaymentMethodId)}
+                    disabled={bulkLoading || !bulkSig || !bulkRecipientName || (bulkHasGuest && !bulkPaymentMethodId && !bulkExemptionToken.trim())}
                     className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50"
                   >
                     {bulkLoading ? 'Registrando…' : 'Confirmar Entrega'}

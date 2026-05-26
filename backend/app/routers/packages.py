@@ -234,6 +234,7 @@ class BulkDeliverRequest(BaseModel):
     picker_phone: str | None = None
     payment_method_id: UUID | None = None
     cash_session_id: UUID | None = None
+    exemption_token: str | None = None
 
 
 @router.post("/bulk-deliver", summary="Entrega múltipla — mesma assinatura para N encomendas")
@@ -245,6 +246,23 @@ async def bulk_deliver_packages(
     if not body.package_ids:
         from fastapi import HTTPException
         raise HTTPException(422, "Informe ao menos uma encomenda.")
+
+    # Validate exemption token for the whole batch
+    bulk_skip_fee = False
+    if body.exemption_token:
+        from datetime import datetime, timezone
+        token_row = (await session.execute(text("""
+            SELECT id FROM delivery_exemption_tokens
+             WHERE association_id = :aid AND token = :tok
+               AND used_at IS NULL AND expires_at > NOW()
+        """), {"aid": str(current.association_id), "tok": body.exemption_token.upper()})).fetchone()
+        if not token_row:
+            raise HTTPException(status_code=422, detail="TOKEN_INVALID")
+        await session.execute(text("""
+            UPDATE delivery_exemption_tokens SET used_at = NOW() WHERE id = :id
+        """), {"id": str(token_row[0])})
+        bulk_skip_fee = True
+
     svc = PackageService(session)
     results = []
     errors = []
@@ -261,7 +279,7 @@ async def bulk_deliver_packages(
                 resident_key = str(pkg_peek.resident_id)
             else:
                 resident_key = body.delivered_to_name.strip().lower()
-            skip_fee = resident_key in fee_charged_residents
+            skip_fee = bulk_skip_fee or (resident_key in fee_charged_residents)
 
             pkg = await svc.deliver_package(
                 package_id=pkg_id,
