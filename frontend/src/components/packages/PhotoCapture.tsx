@@ -122,11 +122,11 @@ export function PhotoCapture({ label, onCapture, onUpload }: PhotoCaptureProps) 
             <canvas ref={canvasRef} className="hidden" />
             <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-3">
               <button type="button" onClick={stopCamera}
-                className="bg-white/80 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white">
+                className="bg-white/80 text-gray-700 px-4 py-3 rounded-lg text-sm font-medium hover:bg-white">
                 Cancelar
               </button>
               <button type="button" onClick={captureFrame} disabled={loading}
-                className="bg-[#26619c] text-white px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#1a4f87] disabled:opacity-50">
+                className="bg-[#26619c] text-white px-5 py-3 rounded-lg text-sm font-semibold hover:bg-[#1a4f87] disabled:opacity-50">
                 {loading ? 'Enviando…' : 'Capturar'}
               </button>
             </div>

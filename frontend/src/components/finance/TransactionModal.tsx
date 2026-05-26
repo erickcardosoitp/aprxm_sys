@@ -664,7 +664,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 overflow-y-auto">
-      <div className="w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl mx-0 sm:mx-4">
+      <div className="w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl mx-0 sm:mx-4 max-h-[95dvh] overflow-y-auto flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">Nova Transação</h2>
@@ -818,7 +818,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                   {!proofIsento && (
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$) *</label>
-                    <input type="number" min="0.01" step="0.01" value={amount}
+                    <input type="number" inputMode="decimal" min="0.01" step="0.01" value={amount}
                       onChange={e => setAmount(e.target.value)} placeholder="0,00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
@@ -1034,7 +1034,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                           </div>
                           <div>
                             <label className="block text-[10px] text-purple-600 font-semibold mb-1">Entrada (R$)</label>
-                            <input type="number" min="0" step="0.01" value={acordoEntrada}
+                            <input type="number" inputMode="decimal" min="0" step="0.01" value={acordoEntrada}
                               onChange={e => setAcordoEntrada(e.target.value)}
                               placeholder="0,00"
                               className="w-full border border-purple-300 rounded-lg px-2 py-1.5 text-xs bg-white" />
@@ -1099,7 +1099,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                         <span className="ml-1 text-[#26619c] font-normal">(padrão: R$ {parseFloat(settings.default_mensalidade_amount).toFixed(2)})</span>
                       )}
                     </label>
-                    <input type="number" min="0.01" step="0.01" value={amount}
+                    <input type="number" inputMode="decimal" min="0.01" step="0.01" value={amount}
                       onChange={(e) => setAmount(e.target.value)} placeholder="0,00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
@@ -1189,7 +1189,7 @@ export function TransactionModal({ onClose, onSuccess }: Props) {
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Valor da 2ª forma (R$)</label>
                             <input
-                              type="number" min="0.01" step="0.01"
+                              type="number" inputMode="decimal" min="0.01" step="0.01"
                               value={amount2Split}
                               onChange={e => setAmount2Split(e.target.value)}
                               placeholder="0,00"

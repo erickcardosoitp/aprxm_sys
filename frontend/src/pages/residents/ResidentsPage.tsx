@@ -165,7 +165,7 @@ function MultiCheck({ label, options, selected, onChange }: {
       <div className="flex flex-wrap gap-2">
         {options.map((opt) => (
           <button key={opt} type="button" onClick={() => toggle(opt)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
+            className={`px-3 py-2 rounded-full text-xs font-medium border transition ${
               selected.includes(opt)
                 ? 'bg-[#26619c] text-white border-[#26619c]'
                 : 'border-gray-300 text-gray-600 hover:border-[#26619c]'
@@ -188,7 +188,7 @@ function YesNo({ label, value, onChange }: {
         {([true, false] as const).map((v) => (
           <button key={String(v)} type="button"
             onClick={() => onChange(value === v ? null : v)}
-            className={`flex-1 py-1.5 rounded-lg text-sm font-medium border transition ${
+            className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition ${
               value === v ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600'
             }`}>
             {v ? 'Sim' : 'Não'}
@@ -945,8 +945,8 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const STATUS_MAP: Record<string, string> = { pending: 'Pendente', paid: 'Pago', overdue: 'Inadimplente', agreement: 'Em Acordo' }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl mx-4 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 overflow-y-auto">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl mx-4 max-h-[90dvh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div>
             <h3 className="font-semibold text-gray-900">{currentResident.full_name}</h3>
@@ -1020,7 +1020,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           {(['mensalidades', 'inadimplencia', 'encomendas', 'migracao'] as ProfileTab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
-              {t === 'mensalidades' ? 'Mensalidades' : t === 'inadimplencia' ? 'Inadimplência' : t === 'encomendas' ? 'Encomendas' : 'Migração'}
+              {t === 'mensalidades' ? 'Mensais' : t === 'inadimplencia' ? 'Inadimp.' : t === 'encomendas' ? 'Encomen.' : 'Migração'}
             </button>
           ))}
         </div>

@@ -85,7 +85,7 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
           <button
             type="button"
             onClick={handleClear}
-            className="flex items-center justify-center gap-1.5 flex-1 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+            className="flex items-center justify-center gap-1.5 flex-1 py-3 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Limpar
@@ -93,7 +93,7 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="flex items-center justify-center gap-1.5 flex-1 py-2 text-sm rounded-lg border border-[#26619c] text-[#26619c] hover:bg-blue-50 transition"
+            className="flex items-center justify-center gap-1.5 flex-1 py-3 text-sm rounded-lg border border-[#26619c] text-[#26619c] hover:bg-blue-50 transition"
           >
             <PenLine className="w-3.5 h-3.5" />
             Refazer
@@ -136,7 +136,7 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
         <button
           type="button"
           onClick={handleClear}
-          className="flex items-center justify-center gap-1.5 flex-1 py-2.5 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition"
+          className="flex items-center justify-center gap-1.5 flex-1 py-3 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition"
         >
           <RotateCcw className="w-3.5 h-3.5" />
           Limpar
@@ -145,7 +145,7 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
           type="button"
           onClick={handleSave}
           disabled={isEmpty || uploading}
-          className="flex items-center justify-center gap-1.5 flex-1 py-2.5 text-sm rounded-lg bg-[#26619c] hover:bg-[#1a4f87] text-white transition disabled:opacity-40 active:bg-[#1a4f87]"
+          className="flex items-center justify-center gap-1.5 flex-1 py-3 text-sm rounded-lg bg-[#26619c] hover:bg-[#1a4f87] text-white transition disabled:opacity-40 active:bg-[#1a4f87]"
         >
           <Check className="w-3.5 h-3.5" />
           {uploading ? 'Salvando…' : 'Confirmar'}

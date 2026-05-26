@@ -70,10 +70,10 @@ function FinanceiroInner() {
       </h1>
 
       {/* Tab navigation */}
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none -mx-4 px-4">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
-            className={`flex flex-col items-center gap-1 px-2 py-3 rounded-xl text-[11px] font-semibold transition border ${
+            className={`flex flex-col items-center gap-1 px-3 py-3 rounded-xl text-[11px] font-semibold transition border shrink-0 min-w-[68px] ${
               tab === key
                 ? 'bg-[#26619c] text-white border-[#26619c] shadow-md'
                 : 'bg-white text-gray-500 border-gray-200 hover:border-[#26619c]/40 hover:text-[#26619c]'

@@ -350,7 +350,7 @@ export function AppShell() {
 
         <div className="flex items-center gap-2">
           {/* Theme color picker */}
-          <label className="relative p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition cursor-pointer" title="Cor do tema">
+          <label className="relative p-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition cursor-pointer" title="Cor do tema">
             <Palette className="w-5 h-5" />
             <input
               type="color"
@@ -364,7 +364,7 @@ export function AppShell() {
           <NavLink
             to="/chat"
             className={({ isActive }) =>
-              `p-1.5 rounded-xl transition ${isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}`
+              `p-2.5 rounded-xl transition ${isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}`
             }
             onClick={() => {
               setChatUnread(0)
@@ -387,7 +387,7 @@ export function AppShell() {
           <div className="relative" ref={notifRef}>
             <button
               onClick={notifOpen ? () => setNotifOpen(false) : openNotifs}
-              className="relative p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition"
+              className="relative p-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition"
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
@@ -398,7 +398,7 @@ export function AppShell() {
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+              <div className="absolute right-0 top-full mt-1.5 w-80 max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                   <span className="text-sm font-semibold text-gray-800">Notificações</span>
                   {unreadCount > 0 && (
@@ -464,7 +464,7 @@ export function AppShell() {
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+              <div className="absolute right-0 top-full mt-1.5 w-64 max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
                 {/* User info */}
                 <div className="px-4 py-3 border-b border-gray-100">
                   <p className="text-sm font-semibold text-gray-800 truncate">{fullName}</p>

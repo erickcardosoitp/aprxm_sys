@@ -51,6 +51,7 @@ export const packageService = {
       picker_id_photo_url?: string
       picker_phone?: string
       payment_method_id?: string
+      payer_name?: string
       cash_session_id?: string
       exemption_token?: string
     },

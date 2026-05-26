@@ -278,9 +278,9 @@ function DemandModal({ demand, users, onClose, onSaved, serviceOrderId, defaultS
         </div>
 
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 rounded-xl hover:bg-gray-100 transition">Cancelar</button>
+          <button onClick={onClose} className="px-4 py-3 text-sm text-gray-500 hover:text-gray-700 rounded-xl hover:bg-gray-100 transition">Cancelar</button>
           <button onClick={handleSubmit} disabled={saving}
-            className="px-5 py-2 bg-[#26619c] hover:bg-[#1a4f87] text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition">
+            className="px-5 py-3 bg-[#26619c] hover:bg-[#1a4f87] text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition">
             {saving ? 'Salvando…' : isEdit ? 'Salvar' : 'Criar'}
           </button>
         </div>

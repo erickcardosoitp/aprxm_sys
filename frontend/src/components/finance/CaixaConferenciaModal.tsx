@@ -409,7 +409,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
               </div>
               <div className="border-2 border-gray-200 rounded-xl p-5 flex flex-col items-center gap-2">
                 <p className="text-xs text-gray-500 font-medium">Total encontrado (R$)</p>
-                <input type="number" min="0" step="0.01" value={contagemInput}
+                <input type="number" inputMode="decimal" min="0" step="0.01" value={contagemInput}
                   onChange={e => setContagemInput(e.target.value)} placeholder="0,00" autoFocus
                   className="w-full text-center text-3xl font-bold border-b-2 border-[#26619c] py-2 focus:outline-none bg-transparent text-gray-900" />
               </div>
@@ -563,10 +563,10 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                                   <option key={b.id} value={b.id}>{b.is_malote ? '📦 ' : ''}{b.name} ({fmt(b.balance)})</option>
                                 ))}
                               </select>
-                              <input type="number" min="0.01" step="0.01" value={rep.amount}
+                              <input type="number" inputMode="decimal" min="0.01" step="0.01" value={rep.amount}
                                 onChange={e => setRepasses(prev => prev.map((r, j) => j === i ? { ...r, amount: e.target.value } : r))}
                                 placeholder="Valor"
-                                className="w-24 border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none" />
+                                className="w-28 border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none" />
                               <button
                                 onClick={() => handleTransfer(i)}
                                 disabled={transferring || !rep.boxId || !rep.amount || parseFloat(rep.amount || '0') > disponivelReal + 0.005}

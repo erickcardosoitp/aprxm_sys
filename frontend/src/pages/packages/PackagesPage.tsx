@@ -165,10 +165,10 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
   return (
     <div className="fixed inset-0 z-50 bg-black/40 overflow-y-auto">
       <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Detalhes da Encomenda</h3>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+          <button onClick={onClose} className="p-2 -mr-2"><X className="w-5 h-5 text-gray-400" /></button>
         </div>
 
         <div className="px-5 py-4 flex flex-col gap-3">
@@ -304,8 +304,8 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
                       className="w-full border border-red-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-white" />
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setEditingDelivery(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
-                    <button onClick={handleSaveDeliveryEdit} disabled={savingDelivery} className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">{savingDelivery ? 'Salvando…' : 'Salvar'}</button>
+                    <button onClick={() => setEditingDelivery(false)} className="flex-1 border border-gray-300 text-gray-600 py-3 rounded-xl text-sm">Cancelar</button>
+                    <button onClick={handleSaveDeliveryEdit} disabled={savingDelivery} className="flex-1 bg-[#26619c] text-white py-3 rounded-xl text-sm font-semibold disabled:opacity-50">{savingDelivery ? 'Salvando…' : 'Salvar'}</button>
                   </div>
                 </div>
               ) : (<>
@@ -389,9 +389,9 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
                 className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300" />
               <div className="flex gap-2">
                 <button onClick={() => { setShowReversal(false); setReversalReason(''); setReversalPassword('') }}
-                  className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
+                  className="flex-1 border border-gray-300 text-gray-600 py-3 rounded-lg text-sm">Cancelar</button>
                 <button onClick={handleReversal} disabled={reversing}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg text-sm font-semibold disabled:opacity-50">
                   {reversing ? 'Estornando…' : 'Confirmar Estorno'}
                 </button>
               </div>
@@ -432,11 +432,11 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
               />
               <div className="flex gap-2">
                 <button onClick={() => setShowReturnForm(false)}
-                  className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">
+                  className="flex-1 border border-gray-300 text-gray-600 py-3 rounded-lg text-sm">
                   Cancelar
                 </button>
                 <button onClick={handleReturn} disabled={returning}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg text-sm font-medium disabled:opacity-50">
                   {returning ? 'Salvando…' : 'Confirmar Devolução'}
                 </button>
               </div>

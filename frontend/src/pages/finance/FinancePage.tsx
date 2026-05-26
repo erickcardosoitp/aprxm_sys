@@ -53,6 +53,16 @@ function ApprovalModal({
   const [rejectReason, setRejectReason] = useState('')
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ratio = window.devicePixelRatio || 1
+    canvas.width = canvas.offsetWidth * ratio
+    canvas.height = 120 * ratio
+    const ctx = canvas.getContext('2d')
+    if (ctx) ctx.scale(ratio, ratio)
+  }, [rejectMode])
+
   const startDraw = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -120,8 +130,9 @@ function ApprovalModal({
               <p className="text-xs text-gray-500 font-medium">Assinatura do aprovador</p>
               <div className="relative border-2 border-dashed border-gray-200 rounded-xl overflow-hidden bg-gray-50">
                 <canvas
-                  ref={canvasRef} width={320} height={120}
+                  ref={canvasRef}
                   className="w-full touch-none cursor-crosshair"
+                  style={{ height: '120px' }}
                   onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
                   onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
                 />
