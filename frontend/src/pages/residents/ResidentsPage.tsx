@@ -1357,6 +1357,10 @@ export default function ResidentsPage() {
   const [updateRequests, setUpdateRequests] = useState<any[]>([])
   const [loadingRequests, setLoadingRequests] = useState(false)
   const [reviewingRequest, setReviewingRequest] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Resident | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const role = useAuthStore(s => s.role)
+  const isAdmin = ['admin', 'admin_master', 'superadmin'].includes(role ?? '')
 
   const loadUpdateRequests = async () => {
     setLoadingRequests(true)
@@ -1461,6 +1465,7 @@ export default function ResidentsPage() {
       date_of_birth: form.date_of_birth ? parseDateInput(form.date_of_birth) : null,
       move_in_date: form.move_in_date || null,
       cpf: form.cpf ? form.cpf.replace(/\D/g, '') : null,
+      responsible_id: form.responsible_id || null,
     }
     try {
       if (editTarget) {
@@ -1521,6 +1526,22 @@ export default function ResidentsPage() {
       load()
     } catch {
       toast.error('Erro ao atualizar status.')
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await api.delete(`/residents/${deleteTarget.id}`)
+      toast.success('Morador excluído.')
+      setDeleteTarget(null)
+      load()
+      loadCounts()
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao excluir.')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -1727,6 +1748,11 @@ export default function ResidentsPage() {
                     <button onClick={() => toggleStatus(r)} className="text-xs text-gray-400 hover:text-gray-600">
                       {r.status === 'active' ? 'Suspender' : 'Reativar'}
                     </button>
+                    {isAdmin && (
+                      <button onClick={() => setDeleteTarget(r)} className="text-xs text-red-400 hover:text-red-600">
+                        Excluir
+                      </button>
+                    )}
                   </div>
                 </div>
               </li>
@@ -1741,6 +1767,28 @@ export default function ResidentsPage() {
           resident={profileResident}
           onClose={() => setProfileResident(null)}
         />
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
+            <h3 className="font-semibold text-gray-900">Excluir morador</h3>
+            <p className="text-sm text-gray-600">
+              Tem certeza que deseja excluir <strong>{deleteTarget.full_name}</strong>?
+              Essa ação é irreversível e só é permitida se não houver movimentações.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                Cancelar
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-xl disabled:opacity-50">
+                {deleting ? 'Excluindo…' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Dependent Form modal */}

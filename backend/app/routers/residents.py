@@ -2,12 +2,12 @@ from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.tenant import CurrentUser, get_current_user
+from app.core.tenant import CurrentUser, get_current_user, require_admin
 from app.database import get_session
 from app.models.resident import Resident, ResidentStatus, ResidentType
 
@@ -537,6 +537,39 @@ async def update_status(
     resident.status = status
     session.add(resident)
     return {"id": str(resident.id), "status": resident.status}
+
+
+@router.delete("/{resident_id}", summary="Excluir morador (sem movimentações)")
+async def delete_resident(
+    resident_id: UUID,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    resident = (await session.execute(
+        select(Resident).where(
+            Resident.id == resident_id,
+            Resident.association_id == current.association_id,
+        )
+    )).scalar_one_or_none()
+    if not resident:
+        raise HTTPException(status_code=404, detail="Morador não encontrado.")
+
+    checks = await session.execute(text("""
+        SELECT
+            (SELECT COUNT(*) FROM mensalidades WHERE resident_id = :rid) +
+            (SELECT COUNT(*) FROM packages WHERE resident_id = :rid) +
+            (SELECT COUNT(*) FROM transactions WHERE resident_id = :rid) AS total
+    """), {"rid": str(resident_id)})
+    row = checks.fetchone()
+    if row and row[0] > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Não é possível excluir: morador possui movimentações no sistema."
+        )
+
+    await session.delete(resident)
+    await session.commit()
+    return {"id": str(resident_id), "deleted": True}
 
 
 class MergeResidentsRequest(BaseModel):
