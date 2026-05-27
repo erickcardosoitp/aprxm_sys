@@ -1804,6 +1804,8 @@ interface TaskComment {
 }
 
 function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
+  const { userId, role } = useAuthStore()
+  const isManager = canWrite  // admins/managers veem todas; operadores veem só as suas
   const [tasks, setTasks] = useState<DailyTask[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -1863,7 +1865,12 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     try {
       const params: any = {}
       if (filterStatus) params.status = filterStatus
-      if (filterAssigned) params.assigned_to = filterAssigned
+      // managers podem filtrar por qualquer usuário; operadores veem só as suas
+      if (filterAssigned) {
+        params.assigned_to = filterAssigned
+      } else if (!isManager && userId) {
+        params.assigned_to = userId
+      }
       if (filterPeriodFrom || filterPeriodTo) {
         if (filterPeriodFrom) params.date_from = filterPeriodFrom
         if (filterPeriodTo) params.date_to = filterPeriodTo
