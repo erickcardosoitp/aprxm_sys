@@ -2056,14 +2056,22 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
   const downloadPdf = async () => {
     try {
-      const params: any = {}
+      const params: any = { _t: Date.now() }
       if (reportFrom) params.date_from = reportFrom
       if (reportTo) params.date_to = reportTo
       if (reportUserId) params.user_id = reportUserId
       const res = await api.get('/daily-tasks/report/pdf', { params, responseType: 'blob' })
+
+      // extrai filename do Content-Disposition (com fallback)
+      const disp = res.headers?.['content-disposition'] || res.headers?.['Content-Disposition'] || ''
+      const match = disp.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i)
+      const fname = match
+        ? decodeURIComponent(match[1])
+        : `Tarefas - ${reportFrom || 'periodo'}.pdf`
+
       const url = URL.createObjectURL(res.data)
       const a = document.createElement('a')
-      a.href = url; a.download = `tarefas_${reportFrom || 'all'}_${reportTo || 'all'}.pdf`
+      a.href = url; a.download = fname
       a.click(); URL.revokeObjectURL(url)
     } catch { toast.error('Erro ao gerar PDF.') }
   }

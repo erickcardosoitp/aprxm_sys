@@ -592,26 +592,121 @@ async def report_pdf(
     if date_from or date_to:
         period_label = f"Periodo: {fmt_date(date_from) if date_from else '-'} a {fmt_date(date_to) if date_to else '-'}"
 
-    IS_IMAGE = lambda u: bool(u and u.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")))
-    STATUS_LABEL = {"pending": "PENDENTE", "in_progress": "ANDANDO", "done": "FEITA"}
+    # ── Design System ─────────────────────────────────────────────────────────
+    # Paleta: dark navy + accent dourado (não-genérico)
+    INK        = (24, 31, 53)        # primary text
+    INK_MUTED  = (105, 113, 138)     # secondary text
+    INK_FAINT  = (165, 172, 195)     # tertiary
+    BRAND      = (29, 53, 122)       # navy
+    BRAND_SOFT = (235, 240, 252)     # navy 5%
+    ACCENT     = (203, 158, 35)      # gold
+    SUCCESS    = (22, 128, 78)
+    WARNING    = (200, 110, 8)
+    DANGER     = (180, 45, 60)
+    INFO       = (28, 100, 180)
+    PURPLE     = (130, 60, 180)
+    LINE       = (228, 232, 240)
+    SURFACE    = (250, 251, 253)
 
-    def safe(s: str) -> str:
-        _map = {
-            "–": "-", "—": "-", "―": "-",
-            "↳": ">", "→": "->", "←": "<-", "•": "*",
-            "…": "...", "‘": "'", "’": "'",
-            "“": '"', "”": '"', "\xa0": " ",
-        }
-        for src, dst in _map.items():
-            s = s.replace(src, dst)
-        return s.encode("latin-1", errors="replace").decode("latin-1")
+    STATUS_LABEL = {"pending": "Pendente", "in_progress": "Em andamento", "done": "Concluída", "blocked": "Bloqueada"}
+    STATUS_COLOR = {
+        "pending":     (WARNING, (255, 243, 224)),
+        "in_progress": (INFO,    (224, 239, 255)),
+        "done":        (SUCCESS, (224, 247, 235)),
+        "blocked":     (DANGER,  (253, 230, 233)),
+    }
+    OS_STATUS_LABEL = {
+        "open": "Aberta", "in_progress": "Em andamento",
+        "waiting_third_party": "Aguard. terceiro",
+        "resolved": "Resolvida", "cancelled": "Cancelada",
+    }
+    OS_STATUS_COLOR = {
+        "open":                (WARNING, (255, 243, 224)),
+        "in_progress":         (INFO,    (224, 239, 255)),
+        "waiting_third_party": (PURPLE,  (240, 230, 250)),
+    }
+    OS_PRIORITY_LABEL = {"low": "Baixa", "medium": "Média", "high": "Alta", "critical": "Crítica"}
+    OS_PRIORITY_COLOR = {
+        "low":      (INK_MUTED, (240, 242, 247)),
+        "medium":   (INFO,      (224, 239, 255)),
+        "high":     (WARNING,   (255, 243, 224)),
+        "critical": (DANGER,    (253, 230, 233)),
+    }
+    IS_IMAGE = lambda u: bool(u and u.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")))
+
+    # ── Custom PDF class com header/footer ───────────────────────────────────
+    class ReportPDF(FPDF):
+        page_label = ""
+
+        def header(self):
+            if self.page_no() > 0 and hasattr(self, "_skip_header"):
+                return
+
+        def footer(self):
+            self.set_y(-12)
+            self.set_font("DejaVu", size=7)
+            self.set_text_color(*INK_FAINT)
+            now_str = _dt.utcnow().strftime("%d/%m/%Y às %H:%M")
+            self.cell(0, 4, f"Gerado em {now_str}  •  APRXM  •  Página {self.page_no()}", align="C")
+
+    pdf = ReportPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.set_margins(left=14, top=14, right=14)
+
+    # Registrar DejaVu Sans (Unicode nativo)
+    import os as _os
+    font_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "assets", "fonts")
+    pdf.add_font("DejaVu", "", _os.path.join(font_dir, "DejaVuSans.ttf"))
+    pdf.add_font("DejaVu", "B", _os.path.join(font_dir, "DejaVuSans-Bold.ttf"))
+    pdf.add_font("DejaVu", "I", _os.path.join(font_dir, "DejaVuSans-Oblique.ttf"))
+
+    def hr(pdf: FPDF, y_offset=0):
+        y = pdf.get_y() + y_offset
+        pdf.set_draw_color(*LINE)
+        pdf.set_line_width(0.2)
+        pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
+
+    def badge(pdf: FPDF, text: str, fg: tuple, bg: tuple, padding_x=2.5, height=4.5):
+        """Renderiza um badge tipo pill com background colorido."""
+        pdf.set_font("DejaVu", "B", 7)
+        w = pdf.get_string_width(text) + padding_x * 2
+        x, y = pdf.get_x(), pdf.get_y()
+        pdf.set_fill_color(*bg)
+        pdf.set_draw_color(*bg)
+        pdf.rect(x, y, w, height, style="F", round_corners=True, corner_radius=1.2)
+        pdf.set_text_color(*fg)
+        pdf.set_xy(x, y + 0.3)
+        pdf.cell(w, height - 0.6, text, align="C")
+        pdf.set_xy(x + w + 1.5, y)
+        pdf.set_text_color(*INK)
+
+    def initials(name: str) -> str:
+        parts = [p for p in name.strip().split() if p]
+        if not parts: return "?"
+        if len(parts) == 1: return parts[0][:2].upper()
+        return (parts[0][0] + parts[-1][0]).upper()
+
+    def kpi_card(pdf: FPDF, x: float, y: float, w: float, h: float, label: str, value: str, color: tuple):
+        pdf.set_fill_color(*SURFACE)
+        pdf.set_draw_color(*LINE)
+        pdf.set_line_width(0.2)
+        pdf.rect(x, y, w, h, style="DF", round_corners=True, corner_radius=1.5)
+        pdf.set_xy(x + 2.5, y + 2)
+        pdf.set_font("DejaVu", "", 7)
+        pdf.set_text_color(*INK_MUTED)
+        pdf.cell(w - 5, 3.5, label.upper())
+        pdf.set_xy(x + 2.5, y + 5.8)
+        pdf.set_font("DejaVu", "B", 13)
+        pdf.set_text_color(*color)
+        pdf.cell(w - 5, 6, value)
+        pdf.set_text_color(*INK)
 
     def embed_attachments(pdf: FPDF, urls: list):
         if not urls: return
-        pdf.set_font("Helvetica", size=8)
-        pdf.set_text_color(150, 150, 150)
-        pdf.cell(0, 4, "Anexos:", ln=True)
-        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("DejaVu", "", 7)
+        pdf.set_text_color(*INK_MUTED)
+        pdf.cell(0, 3.5, "Anexos:", ln=True)
+        pdf.set_text_color(*INK)
         images = [u for u in urls if IS_IMAGE(u)]
         files = [u for u in urls if not IS_IMAGE(u)]
         if images:
@@ -623,189 +718,291 @@ async def report_pdf(
                     from io import BytesIO as _BIO
                     req = _ur.Request(img_url, headers={"User-Agent": "APRXM/1.0"})
                     with _ur.urlopen(req, timeout=3) as resp:
-                        buf = _BIO(resp.read())
+                        buf2 = _BIO(resp.read())
                     col = i % 4
-                    if i > 0 and col == 0:
-                        y += 13
-                    pdf.image(buf, x=x0 + col * 13, y=y, w=11, h=11)
+                    if i > 0 and col == 0: y += 13
+                    pdf.image(buf2, x=x0 + col * 13, y=y, w=11, h=11)
                 except Exception:
-                    pdf.set_font("Helvetica", size=7)
-                    pdf.set_text_color(180, 50, 50)
-                    pdf.cell(0, 4, "[imagem indisponível]", ln=True)
-                    pdf.set_text_color(0, 0, 0)
+                    pass
             rows_used = (len(images) - 1) // 4 + 1
             pdf.set_y(y + rows_used * 13)
         for fu in files:
-            name = fu.split("/")[-1].split("?")[0][:40]
-            pdf.set_font("Helvetica", size=8)
-            pdf.set_text_color(40, 80, 200)
-            pdf.cell(0, 5, f"  {name}", link=fu, ln=True)
-            pdf.set_text_color(0, 0, 0)
+            name = fu.split("/")[-1].split("?")[0][:50]
+            pdf.set_font("DejaVu", "", 7)
+            pdf.set_text_color(*INFO)
+            pdf.cell(0, 4, f"  ↳ {name}", link=fu, ln=True)
+            pdf.set_text_color(*INK)
 
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=10)
-
+    # ── Renderiza uma página por colaborador ─────────────────────────────────
     for uid, entry in users_map.items():
         pdf.add_page()
 
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(130, 6, safe(assoc_name), ln=False)
+        # Header: banda colorida no topo
+        pdf.set_fill_color(*BRAND)
+        pdf.rect(0, 0, pdf.w, 4, style="F")
+
+        # Title block
+        pdf.set_y(8)
+        pdf.set_font("DejaVu", "B", 16)
+        pdf.set_text_color(*INK)
+        pdf.cell(0, 7, assoc_name, ln=True)
+
+        pdf.set_font("DejaVu", "", 8)
+        pdf.set_text_color(*INK_MUTED)
+        subtitle = "Relatório de Atividades — Tarefas Diárias e Ordens de Serviço"
         if period_label:
-            pdf.set_font("Helvetica", size=8)
-            pdf.set_text_color(120, 120, 120)
-            pdf.cell(0, 6, safe(period_label), ln=True, align="R")
-            pdf.set_text_color(0, 0, 0)
-        else:
-            pdf.ln()
-        pdf.set_font("Helvetica", size=9)
-        pdf.set_text_color(80, 80, 80)
-        pdf.cell(0, 4, safe("Tarefas Diarias - Relatorio de Entregas"), ln=True)
-        pdf.set_text_color(0, 0, 0)
-        pdf.ln(1.5)
+            subtitle = f"{subtitle}  •  {period_label}"
+        pdf.cell(0, 4, subtitle, ln=True)
+        pdf.ln(3)
 
-        pdf.set_fill_color(235, 242, 255)
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 6, safe(f"  COLABORADOR: {entry['user_name'].upper()}"), fill=True, ln=True)
-
+        # Card do colaborador (avatar circular + nome + KPIs)
         tasks = entry["tasks"]
+        os_list = entry.get("os_list", [])
         total_items = sum(len(t["checklist"]) for t in tasks)
         done_items = sum(sum(1 for i in t["checklist"] if i.get("done")) for t in tasks)
-        pdf.set_font("Helvetica", size=8)
-        pdf.set_text_color(80, 80, 80)
-        pdf.cell(0, 5, f"  {len(tasks)} tarefa(s)  |  {done_items} entrega(s) OK  |  {total_items - done_items} pendente(s)", ln=True)
-        pdf.set_text_color(0, 0, 0)
-        pdf.ln(1.5)
+        pending_items = total_items - done_items
 
-        for task in tasks:
-            badge = STATUS_LABEL.get(task["status"], task["status"].upper())
-            due_str = f"  Prazo: {fmt_date(task['due_date'])}" if task["due_date"] else ""
+        card_y = pdf.get_y()
+        card_h = 22
+        pdf.set_fill_color(*BRAND_SOFT)
+        pdf.set_draw_color(*BRAND_SOFT)
+        pdf.rect(pdf.l_margin, card_y, pdf.w - pdf.l_margin - pdf.r_margin, card_h, style="F", round_corners=True, corner_radius=2)
 
-            pdf.set_fill_color(245, 248, 255)
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.multi_cell(0, 5.5, safe(f"  > {task['title']}{due_str}  [{badge}]"), fill=True, new_x="LMARGIN", new_y="NEXT")
+        # Avatar circular com iniciais
+        avatar_size = 14
+        avatar_x = pdf.l_margin + 4
+        avatar_y = card_y + (card_h - avatar_size) / 2
+        pdf.set_fill_color(*BRAND)
+        pdf.ellipse(avatar_x, avatar_y, avatar_size, avatar_size, style="F")
+        pdf.set_font("DejaVu", "B", 10)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_xy(avatar_x, avatar_y + 4)
+        pdf.cell(avatar_size, 6, initials(entry["user_name"]), align="C")
 
-            if task.get("so_title"):
-                pdf.set_font("Helvetica", "I", 7)
-                pdf.set_text_color(80, 80, 200)
-                pdf.cell(0, 3.5, safe(f"    OS: {task['so_title']}"), ln=True)
-                pdf.set_text_color(0, 0, 0)
+        # Nome + role
+        pdf.set_xy(avatar_x + avatar_size + 4, card_y + 4)
+        pdf.set_font("DejaVu", "B", 12)
+        pdf.set_text_color(*INK)
+        pdf.cell(80, 6, entry["user_name"], ln=True)
+        pdf.set_xy(avatar_x + avatar_size + 4, card_y + 10)
+        pdf.set_font("DejaVu", "", 8)
+        pdf.set_text_color(*INK_MUTED)
+        pdf.cell(80, 4, "Colaborador")
 
-            task_comments = comments_map.get(task["id"], [])
-            pdf.set_font("Helvetica", size=8)
-            if task["checklist"]:
-                for ci, item in enumerate(task["checklist"]):
-                    mark = "[OK]" if item.get("done") else "[  ]"
-                    col = (0, 120, 0) if item.get("done") else (160, 160, 160)
-                    pdf.set_text_color(*col)
-                    pdf.set_font("Helvetica", "B", 8)
-                    pdf.cell(0, 4, safe(f"    {mark}  {item['text']}"), ln=True)
-                    item_comments = [c for c in task_comments if c.get("checklist_index") == ci]
-                    for c in item_comments:
-                        pdf.set_font("Helvetica", "I", 7)
-                        pdf.set_text_color(120, 120, 120)
-                        prefix = f"      > [{c['created_at']}] {c['author_name']}: "
-                        txt = prefix + (c["comment"] or "")
-                        pdf.multi_cell(0, 3.5, safe(txt), new_x="LMARGIN", new_y="NEXT")
-                    pdf.set_text_color(0, 0, 0)
-                pdf.set_text_color(0, 0, 0)
-            else:
-                pdf.set_text_color(140, 140, 140)
-                pdf.cell(0, 4, "    (sem itens de entrega)", ln=True)
-                pdf.set_text_color(0, 0, 0)
+        # KPIs à direita (4 cards pequenos)
+        kpis_x = pdf.l_margin + 90
+        kpi_w = (pdf.w - pdf.r_margin - kpis_x - 6) / 4
+        kpi_y = card_y + 4
+        kpi_h = card_h - 8
+        kpi_card(pdf, kpis_x + 0 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "Tarefas", str(len(tasks)), BRAND)
+        kpi_card(pdf, kpis_x + 1 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "Entregues", str(done_items), SUCCESS)
+        kpi_card(pdf, kpis_x + 2 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "Pendentes", str(pending_items), WARNING)
+        kpi_card(pdf, kpis_x + 3 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "O.S Ativas", str(len(os_list)), INFO)
 
-            general_comments = [c for c in task_comments if c.get("checklist_index") is None]
-            if general_comments:
-                pdf.set_font("Helvetica", "I", 7)
-                pdf.set_text_color(100, 100, 100)
-                for c in general_comments:
-                    txt = f"      > [{c['created_at']}] {c['author_name']}: {c['comment'] or ''}"
-                    pdf.multi_cell(0, 3.5, safe(txt), new_x="LMARGIN", new_y="NEXT")
-                pdf.set_text_color(0, 0, 0)
+        pdf.set_y(card_y + card_h + 6)
 
-            embed_attachments(pdf, task["attachment_urls"])
+        # ── Seção: TAREFAS ────────────────────────────────────────────────
+        if tasks:
+            pdf.set_font("DejaVu", "B", 10)
+            pdf.set_text_color(*INK)
+            pdf.cell(0, 5, "TAREFAS DO PERÍODO", ln=True)
+            hr(pdf, 0.5)
+            pdf.ln(2.5)
 
-            pdf.ln(1)
+            for task in tasks:
+                status = task["status"] or "pending"
+                fg, bg = STATUS_COLOR.get(status, (INK_MUTED, SURFACE))
+                status_label = STATUS_LABEL.get(status, status.upper())
 
-        # Seção de O.S em andamento/abertas
-        os_list = entry.get("os_list", [])
+                task_y_start = pdf.get_y()
+
+                # Borda esquerda colorida (4mm)
+                pdf.set_fill_color(*fg)
+                pdf.rect(pdf.l_margin, task_y_start, 0.8, 5, style="F")
+
+                # Título da tarefa
+                pdf.set_xy(pdf.l_margin + 3, task_y_start)
+                pdf.set_font("DejaVu", "B", 10)
+                pdf.set_text_color(*INK)
+                pdf.cell(120, 5, task["title"], ln=False)
+
+                # Status badge à direita
+                pdf.set_xy(pdf.w - pdf.r_margin - 30, task_y_start + 0.3)
+                badge(pdf, status_label, fg, bg)
+
+                pdf.set_y(task_y_start + 5.5)
+
+                # Metadata row (prazo + OS link)
+                meta = []
+                if task["due_date"]:
+                    meta.append(f"Prazo: {fmt_date(task['due_date'])}")
+                if task.get("so_title"):
+                    meta.append(f"OS: {task['so_title']}")
+                if meta:
+                    pdf.set_x(pdf.l_margin + 3)
+                    pdf.set_font("DejaVu", "", 7.5)
+                    pdf.set_text_color(*INK_MUTED)
+                    pdf.cell(0, 3.5, "  •  ".join(meta), ln=True)
+
+                pdf.ln(1)
+
+                # Checklist
+                task_comments = comments_map.get(task["id"], [])
+                if task["checklist"]:
+                    for ci, item in enumerate(task["checklist"]):
+                        done = item.get("done")
+                        mark = "✓" if done else "○"
+                        mark_color = SUCCESS if done else INK_FAINT
+                        pdf.set_x(pdf.l_margin + 4)
+                        pdf.set_font("DejaVu", "B", 9)
+                        pdf.set_text_color(*mark_color)
+                        pdf.cell(4, 4, mark, ln=False)
+                        pdf.set_font("DejaVu", "", 8.5)
+                        pdf.set_text_color(*INK)
+                        pdf.multi_cell(0, 4, item.get("text", ""), new_x="LMARGIN", new_y="NEXT")
+
+                        # Comentários do item
+                        item_comments = [c for c in task_comments if c.get("checklist_index") == ci]
+                        for c in item_comments:
+                            pdf.set_x(pdf.l_margin + 10)
+                            pdf.set_font("DejaVu", "", 7.5)
+                            pdf.set_text_color(*INK_MUTED)
+                            ts_author = f"[{c['created_at']}] {c['author_name']}:"
+                            pdf.cell(pdf.get_string_width(ts_author) + 1, 4, ts_author, ln=False)
+                            pdf.set_font("DejaVu", "I", 7.5)
+                            pdf.set_text_color(*INK)
+                            pdf.multi_cell(0, 4, f" {c['comment'] or ''}", new_x="LMARGIN", new_y="NEXT")
+                else:
+                    pdf.set_x(pdf.l_margin + 4)
+                    pdf.set_font("DejaVu", "I", 8)
+                    pdf.set_text_color(*INK_FAINT)
+                    pdf.cell(0, 4, "Sem itens de entrega cadastrados.", ln=True)
+
+                # Comentários gerais (sem checklist_index)
+                general_comments = [c for c in task_comments if c.get("checklist_index") is None]
+                if general_comments:
+                    pdf.ln(0.5)
+                    pdf.set_x(pdf.l_margin + 4)
+                    pdf.set_font("DejaVu", "B", 7)
+                    pdf.set_text_color(*INK_MUTED)
+                    pdf.cell(0, 3.5, "OBSERVAÇÕES", ln=True)
+                    for c in general_comments:
+                        pdf.set_x(pdf.l_margin + 6)
+                        pdf.set_font("DejaVu", "", 7.5)
+                        pdf.set_text_color(*INK_MUTED)
+                        prefix = f"[{c['created_at']}] {c['author_name']}:"
+                        pdf.cell(pdf.get_string_width(prefix) + 1, 4, prefix, ln=False)
+                        pdf.set_font("DejaVu", "I", 7.5)
+                        pdf.set_text_color(*INK)
+                        pdf.multi_cell(0, 4, f" {c['comment'] or ''}", new_x="LMARGIN", new_y="NEXT")
+
+                if task.get("attachment_urls"):
+                    pdf.ln(0.5)
+                    pdf.set_x(pdf.l_margin + 4)
+                    embed_attachments(pdf, task["attachment_urls"])
+
+                pdf.ln(3)
+
+        # ── Seção: O.S EM ANDAMENTO ──────────────────────────────────────
         if os_list:
-            OS_STATUS_LABEL = {
-                "open": "Aberta", "in_progress": "Em andamento",
-                "waiting_third_party": "Aguard. terceiro",
-                "resolved": "Resolvida", "cancelled": "Cancelada",
-            }
-            OS_PRIORITY_LABEL = {
-                "low": "Baixa", "medium": "Media",
-                "high": "Alta", "critical": "Critica",
-            }
-            OS_STATUS_COLOR = {
-                "open": (200, 130, 0),
-                "in_progress": (20, 100, 200),
-                "waiting_third_party": (130, 60, 180),
-            }
             pdf.ln(1)
-            pdf.set_fill_color(230, 240, 255)
-            pdf.set_font("Helvetica", "B", 8)
-            pdf.set_text_color(30, 70, 160)
-            pdf.cell(0, 5, safe(f"  O.S EM ANDAMENTO ({len(os_list)})"), fill=True, ln=True)
-            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("DejaVu", "B", 10)
+            pdf.set_text_color(*INK)
+            pdf.cell(0, 5, f"ORDENS DE SERVIÇO ATIVAS  ({len(os_list)})", ln=True)
+            hr(pdf, 0.5)
+            pdf.ln(2.5)
+
             for os_item in os_list:
-                status_label = OS_STATUS_LABEL.get(os_item["status"], os_item["status"].upper())
-                priority_label = OS_PRIORITY_LABEL.get(os_item["priority"] or "", "")
-                color = OS_STATUS_COLOR.get(os_item["status"], (80, 80, 80))
-                num_str = f"#{os_item['number']}" if os_item["number"] else "-"
-                updated = f"  Atualizado: {os_item['updated_at']}" if os_item["updated_at"] else ""
+                status = os_item["status"]
+                fg, bg = OS_STATUS_COLOR.get(status, (INK_MUTED, SURFACE))
+                status_label = OS_STATUS_LABEL.get(status, status.upper())
+                priority = os_item.get("priority")
+                p_fg, p_bg = OS_PRIORITY_COLOR.get(priority or "", (INK_MUTED, SURFACE))
+                priority_label = OS_PRIORITY_LABEL.get(priority or "", "")
 
-                # Linha 1: número + status (bold, colorido)
-                pdf.set_font("Helvetica", "B", 8)
-                pdf.set_text_color(*color)
-                header = f"  {num_str}  [{status_label}]"
+                os_y_start = pdf.get_y()
+                pdf.set_fill_color(*fg)
+                pdf.rect(pdf.l_margin, os_y_start, 0.8, 5, style="F")
+
+                # Linha 1: número + título + badges direita
+                pdf.set_xy(pdf.l_margin + 3, os_y_start)
+                pdf.set_font("DejaVu", "B", 9.5)
+                pdf.set_text_color(*BRAND)
+                num_str = f"#{os_item['number']}" if os_item["number"] else "—"
+                pdf.cell(pdf.get_string_width(num_str) + 2, 5, num_str, ln=False)
+                pdf.set_font("DejaVu", "B", 9.5)
+                pdf.set_text_color(*INK)
+
+                # Badges no canto direito (status + prioridade)
+                badges_x = pdf.w - pdf.r_margin - 56
+                pdf.set_xy(badges_x, os_y_start + 0.3)
+                badge(pdf, status_label, fg, bg)
                 if priority_label:
-                    header += f"  Prioridade: {priority_label}"
-                pdf.cell(0, 4.5, safe(header), ln=True)
+                    badge(pdf, priority_label, p_fg, p_bg)
 
-                # Linha 2: título (normal, escuro)
-                pdf.set_font("Helvetica", size=8)
-                pdf.set_text_color(30, 30, 30)
-                pdf.multi_cell(0, 4, safe(f"    {os_item['title']}{updated}"), new_x="LMARGIN", new_y="NEXT")
+                # Título (com espaço para badges)
+                title_x = pdf.l_margin + 3 + pdf.get_string_width(num_str) + 3
+                title_w = badges_x - title_x - 2
+                pdf.set_xy(title_x, os_y_start)
+                pdf.set_font("DejaVu", "B", 9.5)
+                pdf.set_text_color(*INK)
+                # truncar se muito longo
+                title = os_item["title"]
+                while pdf.get_string_width(title) > title_w and len(title) > 10:
+                    title = title[:-1]
+                if title != os_item["title"]:
+                    title = title.rstrip() + "…"
+                pdf.cell(title_w, 5, title, ln=False)
 
-                # Linha 3: categoria / área (se houver)
+                pdf.set_y(os_y_start + 5.5)
+
+                # Meta (categoria, área, atualização)
                 meta_parts = []
                 if os_item.get("category_name"): meta_parts.append(os_item["category_name"])
                 if os_item.get("area"): meta_parts.append(os_item["area"])
+                if os_item.get("updated_at"): meta_parts.append(f"Atualizada {os_item['updated_at']}")
                 if meta_parts:
-                    pdf.set_font("Helvetica", "I", 7)
-                    pdf.set_text_color(100, 100, 100)
-                    pdf.cell(0, 3.5, safe(f"    {' | '.join(meta_parts)}"), ln=True)
-                    pdf.set_text_color(0, 0, 0)
+                    pdf.set_x(pdf.l_margin + 3)
+                    pdf.set_font("DejaVu", "", 7.5)
+                    pdf.set_text_color(*INK_MUTED)
+                    pdf.cell(0, 3.5, "  •  ".join(meta_parts), ln=True)
 
-                # Linha 4: descrição (resumida)
+                # Descrição
                 desc = (os_item.get("description") or "").strip()
                 if desc:
-                    pdf.set_font("Helvetica", "I", 7)
-                    pdf.set_text_color(80, 80, 80)
-                    desc_short = desc[:300] + ("..." if len(desc) > 300 else "")
-                    pdf.multi_cell(0, 3.5, safe(f"    {desc_short}"), new_x="LMARGIN", new_y="NEXT")
-                    pdf.set_text_color(0, 0, 0)
+                    pdf.ln(0.5)
+                    pdf.set_x(pdf.l_margin + 3)
+                    pdf.set_font("DejaVu", "", 8)
+                    pdf.set_text_color(*INK)
+                    desc_short = desc[:400] + ("…" if len(desc) > 400 else "")
+                    pdf.multi_cell(0, 4, desc_short, new_x="LMARGIN", new_y="NEXT")
 
-                # Comentários da OS
+                # Comentários
                 os_comments = os_comments_map.get(os_item["id"], [])
                 if os_comments:
+                    pdf.ln(0.5)
+                    pdf.set_x(pdf.l_margin + 3)
+                    pdf.set_font("DejaVu", "B", 7)
+                    pdf.set_text_color(*INK_MUTED)
+                    pdf.cell(0, 3.5, f"ATUALIZAÇÕES ({len(os_comments)})", ln=True)
                     for oc in os_comments:
-                        pdf.set_font("Helvetica", "I", 7)
-                        pdf.set_text_color(120, 120, 120)
-                        txt = f"      > [{oc['created_at']}] {oc['author']}: {oc['comment']}"
-                        pdf.multi_cell(0, 3.5, safe(txt), new_x="LMARGIN", new_y="NEXT")
-                    pdf.set_text_color(0, 0, 0)
+                        pdf.set_x(pdf.l_margin + 6)
+                        pdf.set_font("DejaVu", "", 7.5)
+                        pdf.set_text_color(*INK_MUTED)
+                        prefix = f"[{oc['created_at']}] {oc['author']}:"
+                        pdf.cell(pdf.get_string_width(prefix) + 1, 4, prefix, ln=False)
+                        pdf.set_font("DejaVu", "I", 7.5)
+                        pdf.set_text_color(*INK)
+                        pdf.multi_cell(0, 4, f" {oc['comment']}", new_x="LMARGIN", new_y="NEXT")
 
-                pdf.ln(1.5)
-            pdf.ln(0.5)
+                pdf.ln(3)
 
-        pdf.set_y(-9)
-        pdf.set_font("Helvetica", size=6.5)
-        pdf.set_text_color(170, 170, 170)
-        now_str = _dt.utcnow().strftime("%d/%m/%Y %H:%M")
-        pdf.cell(0, 4, f"Gerado em {now_str} - APRXM", align="C", ln=True)
+        # Vazio
+        if not tasks and not os_list:
+            pdf.ln(10)
+            pdf.set_font("DejaVu", "I", 10)
+            pdf.set_text_color(*INK_FAINT)
+            pdf.cell(0, 8, "Sem atividades registradas no período.", align="C", ln=True)
 
     buf = _BytesIO()
     buf.write(bytes(pdf.output()))

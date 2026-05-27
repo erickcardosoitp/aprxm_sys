@@ -1,1 +1,5 @@
 .vercel
+__pycache__/
+*.pyc
+output/
+test_pdf.py
