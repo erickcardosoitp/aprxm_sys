@@ -272,72 +272,72 @@ async def report_by_user(
     aids = await _group_assoc_ids(str(current.association_id), session)
     params: dict = {"aids": aids}
     date_filter_task = ""
-    date_filter_comment = ""
     date_filter_os_hist = ""
     date_filter_os_comment = ""
-    uid_filter = ""
+    uid_filter_task = ""
+    uid_filter_user = ""
     if date_from:
         date_filter_task += " AND t.created_at >= CAST(:df AS timestamptz)"
-        date_filter_comment += " AND c.created_at >= CAST(:df AS timestamptz)"
         date_filter_os_hist += " AND h.changed_at >= CAST(:df AS timestamptz)"
         date_filter_os_comment += " AND c.created_at >= CAST(:df AS timestamptz)"
         params["df"] = date.fromisoformat(date_from)
     if date_to:
         date_filter_task += " AND t.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
-        date_filter_comment += " AND c.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
         date_filter_os_hist += " AND h.changed_at < CAST(:dt AS timestamptz) + interval '1 day'"
         date_filter_os_comment += " AND c.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
         params["dt"] = date.fromisoformat(date_to)
     if user_id:
-        uid_filter = " AND u.id = :uid"
+        uid_filter_task = " AND (t.assigned_to = :uid OR t.created_by = :uid)"
+        uid_filter_user = " AND u.id = :uid"
         params["uid"] = user_id
 
+    # Tasks — FROM daily_tasks para incluir tarefas ITP mesmo com assigned_to deletado
     task_rows = (await session.execute(text(f"""
         SELECT
-            u.id AS user_id,
-            u.full_name AS user_name,
+            COALESCE(ua.full_name, t.assigned_to_name, uc.full_name, 'Desconhecido') AS user_name,
             t.id, t.title, t.status, t.due_date, t.service_order_title,
-            t.checklist, t.created_at, t.updated_at,
-            CASE WHEN t.assigned_to = u.id THEN 'assigned' ELSE 'created' END AS relation
-        FROM users u
-        JOIN daily_tasks t ON u.id = COALESCE(t.assigned_to, t.created_by)
+            t.checklist, t.created_at,
+            CASE WHEN t.assigned_to IS NOT NULL THEN 'assigned' ELSE 'created' END AS relation
+        FROM daily_tasks t
+        LEFT JOIN users ua ON ua.id = t.assigned_to
+        LEFT JOIN users uc ON uc.id = t.created_by
         WHERE t.association_id = ANY(:aids)
-          AND u.association_id = ANY(:aids)
-          {date_filter_task}{uid_filter}
-        ORDER BY u.full_name, t.created_at DESC
+          {date_filter_task}{uid_filter_task}
+        ORDER BY user_name, t.created_at DESC
     """), params)).fetchall()
 
-    comment_rows = (await session.execute(text(f"""
-        SELECT
-            c.created_by AS user_id,
-            u.full_name AS user_name,
-            c.id, c.comment, c.created_at,
-            t.id AS task_id, t.title AS task_title
-        FROM daily_task_comments c
-        JOIN users u ON u.id = c.created_by
-        JOIN daily_tasks t ON t.id = c.task_id
-        WHERE c.association_id = ANY(:aids)
-          {date_filter_comment}{uid_filter}
-        ORDER BY c.created_at DESC
-    """), params)).fetchall()
+    # Comentários — buscar por task_id (para embedar em cada tarefa)
+    task_ids = list({str(r[1]) for r in task_rows})
+    comments_by_task: dict = {}
+    if task_ids:
+        c_rows = (await session.execute(text("""
+            SELECT c.task_id, u.full_name, c.id, c.comment, c.created_at, c.checklist_index
+            FROM daily_task_comments c
+            JOIN users u ON u.id = c.created_by
+            WHERE c.task_id = ANY(:tids)
+            ORDER BY c.created_at ASC
+        """), {"tids": task_ids})).fetchall()
+        for cr in c_rows:
+            comments_by_task.setdefault(str(cr[0]), []).append({
+                "commenter": cr[1], "id": str(cr[2]),
+                "comment": cr[3], "created_at": str(cr[4])[:16],
+                "checklist_index": cr[5],
+            })
 
     # OS: mudanças de status (service_order_history)
     os_hist_rows = (await session.execute(text(f"""
         SELECT
             h.changed_by AS user_id,
             u.full_name AS user_name,
-            h.to_status,
-            h.changed_at,
-            so.id AS so_id,
-            so.title AS so_title,
-            so.number AS so_number
+            h.to_status, h.changed_at,
+            so.id AS so_id, so.title AS so_title, so.number AS so_number
         FROM service_order_history h
         JOIN users u ON u.id = h.changed_by
         JOIN service_orders so ON so.id = h.service_order_id
         WHERE h.association_id = ANY(:aids)
           AND u.association_id = ANY(:aids)
           AND h.to_status IN ('resolved', 'in_progress', 'cancelled')
-          {date_filter_os_hist}{uid_filter}
+          {date_filter_os_hist}{uid_filter_user}
         ORDER BY h.changed_at DESC
     """), params)).fetchall()
 
@@ -346,102 +346,99 @@ async def report_by_user(
         SELECT
             c.created_by AS user_id,
             u.full_name AS user_name,
-            c.id,
-            c.comment,
-            c.created_at,
-            so.id AS so_id,
-            so.title AS so_title,
-            so.number AS so_number
+            c.id, c.comment, c.created_at,
+            so.id AS so_id, so.title AS so_title, so.number AS so_number
         FROM service_order_comments c
         JOIN users u ON u.id = c.created_by
         JOIN service_orders so ON so.id = c.service_order_id
         WHERE c.association_id = ANY(:aids)
-          {date_filter_os_comment}{uid_filter}
+          {date_filter_os_comment}{uid_filter_user}
         ORDER BY c.created_at DESC
     """), params)).fetchall()
 
     import json as _json
 
-    def _ensure_user(uid: str, name: str, um: dict) -> None:
-        if uid not in um:
-            um[uid] = {
-                "user_id": uid, "user_name": name,
-                "tasks": [], "comments": [],
+    # Agrupar por nome (unifica mesma pessoa em associações diferentes)
+    users_map: dict = {}  # key = user_name.lower()
+
+    def _ensure(name: str) -> dict:
+        key = name.strip().lower()
+        if key not in users_map:
+            users_map[key] = {
+                "user_name": name, "tasks": [],
                 "os_entregas": [], "os_andamento": [],
             }
-        elif "os_entregas" not in um[uid]:
-            um[uid]["os_entregas"] = []
-            um[uid]["os_andamento"] = []
-
-    users_map: dict = {}
+        return users_map[key]
 
     for r in task_rows:
-        uid = str(r[0])
-        _ensure_user(uid, r[1], users_map)
-        if not any(t["id"] == str(r[2]) for t in users_map[uid]["tasks"]):
-            checklist = r[7]
-            if isinstance(checklist, str):
-                try: checklist = _json.loads(checklist)
-                except: checklist = []
-            users_map[uid]["tasks"].append({
-                "id": str(r[2]), "title": r[3], "status": r[4],
-                "due_date": str(r[5]) if r[5] else None,
-                "so_title": r[6], "checklist": checklist or [],
-                "created_at": str(r[8])[:16], "relation": r[10],
+        entry = _ensure(r[0])  # r[0] = user_name
+        tid = str(r[1])
+        if not any(t["id"] == tid for t in entry["tasks"]):
+            cl = r[6]
+            if isinstance(cl, str):
+                try: cl = _json.loads(cl)
+                except: cl = []
+            entry["tasks"].append({
+                "id": tid, "title": r[2], "status": r[3],
+                "due_date": str(r[4]) if r[4] else None,
+                "so_title": r[5], "checklist": cl or [],
+                "created_at": str(r[7])[:16], "relation": r[8],
+                "comments": comments_by_task.get(tid, []),
             })
 
-    for r in comment_rows:
-        uid = str(r[0])
-        _ensure_user(uid, r[1], users_map)
-        users_map[uid]["comments"].append({
-            "id": str(r[2]), "comment": r[3],
-            "created_at": str(r[4])[:16],
-            "task_id": str(r[5]), "task_title": r[6],
-        })
-
     for r in os_hist_rows:
-        uid = str(r[0])
-        _ensure_user(uid, r[1], users_map)
-        entry = {
-            "so_id": str(r[4]), "so_title": r[5], "so_number": r[6],
-            "changed_at": str(r[3])[:16], "action": r[2],
-        }
+        entry = _ensure(r[1])
+        ev = {"so_id": str(r[4]), "so_title": r[5], "so_number": r[6],
+              "changed_at": str(r[3])[:16], "action": r[2]}
         if r[2] == "resolved":
-            users_map[uid]["os_entregas"].append(entry)
+            entry["os_entregas"].append(ev)
         else:
-            users_map[uid]["os_andamento"].append(entry)
+            entry["os_andamento"].append(ev)
 
     for r in os_comment_rows:
-        uid = str(r[0])
-        _ensure_user(uid, r[1], users_map)
-        users_map[uid]["os_andamento"].append({
+        entry = _ensure(r[1])
+        entry["os_andamento"].append({
             "so_id": str(r[5]), "so_title": r[6], "so_number": r[7],
-            "changed_at": str(r[4])[:16], "action": "commented",
-            "comment": r[3],
+            "changed_at": str(r[4])[:16], "action": "commented", "comment": r[3],
         })
 
     result = []
+    today_str = str(date.today())
     for entry in users_map.values():
         tasks = entry["tasks"]
+        # % por item de checklist (não por tarefa)
+        total_items = done_items = 0
+        for t in tasks:
+            cl = t["checklist"]
+            if cl:
+                total_items += len(cl)
+                done_items += sum(1 for c in cl if c.get("done"))
+            else:
+                total_items += 1
+                if t["status"] == "done":
+                    done_items += 1
         concluidas = sum(1 for t in tasks if t["status"] == "done")
-        atrasadas = sum(1 for t in tasks if t["status"] != "done" and t["due_date"] and t["due_date"] < str(date.today()))
+        bloqueadas = sum(1 for t in tasks if t["status"] == "blocked")
+        atrasadas = sum(1 for t in tasks
+                        if t["status"] not in ("done", "blocked")
+                        and t["due_date"] and t["due_date"] < today_str)
         os_e = entry["os_entregas"]
         os_a = entry["os_andamento"]
         result.append({
-            "user_id": entry["user_id"],
             "user_name": entry["user_name"],
             "total": len(tasks),
             "concluidas": concluidas,
+            "bloqueadas": bloqueadas,
             "atrasadas": atrasadas,
+            "total_items": total_items,
+            "done_items": done_items,
             "tasks": tasks,
-            "comments": entry["comments"],
-            "total_comments": len(entry["comments"]),
             "os_entregas": os_e,
             "os_andamento": os_a,
             "total_os": len(os_e) + len(os_a),
         })
 
-    result.sort(key=lambda x: (-x["total_comments"] - x["total"] - x["total_os"], x["user_name"]))
+    result.sort(key=lambda x: (-x["total"] - x["total_os"], x["user_name"]))
     return result
 
 

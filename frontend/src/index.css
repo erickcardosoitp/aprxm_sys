@@ -87,7 +87,7 @@
     position: absolute !important;
     inset: 0 !important;
     background: white !important;
-    padding: 8mm 10mm !important;
+    padding: 6mm 8mm !important;
     color: #111 !important;
   }
   body.printing-tasks-report .no-print { display: none !important; }
@@ -99,10 +99,20 @@
     box-shadow: none !important;
     border: 1px solid #d4d4d4 !important;
     margin-bottom: 0 !important;
+    padding: 10px 12px !important;
+    border-radius: 6px !important;
   }
   body.printing-tasks-report .report-card:last-child {
     page-break-after: auto !important;
     break-after: auto !important;
   }
-  @page { margin: 10mm; size: A4 portrait; }
+  /* Compactar fontes para caber em uma folha */
+  body.printing-tasks-report .report-card h3 { font-size: 13pt !important; }
+  body.printing-tasks-report .report-card p,
+  body.printing-tasks-report .report-card li,
+  body.printing-tasks-report .report-card span { font-size: 7.5pt !important; }
+  body.printing-tasks-report .report-card .font-semibold { font-size: 8pt !important; }
+  body.printing-tasks-report .report-card .text-2xl { font-size: 14pt !important; }
+  body.printing-tasks-report .report-card .text-base { font-size: 10pt !important; }
+  @page { margin: 8mm; size: A4 portrait; }
 }

@@ -49,15 +49,18 @@ interface SOTask {
 }
 
 const TASK_STATUS_LABELS: Record<string, string> = {
-  open: 'Aberto', pending: 'Pendente',
-  waiting_third_party: 'Ag. Terceiros', done: 'Concluído',
+  pending: 'Pendente', in_progress: 'Em Andamento',
+  done: 'Concluído', blocked: 'Bloqueado',
+  open: 'Aberto', waiting_third_party: 'Ag. Terceiros',
 }
 
 const TASK_STATUS_COLORS: Record<string, string> = {
-  open: 'bg-blue-100 text-blue-700',
-  pending: 'bg-yellow-100 text-yellow-700',
-  waiting_third_party: 'bg-orange-100 text-orange-700',
+  pending: 'bg-gray-100 text-gray-600',
+  in_progress: 'bg-blue-100 text-blue-700',
   done: 'bg-green-100 text-green-700',
+  blocked: 'bg-orange-100 text-orange-700',
+  open: 'bg-blue-100 text-blue-700',
+  waiting_third_party: 'bg-orange-100 text-orange-700',
 }
 
 interface ResidentResult {
@@ -1778,7 +1781,8 @@ interface DailyTask {
   assigned_to_name?: string
   due_date?: string
   reminder_at?: string
-  status: 'pending' | 'in_progress' | 'done'
+  status: 'pending' | 'in_progress' | 'done' | 'blocked'
+  blocked_reason?: string
   checklist: { text: string; done: boolean }[]
   attachment_urls: string[]
   service_order_id?: string
@@ -2018,7 +2022,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   }
 
   const cycleStatus = async (task: DailyTask) => {
-    const cycle: DailyTask['status'][] = ['pending', 'in_progress', 'done']
+    const cycle: DailyTask['status'][] = ['pending', 'in_progress', 'done', 'blocked']
     const idx = cycle.indexOf(task.status)
     const newStatus = cycle[(idx + 1) % cycle.length]
     try {
@@ -2232,72 +2236,89 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         )}
 
         <div id="tasks-report-print" className="flex flex-col gap-4">
-          {reportData.map(user => {
-            const pct = user.total > 0 ? Math.round((user.concluidas / user.total) * 100) : 0
-            const pendentes = Math.max(0, user.total - user.concluidas - user.atrasadas)
+          {reportData.map((user, ui) => {
+            const pct = user.total_items > 0 ? Math.round((user.done_items / user.total_items) * 100) : 0
+            const pctColor = pct >= 80 ? '#15803d' : pct >= 50 ? '#a16207' : '#b91c1c'
+            const pendentes = Math.max(0, user.total - user.concluidas - user.atrasadas - (user.bloqueadas ?? 0))
+            const hasOS = (user.os_entregas?.length ?? 0) + (user.os_andamento?.length ?? 0) > 0
             return (
-              <article key={user.user_id} className="report-card bg-white border border-gray-200 rounded-2xl px-6 py-5 shadow-sm">
-                {/* Header — left-aligned (NN/g left-side bias) */}
-                <header className="flex items-start justify-between gap-4 pb-4 border-b border-gray-200">
+              <article key={ui} className="report-card bg-white border border-gray-200 rounded-2xl px-5 py-4 shadow-sm">
+                {/* Header */}
+                <header className="flex items-start justify-between gap-3 pb-3 border-b border-gray-200">
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase tracking-[0.18em] text-gray-400 font-semibold mb-1">Colaborador</p>
-                    <h3 className="text-xl font-bold text-gray-900 leading-tight truncate">{user.user_name}</h3>
-                    <p className="text-[11px] text-gray-500 mt-1 tabular-nums">{periodLabel}</p>
+                    <p className="text-[9px] uppercase tracking-[0.18em] text-gray-400 font-semibold mb-0.5">Colaborador</p>
+                    <h3 className="text-lg font-bold text-gray-900 leading-tight">{user.user_name}</h3>
+                    <p className="text-[10px] text-gray-400 mt-0.5 tabular-nums">{periodLabel}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="font-mono text-3xl font-bold tabular-nums leading-none" style={{ color: pct >= 80 ? '#15803d' : pct >= 50 ? '#a16207' : '#b91c1c' }}>{pct}<span className="text-lg text-gray-400">%</span></p>
-                    <p className="text-[10px] uppercase tracking-wider text-gray-400 mt-1">Conclusão</p>
+                    <p className="font-mono text-2xl font-bold tabular-nums leading-none" style={{ color: pctColor }}>{pct}<span className="text-sm text-gray-400">%</span></p>
+                    <p className="text-[9px] uppercase tracking-wider text-gray-400">checklist</p>
                   </div>
                 </header>
 
-                {/* Progress bar — slim, monochrome, print-friendly */}
-                <div className="mt-3 h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: pct >= 80 ? '#15803d' : pct >= 50 ? '#a16207' : '#b91c1c' }} />
+                {/* KPI strip — 6 colunas compactas */}
+                <div className="grid grid-cols-6 gap-1.5 mt-3 mb-3">
+                  {[
+                    { v: user.total, label: 'Total', color: 'border-gray-300', tc: 'text-gray-900' },
+                    { v: user.concluidas, label: 'Feitas', color: 'border-green-600', tc: 'text-green-700' },
+                    { v: pendentes, label: 'Pend.', color: 'border-yellow-500', tc: 'text-yellow-700' },
+                    { v: user.atrasadas, label: 'Atraso', color: user.atrasadas > 0 ? 'border-red-600' : 'border-gray-200', tc: user.atrasadas > 0 ? 'text-red-700' : 'text-gray-300' },
+                    { v: user.bloqueadas ?? 0, label: 'Bloq.', color: (user.bloqueadas ?? 0) > 0 ? 'border-orange-500' : 'border-gray-200', tc: (user.bloqueadas ?? 0) > 0 ? 'text-orange-600' : 'text-gray-300' },
+                    { v: user.total_os ?? 0, label: 'O.S.', color: 'border-blue-400', tc: 'text-blue-700' },
+                  ].map(({ v, label, color, tc }) => (
+                    <div key={label} className={`border-l-2 pl-2 ${color}`}>
+                      <p className={`font-mono text-base font-bold tabular-nums leading-none ${tc}`}>{v}</p>
+                      <p className="text-[9px] uppercase tracking-wide text-gray-400 mt-0.5">{label}</p>
+                    </div>
+                  ))}
                 </div>
 
-                {/* KPI strip — tabular numbers, no heavy backgrounds */}
-                <div className="grid grid-cols-4 gap-2 mt-4 mb-5">
-                  <div className="border-l-2 border-gray-300 pl-3">
-                    <p className="font-mono text-xl font-bold tabular-nums text-gray-900 leading-none">{user.total}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">Total</p>
-                  </div>
-                  <div className="border-l-2 border-green-600 pl-3">
-                    <p className="font-mono text-xl font-bold tabular-nums text-green-700 leading-none">{user.concluidas}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">Concluídas</p>
-                  </div>
-                  <div className="border-l-2 border-yellow-600 pl-3">
-                    <p className="font-mono text-xl font-bold tabular-nums text-yellow-700 leading-none">{pendentes}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">Pendentes</p>
-                  </div>
-                  <div className={`border-l-2 pl-3 ${user.atrasadas > 0 ? 'border-red-600' : 'border-gray-200'}`}>
-                    <p className={`font-mono text-xl font-bold tabular-nums leading-none ${user.atrasadas > 0 ? 'text-red-700' : 'text-gray-300'}`}>{user.atrasadas}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">Atrasadas</p>
-                  </div>
-                </div>
-
+                {/* Tarefas com comentários inline */}
                 {user.tasks.length > 0 && (
-                  <section className="mb-3">
-                    <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.18em] mb-2 pb-1 border-b border-gray-100">Tarefas</h4>
+                  <section className={hasOS ? 'mb-3' : ''}>
+                    <h4 className="text-[9px] font-bold text-gray-500 uppercase tracking-[0.18em] mb-1.5 pb-1 border-b border-gray-100">Tarefas Diárias</h4>
                     <ul className="flex flex-col divide-y divide-gray-100">
                       {user.tasks.map((t: any) => {
-                        const overdue = t.status !== 'done' && t.due_date && t.due_date < today
+                        const overdue = t.status !== 'done' && t.status !== 'blocked' && t.due_date && t.due_date < today
+                        const effStatus = overdue ? 'overdue' : t.status
+                        const dotColor = effStatus === 'done' ? 'bg-green-600' : effStatus === 'overdue' ? 'bg-red-500' : effStatus === 'in_progress' ? 'bg-blue-500' : effStatus === 'blocked' ? 'bg-orange-500' : 'bg-gray-300'
+                        const statusLabel = effStatus === 'overdue' ? 'Em Atraso' : TASK_STATUS_LABELS[t.status] ?? t.status
                         return (
-                          <li key={t.id} className="py-2.5">
-                            <div className="flex items-start gap-2.5">
-                              <span aria-hidden className={`mt-1 inline-block w-2.5 h-2.5 rounded-full shrink-0 ${t.status === 'done' ? 'bg-green-600' : overdue ? 'bg-red-600' : 'bg-gray-300'}`} />
+                          <li key={t.id} className="py-2">
+                            <div className="flex items-start gap-2">
+                              <span aria-hidden className={`mt-1 inline-block w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
                               <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-medium leading-snug ${t.status === 'done' ? 'line-through text-gray-400' : 'text-gray-900'}`}>{t.title}</p>
-                                <div className="flex items-center gap-x-3 gap-y-1 mt-1 flex-wrap text-[11px] tabular-nums text-gray-500">
-                                  {t.relation === 'created' && <span className="italic">criou</span>}
-                                  {t.due_date && <span className={overdue ? 'text-red-600 font-semibold' : ''}>Prazo {fmtBR(t.due_date)}</span>}
-                                  {t.so_title && <span className="text-[#26619c]">OS: {t.so_title}</span>}
+                                <div className="flex items-baseline gap-2 flex-wrap">
+                                  <p className={`text-[12px] font-semibold leading-snug ${t.status === 'done' ? 'line-through text-gray-400' : 'text-gray-900'}`}>{t.title}</p>
+                                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                                    effStatus === 'done' ? 'bg-green-50 text-green-700' :
+                                    effStatus === 'overdue' ? 'bg-red-50 text-red-700' :
+                                    effStatus === 'in_progress' ? 'bg-blue-50 text-blue-700' :
+                                    effStatus === 'blocked' ? 'bg-orange-50 text-orange-700' :
+                                    'bg-gray-100 text-gray-500'
+                                  }`}>{statusLabel}</span>
+                                  {t.due_date && <span className={`text-[10px] tabular-nums ${overdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>{fmtBR(t.due_date)}</span>}
+                                  {t.so_title && <span className="text-[10px] text-[#26619c]">OS: {t.so_title}</span>}
                                 </div>
+                                {/* Checklist compacto */}
                                 {t.checklist?.length > 0 && (
-                                  <ul className="mt-1.5 flex flex-col gap-0.5">
+                                  <ul className="mt-1 flex flex-col gap-0">
                                     {t.checklist.map((cl: any, ci: number) => (
-                                      <li key={ci} className="flex items-baseline gap-2 text-[12px] leading-snug">
-                                        <span className={`font-mono shrink-0 ${cl.done ? 'text-green-600' : 'text-gray-300'}`}>{cl.done ? '[✓]' : '[ ]'}</span>
-                                        <span className={cl.done ? 'line-through text-gray-400' : 'text-gray-700'}>{cl.text}</span>
+                                      <li key={ci} className="flex items-baseline gap-1.5 text-[11px] leading-snug">
+                                        <span className={`font-mono shrink-0 text-[10px] ${cl.done ? 'text-green-600' : 'text-gray-300'}`}>{cl.done ? '✓' : '○'}</span>
+                                        <span className={cl.done ? 'line-through text-gray-400' : 'text-gray-600'}>{cl.text}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                                {/* Comentários inline */}
+                                {t.comments?.length > 0 && (
+                                  <ul className="mt-1 pl-2 border-l border-gray-200 flex flex-col gap-0.5">
+                                    {t.comments.map((c: any) => (
+                                      <li key={c.id} className="flex items-baseline gap-1.5 text-[10px] text-gray-500 leading-snug">
+                                        <span className="shrink-0 text-gray-300">↳</span>
+                                        <span className="italic truncate">{c.comment}</span>
+                                        <span className="shrink-0 tabular-nums text-gray-300">{c.created_at?.slice(0,10)}</span>
                                       </li>
                                     ))}
                                   </ul>
@@ -2311,90 +2332,41 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                   </section>
                 )}
 
-                {user.comments?.length > 0 && (
-                  <section className="mb-3">
-                    <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.18em] mb-2 pb-1 border-b border-gray-100">Acompanhamentos de Tarefas</h4>
+                {/* Ordens de Serviço — compacto */}
+                {hasOS && (
+                  <section className="mt-2 pt-2 border-t border-dashed border-gray-200">
+                    <h4 className="text-[9px] font-bold text-gray-500 uppercase tracking-[0.18em] mb-1.5">Ordens de Serviço</h4>
                     <ul className="flex flex-col divide-y divide-gray-100">
-                      {user.comments.map((c: any) => (
-                        <li key={c.id} className="py-2 flex items-start gap-2.5">
-                          <span aria-hidden className="mt-1.5 inline-block w-1.5 h-1.5 rounded-full bg-[#26619c] shrink-0" />
+                      {user.os_entregas?.map((o: any, i: number) => (
+                        <li key={`e-${i}`} className="py-1.5 flex items-start gap-2">
+                          <span aria-hidden className="mt-0.5 inline-block w-2 h-2 rounded-full bg-green-600 shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-[13px] text-gray-800 leading-snug">{c.comment}</p>
-                            <div className="flex items-center gap-x-3 mt-0.5 flex-wrap text-[10px] tabular-nums text-gray-500">
-                              <span>{c.created_at?.slice(0, 16).replace('T', ' ')}</span>
-                              <span className="text-[#26619c]">{c.task_title}</span>
-                            </div>
+                            <span className="text-[11px] font-medium text-gray-900">
+                              {o.so_number ? <span className="font-mono text-[10px] text-gray-400 mr-1">#{String(o.so_number).padStart(4,'0')}</span> : null}
+                              {o.so_title}
+                            </span>
+                            <span className="ml-2 text-[9px] bg-green-50 text-green-700 font-semibold px-1 rounded">Resolvida</span>
+                          </div>
+                        </li>
+                      ))}
+                      {user.os_andamento?.map((o: any, i: number) => (
+                        <li key={`a-${i}`} className="py-1.5 flex items-start gap-2">
+                          <span aria-hidden className={`mt-0.5 inline-block w-2 h-2 rounded-full shrink-0 ${o.action === 'in_progress' ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[11px] font-medium text-gray-900">
+                              {o.so_number ? <span className="font-mono text-[10px] text-gray-400 mr-1">#{String(o.so_number).padStart(4,'0')}</span> : null}
+                              {o.so_title}
+                            </span>
+                            <span className={`ml-2 text-[9px] font-semibold px-1 rounded ${o.action === 'in_progress' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {o.action === 'in_progress' ? 'Iniciou' : o.action === 'cancelled' ? 'Cancelou' : 'Comentou'}
+                            </span>
+                            {o.action === 'commented' && o.comment && (
+                              <p className="text-[10px] text-gray-500 italic truncate mt-0.5">{o.comment}</p>
+                            )}
                           </div>
                         </li>
                       ))}
                     </ul>
-                  </section>
-                )}
-
-                {/* ── Ordens de Serviço ─────────────────────────────── */}
-                {((user.os_entregas?.length ?? 0) + (user.os_andamento?.length ?? 0)) > 0 && (
-                  <section className="mt-4 pt-4 border-t-2 border-dashed border-gray-200">
-                    <h4 className="text-[10px] font-bold text-gray-700 uppercase tracking-[0.18em] mb-3">Ordens de Serviço</h4>
-
-                    {/* OS KPI strip */}
-                    <div className="grid grid-cols-2 gap-2 mb-4">
-                      <div className="border-l-2 border-green-600 pl-3">
-                        <p className="font-mono text-xl font-bold tabular-nums text-green-700 leading-none">{user.os_entregas?.length ?? 0}</p>
-                        <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">OS Entregues</p>
-                      </div>
-                      <div className="border-l-2 border-blue-500 pl-3">
-                        <p className="font-mono text-xl font-bold tabular-nums text-blue-700 leading-none">{user.os_andamento?.length ?? 0}</p>
-                        <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">OS Andamento</p>
-                      </div>
-                    </div>
-
-                    {/* OS Entregas */}
-                    {user.os_entregas?.length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-[10px] font-semibold text-green-700 uppercase tracking-wider mb-1.5">✓ Resolvidas</p>
-                        <ul className="flex flex-col divide-y divide-gray-100">
-                          {user.os_entregas.map((o: any, i: number) => (
-                            <li key={`${o.so_id}-${i}`} className="py-2 flex items-start gap-2.5">
-                              <span aria-hidden className="mt-1 inline-block w-2.5 h-2.5 rounded-full bg-green-600 shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 leading-snug">
-                                  {o.so_number ? <span className="font-mono text-[11px] text-gray-400 mr-1.5">#{String(o.so_number).padStart(4,'0')}</span> : null}
-                                  {o.so_title}
-                                </p>
-                                <p className="text-[11px] tabular-nums text-gray-500 mt-0.5">{o.changed_at?.slice(0,16).replace('T',' ')}</p>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* OS Andamento */}
-                    {user.os_andamento?.length > 0 && (
-                      <div>
-                        <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wider mb-1.5">→ Em Andamento / Comentários</p>
-                        <ul className="flex flex-col divide-y divide-gray-100">
-                          {user.os_andamento.map((o: any, i: number) => (
-                            <li key={`${o.so_id}-${i}-${o.action}`} className="py-2 flex items-start gap-2.5">
-                              <span aria-hidden className={`mt-1 inline-block w-2.5 h-2.5 rounded-full shrink-0 ${o.action === 'in_progress' ? 'bg-blue-500' : 'bg-gray-400'}`} />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 leading-snug">
-                                  {o.so_number ? <span className="font-mono text-[11px] text-gray-400 mr-1.5">#{String(o.so_number).padStart(4,'0')}</span> : null}
-                                  {o.so_title}
-                                </p>
-                                {o.action === 'commented' && o.comment && (
-                                  <p className="text-[12px] text-gray-600 italic leading-snug mt-0.5 truncate">{o.comment}</p>
-                                )}
-                                <div className="flex items-center gap-x-3 mt-0.5 text-[10px] tabular-nums text-gray-500">
-                                  <span>{o.changed_at?.slice(0,16).replace('T',' ')}</span>
-                                  <span className="capitalize">{o.action === 'in_progress' ? 'Iniciou' : o.action === 'cancelled' ? 'Cancelou' : 'Comentou'}</span>
-                                </div>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
                   </section>
                 )}
               </article>
