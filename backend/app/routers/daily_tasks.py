@@ -218,7 +218,8 @@ async def update_task(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import json
-    sets, params = [], {"id": str(task_id), "aid": str(current.association_id)}
+    aids = await _group_assoc_ids(str(current.association_id), session)
+    sets, params = [], {"id": str(task_id), "aids": aids}
     if body.title is not None: sets.append("title = :title"); params["title"] = body.title
     if body.description is not None: sets.append("description = :desc"); params["desc"] = body.description
     if body.assigned_to is not None: sets.append("assigned_to = :at"); params["at"] = str(body.assigned_to)
@@ -234,7 +235,7 @@ async def update_task(
         return {"ok": True}
     sets.append("updated_at = NOW()")
     row = (await session.execute(
-        text(f"UPDATE daily_tasks SET {', '.join(sets)} WHERE id = :id AND association_id = :aid RETURNING title, assigned_to, service_order_title"),
+        text(f"UPDATE daily_tasks SET {', '.join(sets)} WHERE id = :id AND association_id = ANY(:aids) RETURNING title, assigned_to, service_order_title"),
         params,
     )).fetchone()
     await session.commit()
