@@ -138,6 +138,15 @@ Query params:
 - Footer: "Gerado em DD/MM/YYYY HH:MM · APRXM"
 - Ordenação: colaboradores por nome ASC; tarefas por `due_date` ASC
 
+**Anexos no PDF:**
+- **Imagens** (jpg/png/webp/gif): embutir como thumbnail `40×40 px` lado a lado (máx 4 por linha), usando `pdf.image()` do fpdf2. Fonte de dados: URL do Supabase Storage (fazer `requests.get(url)` → `BytesIO`).
+- **Outros arquivos** (pdf, doc, xls…): exibir ícone 📎 + nome do arquivo truncado (máx 40 chars) + URL como link clicável (`pdf.cell(..., link=url)`).
+- Anexos aparecem em dois lugares:
+  1. **Abaixo da tarefa** (campo `attachment_urls` da tarefa)
+  2. **Abaixo de cada acompanhamento** (`attachment_urls` do comment)
+- Label separadora: `"Anexos:"` em fonte menor (8pt, cinza)
+- Se URL não carregar (timeout 3s): exibir `[imagem indisponível]` sem quebrar o PDF
+
 **Frontend — botão "Baixar PDF":**
 - Substituir o botão "Relatório" (que abre a view interna) por dois botões:
   - `[📊 Ver relatório]` → mantém a view interna atual

@@ -875,7 +875,75 @@ Use `downloadPdf()` on button click (blob approach is correct since API uses Bea
 
 ---
 
-**Total Estimated Time:** ~2h
+### Step 10 — Frontend: Filtros completos na barra de relatório + botão PDF
+
+**File:** `ServiceOrdersPage.tsx`
+
+Na view de relatório (`showReport`), adicionar filtro de operador + botão PDF:
+```tsx
+<div className="flex gap-2 items-end flex-wrap">
+  <div>
+    <label className="block text-xs text-gray-500 mb-1">De</label>
+    <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className={inputCls} />
+  </div>
+  <div>
+    <label className="block text-xs text-gray-500 mb-1">Até</label>
+    <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className={inputCls} />
+  </div>
+  <div>
+    <label className="block text-xs text-gray-500 mb-1">Operador</label>
+    <select value={reportUserId} onChange={e => setReportUserId(e.target.value)} className={inputCls}>
+      <option value="">Todos</option>
+      {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+    </select>
+  </div>
+  <button onClick={loadReport} disabled={loadingReport}
+    className="px-4 py-2 bg-[#26619c] text-white rounded-xl text-sm font-medium disabled:opacity-50">
+    {loadingReport ? 'Carregando…' : 'Gerar'}
+  </button>
+  <button onClick={downloadPdf}
+    className="flex items-center gap-1.5 border border-gray-200 px-3 py-2 rounded-xl text-sm hover:bg-gray-50">
+    📄 Baixar PDF
+  </button>
+</div>
+```
+
+Adicionar estado `reportUserId`:
+```tsx
+const [reportUserId, setReportUserId] = useState('')
+```
+
+`downloadPdf` passa `reportUserId` e usa blob (Bearer auth):
+```tsx
+const downloadPdf = async () => {
+  try {
+    const params: any = {}
+    if (reportFrom) params.date_from = reportFrom
+    if (reportTo) params.date_to = reportTo
+    if (reportUserId) params.user_id = reportUserId
+    const res = await api.get('/daily-tasks/report/pdf', { params, responseType: 'blob' })
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `tarefas_${reportFrom || 'all'}_${reportTo || 'all'}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch { toast.error('Erro ao gerar PDF.') }
+}
+```
+
+`loadReport` também passa `reportUserId` para a view interna:
+```tsx
+const res = await api.get('/daily-tasks/report/by-user', {
+  params: { date_from: reportFrom, date_to: reportTo, user_id: reportUserId || undefined }
+})
+```
+
+**Verificação:** Filtrar por operador + período → "Gerar" atualiza a view; "Baixar PDF" baixa arquivo filtrado pelo operador selecionado.
+
+---
+
+**Total Estimated Time:** ~2h15
 
 ---
 

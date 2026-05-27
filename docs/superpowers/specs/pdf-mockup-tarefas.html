@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>Mockup PDF — Tarefas Diárias</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #e5e7eb;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    padding: 40px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 40px;
+  }
+  .label {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 8px;
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  /* ── A4 page simulation ── */
+  .page {
+    width: 794px;
+    min-height: 1123px;
+    background: #fff;
+    box-shadow: 0 4px 24px rgba(0,0,0,.18);
+    padding: 48px 52px 40px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 16px;
+    border-bottom: 2.5px solid #1a4f87;
+    margin-bottom: 24px;
+  }
+  .header-left .org-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1a4f87;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .header-left .doc-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: #111827;
+  }
+  .header-left .doc-sub {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 2px;
+  }
+  .header-right {
+    text-align: right;
+  }
+  .header-right .periodo-label {
+    font-size: 10px;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .header-right .periodo-val {
+    font-size: 13px;
+    font-weight: 700;
+    color: #374151;
+    margin-top: 2px;
+  }
+  .header-right .gerado {
+    font-size: 9.5px;
+    color: #d1d5db;
+    margin-top: 4px;
+  }
+
+  /* Colaborador section */
+  .colab-header {
+    background: #f0f5ff;
+    border-left: 4px solid #1a4f87;
+    border-radius: 0 6px 6px 0;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .colab-name {
+    font-size: 14px;
+    font-weight: 800;
+    color: #1a4f87;
+    letter-spacing: .04em;
+  }
+  .colab-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 11px;
+  }
+  .stat { display: flex; align-items: center; gap: 4px; font-weight: 600; }
+  .stat.total { color: #374151; }
+  .stat.ok    { color: #15803d; }
+  .stat.pend  { color: #b45309; }
+  .stat.atras { color: #dc2626; }
+
+  /* Progress bar */
+  .progress-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 0 2px;
+  }
+  .progress-bar {
+    flex: 1;
+    height: 6px;
+    background: #e5e7eb;
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: #1a4f87;
+    border-radius: 99px;
+  }
+  .progress-pct {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1a4f87;
+    white-space: nowrap;
+  }
+
+  /* Task card */
+  .task-block {
+    margin-bottom: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .task-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #111827;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .task-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .prazo {
+    font-size: 10px;
+    color: #6b7280;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 99px;
+    letter-spacing: .03em;
+  }
+  .badge-done     { background: #dcfce7; color: #15803d; }
+  .badge-progress { background: #fef3c7; color: #92400e; }
+  .badge-pending  { background: #f3f4f6; color: #6b7280; }
+  .badge-overdue  { background: #fee2e2; color: #dc2626; }
+
+  /* Checklist items */
+  .checklist {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .check-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .check-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1.5px solid #d1d5db;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+    font-size: 9px;
+  }
+  .check-icon.done   { background: #16a34a; border-color: #16a34a; color: #fff; }
+  .check-icon.pend   { background: #fff; border-color: #d1d5db; color: transparent; }
+  .check-text.done   { color: #374151; }
+  .check-text.pend   { color: #9ca3af; text-decoration: line-through; }
+
+  /* No checklist */
+  .no-checklist {
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #9ca3af;
+    font-style: italic;
+  }
+
+  /* Page divider (between collaborators) */
+  .page-break-note {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 28px 0 24px;
+    color: #d1d5db;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .page-break-note::before,
+  .page-break-note::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e5e7eb;
+    border-top: 1px dashed #d1d5db;
+  }
+
+  /* Acompanhamentos (comments) */
+  .comments-section {
+    margin-top: 6px;
+    padding: 8px 12px;
+    background: #fafafa;
+    border-top: 1px dashed #e5e7eb;
+  }
+  .comments-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 6px;
+  }
+  .comment-row {
+    display: flex;
+    gap: 7px;
+    margin-bottom: 5px;
+    align-items: flex-start;
+  }
+  .comment-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #1a4f87;
+    color: #fff;
+    font-size: 8px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .comment-body {
+    flex: 1;
+  }
+  .comment-author {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #374151;
+  }
+  .comment-text {
+    font-size: 10.5px;
+    color: #6b7280;
+    margin-top: 1px;
+    line-height: 1.4;
+  }
+  .comment-time {
+    font-size: 9px;
+    color: #d1d5db;
+    margin-left: 6px;
+  }
+
+  /* Footer */
+  .page-footer {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9px;
+    color: #d1d5db;
+  }
+
+  /* Second page indicator */
+  .page-indicator {
+    position: absolute;
+    top: 18px;
+    right: 52px;
+    font-size: 9px;
+    color: #d1d5db;
+  }
+
+  /* OS badge */
+  .os-badge {
+    font-size: 9.5px;
+    background: #ede9fe;
+    color: #6d28d9;
+    padding: 1px 6px;
+    border-radius: 99px;
+    font-weight: 600;
+  }
+
+  /* Attachments */
+  .attachments {
+    padding: 6px 12px 8px;
+    border-top: 1px dashed #f3f4f6;
+    background: #fafafa;
+  }
+  .attach-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #d1d5db;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 5px;
+  }
+  .attach-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: flex-start;
+  }
+  .attach-img {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #e5e7eb;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    overflow: hidden;
+  }
+  .attach-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 3px;
+  }
+  .attach-file {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9.5px;
+    color: #2563eb;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    padding: 3px 7px;
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* comment attachments */
+  .comment-attachments {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .c-attach-img {
+    width: 36px;
+    height: 36px;
+    border-radius: 3px;
+    border: 1px solid #e5e7eb;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    overflow: hidden;
+  }
+  .c-attach-img img { width:100%;height:100%;object-fit:cover;border-radius:2px; }
+  .c-attach-file {
+    font-size: 9px;
+    color: #2563eb;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 3px;
+    padding: 2px 5px;
+  }
+
+  /* Tip note */
+  .tip {
+    font-size: 12px;
+    color: #6b7280;
+    background: #fff;
+    border: 1px dashed #d1d5db;
+    border-radius: 8px;
+    padding: 10px 16px;
+    max-width: 794px;
+    width: 100%;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<p class="label">Página 1 — Colaborador 1</p>
+
+<!-- PAGE 1 -->
+<div class="page">
+  <div class="page-indicator">pág. 1 / 2</div>
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="header-left">
+      <div class="org-name">Instituto Tia Pretinha</div>
+      <div class="doc-title">Relatório de Tarefas Diárias</div>
+      <div class="doc-sub">Entregas e Não-Entregas por Colaborador</div>
+    </div>
+    <div class="header-right">
+      <div class="periodo-label">Período</div>
+      <div class="periodo-val">01/05/2026 – 27/05/2026</div>
+      <div class="gerado">Gerado em 27/05/2026 às 14:32 · APRXM</div>
+    </div>
+  </div>
+
+  <!-- Collaborator 1 -->
+  <div class="colab-header">
+    <div class="colab-name">👤 Monique Silva</div>
+    <div class="colab-stats">
+      <div class="stat total">📋 3 tarefas</div>
+      <div class="stat ok">✓ 5 entregas</div>
+      <div class="stat pend">✗ 4 pendentes</div>
+      <div class="stat atras">⚠ 1 atrasada</div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-wrap">
+    <span style="font-size:10px;color:#9ca3af;white-space:nowrap">Conclusão geral</span>
+    <div class="progress-bar"><div class="progress-fill" style="width:56%"></div></div>
+    <span class="progress-pct">56%</span>
+  </div>
+
+  <!-- Task 1 -->
+  <div class="task-block">
+    <div class="task-header">
+      <div class="task-title">
+        ▸ Ordens de serviço
+        <span class="os-badge">OS #0042</span>
+      </div>
+      <div class="task-meta">
+        <span class="prazo">Prazo: 27/05/2026</span>
+        <span class="badge badge-overdue">⚠ Atrasada</span>
+      </div>
+    </div>
+    <div class="checklist">
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Ver as ordens de serviço abertas</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon pend"></div>
+        <span class="check-text pend">Conversar com o rapaz da casa de festa sobre veículos nos dias de evento</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon pend"></div>
+        <span class="check-text pend">Ver forma de orientar o locatário a colocar som em parede adequada</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon pend"></div>
+        <span class="check-text pend">Pedir ao pessoal da Comlurb para retirar carrinho enferrujado da rua Texeira</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon pend"></div>
+        <span class="check-text pend">Avisar os moradores da Carlos Ferreira que amanhã terá reunião</span>
+      </div>
+    </div>
+    <!-- Task attachments -->
+    <div class="attachments">
+      <div class="attach-label">📎 Anexos da tarefa</div>
+      <div class="attach-row">
+        <div class="attach-img">
+          <!-- simulated image thumbnail -->
+          <div style="width:44px;height:44px;background:linear-gradient(135deg,#bfdbfe,#93c5fd);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:18px;">🏘️</div>
+        </div>
+        <div class="attach-img">
+          <div style="width:44px;height:44px;background:linear-gradient(135deg,#d9f99d,#86efac);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:18px;">🛺</div>
+        </div>
+        <div class="attach-file">📄 ordem-servico-042.pdf</div>
+      </div>
+    </div>
+    <div class="comments-section">
+      <div class="comments-label">💬 Acompanhamentos</div>
+      <div class="comment-row">
+        <div class="comment-avatar">M</div>
+        <div class="comment-body">
+          <span class="comment-author">Monique</span>
+          <span class="comment-time">27/05 09:14</span>
+          <div class="comment-text">Fui até a casa de festa, o rapaz não estava. Vou tentar novamente amanhã.</div>
+          <!-- Comment attachments -->
+          <div class="comment-attachments">
+            <div class="c-attach-img">
+              <div style="width:36px;height:36px;background:linear-gradient(135deg,#fde68a,#fbbf24);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:13px;">📍</div>
+            </div>
+            <span class="c-attach-file">📎 foto-local.jpg</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task 2 -->
+  <div class="task-block">
+    <div class="task-header">
+      <div class="task-title">▸ Limpeza e organização rua A</div>
+      <div class="task-meta">
+        <span class="prazo">Prazo: 28/05/2026</span>
+        <span class="badge badge-progress">🔄 Em andamento</span>
+      </div>
+    </div>
+    <div class="checklist">
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Varrer a calçada principal</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Recolher lixo nos containers</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Verificar estado das lixeiras</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task 3 -->
+  <div class="task-block">
+    <div class="task-header">
+      <div class="task-title">▸ Reunião com conselho</div>
+      <div class="task-meta">
+        <span class="prazo">Prazo: 30/05/2026</span>
+        <span class="badge badge-pending">⬜ Pendente</span>
+      </div>
+    </div>
+    <div class="no-checklist">Sem itens de checklist — tarefa simples</div>
+  </div>
+
+  <!-- Footer -->
+  <div class="page-footer">
+    <span>APRXM · Instituto Tia Pretinha · Relatório de Tarefas Diárias</span>
+    <span>Página 1 de 2</span>
+  </div>
+</div>
+
+
+<!-- PAGE BREAK INDICATOR -->
+<div style="display:flex;align-items:center;gap:12px;color:#9ca3af;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;width:794px">
+  <div style="flex:1;border-top:2px dashed #d1d5db"></div>
+  ✂ quebra de página — novo colaborador
+  <div style="flex:1;border-top:2px dashed #d1d5db"></div>
+</div>
+
+<p class="label">Página 2 — Colaborador 2</p>
+
+<!-- PAGE 2 -->
+<div class="page">
+  <div class="page-indicator">pág. 2 / 2</div>
+
+  <!-- Header (repeated) -->
+  <div class="page-header">
+    <div class="header-left">
+      <div class="org-name">Instituto Tia Pretinha</div>
+      <div class="doc-title">Relatório de Tarefas Diárias</div>
+      <div class="doc-sub">Entregas e Não-Entregas por Colaborador</div>
+    </div>
+    <div class="header-right">
+      <div class="periodo-label">Período</div>
+      <div class="periodo-val">01/05/2026 – 27/05/2026</div>
+      <div class="gerado">Gerado em 27/05/2026 às 14:32 · APRXM</div>
+    </div>
+  </div>
+
+  <!-- Collaborator 2 -->
+  <div class="colab-header">
+    <div class="colab-name">👤 Carlos Eduardo</div>
+    <div class="colab-stats">
+      <div class="stat total">📋 2 tarefas</div>
+      <div class="stat ok">✓ 6 entregas</div>
+      <div class="stat pend">✗ 0 pendentes</div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-wrap">
+    <span style="font-size:10px;color:#9ca3af;white-space:nowrap">Conclusão geral</span>
+    <div class="progress-bar"><div class="progress-fill" style="width:100%;background:#16a34a"></div></div>
+    <span class="progress-pct" style="color:#16a34a">100%</span>
+  </div>
+
+  <!-- Task 1 -->
+  <div class="task-block">
+    <div class="task-header">
+      <div class="task-title">▸ Manutenção elétrica bloco B</div>
+      <div class="task-meta">
+        <span class="prazo">Prazo: 25/05/2026</span>
+        <span class="badge badge-done">✅ Concluída</span>
+      </div>
+    </div>
+    <div class="checklist">
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Verificar quadro de distribuição</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Substituir disjuntor do apto 201</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Testar tomadas da área comum</span>
+      </div>
+    </div>
+    <!-- Task attachments -->
+    <div class="attachments">
+      <div class="attach-label">📎 Anexos da tarefa</div>
+      <div class="attach-row">
+        <div class="attach-img">
+          <div style="width:44px;height:44px;background:linear-gradient(135deg,#fecaca,#f87171);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</div>
+        </div>
+        <div class="attach-img">
+          <div style="width:44px;height:44px;background:linear-gradient(135deg,#fed7aa,#fb923c);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:18px;">🔌</div>
+        </div>
+        <div class="attach-img">
+          <div style="width:44px;height:44px;background:linear-gradient(135deg,#e9d5ff,#c084fc);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:18px;">🔧</div>
+        </div>
+        <div class="attach-file">📄 laudo-eletrico-bloco-b.pdf</div>
+      </div>
+    </div>
+    <div class="comments-section">
+      <div class="comments-label">💬 Acompanhamentos</div>
+      <div class="comment-row">
+        <div class="comment-avatar" style="background:#7c3aed">C</div>
+        <div class="comment-body">
+          <span class="comment-author">Carlos</span>
+          <span class="comment-time">25/05 16:45</span>
+          <div class="comment-text">Tudo finalizado. Disjuntor substituído com sucesso, tomadas testadas e aprovadas.</div>
+          <div class="comment-attachments">
+            <div class="c-attach-img">
+              <div style="width:36px;height:36px;background:linear-gradient(135deg,#bbf7d0,#4ade80);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:13px;">✅</div>
+            </div>
+            <div class="c-attach-img">
+              <div style="width:36px;height:36px;background:linear-gradient(135deg,#bfdbfe,#60a5fa);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:13px;">📸</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task 2 -->
+  <div class="task-block">
+    <div class="task-header">
+      <div class="task-title">▸ Inspeção hidráulica</div>
+      <div class="task-meta">
+        <span class="prazo">Prazo: 26/05/2026</span>
+        <span class="badge badge-done">✅ Concluída</span>
+      </div>
+    </div>
+    <div class="checklist">
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Verificar caixa d'água</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Checar registro geral</span>
+      </div>
+      <div class="check-item">
+        <div class="check-icon done">✓</div>
+        <span class="check-text done">Inspecionar encanamento do bloco C</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="page-footer">
+    <span>APRXM · Instituto Tia Pretinha · Relatório de Tarefas Diárias</span>
+    <span>Página 2 de 2</span>
+  </div>
+</div>
+
+<div class="tip">💡 Cada colaborador ocupa exatamente uma página A4 — a quantidade de tarefas/itens determina a densidade, não muda a quebra de página.</div>
+
+</body>
+</html>
