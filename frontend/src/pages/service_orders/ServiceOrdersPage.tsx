@@ -1879,7 +1879,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     } catch { /* silent */ }
   }
 
-  useEffect(() => { load(); loadUsers() }, [filterStatus, filterAssigned, filterPeriodFrom, filterPeriodTo, viewDate])
+  useEffect(() => { load(); loadUsers() }, [filterStatus, filterAssigned, filterPeriodFrom, filterPeriodTo])
 
   const loadComments = async (taskId: string) => {
     if (comments[taskId]) return
@@ -2179,7 +2179,10 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           <label className="block text-xs text-gray-500 mb-1">Operador</label>
           <select value={reportUserId} onChange={e => setReportUserId(e.target.value)} className={inputCls}>
             <option value="">Todos</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+            {users.map(u => {
+              const dup = users.filter(x => x.full_name === u.full_name).length > 1
+              return <option key={u.id} value={u.id}>{u.full_name}{dup && u.assoc_name ? ` — ${u.assoc_name}` : ''}</option>
+            })}
           </select>
         </div>
         <button onClick={loadReport} disabled={loadingReport}
@@ -2319,17 +2322,26 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         <select value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}
           className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white">
           <option value="">Todos responsáveis</option>
-          {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+          {users.map(u => {
+            const dup = users.filter(x => x.full_name === u.full_name).length > 1
+            return <option key={u.id} value={u.id}>{u.full_name}{dup && u.assoc_name ? ` — ${u.assoc_name}` : ''}</option>
+          })}
         </select>
 
         {/* Período */}
         <div className="flex items-center gap-1">
           <input type="date" value={filterPeriodFrom}
-            onChange={e => { setFilterPeriodFrom(e.target.value); setViewDate(today) }}
+            onChange={e => {
+              const v = e.target.value
+              if (!v || (v.length === 10 && parseInt(v.slice(0, 4)) >= 2020)) { setFilterPeriodFrom(v); setViewDate(today) }
+            }}
             className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
           <span className="text-xs text-gray-400">–</span>
           <input type="date" value={filterPeriodTo}
-            onChange={e => { setFilterPeriodTo(e.target.value); setViewDate(today) }}
+            onChange={e => {
+              const v = e.target.value
+              if (!v || (v.length === 10 && parseInt(v.slice(0, 4)) >= 2020)) { setFilterPeriodTo(v); setViewDate(today) }
+            }}
             className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
         </div>
 

@@ -116,11 +116,17 @@ async def list_tasks(
         filters.append("(t.due_date = CURRENT_DATE OR (t.due_date IS NULL AND t.status != 'done'))")
     else:
         if date_from:
-            filters.append("t.due_date >= CAST(:df AS date)")
-            params["df"] = date_from
+            try:
+                params["df"] = date.fromisoformat(date_from)
+                filters.append("t.due_date >= :df")
+            except ValueError:
+                pass
         if date_to:
-            filters.append("t.due_date <= CAST(:dt AS date)")
-            params["dt"] = date_to
+            try:
+                params["dt"] = date.fromisoformat(date_to)
+                filters.append("t.due_date <= :dt")
+            except ValueError:
+                pass
     where = " AND ".join(filters)
     rows = (await session.execute(text(f"""
         SELECT t.id, t.title, t.description, t.assigned_to, t.assigned_to_name,
