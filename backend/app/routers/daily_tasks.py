@@ -196,14 +196,17 @@ async def create_task(
     await session.commit()
 
     if body.assigned_to and str(body.assigned_to) != str(current.user_id):
-        from app.routers.notifications import create_notification
-        so_ctx = f' (OS: {body.service_order_title})' if body.service_order_title else ''
-        await create_notification(
-            str(current.association_id), str(body.assigned_to),
-            "📋 Nova tarefa atribuída",
-            f'Você foi atribuído(a) à tarefa "{body.title}"{so_ctx}',
-            "task",
-        )
+        try:
+            from app.routers.notifications import create_notification
+            so_ctx = f' (OS: {body.service_order_title})' if body.service_order_title else ''
+            await create_notification(
+                str(current.association_id), str(body.assigned_to),
+                "📋 Nova tarefa atribuída",
+                f'Você foi atribuído(a) à tarefa "{body.title}"{so_ctx}',
+                "task",
+            )
+        except Exception:
+            pass
     return _row_to_dict(row)
 
 
@@ -236,14 +239,17 @@ async def update_task(
     )).fetchone()
     await session.commit()
     if body.assigned_to and row and str(body.assigned_to) != str(current.user_id):
-        from app.routers.notifications import create_notification
-        so_ctx = f' (OS: {row[2]})' if row[2] else ''
-        await create_notification(
-            str(current.association_id), str(body.assigned_to),
-            "📋 Tarefa atribuída a você",
-            f'Você foi atribuído(a) à tarefa "{row[0]}"{so_ctx}',
-            "task",
-        )
+        try:
+            from app.routers.notifications import create_notification
+            so_ctx = f' (OS: {row[2]})' if row[2] else ''
+            await create_notification(
+                str(current.association_id), str(body.assigned_to),
+                "📋 Tarefa atribuída a você",
+                f'Você foi atribuído(a) à tarefa "{row[0]}"{so_ctx}',
+                "task",
+            )
+        except Exception:
+            pass
     return {"ok": True}
 
 
