@@ -469,37 +469,37 @@ async def report_pdf(
     if date_from:
         try:
             params["df"] = date.fromisoformat(date_from)
-            df_filter = " AND t.due_date >= :df"
+            df_filter = " AND t.created_at >= CAST(:df AS timestamptz)"
         except ValueError:
             pass
     if date_to:
         try:
             params["dt"] = date.fromisoformat(date_to)
-            dt_filter = " AND t.due_date <= :dt"
+            dt_filter = " AND t.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
         except ValueError:
             pass
     if user_id:
-        uid_filter = " AND COALESCE(t.assigned_to, t.created_by) = :uid"
+        uid_filter = " AND (t.assigned_to = :uid OR t.created_by = :uid)"
         params["uid"] = user_id
 
     rows = (await session.execute(text(f"""
-        SELECT u.id, u.full_name,
-               t.id, t.title, t.status, t.due_date,
-               t.checklist, t.attachment_urls, t.service_order_title
-        FROM users u
-        JOIN daily_tasks t ON u.id = COALESCE(t.assigned_to, t.created_by)
+        SELECT
+            COALESCE(ua.full_name, t.assigned_to_name, uc.full_name, 'Desconhecido') AS user_name,
+            t.id, t.title, t.status, t.due_date,
+            t.checklist, t.attachment_urls, t.service_order_title
+        FROM daily_tasks t
+        LEFT JOIN users ua ON ua.id = t.assigned_to
+        LEFT JOIN users uc ON uc.id = t.created_by
         WHERE t.association_id = ANY(:aids)
-          AND u.association_id = ANY(:aids)
-          AND u.is_active = true
           {df_filter}{dt_filter}{uid_filter}
-        ORDER BY u.full_name ASC, t.due_date ASC NULLS LAST
+        ORDER BY user_name ASC, t.due_date ASC NULLS LAST
     """), params)).fetchall()
 
-    task_ids = list({str(r[2]) for r in rows})
+    task_ids = list({str(r[1]) for r in rows})
     comments_map: dict = {}
     if task_ids:
         c_rows = (await session.execute(text("""
-            SELECT c.task_id, c.comment, c.attachment_urls, c.created_at, u.full_name
+            SELECT c.task_id, c.comment, c.attachment_urls, c.created_at, u.full_name, c.checklist_index
             FROM daily_task_comments c
             JOIN users u ON u.id = c.created_by
             WHERE c.task_id = ANY(:tids)
@@ -514,28 +514,29 @@ async def report_pdf(
             comments_map.setdefault(tid, []).append({
                 "comment": cr[1] or "", "attachment_urls": att,
                 "created_at": str(cr[3])[:16], "author_name": cr[4],
+                "checklist_index": cr[5],
             })
 
     users_map: OrderedDict = OrderedDict()
     for r in rows:
-        uid = str(r[0])
-        if uid not in users_map:
-            users_map[uid] = {"user_name": r[1], "tasks": []}
-        tid = str(r[2])
-        if not any(t["id"] == tid for t in users_map[uid]["tasks"]):
-            cl = r[6]
+        key = r[0].strip().lower()  # agrupar por nome (unifica associações)
+        if key not in users_map:
+            users_map[key] = {"user_name": r[0], "tasks": []}
+        tid = str(r[1])
+        if not any(t["id"] == tid for t in users_map[key]["tasks"]):
+            cl = r[5]
             if isinstance(cl, str):
                 try: cl = _json.loads(cl)
                 except: cl = []
-            att = r[7]
+            att = r[6]
             if isinstance(att, str):
                 try: att = _json.loads(att)
                 except: att = []
-            users_map[uid]["tasks"].append({
-                "id": tid, "title": r[3], "status": r[4],
-                "due_date": str(r[5]) if r[5] else None,
+            users_map[key]["tasks"].append({
+                "id": tid, "title": r[2], "status": r[3],
+                "due_date": str(r[4]) if r[4] else None,
                 "checklist": cl or [], "attachment_urls": att or [],
-                "so_title": r[8],
+                "so_title": r[7],
             })
 
     def fmt_date(d: str) -> str:
@@ -637,34 +638,41 @@ async def report_pdf(
                 pdf.cell(0, 3.5, safe(f"    OS: {task['so_title']}"), ln=True)
                 pdf.set_text_color(0, 0, 0)
 
+            task_comments = comments_map.get(task["id"], [])
             pdf.set_font("Helvetica", size=8)
             if task["checklist"]:
-                for item in task["checklist"]:
+                for ci, item in enumerate(task["checklist"]):
                     mark = "[OK]" if item.get("done") else "[  ]"
                     col = (0, 120, 0) if item.get("done") else (160, 160, 160)
                     pdf.set_text_color(*col)
+                    pdf.set_font("Helvetica", "B", 8)
                     pdf.cell(0, 4, safe(f"    {mark}  {item['text']}"), ln=True)
+                    # Acompanhamentos deste item
+                    item_comments = [c for c in task_comments if c.get("checklist_index") == ci]
+                    for c in item_comments:
+                        pdf.set_font("Helvetica", "I", 7)
+                        pdf.set_text_color(120, 120, 120)
+                        prefix = f"      ↳ [{c['created_at']}] {c['author_name']}: "
+                        txt = prefix + (c["comment"] or "")
+                        pdf.multi_cell(0, 3.5, safe(txt))
+                    pdf.set_text_color(0, 0, 0)
                 pdf.set_text_color(0, 0, 0)
             else:
                 pdf.set_text_color(140, 140, 140)
                 pdf.cell(0, 4, "    (sem itens de entrega)", ln=True)
                 pdf.set_text_color(0, 0, 0)
 
-            embed_attachments(pdf, task["attachment_urls"])
-
-            task_comments = comments_map.get(task["id"], [])
-            if task_comments:
+            # Comentários gerais (sem checklist_index)
+            general_comments = [c for c in task_comments if c.get("checklist_index") is None]
+            if general_comments:
                 pdf.set_font("Helvetica", "I", 7)
                 pdf.set_text_color(100, 100, 100)
-                pdf.cell(0, 4, "  Acompanhamentos:", ln=True)
-                for c in task_comments:
-                    pdf.set_font("Helvetica", size=7)
-                    text_line = f"    [{c['created_at']}] {c['author_name']}"
-                    if c["comment"]:
-                        text_line += f": {c['comment'][:80]}"
-                    pdf.cell(0, 3.5, safe(text_line), ln=True)
-                    embed_attachments(pdf, c["attachment_urls"])
+                for c in general_comments:
+                    txt = f"      ↳ [{c['created_at']}] {c['author_name']}: {c['comment'] or ''}"
+                    pdf.multi_cell(0, 3.5, safe(txt))
                 pdf.set_text_color(0, 0, 0)
+
+            embed_attachments(pdf, task["attachment_urls"])
 
             pdf.ln(1)
 
