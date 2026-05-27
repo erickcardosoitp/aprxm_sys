@@ -517,11 +517,26 @@ async def report_pdf(
                 "checklist_index": cr[5],
             })
 
+    # OS em andamento/abertas para os colaboradores do período
+    os_uid_filter = " AND so.assigned_to = :uid" if user_id else ""
+    os_rows = (await session.execute(text(f"""
+        SELECT
+            COALESCE(u.full_name, so.assigned_to_name, 'Desconhecido') AS user_name,
+            so.id, so.number, so.title, so.status, so.priority,
+            so.description, so.category_name, so.area, so.updated_at
+        FROM service_orders so
+        LEFT JOIN users u ON u.id = so.assigned_to
+        WHERE so.association_id = ANY(:aids)
+          AND so.status IN ('open', 'in_progress', 'waiting_third_party')
+          {os_uid_filter}
+        ORDER BY user_name ASC, so.number ASC
+    """), params)).fetchall()
+
     users_map: OrderedDict = OrderedDict()
     for r in rows:
-        key = r[0].strip().lower()  # agrupar por nome (unifica associações)
+        key = r[0].strip().lower()
         if key not in users_map:
-            users_map[key] = {"user_name": r[0], "tasks": []}
+            users_map[key] = {"user_name": r[0], "tasks": [], "os_list": []}
         tid = str(r[1])
         if not any(t["id"] == tid for t in users_map[key]["tasks"]):
             cl = r[5]
@@ -539,19 +554,56 @@ async def report_pdf(
                 "so_title": r[7],
             })
 
+    for r in os_rows:
+        key = r[0].strip().lower()
+        if key not in users_map:
+            users_map[key] = {"user_name": r[0], "tasks": [], "os_list": []}
+        so_id = str(r[1])
+        if not any(o["id"] == so_id for o in users_map[key]["os_list"]):
+            users_map[key]["os_list"].append({
+                "id": so_id, "number": r[2], "title": r[3],
+                "status": r[4], "priority": r[5],
+                "description": r[6], "category_name": r[7],
+                "area": r[8], "updated_at": str(r[9])[:10] if r[9] else None,
+            })
+
+    # Comentários das OS encontradas
+    all_os_ids = [o["id"] for entry in users_map.values() for o in entry.get("os_list", [])]
+    os_comments_map: dict = {}
+    if all_os_ids:
+        oc_rows = (await session.execute(text("""
+            SELECT c.service_order_id, u.full_name, c.comment, c.created_at
+            FROM service_order_comments c
+            JOIN users u ON u.id = c.created_by
+            WHERE c.service_order_id = ANY(:oids)
+            ORDER BY c.created_at ASC
+        """), {"oids": all_os_ids})).fetchall()
+        for cr in oc_rows:
+            os_comments_map.setdefault(str(cr[0]), []).append({
+                "author": cr[1], "comment": cr[2] or "",
+                "created_at": str(cr[3])[:16],
+            })
+
     def fmt_date(d: str) -> str:
         p = d.split("-")
         return f"{p[2]}/{p[1]}" if len(p) == 3 else d
 
     period_label = ""
     if date_from or date_to:
-        period_label = f"Período: {fmt_date(date_from) if date_from else '—'} – {fmt_date(date_to) if date_to else '—'}"
+        period_label = f"Periodo: {fmt_date(date_from) if date_from else '-'} a {fmt_date(date_to) if date_to else '-'}"
 
     IS_IMAGE = lambda u: bool(u and u.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")))
     STATUS_LABEL = {"pending": "PENDENTE", "in_progress": "ANDANDO", "done": "FEITA"}
 
     def safe(s: str) -> str:
-        """Remove characters outside Latin-1 to avoid fpdf2 Helvetica corruption."""
+        _map = {
+            "–": "-", "—": "-", "―": "-",
+            "↳": ">", "→": "->", "←": "<-", "•": "*",
+            "…": "...", "‘": "'", "’": "'",
+            "“": '"', "”": '"', "\xa0": " ",
+        }
+        for src, dst in _map.items():
+            s = s.replace(src, dst)
         return s.encode("latin-1", errors="replace").decode("latin-1")
 
     def embed_attachments(pdf: FPDF, urls: list):
@@ -607,7 +659,7 @@ async def report_pdf(
             pdf.ln()
         pdf.set_font("Helvetica", size=9)
         pdf.set_text_color(80, 80, 80)
-        pdf.cell(0, 4, "Tarefas Diarias - Relatorio de Entregas", ln=True)
+        pdf.cell(0, 4, safe("Tarefas Diarias - Relatorio de Entregas"), ln=True)
         pdf.set_text_color(0, 0, 0)
         pdf.ln(1.5)
 
@@ -630,7 +682,7 @@ async def report_pdf(
 
             pdf.set_fill_color(245, 248, 255)
             pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(0, 5.5, safe(f"  > {task['title']}{due_str}  [{badge}]"), fill=True, ln=True)
+            pdf.multi_cell(0, 5.5, safe(f"  > {task['title']}{due_str}  [{badge}]"), fill=True, new_x="LMARGIN", new_y="NEXT")
 
             if task.get("so_title"):
                 pdf.set_font("Helvetica", "I", 7)
@@ -647,14 +699,13 @@ async def report_pdf(
                     pdf.set_text_color(*col)
                     pdf.set_font("Helvetica", "B", 8)
                     pdf.cell(0, 4, safe(f"    {mark}  {item['text']}"), ln=True)
-                    # Acompanhamentos deste item
                     item_comments = [c for c in task_comments if c.get("checklist_index") == ci]
                     for c in item_comments:
                         pdf.set_font("Helvetica", "I", 7)
                         pdf.set_text_color(120, 120, 120)
-                        prefix = f"      ↳ [{c['created_at']}] {c['author_name']}: "
+                        prefix = f"      > [{c['created_at']}] {c['author_name']}: "
                         txt = prefix + (c["comment"] or "")
-                        pdf.multi_cell(0, 3.5, safe(txt))
+                        pdf.multi_cell(0, 3.5, safe(txt), new_x="LMARGIN", new_y="NEXT")
                     pdf.set_text_color(0, 0, 0)
                 pdf.set_text_color(0, 0, 0)
             else:
@@ -662,19 +713,93 @@ async def report_pdf(
                 pdf.cell(0, 4, "    (sem itens de entrega)", ln=True)
                 pdf.set_text_color(0, 0, 0)
 
-            # Comentários gerais (sem checklist_index)
             general_comments = [c for c in task_comments if c.get("checklist_index") is None]
             if general_comments:
                 pdf.set_font("Helvetica", "I", 7)
                 pdf.set_text_color(100, 100, 100)
                 for c in general_comments:
-                    txt = f"      ↳ [{c['created_at']}] {c['author_name']}: {c['comment'] or ''}"
-                    pdf.multi_cell(0, 3.5, safe(txt))
+                    txt = f"      > [{c['created_at']}] {c['author_name']}: {c['comment'] or ''}"
+                    pdf.multi_cell(0, 3.5, safe(txt), new_x="LMARGIN", new_y="NEXT")
                 pdf.set_text_color(0, 0, 0)
 
             embed_attachments(pdf, task["attachment_urls"])
 
             pdf.ln(1)
+
+        # Seção de O.S em andamento/abertas
+        os_list = entry.get("os_list", [])
+        if os_list:
+            OS_STATUS_LABEL = {
+                "open": "Aberta", "in_progress": "Em andamento",
+                "waiting_third_party": "Aguard. terceiro",
+                "resolved": "Resolvida", "cancelled": "Cancelada",
+            }
+            OS_PRIORITY_LABEL = {
+                "low": "Baixa", "medium": "Media",
+                "high": "Alta", "critical": "Critica",
+            }
+            OS_STATUS_COLOR = {
+                "open": (200, 130, 0),
+                "in_progress": (20, 100, 200),
+                "waiting_third_party": (130, 60, 180),
+            }
+            pdf.ln(1)
+            pdf.set_fill_color(230, 240, 255)
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_text_color(30, 70, 160)
+            pdf.cell(0, 5, safe(f"  O.S EM ANDAMENTO ({len(os_list)})"), fill=True, ln=True)
+            pdf.set_text_color(0, 0, 0)
+            for os_item in os_list:
+                status_label = OS_STATUS_LABEL.get(os_item["status"], os_item["status"].upper())
+                priority_label = OS_PRIORITY_LABEL.get(os_item["priority"] or "", "")
+                color = OS_STATUS_COLOR.get(os_item["status"], (80, 80, 80))
+                num_str = f"#{os_item['number']}" if os_item["number"] else "-"
+                updated = f"  Atualizado: {os_item['updated_at']}" if os_item["updated_at"] else ""
+
+                # Linha 1: número + status (bold, colorido)
+                pdf.set_font("Helvetica", "B", 8)
+                pdf.set_text_color(*color)
+                header = f"  {num_str}  [{status_label}]"
+                if priority_label:
+                    header += f"  Prioridade: {priority_label}"
+                pdf.cell(0, 4.5, safe(header), ln=True)
+
+                # Linha 2: título (normal, escuro)
+                pdf.set_font("Helvetica", size=8)
+                pdf.set_text_color(30, 30, 30)
+                pdf.multi_cell(0, 4, safe(f"    {os_item['title']}{updated}"), new_x="LMARGIN", new_y="NEXT")
+
+                # Linha 3: categoria / área (se houver)
+                meta_parts = []
+                if os_item.get("category_name"): meta_parts.append(os_item["category_name"])
+                if os_item.get("area"): meta_parts.append(os_item["area"])
+                if meta_parts:
+                    pdf.set_font("Helvetica", "I", 7)
+                    pdf.set_text_color(100, 100, 100)
+                    pdf.cell(0, 3.5, safe(f"    {' | '.join(meta_parts)}"), ln=True)
+                    pdf.set_text_color(0, 0, 0)
+
+                # Linha 4: descrição (resumida)
+                desc = (os_item.get("description") or "").strip()
+                if desc:
+                    pdf.set_font("Helvetica", "I", 7)
+                    pdf.set_text_color(80, 80, 80)
+                    desc_short = desc[:300] + ("..." if len(desc) > 300 else "")
+                    pdf.multi_cell(0, 3.5, safe(f"    {desc_short}"), new_x="LMARGIN", new_y="NEXT")
+                    pdf.set_text_color(0, 0, 0)
+
+                # Comentários da OS
+                os_comments = os_comments_map.get(os_item["id"], [])
+                if os_comments:
+                    for oc in os_comments:
+                        pdf.set_font("Helvetica", "I", 7)
+                        pdf.set_text_color(120, 120, 120)
+                        txt = f"      > [{oc['created_at']}] {oc['author']}: {oc['comment']}"
+                        pdf.multi_cell(0, 3.5, safe(txt), new_x="LMARGIN", new_y="NEXT")
+                    pdf.set_text_color(0, 0, 0)
+
+                pdf.ln(1.5)
+            pdf.ln(0.5)
 
         pdf.set_y(-9)
         pdf.set_font("Helvetica", size=6.5)
@@ -685,7 +810,21 @@ async def report_pdf(
     buf = _BytesIO()
     buf.write(bytes(pdf.output()))
     buf.seek(0)
-    fname = f"tarefas_{date_from or 'all'}_{date_to or 'all'}.pdf"
+
+    # Nome amigável: "Tarefas - Nome Colaborador - DD-MM.pdf"
+    if len(users_map) == 1:
+        collab_name = next(iter(users_map.values()))["user_name"]
+    else:
+        collab_name = None
+    date_str = fmt_date(date_from or date_to or str(date.today())).replace("/", "-")
+    if collab_name:
+        fname = f"Tarefas - {collab_name} - {date_str}.pdf"
+    else:
+        fname = f"Tarefas - {date_str}.pdf"
+    # Remove chars inválidos em nome de arquivo
+    import re as _re
+    fname = _re.sub(r'[\\/:*?"<>|]', "_", fname)
+
     return Response(
         content=buf.read(), media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
