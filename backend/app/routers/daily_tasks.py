@@ -356,6 +356,23 @@ async def report_by_user(
         ORDER BY c.created_at DESC
     """), params)).fetchall()
 
+    # OS: registros abertos/em andamento atribuídos ou criados pelo usuário
+    uid_filter_os_direct = ""
+    if user_id:
+        uid_filter_os_direct = " AND (so.assigned_to = :uid OR so.requester_user_id = :uid)"
+    os_open_rows = (await session.execute(text(f"""
+        SELECT
+            COALESCE(ua.full_name, uc.full_name, 'Desconhecido') AS user_name,
+            so.id, so.title, so.number, so.status, so.created_at
+        FROM service_orders so
+        LEFT JOIN users ua ON ua.id = so.assigned_to
+        LEFT JOIN users uc ON uc.id = so.requester_user_id
+        WHERE so.association_id = ANY(:aids)
+          AND so.status NOT IN ('resolved', 'cancelled')
+          {uid_filter_os_direct}
+        ORDER BY so.created_at DESC
+    """), params)).fetchall()
+
     import json as _json
 
     # Agrupar por nome (unifica mesma pessoa em associações diferentes)
@@ -401,6 +418,23 @@ async def report_by_user(
             "so_id": str(r[5]), "so_title": r[6], "so_number": r[7],
             "changed_at": str(r[4])[:16], "action": "commented", "comment": r[3],
         })
+
+    # OS abertas/em andamento — aparece em os_andamento se ainda não listada
+    seen_os: set = set()
+    for ev_list in [e["os_entregas"] + e["os_andamento"] for e in users_map.values()]:
+        for ev in ev_list:
+            seen_os.add(ev["so_id"])
+    for r in os_open_rows:
+        user_name = r[0]
+        so_id = str(r[1])
+        entry = _ensure(user_name)
+        # só adiciona se não apareceu via history/comment
+        already = any(ev["so_id"] == so_id for ev in entry["os_andamento"] + entry["os_entregas"])
+        if not already:
+            entry["os_andamento"].append({
+                "so_id": so_id, "so_title": r[2], "so_number": r[3],
+                "changed_at": str(r[5])[:16], "action": r[4],
+            })
 
     result = []
     today_str = str(date.today())
@@ -518,14 +552,15 @@ async def report_pdf(
             })
 
     # OS em andamento/abertas para os colaboradores do período
-    os_uid_filter = " AND so.assigned_to = :uid" if user_id else ""
+    os_uid_filter = " AND (so.assigned_to = :uid OR so.requester_user_id = :uid)" if user_id else ""
     os_rows = (await session.execute(text(f"""
         SELECT
-            COALESCE(u.full_name, so.assigned_to_name, 'Desconhecido') AS user_name,
+            COALESCE(ua.full_name, uc.full_name, so.assigned_to_name, 'Desconhecido') AS user_name,
             so.id, so.number, so.title, so.status, so.priority,
             so.description, so.category_name, so.area, so.updated_at
         FROM service_orders so
-        LEFT JOIN users u ON u.id = so.assigned_to
+        LEFT JOIN users ua ON ua.id = so.assigned_to
+        LEFT JOIN users uc ON uc.id = so.requester_user_id
         WHERE so.association_id = ANY(:aids)
           AND so.status IN ('open', 'in_progress', 'waiting_third_party')
           {os_uid_filter}
