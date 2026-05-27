@@ -2300,29 +2300,37 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                                   {t.due_date && <span className={`text-[10px] tabular-nums ${overdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>{fmtBR(t.due_date)}</span>}
                                   {t.so_title && <span className="text-[10px] text-[#26619c]">OS: {t.so_title}</span>}
                                 </div>
-                                {/* Checklist compacto */}
+                                {/* Checklist + acompanhamentos intercalados por índice */}
                                 {t.checklist?.length > 0 && (
-                                  <ul className="mt-1 flex flex-col gap-0">
-                                    {t.checklist.map((cl: any, ci: number) => (
-                                      <li key={ci} className="flex items-baseline gap-1.5 text-[11px] leading-snug">
-                                        <span className={`font-mono shrink-0 text-[10px] ${cl.done ? 'text-green-600' : 'text-gray-300'}`}>{cl.done ? '✓' : '○'}</span>
-                                        <span className={cl.done ? 'line-through text-gray-400' : 'text-gray-600'}>{cl.text}</span>
-                                      </li>
-                                    ))}
+                                  <ul className="mt-1 flex flex-col gap-0.5">
+                                    {t.checklist.map((cl: any, ci: number) => {
+                                      const itemComments = (t.comments ?? []).filter((c: any) => c.checklist_index === ci)
+                                      return (
+                                        <li key={ci}>
+                                          <div className="flex items-baseline gap-1.5 text-[11px] leading-snug">
+                                            <span className={`font-mono shrink-0 text-[10px] ${cl.done ? 'text-green-600' : 'text-gray-300'}`}>{cl.done ? '✓' : '○'}</span>
+                                            <span className={`font-semibold ${cl.done ? 'line-through text-gray-400' : 'text-gray-800'}`}>{cl.text}</span>
+                                          </div>
+                                          {itemComments.map((c: any) => (
+                                            <div key={c.id} className="flex items-baseline gap-1.5 pl-4 text-[10px] text-gray-400 leading-snug">
+                                              <span className="shrink-0">↳</span>
+                                              <span className="italic">{c.comment}</span>
+                                              <span className="shrink-0 tabular-nums ml-1">{c.created_at?.slice(0,10)}</span>
+                                            </div>
+                                          ))}
+                                        </li>
+                                      )
+                                    })}
                                   </ul>
                                 )}
-                                {/* Comentários inline */}
-                                {t.comments?.length > 0 && (
-                                  <ul className="mt-1 pl-2 border-l border-gray-200 flex flex-col gap-0.5">
-                                    {t.comments.map((c: any) => (
-                                      <li key={c.id} className="flex items-baseline gap-1.5 text-[10px] text-gray-500 leading-snug">
-                                        <span className="shrink-0 text-gray-300">↳</span>
-                                        <span className="italic truncate">{c.comment}</span>
-                                        <span className="shrink-0 tabular-nums text-gray-300">{c.created_at?.slice(0,10)}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
+                                {/* Comentários gerais (sem checklist_index) */}
+                                {(t.comments ?? []).filter((c: any) => c.checklist_index == null).map((c: any) => (
+                                  <div key={c.id} className="flex items-baseline gap-1.5 mt-0.5 pl-3 text-[10px] text-gray-400 leading-snug">
+                                    <span className="shrink-0">↳</span>
+                                    <span className="italic">{c.comment}</span>
+                                    <span className="shrink-0 tabular-nums ml-1">{c.created_at?.slice(0,10)}</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           </li>
