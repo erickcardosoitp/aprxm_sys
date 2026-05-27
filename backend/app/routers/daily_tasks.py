@@ -376,10 +376,10 @@ async def report_pdf(
     params: dict = {"aids": aids}
     df_filter = dt_filter = uid_filter = ""
     if date_from:
-        df_filter = " AND t.due_date >= :df"
+        df_filter = " AND t.due_date >= CAST(:df AS date)"
         params["df"] = date_from
     if date_to:
-        dt_filter = " AND t.due_date <= :dt"
+        dt_filter = " AND t.due_date <= CAST(:dt AS date)"
         params["dt"] = date_to
     if user_id:
         uid_filter = " AND COALESCE(t.assigned_to, t.created_by) = :uid"
@@ -393,6 +393,7 @@ async def report_pdf(
         JOIN daily_tasks t ON u.id = COALESCE(t.assigned_to, t.created_by)
         WHERE t.association_id = ANY(:aids)
           AND u.association_id = ANY(:aids)
+          AND u.is_active = true
           {df_filter}{dt_filter}{uid_filter}
         ORDER BY u.full_name ASC, t.due_date ASC NULLS LAST
     """), params)).fetchall()
