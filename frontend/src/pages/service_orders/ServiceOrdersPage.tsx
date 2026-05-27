@@ -1778,7 +1778,7 @@ interface DailyTask {
   assigned_to_name?: string
   due_date?: string
   reminder_at?: string
-  status: 'pending' | 'done'
+  status: 'pending' | 'in_progress' | 'done'
   checklist: { text: string; done: boolean }[]
   attachment_urls: string[]
   service_order_id?: string
@@ -1832,20 +1832,40 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [soResults, setSOResults] = useState<any[]>([])
   const [saving, setSaving] = useState(false)
 
-  // comments
+  // comments — keyed por taskId
   const [comments, setComments] = useState<Record<string, TaskComment[]>>({})
-  const [commentInput, setCommentInput] = useState('')
-  const [commentPhotos, setCommentPhotos] = useState<string[]>([])
-  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [commentDraft, setCommentDraft] = useState<
+    Record<string, { text: string; photos: string[]; uploading: boolean }>
+  >({})
   const [savingComment, setSavingComment] = useState(false)
 
+  // filtros avançados
   const today = new Date().toISOString().split('T')[0]
+  const [viewDate, setViewDate] = useState(today)
+  const [filterAssigned, setFilterAssigned] = useState('')
+  const [filterPeriodFrom, setFilterPeriodFrom] = useState('')
+  const [filterPeriodTo, setFilterPeriodTo] = useState('')
+  const [fInitialStatus, setFInitialStatus] = useState('pending')
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [reportUserId, setReportUserId] = useState('')
+
+  const getDraft = (taskId: string) =>
+    commentDraft[taskId] ?? { text: '', photos: [], uploading: false }
+  const setDraft = (taskId: string, patch: Partial<{ text: string; photos: string[]; uploading: boolean }>) =>
+    setCommentDraft(prev => ({ ...prev, [taskId]: { ...getDraft(taskId), ...patch } }))
 
   const load = async () => {
     setLoading(true)
     try {
       const params: any = {}
       if (filterStatus) params.status = filterStatus
+      if (filterAssigned) params.assigned_to = filterAssigned
+      if (filterPeriodFrom || filterPeriodTo) {
+        if (filterPeriodFrom) params.date_from = filterPeriodFrom
+        if (filterPeriodTo) params.date_to = filterPeriodTo
+      } else {
+        params.view = 'default'
+      }
       const res = await api.get<DailyTask[]>('/daily-tasks', { params })
       setTasks(res.data)
     } catch { toast.error('Erro ao carregar tarefas.') }
@@ -1859,8 +1879,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     } catch { /* silent */ }
   }
 
-  useEffect(() => { load() }, [filterStatus])
-  useEffect(() => { loadUsers() }, [])
+  useEffect(() => { load(); loadUsers() }, [filterStatus, filterAssigned, filterPeriodFrom, filterPeriodTo, viewDate])
 
   const loadComments = async (taskId: string) => {
     if (comments[taskId]) return
@@ -1873,36 +1892,36 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const toggleExpanded = (taskId: string) => {
     const next = expandedId === taskId ? null : taskId
     setExpandedId(next)
-    setCommentInput('')
-    setCommentPhotos([])
     if (next) loadComments(next)
   }
 
-  const handleCommentPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCommentPhotoUpload = async (taskId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setUploadingPhoto(true)
+    setDraft(taskId, { uploading: true })
     try {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('folder', 'task-comments')
       const res = await api.post<{ url: string }>('/uploads', fd)
-      setCommentPhotos(prev => [...prev, res.data.url])
-    } catch { toast.error('Erro ao enviar foto.') }
-    finally { setUploadingPhoto(false); e.target.value = '' }
+      setDraft(taskId, { photos: [...getDraft(taskId).photos, res.data.url], uploading: false })
+    } catch {
+      toast.error('Erro ao enviar foto.')
+      setDraft(taskId, { uploading: false })
+    } finally { e.target.value = '' }
   }
 
   const submitComment = async (taskId: string) => {
-    if (!commentInput.trim() && commentPhotos.length === 0) return
+    const draft = getDraft(taskId)
+    if (!draft.text.trim() && draft.photos.length === 0) return
     setSavingComment(true)
     try {
       const res = await api.post<TaskComment>(`/daily-tasks/${taskId}/comments`, {
-        comment: commentInput.trim(),
-        attachment_urls: commentPhotos,
+        comment: draft.text.trim(),
+        attachment_urls: draft.photos,
       })
       setComments(prev => ({ ...prev, [taskId]: [...(prev[taskId] || []), res.data] }))
-      setCommentInput('')
-      setCommentPhotos([])
+      setDraft(taskId, { text: '', photos: [] })
     } catch { toast.error('Erro ao salvar acompanhamento.') }
     finally { setSavingComment(false) }
   }
@@ -1926,6 +1945,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     setFDueDate(''); setFReminder(''); setFChecklist([]); setFCheckInput('')
     setFAttachments([])
     setFSOId(''); setFSOTitle(''); setSOSearch(''); setSOResults([])
+    setFInitialStatus('pending')
     setShowForm(false); setEditingId(null)
   }
 
@@ -1963,6 +1983,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         service_order_id: fSOId || undefined,
         service_order_title: fSOTitle || undefined,
       }
+      if (!editingId) body.status = fInitialStatus
       if (editingId) {
         await api.patch(`/daily-tasks/${editingId}`, body)
         toast.success('Tarefa atualizada.')
@@ -1984,8 +2005,10 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     } catch { toast.error('Erro ao excluir.') }
   }
 
-  const toggleDone = async (task: DailyTask) => {
-    const newStatus = task.status === 'done' ? 'pending' : 'done'
+  const cycleStatus = async (task: DailyTask) => {
+    const cycle: DailyTask['status'][] = ['pending', 'in_progress', 'done']
+    const idx = cycle.indexOf(task.status)
+    const newStatus = cycle[(idx + 1) % cycle.length]
     try {
       await api.patch(`/daily-tasks/${task.id}`, { status: newStatus })
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
@@ -2003,10 +2026,30 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const loadReport = async () => {
     setLoadingReport(true)
     try {
-      const res = await api.get('/daily-tasks/report/by-user', { params: { date_from: reportFrom, date_to: reportTo } })
+      const res = await api.get('/daily-tasks/report/by-user', {
+        params: {
+          date_from: reportFrom || undefined,
+          date_to: reportTo || undefined,
+          user_id: reportUserId || undefined,
+        }
+      })
       setReportData(res.data)
     } catch { toast.error('Erro ao carregar relatório.') }
     finally { setLoadingReport(false) }
+  }
+
+  const downloadPdf = async () => {
+    try {
+      const params: any = {}
+      if (reportFrom) params.date_from = reportFrom
+      if (reportTo) params.date_to = reportTo
+      if (reportUserId) params.user_id = reportUserId
+      const res = await api.get('/daily-tasks/report/pdf', { params, responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url; a.download = `tarefas_${reportFrom || 'all'}_${reportTo || 'all'}.pdf`
+      a.click(); URL.revokeObjectURL(url)
+    } catch { toast.error('Erro ao gerar PDF.') }
   }
 
   const taskForm = (
@@ -2060,8 +2103,19 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           </div>
         )}
       </div>
+      {!editingId && (
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Status inicial</label>
+          <select value={fInitialStatus} onChange={e => setFInitialStatus(e.target.value)} className={inputCls}>
+            <option value="pending">⬜ Pendente</option>
+            <option value="in_progress">🔄 Em andamento</option>
+          </select>
+        </div>
+      )}
+      <hr className="border-gray-200 my-1" />
       <div>
-        <label className="block text-xs text-gray-600 mb-1">Checklist</label>
+        <label className="block text-xs text-gray-600 mb-0.5">Itens a entregar</label>
+        <p className="text-[10px] text-gray-400 mb-1">Cada item representa uma entrega a confirmar</p>
         <div className="flex gap-2 mb-2">
           <input value={fCheckInput} onChange={e => setFCheckInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), fCheckInput.trim() && (setFChecklist(p => [...p, { text: fCheckInput.trim(), done: false }]), setFCheckInput('')))}
@@ -2121,9 +2175,20 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           <label className="block text-xs text-gray-500 mb-1">Até</label>
           <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className={inputCls} />
         </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Operador</label>
+          <select value={reportUserId} onChange={e => setReportUserId(e.target.value)} className={inputCls}>
+            <option value="">Todos</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+          </select>
+        </div>
         <button onClick={loadReport} disabled={loadingReport}
           className="px-4 py-2 bg-[#26619c] text-white rounded-xl text-sm font-medium disabled:opacity-50">
           {loadingReport ? 'Carregando…' : 'Gerar'}
+        </button>
+        <button onClick={downloadPdf}
+          className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm hover:bg-gray-50">
+          📄 Baixar PDF
         </button>
       </div>
 
@@ -2207,26 +2272,82 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     </div>
   )
 
+  const avatarColor = (name: string) => {
+    const colors = ['#26619c', '#7c3aed', '#059669', '#dc2626', '#d97706', '#0891b2']
+    let hash = 0
+    for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff
+    return colors[hash % colors.length]
+  }
+  const relTime = (isoStr: string) => {
+    const diff = Date.now() - new Date(isoStr).getTime()
+    const m = Math.floor(diff / 60000)
+    if (m < 1) return 'agora'
+    if (m < 60) return `há ${m}min`
+    const h = Math.floor(m / 60)
+    if (h < 24) return `há ${h}h`
+    return `há ${Math.floor(h / 24)}d`
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Date navigator */}
+        <div className="flex items-center gap-1">
+          <button onClick={() => {
+            const d = new Date(viewDate + 'T12:00:00'); d.setDate(d.getDate() - 1)
+            setViewDate(d.toISOString().slice(0, 10)); setFilterPeriodFrom(''); setFilterPeriodTo('')
+          }} className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">←</button>
+          <span className="text-sm font-medium text-gray-700 px-2 min-w-[80px] text-center">
+            {viewDate === today ? 'Hoje' : new Date(viewDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+          </span>
+          <button onClick={() => {
+            const d = new Date(viewDate + 'T12:00:00'); d.setDate(d.getDate() + 1)
+            setViewDate(d.toISOString().slice(0, 10)); setFilterPeriodFrom(''); setFilterPeriodTo('')
+          }} className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">→</button>
+        </div>
+
+        {/* Status */}
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
           className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white">
           <option value="">Todos</option>
           <option value="pending">Pendentes</option>
+          <option value="in_progress">Em andamento</option>
           <option value="done">Concluídas</option>
         </select>
+
+        {/* Responsável */}
+        <select value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white">
+          <option value="">Todos responsáveis</option>
+          {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+        </select>
+
+        {/* Período */}
+        <div className="flex items-center gap-1">
+          <input type="date" value={filterPeriodFrom}
+            onChange={e => { setFilterPeriodFrom(e.target.value); setViewDate(today) }}
+            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+          <span className="text-xs text-gray-400">–</span>
+          <input type="date" value={filterPeriodTo}
+            onChange={e => { setFilterPeriodTo(e.target.value); setViewDate(today) }}
+            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+        </div>
+
         <span className="text-sm text-gray-400">{tasks.length} tarefa(s)</span>
-        <button onClick={() => { setShowReport(true); loadReport() }}
-          className="ml-auto flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
-          <FileText className="w-4 h-4" /> Relatório
-        </button>
-        {canWrite && !showForm && (
-          <button onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition">
-            <Plus className="w-4 h-4" /> Nova Tarefa
+
+        {/* Botões direita */}
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => { setShowReport(true); loadReport() }}
+            className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
+            <FileText className="w-4 h-4" /> Ver relatório
           </button>
-        )}
+          {canWrite && !showForm && (
+            <button onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+              <Plus className="w-4 h-4" /> Nova Tarefa
+            </button>
+          )}
+        </div>
       </div>
 
       {showForm && taskForm}
@@ -2242,11 +2363,23 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         const doneCount = task.checklist.filter(i => i.done).length
         const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
         return (
-          <div key={task.id} className={`rounded-xl border shadow-sm overflow-hidden ${task.status === 'done' ? 'border-gray-200 bg-gray-50' : isOverdue ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-white'}`}>
+          <div key={task.id} className={`rounded-xl border shadow-sm overflow-hidden ${
+            task.status === 'done' ? 'border-gray-200 bg-gray-50' :
+            task.status === 'in_progress' ? 'border-amber-200 bg-amber-50/30' :
+            isOverdue ? 'border-red-200 bg-red-50/30' :
+            'border-gray-200 bg-white'
+          }`}>
             <div className="p-3">
               <div className="flex items-start gap-3">
-                <button onClick={() => toggleDone(task)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${task.status === 'done' ? 'bg-green-500 border-green-500' : 'border-gray-400 hover:border-[#26619c]'}`}>
-                  {task.status === 'done' && <span className="text-white text-[10px] font-bold">✓</span>}
+                <button
+                  onClick={() => cycleStatus(task)}
+                  title={task.status === 'pending' ? 'Pendente' : task.status === 'in_progress' ? 'Em andamento' : 'Concluída'}
+                  className={`mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition text-xs
+                    ${task.status === 'done' ? 'bg-green-500 border-green-500 text-white' :
+                      task.status === 'in_progress' ? 'bg-amber-400 border-amber-400 text-white' :
+                      'border-gray-400 hover:border-[#26619c]'}`}
+                >
+                  {task.status === 'done' ? '✓' : task.status === 'in_progress' ? '↺' : ''}
                 </button>
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpanded(task.id)}>
                   <div className="flex flex-wrap gap-1.5 mb-1">
@@ -2308,54 +2441,68 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                     ))}
                   </div>
                 )}
-                {/* Acompanhamentos */}
+                {/* Acompanhamentos — chat */}
                 <div className="flex flex-col gap-2 pt-1">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">💬 Acompanhamentos</p>
-                  {(comments[task.id] || []).map(c => (
-                    <div key={c.id} className="bg-gray-50 rounded-lg p-2.5 flex flex-col gap-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-gray-700">{c.author_name}</span>
-                        <span className="text-[10px] text-gray-400">{new Date(c.created_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
-                      </div>
-                      {c.comment && <p className="text-xs text-gray-600 whitespace-pre-wrap">{c.comment}</p>}
-                      {c.attachment_urls?.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-1">
-                          {c.attachment_urls.map((url, i) => (
-                            url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                              ? <a key={i} href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt="" className="h-16 w-16 object-cover rounded border border-gray-200" /></a>
-                              : <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">📎 {url.split('/').pop()}</a>
-                          ))}
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Acompanhamentos</p>
+                  <div className="flex flex-col gap-3 max-h-72 overflow-y-auto pr-1">
+                    {(comments[task.id] || []).map(c => (
+                      <div key={c.id} className="flex items-end gap-2">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold"
+                          style={{ backgroundColor: avatarColor(c.author_name) }}>
+                          {c.author_name.charAt(0).toUpperCase()}
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-3 py-2 bg-gray-100 flex flex-col gap-1">
+                          <span className="text-[10px] font-semibold text-gray-500">{c.author_name}</span>
+                          {c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap">{c.comment}</p>}
+                          {c.attachment_urls?.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {c.attachment_urls.map((url, i) =>
+                                url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                                  ? <img key={i} src={url} alt="" onClick={() => setLightboxUrl(url)}
+                                      className="h-12 w-12 object-cover rounded border border-gray-200 cursor-pointer hover:opacity-80" />
+                                  : <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                                      className="text-xs text-blue-600 hover:underline flex items-center gap-1">📎 {url.split('/').pop()}</a>
+                              )}
+                            </div>
+                          )}
+                          <span className="text-[10px] text-gray-400 self-end"
+                            title={new Date(c.created_at).toLocaleString('pt-BR')}>
+                            {relTime(c.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Input */}
                   <div className="flex flex-col gap-1.5 mt-1">
                     <textarea
-                      value={commentInput}
-                      onChange={e => setCommentInput(e.target.value)}
+                      value={getDraft(task.id).text}
+                      onChange={e => setDraft(task.id, { text: e.target.value })}
                       placeholder="Adicionar acompanhamento..."
                       rows={2}
                       className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-[#26619c]"
                     />
-                    {commentPhotos.length > 0 && (
+                    {getDraft(task.id).photos.length > 0 && (
                       <div className="flex flex-wrap gap-2">
-                        {commentPhotos.map((url, i) => (
+                        {getDraft(task.id).photos.map((url, i) =>
                           url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
                             ? <img key={i} src={url} alt="" className="h-12 w-12 object-cover rounded border border-gray-200" />
                             : <span key={i} className="text-xs text-blue-600">📎 {url.split('/').pop()}</span>
-                        ))}
+                        )}
                       </div>
                     )}
                     <div className="flex items-center gap-2">
-                      <label className={`text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition flex items-center gap-1 ${uploadingPhoto ? 'opacity-50' : ''}`}>
-                        📷 {uploadingPhoto ? 'Enviando...' : 'Foto'}
-                        <input type="file" accept="image/*" className="hidden" onChange={handleCommentPhotoUpload} disabled={uploadingPhoto} />
+                      <label className={`text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition flex items-center gap-1 ${getDraft(task.id).uploading ? 'opacity-50' : ''}`}>
+                        📷 {getDraft(task.id).uploading ? 'Enviando...' : 'Foto'}
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={e => handleCommentPhotoUpload(task.id, e)}
+                          disabled={getDraft(task.id).uploading} />
                       </label>
                       <button
                         onClick={() => submitComment(task.id)}
-                        disabled={savingComment || (!commentInput.trim() && commentPhotos.length === 0)}
-                        className="text-xs px-3 py-1.5 bg-[#26619c] text-white rounded-lg hover:bg-[#1a4a7a] disabled:opacity-40 transition"
-                      >
+                        disabled={savingComment || (!getDraft(task.id).text.trim() && getDraft(task.id).photos.length === 0)}
+                        className="text-xs px-3 py-1.5 bg-[#26619c] text-white rounded-lg hover:bg-[#1a4a7a] disabled:opacity-40 transition">
                         {savingComment ? 'Salvando...' : 'Enviar'}
                       </button>
                     </div>
@@ -2373,6 +2520,15 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           </div>
         )
       })}
+
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <img src={lightboxUrl} alt="" className="max-w-full max-h-full object-contain rounded" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   )
 }

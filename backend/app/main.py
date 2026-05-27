@@ -611,6 +611,15 @@ async def _run_migrations() -> None:
             "ALTER TABLE daily_tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ"
         ))
 
+        # daily_tasks: adicionar status in_progress
+        await session.execute(text(
+            "ALTER TABLE daily_tasks DROP CONSTRAINT IF EXISTS daily_tasks_status_check"
+        ))
+        await session.execute(text("""
+            ALTER TABLE daily_tasks ADD CONSTRAINT daily_tasks_status_check
+              CHECK (status IN ('pending', 'in_progress', 'done'))
+        """))
+
         # Merge duplicate users (mesmo email, assocs diferentes)
         await session.execute(text("""
             DO $$
