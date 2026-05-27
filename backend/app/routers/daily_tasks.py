@@ -250,6 +250,7 @@ async def update_task(
 class AddCommentRequest(BaseModel):
     comment: str = ""
     attachment_urls: list[str] = []
+    checklist_index: int | None = None
 
 
 # ── Rotas sem parâmetro de path (devem vir ANTES de /{task_id}) ────────────────
@@ -382,11 +383,17 @@ async def report_pdf(
     params: dict = {"aids": aids}
     df_filter = dt_filter = uid_filter = ""
     if date_from:
-        df_filter = " AND t.due_date >= CAST(:df AS date)"
-        params["df"] = date_from
+        try:
+            params["df"] = date.fromisoformat(date_from)
+            df_filter = " AND t.due_date >= :df"
+        except ValueError:
+            pass
     if date_to:
-        dt_filter = " AND t.due_date <= CAST(:dt AS date)"
-        params["dt"] = date_to
+        try:
+            params["dt"] = date.fromisoformat(date_to)
+            dt_filter = " AND t.due_date <= :dt"
+        except ValueError:
+            pass
     if user_id:
         uid_filter = " AND COALESCE(t.assigned_to, t.created_by) = :uid"
         params["uid"] = user_id
@@ -642,8 +649,8 @@ async def add_comment(
 ) -> dict:
     import json
     row = (await session.execute(text("""
-        INSERT INTO daily_task_comments (task_id, association_id, created_by, comment, attachment_urls)
-        VALUES (:tid, :aid, :uid, :comment, CAST(:attachments AS jsonb))
+        INSERT INTO daily_task_comments (task_id, association_id, created_by, comment, attachment_urls, checklist_index)
+        VALUES (:tid, :aid, :uid, :comment, CAST(:attachments AS jsonb), :cidx)
         RETURNING id, created_at
     """), {
         "tid": str(task_id),
@@ -651,6 +658,7 @@ async def add_comment(
         "uid": str(current.user_id),
         "comment": body.comment,
         "attachments": json.dumps(body.attachment_urls),
+        "cidx": body.checklist_index,
     })).fetchone()
     await session.commit()
     author = (await session.execute(
@@ -660,6 +668,7 @@ async def add_comment(
         "id": str(row[0]), "created_at": str(row[1]),
         "author_name": author, "comment": body.comment,
         "attachment_urls": body.attachment_urls,
+        "checklist_index": body.checklist_index,
     }
 
 
@@ -671,7 +680,7 @@ async def list_comments(
 ) -> list[dict]:
     aids = await _group_assoc_ids(str(current.association_id), session)
     rows = (await session.execute(text("""
-        SELECT c.id, c.comment, c.attachment_urls, c.created_at, u.full_name
+        SELECT c.id, c.comment, c.attachment_urls, c.created_at, u.full_name, c.checklist_index
         FROM daily_task_comments c
         JOIN users u ON u.id = c.created_by
         WHERE c.task_id = :tid AND c.association_id = ANY(:aids)
@@ -679,7 +688,7 @@ async def list_comments(
     """), {"tid": str(task_id), "aids": aids})).fetchall()
     return [
         {"id": str(r[0]), "comment": r[1], "attachment_urls": r[2] or [],
-         "created_at": str(r[3]), "author_name": r[4]}
+         "created_at": str(r[3]), "author_name": r[4], "checklist_index": r[5]}
         for r in rows
     ]
 

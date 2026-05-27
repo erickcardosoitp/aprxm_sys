@@ -88,7 +88,7 @@ export default function App() {
           <Route path="overview"       element={<RequireNotOffice><OverviewPage /></RequireNotOffice>} />
           <Route path="finance"        element={<RequireNotOffice><RequireModule module="finance"><FinancePage /></RequireModule></RequireNotOffice>} />
           <Route path="packages"       element={<RequireNotOffice><RequireModule module="packages"><PackagesPage /></RequireModule></RequireNotOffice>} />
-          <Route path="service-orders" element={<RequireNotOffice><RequireModule module="service_orders"><ServiceOrdersPage /></RequireModule></RequireNotOffice>} />
+          <Route path="service-orders" element={<RequireNotOffice><ServiceOrdersPage /></RequireNotOffice>} />
           <Route path="residents"      element={<RequireNotOffice><RequireModule module="residents"><ResidentsPage /></RequireModule></RequireNotOffice>} />
           <Route path="admin"          element={<RequireNotOffice><RequireAdmin><AdminPage /></RequireAdmin></RequireNotOffice>} />
           <Route path="settings"       element={<RequireNotOffice><RequireModule module="settings"><SettingsPage /></RequireModule></RequireNotOffice>} />

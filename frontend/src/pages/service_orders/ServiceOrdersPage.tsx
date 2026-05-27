@@ -1800,6 +1800,7 @@ interface TaskComment {
   attachment_urls: string[]
   created_at: string
   author_name: string
+  checklist_index: number | null
 }
 
 function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
@@ -1838,6 +1839,8 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     Record<string, { text: string; photos: string[]; uploading: boolean }>
   >({})
   const [savingComment, setSavingComment] = useState(false)
+  // expanded acompanhamentos per checklist item: key = `${taskId}:${idx}`
+  const [expandedAcomp, setExpandedAcomp] = useState<Record<string, boolean>>({})
 
   // filtros avançados
   const today = new Date().toISOString().split('T')[0]
@@ -1849,10 +1852,11 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [reportUserId, setReportUserId] = useState('')
 
-  const getDraft = (taskId: string) =>
-    commentDraft[taskId] ?? { text: '', photos: [], uploading: false }
-  const setDraft = (taskId: string, patch: Partial<{ text: string; photos: string[]; uploading: boolean }>) =>
-    setCommentDraft(prev => ({ ...prev, [taskId]: { ...getDraft(taskId), ...patch } }))
+  const draftKey = (taskId: string, idx: number) => `${taskId}:${idx}`
+  const getDraft = (taskId: string, idx: number) =>
+    commentDraft[draftKey(taskId, idx)] ?? { text: '', photos: [], uploading: false }
+  const setDraft = (taskId: string, idx: number, patch: Partial<{ text: string; photos: string[]; uploading: boolean }>) =>
+    setCommentDraft(prev => ({ ...prev, [draftKey(taskId, idx)]: { ...getDraft(taskId, idx), ...patch } }))
 
   const load = async () => {
     setLoading(true)
@@ -1895,33 +1899,34 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     if (next) loadComments(next)
   }
 
-  const handleCommentPhotoUpload = async (taskId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCommentPhotoUpload = async (taskId: string, idx: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setDraft(taskId, { uploading: true })
+    setDraft(taskId, idx, { uploading: true })
     try {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('folder', 'task-comments')
       const res = await api.post<{ url: string }>('/uploads', fd)
-      setDraft(taskId, { photos: [...getDraft(taskId).photos, res.data.url], uploading: false })
+      setDraft(taskId, idx, { photos: [...getDraft(taskId, idx).photos, res.data.url], uploading: false })
     } catch {
       toast.error('Erro ao enviar foto.')
-      setDraft(taskId, { uploading: false })
+      setDraft(taskId, idx, { uploading: false })
     } finally { e.target.value = '' }
   }
 
-  const submitComment = async (taskId: string) => {
-    const draft = getDraft(taskId)
+  const submitComment = async (taskId: string, checklistIdx: number) => {
+    const draft = getDraft(taskId, checklistIdx)
     if (!draft.text.trim() && draft.photos.length === 0) return
     setSavingComment(true)
     try {
       const res = await api.post<TaskComment>(`/daily-tasks/${taskId}/comments`, {
         comment: draft.text.trim(),
         attachment_urls: draft.photos,
+        checklist_index: checklistIdx,
       })
       setComments(prev => ({ ...prev, [taskId]: [...(prev[taskId] || []), res.data] }))
-      setDraft(taskId, { text: '', photos: [] })
+      setDraft(taskId, checklistIdx, { text: '', photos: [] })
     } catch { toast.error('Erro ao salvar acompanhamento.') }
     finally { setSavingComment(false) }
   }
@@ -2431,15 +2436,102 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
               <div className="border-t border-gray-100 p-3 flex flex-col gap-3">
                 {task.description && <p className="text-sm text-gray-600 whitespace-pre-wrap">{task.description}</p>}
                 {task.checklist.length > 0 && (
-                  <ul className="flex flex-col gap-1.5">
-                    {task.checklist.map((item, i) => (
-                      <li key={i} className="flex items-center gap-2 cursor-pointer" onClick={() => toggleChecklist(task, i)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${item.done ? 'bg-[#26619c] border-[#26619c]' : 'border-gray-400'}`}>
-                          {item.done && <span className="text-white text-[10px]">✓</span>}
-                        </div>
-                        <span className={`text-sm ${item.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.text}</span>
-                      </li>
-                    ))}
+                  <ul className="flex flex-col gap-2">
+                    {task.checklist.map((item, i) => {
+                      const itemComments = (comments[task.id] || []).filter(c => c.checklist_index === i)
+                      const acompKey = `${task.id}:${i}`
+                      const showAcomp = expandedAcomp[acompKey] ?? false
+                      const draft = getDraft(task.id, i)
+                      return (
+                        <li key={i} className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition cursor-pointer ${item.done ? 'bg-[#26619c] border-[#26619c]' : 'border-gray-400'}`}
+                              onClick={() => toggleChecklist(task, i)}
+                            >
+                              {item.done && <span className="text-white text-[10px]">✓</span>}
+                            </div>
+                            <span
+                              className={`text-sm flex-1 cursor-pointer ${item.done ? 'line-through text-gray-400' : 'text-gray-700'}`}
+                              onClick={() => toggleChecklist(task, i)}
+                            >{item.text}</span>
+                            <button
+                              onClick={() => setExpandedAcomp(prev => ({ ...prev, [acompKey]: !showAcomp }))}
+                              className="text-[10px] text-gray-400 hover:text-[#26619c] flex items-center gap-0.5 shrink-0"
+                            >
+                              💬 {itemComments.length > 0 ? itemComments.length : ''}
+                              {showAcomp ? ' ▲' : ' ▼'}
+                            </button>
+                          </div>
+                          {showAcomp && (
+                            <div className="ml-6 flex flex-col gap-2 border-l-2 border-gray-100 pl-3 py-1">
+                              {itemComments.length === 0 && (
+                                <p className="text-[10px] text-gray-400">Nenhum acompanhamento ainda.</p>
+                              )}
+                              {itemComments.map(c => (
+                                <div key={c.id} className="flex items-end gap-2">
+                                  <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold"
+                                    style={{ backgroundColor: avatarColor(c.author_name) }}>
+                                    {c.author_name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="max-w-[85%] rounded-2xl rounded-bl-sm px-2.5 py-1.5 bg-gray-100 flex flex-col gap-0.5">
+                                    <span className="text-[10px] font-semibold text-gray-500">{c.author_name}</span>
+                                    {c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap">{c.comment}</p>}
+                                    {c.attachment_urls?.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {c.attachment_urls.map((url, j) =>
+                                          url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                                            ? <img key={j} src={url} alt="" onClick={() => setLightboxUrl(url)}
+                                                className="h-10 w-10 object-cover rounded border border-gray-200 cursor-pointer hover:opacity-80" />
+                                            : <a key={j} href={url} target="_blank" rel="noopener noreferrer"
+                                                className="text-[10px] text-blue-600 hover:underline">📎 {url.split('/').pop()}</a>
+                                        )}
+                                      </div>
+                                    )}
+                                    <span className="text-[10px] text-gray-400 self-end" title={new Date(c.created_at).toLocaleString('pt-BR')}>
+                                      {relTime(c.created_at)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                              {/* Input */}
+                              <div className="flex flex-col gap-1 mt-1">
+                                <textarea
+                                  value={draft.text}
+                                  onChange={e => setDraft(task.id, i, { text: e.target.value })}
+                                  placeholder="Adicionar acompanhamento..."
+                                  rows={2}
+                                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-[#26619c]"
+                                />
+                                {draft.photos.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {draft.photos.map((url, j) =>
+                                      url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                                        ? <img key={j} src={url} alt="" className="h-10 w-10 object-cover rounded border border-gray-200" />
+                                        : <span key={j} className="text-[10px] text-blue-600">📎 {url.split('/').pop()}</span>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-1.5">
+                                  <label className={`text-[10px] px-2 py-1 rounded border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition ${draft.uploading ? 'opacity-50' : ''}`}>
+                                    📷 {draft.uploading ? '...' : 'Foto'}
+                                    <input type="file" accept="image/*" className="hidden"
+                                      onChange={e => handleCommentPhotoUpload(task.id, i, e)}
+                                      disabled={draft.uploading} />
+                                  </label>
+                                  <button
+                                    onClick={() => submitComment(task.id, i)}
+                                    disabled={savingComment || (!draft.text.trim() && draft.photos.length === 0)}
+                                    className="text-[10px] px-2.5 py-1 bg-[#26619c] text-white rounded hover:bg-[#1a4a7a] disabled:opacity-40 transition">
+                                    {savingComment ? '...' : 'Enviar'}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
                 {task.attachment_urls?.length > 0 && (
@@ -2453,73 +2545,6 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                     ))}
                   </div>
                 )}
-                {/* Acompanhamentos — chat */}
-                <div className="flex flex-col gap-2 pt-1">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Acompanhamentos</p>
-                  <div className="flex flex-col gap-3 max-h-72 overflow-y-auto pr-1">
-                    {(comments[task.id] || []).map(c => (
-                      <div key={c.id} className="flex items-end gap-2">
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold"
-                          style={{ backgroundColor: avatarColor(c.author_name) }}>
-                          {c.author_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-3 py-2 bg-gray-100 flex flex-col gap-1">
-                          <span className="text-[10px] font-semibold text-gray-500">{c.author_name}</span>
-                          {c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap">{c.comment}</p>}
-                          {c.attachment_urls?.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-1">
-                              {c.attachment_urls.map((url, i) =>
-                                url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                                  ? <img key={i} src={url} alt="" onClick={() => setLightboxUrl(url)}
-                                      className="h-12 w-12 object-cover rounded border border-gray-200 cursor-pointer hover:opacity-80" />
-                                  : <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                                      className="text-xs text-blue-600 hover:underline flex items-center gap-1">📎 {url.split('/').pop()}</a>
-                              )}
-                            </div>
-                          )}
-                          <span className="text-[10px] text-gray-400 self-end"
-                            title={new Date(c.created_at).toLocaleString('pt-BR')}>
-                            {relTime(c.created_at)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Input */}
-                  <div className="flex flex-col gap-1.5 mt-1">
-                    <textarea
-                      value={getDraft(task.id).text}
-                      onChange={e => setDraft(task.id, { text: e.target.value })}
-                      placeholder="Adicionar acompanhamento..."
-                      rows={2}
-                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-[#26619c]"
-                    />
-                    {getDraft(task.id).photos.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {getDraft(task.id).photos.map((url, i) =>
-                          url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                            ? <img key={i} src={url} alt="" className="h-12 w-12 object-cover rounded border border-gray-200" />
-                            : <span key={i} className="text-xs text-blue-600">📎 {url.split('/').pop()}</span>
-                        )}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <label className={`text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition flex items-center gap-1 ${getDraft(task.id).uploading ? 'opacity-50' : ''}`}>
-                        📷 {getDraft(task.id).uploading ? 'Enviando...' : 'Foto'}
-                        <input type="file" accept="image/*" className="hidden"
-                          onChange={e => handleCommentPhotoUpload(task.id, e)}
-                          disabled={getDraft(task.id).uploading} />
-                      </label>
-                      <button
-                        onClick={() => submitComment(task.id)}
-                        disabled={savingComment || (!getDraft(task.id).text.trim() && getDraft(task.id).photos.length === 0)}
-                        className="text-xs px-3 py-1.5 bg-[#26619c] text-white rounded-lg hover:bg-[#1a4a7a] disabled:opacity-40 transition">
-                        {savingComment ? 'Salvando...' : 'Enviar'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
 
                 {canWrite && (
                   <div className="flex gap-2 pt-1 border-t border-gray-100">
@@ -2550,8 +2575,9 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 export default function ServiceOrdersPage() {
   const { role, permissions } = useAuthStore()
   const canWrite = permissions?.service_orders?.can_write ?? CAN_WRITE_ROLES.includes(role ?? '')
+  const canViewOS = role === 'superadmin' || role === 'admin_master' || permissions?.service_orders?.can_view !== false
 
-  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'tarefas'>('ordens')
+  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'tarefas'>(canViewOS ? 'ordens' : 'tarefas')
 
   const [orders, setOrders] = useState<ServiceOrder[]>([])
   const [loading, setLoading] = useState(false)
@@ -2635,19 +2661,19 @@ export default function ServiceOrdersPage() {
       </div>
 
       {/* Page tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        <button
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto whitespace-nowrap scrollbar-none">
+        {canViewOS && <button
           onClick={() => setPageTab('ordens')}
           className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'ordens' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
         >
           <FileText className="w-4 h-4" /> Ordens
-        </button>
-        <button
+        </button>}
+        {canViewOS && <button
           onClick={() => setPageTab('demandas')}
           className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'demandas' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
         >
           <LayoutDashboard className="w-4 h-4" /> Demandas
-        </button>
+        </button>}
         <button
           onClick={() => setPageTab('tarefas')}
           className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'tarefas' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
