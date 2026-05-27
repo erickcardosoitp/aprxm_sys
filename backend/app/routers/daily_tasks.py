@@ -506,89 +506,89 @@ async def report_pdf(
             pdf.set_text_color(0, 0, 0)
 
     pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=True, margin=10)
 
     for uid, entry in users_map.items():
         pdf.add_page()
 
-        pdf.set_font("Helvetica", "B", 13)
-        pdf.cell(130, 7, safe(assoc_name), ln=False)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(130, 6, safe(assoc_name), ln=False)
         if period_label:
-            pdf.set_font("Helvetica", size=9)
+            pdf.set_font("Helvetica", size=8)
             pdf.set_text_color(120, 120, 120)
-            pdf.cell(0, 7, safe(period_label), ln=True, align="R")
+            pdf.cell(0, 6, safe(period_label), ln=True, align="R")
             pdf.set_text_color(0, 0, 0)
         else:
             pdf.ln()
-        pdf.set_font("Helvetica", size=10)
-        pdf.set_text_color(60, 60, 60)
-        pdf.cell(0, 5, "Tarefas Diarias - Relatorio de Entregas", ln=True)
+        pdf.set_font("Helvetica", size=9)
+        pdf.set_text_color(80, 80, 80)
+        pdf.cell(0, 4, "Tarefas Diarias - Relatorio de Entregas", ln=True)
         pdf.set_text_color(0, 0, 0)
-        pdf.ln(3)
+        pdf.ln(1.5)
 
         pdf.set_fill_color(235, 242, 255)
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 8, safe(f"  COLABORADOR: {entry['user_name'].upper()}"), fill=True, ln=True)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(0, 6, safe(f"  COLABORADOR: {entry['user_name'].upper()}"), fill=True, ln=True)
 
         tasks = entry["tasks"]
         total_items = sum(len(t["checklist"]) for t in tasks)
         done_items = sum(sum(1 for i in t["checklist"] if i.get("done")) for t in tasks)
-        pdf.set_font("Helvetica", size=9)
+        pdf.set_font("Helvetica", size=8)
         pdf.set_text_color(80, 80, 80)
-        pdf.cell(0, 6, f"  {len(tasks)} tarefa(s)  |  {done_items} entrega(s) OK  |  {total_items - done_items} pendente(s)", ln=True)
+        pdf.cell(0, 5, f"  {len(tasks)} tarefa(s)  |  {done_items} entrega(s) OK  |  {total_items - done_items} pendente(s)", ln=True)
         pdf.set_text_color(0, 0, 0)
-        pdf.ln(3)
+        pdf.ln(1.5)
 
         for task in tasks:
             badge = STATUS_LABEL.get(task["status"], task["status"].upper())
             due_str = f"  Prazo: {fmt_date(task['due_date'])}" if task["due_date"] else ""
 
             pdf.set_fill_color(245, 248, 255)
-            pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 7, safe(f"  > {task['title']}{due_str}  [{badge}]"), fill=True, ln=True)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.cell(0, 5.5, safe(f"  > {task['title']}{due_str}  [{badge}]"), fill=True, ln=True)
 
             if task.get("so_title"):
-                pdf.set_font("Helvetica", "I", 8)
+                pdf.set_font("Helvetica", "I", 7)
                 pdf.set_text_color(80, 80, 200)
-                pdf.cell(0, 4, safe(f"    OS: {task['so_title']}"), ln=True)
+                pdf.cell(0, 3.5, safe(f"    OS: {task['so_title']}"), ln=True)
                 pdf.set_text_color(0, 0, 0)
 
-            pdf.set_font("Helvetica", size=9)
+            pdf.set_font("Helvetica", size=8)
             if task["checklist"]:
                 for item in task["checklist"]:
                     mark = "[OK]" if item.get("done") else "[  ]"
                     col = (0, 120, 0) if item.get("done") else (160, 160, 160)
                     pdf.set_text_color(*col)
-                    pdf.cell(0, 5, safe(f"    {mark}  {item['text']}"), ln=True)
+                    pdf.cell(0, 4, safe(f"    {mark}  {item['text']}"), ln=True)
                 pdf.set_text_color(0, 0, 0)
             else:
                 pdf.set_text_color(140, 140, 140)
-                pdf.cell(0, 5, "    (sem itens de entrega)", ln=True)
+                pdf.cell(0, 4, "    (sem itens de entrega)", ln=True)
                 pdf.set_text_color(0, 0, 0)
 
             embed_attachments(pdf, task["attachment_urls"])
 
             task_comments = comments_map.get(task["id"], [])
             if task_comments:
-                pdf.set_font("Helvetica", "I", 8)
+                pdf.set_font("Helvetica", "I", 7)
                 pdf.set_text_color(100, 100, 100)
-                pdf.cell(0, 5, "  Acompanhamentos:", ln=True)
+                pdf.cell(0, 4, "  Acompanhamentos:", ln=True)
                 for c in task_comments:
-                    pdf.set_font("Helvetica", size=8)
+                    pdf.set_font("Helvetica", size=7)
                     text_line = f"    [{c['created_at']}] {c['author_name']}"
                     if c["comment"]:
                         text_line += f": {c['comment'][:80]}"
-                    pdf.cell(0, 4, safe(text_line), ln=True)
+                    pdf.cell(0, 3.5, safe(text_line), ln=True)
                     embed_attachments(pdf, c["attachment_urls"])
                 pdf.set_text_color(0, 0, 0)
 
-            pdf.ln(2)
+            pdf.ln(1)
 
-        pdf.set_y(-12)
-        pdf.set_font("Helvetica", size=7)
+        pdf.set_y(-9)
+        pdf.set_font("Helvetica", size=6.5)
         pdf.set_text_color(170, 170, 170)
         now_str = _dt.utcnow().strftime("%d/%m/%Y %H:%M")
-        pdf.cell(0, 5, f"Gerado em {now_str} - APRXM", align="C", ln=True)
+        pdf.cell(0, 4, f"Gerado em {now_str} - APRXM", align="C", ln=True)
 
     buf = _BytesIO()
     buf.write(bytes(pdf.output()))

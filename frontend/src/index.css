@@ -78,4 +78,31 @@
     padding: 12mm 14mm !important;
     overflow: visible !important;
   }
+
+  /* Tarefas Diárias - Relatório por Colaborador */
+  body.printing-tasks-report > * { visibility: hidden !important; }
+  body.printing-tasks-report #tasks-report-print,
+  body.printing-tasks-report #tasks-report-print * { visibility: visible !important; }
+  body.printing-tasks-report #tasks-report-print {
+    position: absolute !important;
+    inset: 0 !important;
+    background: white !important;
+    padding: 8mm 10mm !important;
+    color: #111 !important;
+  }
+  body.printing-tasks-report .no-print { display: none !important; }
+  body.printing-tasks-report .report-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    box-shadow: none !important;
+    border: 1px solid #d4d4d4 !important;
+    margin-bottom: 0 !important;
+  }
+  body.printing-tasks-report .report-card:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+  @page { margin: 10mm; size: A4 portrait; }
 }

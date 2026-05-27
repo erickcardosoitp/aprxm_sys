@@ -2172,131 +2172,171 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     </div>
   )
 
-  if (showReport) return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3">
-        <button onClick={() => setShowReport(false)} className="text-sm text-[#26619c] hover:underline flex items-center gap-1">← Voltar</button>
-        <h2 className="text-base font-semibold text-gray-800">Relatório por Colaborador</h2>
-      </div>
-      <div className="flex gap-2 items-end flex-wrap">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">De</label>
-          <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className={inputCls} />
+  if (showReport) {
+    const handlePrint = () => {
+      document.body.classList.add('printing-tasks-report')
+      const restore = () => { document.body.classList.remove('printing-tasks-report'); window.removeEventListener('afterprint', restore) }
+      window.addEventListener('afterprint', restore)
+      setTimeout(() => window.print(), 50)
+    }
+    const fmtBR = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('pt-BR')
+    const periodLabel = reportFrom || reportTo
+      ? `${reportFrom ? fmtBR(reportFrom) : '—'}  →  ${reportTo ? fmtBR(reportTo) : '—'}`
+      : 'Todo o período'
+
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="no-print flex items-center gap-3">
+          <button onClick={() => setShowReport(false)} className="text-sm text-[#26619c] hover:underline flex items-center gap-1">← Voltar</button>
+          <h2 className="text-base font-semibold text-gray-800">Relatório por Colaborador</h2>
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Até</label>
-          <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className={inputCls} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Operador</label>
-          <select value={reportUserId} onChange={e => setReportUserId(e.target.value)} className={inputCls}>
-            <option value="">Todos</option>
-            {users.map(u => {
-              const dup = users.filter(x => x.full_name === u.full_name).length > 1
-              return <option key={u.id} value={u.id}>{u.full_name}{dup && u.assoc_name ? ` — ${u.assoc_name}` : ''}</option>
-            })}
-          </select>
-        </div>
-        <button onClick={loadReport} disabled={loadingReport}
-          className="px-4 py-2 bg-[#26619c] text-white rounded-xl text-sm font-medium disabled:opacity-50">
-          {loadingReport ? 'Carregando…' : 'Gerar'}
-        </button>
-        <button onClick={downloadPdf}
-          className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm hover:bg-gray-50">
-          📄 Baixar PDF
-        </button>
-      </div>
-
-      {reportData.length === 0 && !loadingReport && (
-        <p className="text-sm text-gray-400 text-center py-8">Clique em "Gerar" para ver o relatório.</p>
-      )}
-
-      {reportData.map(user => {
-        const pct = user.total > 0 ? Math.round((user.concluidas / user.total) * 100) : 0
-        return (
-          <div key={user.user_id} className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[#26619c]/10 flex items-center justify-center">
-                  <User className="w-5 h-5 text-[#26619c]" />
-                </div>
-                <div>
-                  <p className="font-semibold text-gray-800">{user.user_name}</p>
-                  <p className="text-xs text-gray-400">{user.total} tarefa(s) no período</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold text-[#26619c]">{pct}%</p>
-                <p className="text-xs text-gray-400">conclusão</p>
-              </div>
-            </div>
-            <div className="w-full bg-gray-100 rounded-full h-2 mb-3">
-              <div className="bg-[#26619c] h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
-            </div>
-            <div className="flex gap-4 text-xs mb-4 flex-wrap">
-              <span className="text-green-600 font-medium">✓ {user.concluidas} concluída(s)</span>
-              <span className="text-yellow-600 font-medium">⏳ {user.total - user.concluidas - user.atrasadas} pendente(s)</span>
-              {user.atrasadas > 0 && <span className="text-red-600 font-medium">⚠ {user.atrasadas} atrasada(s)</span>}
-              {user.total_comments > 0 && <span className="text-purple-600 font-medium">💬 {user.total_comments} acompanhamento(s)</span>}
-            </div>
-
-            {user.tasks.length > 0 && (
-              <div className="mb-3">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tarefas</p>
-                <div className="flex flex-col gap-2">
-                  {user.tasks.map((t: any) => (
-                    <div key={t.id} className={`flex flex-col gap-1.5 px-3 py-2 rounded-lg border text-sm ${t.status === 'done' ? 'bg-green-50 border-green-200' : t.due_date && t.due_date < today ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
-                      <div className="flex items-start gap-2">
-                        <span className={`mt-0.5 text-base ${t.status === 'done' ? 'text-green-500' : 'text-gray-300'}`}>{t.status === 'done' ? '✓' : '○'}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className={`font-medium ${t.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{t.title}</p>
-                          <div className="flex gap-2 mt-0.5 flex-wrap">
-                            {t.relation === 'created' && <span className="text-[10px] text-gray-400 italic">criou</span>}
-                            {t.due_date && <span className="text-[10px] text-gray-500">Prazo: {new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>}
-                            {t.so_title && <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{t.so_title}</span>}
-                          </div>
-                        </div>
-                      </div>
-                      {t.checklist?.length > 0 && (
-                        <ul className="ml-6 flex flex-col gap-0.5">
-                          {t.checklist.map((cl: any, ci: number) => (
-                            <li key={ci} className="flex items-center gap-1.5">
-                              <span className={`text-xs font-bold ${cl.done ? 'text-green-500' : 'text-gray-300'}`}>{cl.done ? '✓' : '○'}</span>
-                              <span className={`text-xs ${cl.done ? 'line-through text-gray-400' : 'text-gray-600'}`}>{cl.text}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {user.comments?.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Acompanhamentos</p>
-                <div className="flex flex-col gap-2">
-                  {user.comments.map((c: any) => (
-                    <div key={c.id} className="flex items-start gap-2 px-3 py-2 rounded-lg border bg-purple-50 border-purple-200 text-sm">
-                      <span className="mt-0.5 text-purple-400">💬</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-gray-700">{c.comment}</p>
-                        <div className="flex gap-2 mt-0.5 flex-wrap">
-                          <span className="text-[10px] text-gray-500">{c.created_at?.slice(0, 16).replace('T', ' ')}</span>
-                          <span className="text-[10px] text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded">{c.task_title}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+        <div className="no-print flex gap-2 items-end flex-wrap">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">De</label>
+            <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className={inputCls} />
           </div>
-        )
-      })}
-    </div>
-  )
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Até</label>
+            <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Operador</label>
+            <select value={reportUserId} onChange={e => setReportUserId(e.target.value)} className={inputCls}>
+              <option value="">Todos</option>
+              {users.map(u => {
+                const dup = users.filter(x => x.full_name === u.full_name).length > 1
+                return <option key={u.id} value={u.id}>{u.full_name}{dup && u.assoc_name ? ` — ${u.assoc_name}` : ''}</option>
+              })}
+            </select>
+          </div>
+          <button onClick={loadReport} disabled={loadingReport}
+            className="px-4 py-2 bg-[#26619c] text-white rounded-xl text-sm font-medium disabled:opacity-50">
+            {loadingReport ? 'Carregando…' : 'Gerar'}
+          </button>
+          {reportData.length > 0 && (
+            <>
+              <button onClick={handlePrint}
+                className="flex items-center gap-1.5 border border-gray-300 text-gray-700 px-3 py-2 rounded-xl text-sm hover:bg-gray-50 font-medium">
+                🖨 Imprimir
+              </button>
+              <button onClick={downloadPdf}
+                className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm hover:bg-gray-50">
+                📄 Baixar PDF
+              </button>
+            </>
+          )}
+        </div>
+
+        {reportData.length === 0 && !loadingReport && (
+          <p className="no-print text-sm text-gray-400 text-center py-8">Clique em "Gerar" para ver o relatório.</p>
+        )}
+
+        <div id="tasks-report-print" className="flex flex-col gap-4">
+          {reportData.map(user => {
+            const pct = user.total > 0 ? Math.round((user.concluidas / user.total) * 100) : 0
+            const pendentes = Math.max(0, user.total - user.concluidas - user.atrasadas)
+            return (
+              <article key={user.user_id} className="report-card bg-white border border-gray-200 rounded-2xl px-6 py-5 shadow-sm">
+                {/* Header — left-aligned (NN/g left-side bias) */}
+                <header className="flex items-start justify-between gap-4 pb-4 border-b border-gray-200">
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-gray-400 font-semibold mb-1">Colaborador</p>
+                    <h3 className="text-xl font-bold text-gray-900 leading-tight truncate">{user.user_name}</h3>
+                    <p className="text-[11px] text-gray-500 mt-1 tabular-nums">{periodLabel}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-mono text-3xl font-bold tabular-nums leading-none" style={{ color: pct >= 80 ? '#15803d' : pct >= 50 ? '#a16207' : '#b91c1c' }}>{pct}<span className="text-lg text-gray-400">%</span></p>
+                    <p className="text-[10px] uppercase tracking-wider text-gray-400 mt-1">Conclusão</p>
+                  </div>
+                </header>
+
+                {/* Progress bar — slim, monochrome, print-friendly */}
+                <div className="mt-3 h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: pct >= 80 ? '#15803d' : pct >= 50 ? '#a16207' : '#b91c1c' }} />
+                </div>
+
+                {/* KPI strip — tabular numbers, no heavy backgrounds */}
+                <div className="grid grid-cols-4 gap-2 mt-4 mb-5">
+                  <div className="border-l-2 border-gray-300 pl-3">
+                    <p className="font-mono text-xl font-bold tabular-nums text-gray-900 leading-none">{user.total}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">Total</p>
+                  </div>
+                  <div className="border-l-2 border-green-600 pl-3">
+                    <p className="font-mono text-xl font-bold tabular-nums text-green-700 leading-none">{user.concluidas}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">Concluídas</p>
+                  </div>
+                  <div className="border-l-2 border-yellow-600 pl-3">
+                    <p className="font-mono text-xl font-bold tabular-nums text-yellow-700 leading-none">{pendentes}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">Pendentes</p>
+                  </div>
+                  <div className={`border-l-2 pl-3 ${user.atrasadas > 0 ? 'border-red-600' : 'border-gray-200'}`}>
+                    <p className={`font-mono text-xl font-bold tabular-nums leading-none ${user.atrasadas > 0 ? 'text-red-700' : 'text-gray-300'}`}>{user.atrasadas}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">Atrasadas</p>
+                  </div>
+                </div>
+
+                {user.tasks.length > 0 && (
+                  <section className="mb-3">
+                    <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.18em] mb-2 pb-1 border-b border-gray-100">Tarefas</h4>
+                    <ul className="flex flex-col divide-y divide-gray-100">
+                      {user.tasks.map((t: any) => {
+                        const overdue = t.status !== 'done' && t.due_date && t.due_date < today
+                        return (
+                          <li key={t.id} className="py-2.5">
+                            <div className="flex items-start gap-2.5">
+                              <span aria-hidden className={`mt-1 inline-block w-2.5 h-2.5 rounded-full shrink-0 ${t.status === 'done' ? 'bg-green-600' : overdue ? 'bg-red-600' : 'bg-gray-300'}`} />
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-medium leading-snug ${t.status === 'done' ? 'line-through text-gray-400' : 'text-gray-900'}`}>{t.title}</p>
+                                <div className="flex items-center gap-x-3 gap-y-1 mt-1 flex-wrap text-[11px] tabular-nums text-gray-500">
+                                  {t.relation === 'created' && <span className="italic">criou</span>}
+                                  {t.due_date && <span className={overdue ? 'text-red-600 font-semibold' : ''}>Prazo {fmtBR(t.due_date)}</span>}
+                                  {t.so_title && <span className="text-[#26619c]">OS: {t.so_title}</span>}
+                                </div>
+                                {t.checklist?.length > 0 && (
+                                  <ul className="mt-1.5 flex flex-col gap-0.5">
+                                    {t.checklist.map((cl: any, ci: number) => (
+                                      <li key={ci} className="flex items-baseline gap-2 text-[12px] leading-snug">
+                                        <span className={`font-mono shrink-0 ${cl.done ? 'text-green-600' : 'text-gray-300'}`}>{cl.done ? '[✓]' : '[ ]'}</span>
+                                        <span className={cl.done ? 'line-through text-gray-400' : 'text-gray-700'}>{cl.text}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </section>
+                )}
+
+                {user.comments?.length > 0 && (
+                  <section>
+                    <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.18em] mb-2 pb-1 border-b border-gray-100">Acompanhamentos</h4>
+                    <ul className="flex flex-col divide-y divide-gray-100">
+                      {user.comments.map((c: any) => (
+                        <li key={c.id} className="py-2 flex items-start gap-2.5">
+                          <span aria-hidden className="mt-1.5 inline-block w-1.5 h-1.5 rounded-full bg-[#26619c] shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] text-gray-800 leading-snug">{c.comment}</p>
+                            <div className="flex items-center gap-x-3 mt-0.5 flex-wrap text-[10px] tabular-nums text-gray-500">
+                              <span>{c.created_at?.slice(0, 16).replace('T', ' ')}</span>
+                              <span className="text-[#26619c]">{c.task_title}</span>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
 
   const avatarColor = (name: string) => {
     const colors = ['#26619c', '#7c3aed', '#059669', '#dc2626', '#d97706', '#0891b2']
