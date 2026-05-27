@@ -312,9 +312,10 @@ async def report_by_user(
     comments_by_task: dict = {}
     if task_ids:
         c_rows = (await session.execute(text("""
-            SELECT c.task_id, u.full_name, c.id, c.comment, c.created_at, c.checklist_index
+            SELECT c.task_id, COALESCE(u.full_name, 'Usuário') AS full_name,
+                   c.id, c.comment, c.created_at, c.checklist_index
             FROM daily_task_comments c
-            JOIN users u ON u.id = c.created_by
+            LEFT JOIN users u ON u.id = c.created_by
             WHERE c.task_id = ANY(:tids)
             ORDER BY c.created_at ASC
         """), {"tids": task_ids})).fetchall()
@@ -350,7 +351,7 @@ async def report_by_user(
             c.id, c.comment, c.created_at,
             so.id AS so_id, so.title AS so_title, so.number AS so_number
         FROM service_order_comments c
-        JOIN users u ON u.id = c.created_by
+        LEFT JOIN users u ON u.id = c.created_by
         JOIN service_orders so ON so.id = c.service_order_id
         WHERE c.association_id = ANY(:aids)
           {date_filter_os_comment}{uid_filter_user}
@@ -534,9 +535,9 @@ async def report_pdf(
     comments_map: dict = {}
     if task_ids:
         c_rows = (await session.execute(text("""
-            SELECT c.task_id, c.comment, c.attachment_urls, c.created_at, u.full_name, c.checklist_index
+            SELECT c.task_id, c.comment, c.attachment_urls, c.created_at, COALESCE(u.full_name, 'Usuário') AS full_name, c.checklist_index
             FROM daily_task_comments c
-            JOIN users u ON u.id = c.created_by
+            LEFT JOIN users u ON u.id = c.created_by
             WHERE c.task_id = ANY(:tids)
             ORDER BY c.created_at ASC
         """), {"tids": task_ids})).fetchall()
@@ -608,9 +609,9 @@ async def report_pdf(
     os_comments_map: dict = {}
     if all_os_ids:
         oc_rows = (await session.execute(text("""
-            SELECT c.service_order_id, u.full_name, c.comment, c.created_at
+            SELECT c.service_order_id, COALESCE(u.full_name, 'Usuário') AS full_name, c.comment, c.created_at
             FROM service_order_comments c
-            JOIN users u ON u.id = c.created_by
+            LEFT JOIN users u ON u.id = c.created_by
             WHERE c.service_order_id = ANY(:oids)
             ORDER BY c.created_at ASC
         """), {"oids": all_os_ids})).fetchall()
