@@ -2646,6 +2646,26 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                     })}
                   </ul>
                 )}
+                {/* Comentários gerais (sem checklist_index) */}
+                {(comments[task.id] || []).filter(c => c.checklist_index == null).length > 0 && (
+                  <div className="flex flex-col gap-2 border-t border-gray-100 pt-2">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Observações gerais</p>
+                    {(comments[task.id] || []).filter(c => c.checklist_index == null).map(c => (
+                      <div key={c.id} className="flex items-end gap-2">
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold"
+                          style={{ backgroundColor: avatarColor(c.author_name) }}>
+                          {(c.author_name || 'U').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="max-w-[85%] rounded-2xl rounded-bl-sm px-2.5 py-1.5 bg-gray-100 flex flex-col gap-0.5">
+                          <span className="text-[10px] font-semibold text-gray-500">{c.author_name}</span>
+                          {c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap">{c.comment}</p>}
+                          <span className="text-[10px] text-gray-400 self-end">{relTime(c.created_at)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {task.attachment_urls?.length > 0 && (
                   <div className="flex flex-col gap-1">
                     <p className="text-xs text-gray-500 font-medium">Anexos</p>
