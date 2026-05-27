@@ -34,3 +34,6 @@ backend/alembic/versions/*.pyc
 
 .vercel
 backend/.env.production
+
+# Claude local settings — pode conter secrets/tokens
+.claude/settings.local.json

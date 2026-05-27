@@ -114,14 +114,14 @@ async def list_tasks(
         params["status"] = status
     if view == "default":
         filters.append("(t.due_date = :today OR (t.due_date IS NULL AND t.status != 'done'))")
-        params["today"] = str(_date.today())
+        params["today"] = _date.today()
     else:
         if date_from:
             filters.append("t.due_date >= :df")
-            params["df"] = date_from
+            params["df"] = _date.fromisoformat(date_from)
         if date_to:
             filters.append("t.due_date <= :dt")
-            params["dt"] = date_to
+            params["dt"] = _date.fromisoformat(date_to)
     where = " AND ".join(filters)
     rows = (await session.execute(text(f"""
         SELECT t.id, t.title, t.description, t.assigned_to, t.assigned_to_name,
