@@ -2312,8 +2312,8 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                 )}
 
                 {user.comments?.length > 0 && (
-                  <section>
-                    <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.18em] mb-2 pb-1 border-b border-gray-100">Acompanhamentos</h4>
+                  <section className="mb-3">
+                    <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.18em] mb-2 pb-1 border-b border-gray-100">Acompanhamentos de Tarefas</h4>
                     <ul className="flex flex-col divide-y divide-gray-100">
                       {user.comments.map((c: any) => (
                         <li key={c.id} className="py-2 flex items-start gap-2.5">
@@ -2328,6 +2328,73 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                         </li>
                       ))}
                     </ul>
+                  </section>
+                )}
+
+                {/* ── Ordens de Serviço ─────────────────────────────── */}
+                {((user.os_entregas?.length ?? 0) + (user.os_andamento?.length ?? 0)) > 0 && (
+                  <section className="mt-4 pt-4 border-t-2 border-dashed border-gray-200">
+                    <h4 className="text-[10px] font-bold text-gray-700 uppercase tracking-[0.18em] mb-3">Ordens de Serviço</h4>
+
+                    {/* OS KPI strip */}
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <div className="border-l-2 border-green-600 pl-3">
+                        <p className="font-mono text-xl font-bold tabular-nums text-green-700 leading-none">{user.os_entregas?.length ?? 0}</p>
+                        <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">OS Entregues</p>
+                      </div>
+                      <div className="border-l-2 border-blue-500 pl-3">
+                        <p className="font-mono text-xl font-bold tabular-nums text-blue-700 leading-none">{user.os_andamento?.length ?? 0}</p>
+                        <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-1">OS Andamento</p>
+                      </div>
+                    </div>
+
+                    {/* OS Entregas */}
+                    {user.os_entregas?.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-[10px] font-semibold text-green-700 uppercase tracking-wider mb-1.5">✓ Resolvidas</p>
+                        <ul className="flex flex-col divide-y divide-gray-100">
+                          {user.os_entregas.map((o: any, i: number) => (
+                            <li key={`${o.so_id}-${i}`} className="py-2 flex items-start gap-2.5">
+                              <span aria-hidden className="mt-1 inline-block w-2.5 h-2.5 rounded-full bg-green-600 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 leading-snug">
+                                  {o.so_number ? <span className="font-mono text-[11px] text-gray-400 mr-1.5">#{String(o.so_number).padStart(4,'0')}</span> : null}
+                                  {o.so_title}
+                                </p>
+                                <p className="text-[11px] tabular-nums text-gray-500 mt-0.5">{o.changed_at?.slice(0,16).replace('T',' ')}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* OS Andamento */}
+                    {user.os_andamento?.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wider mb-1.5">→ Em Andamento / Comentários</p>
+                        <ul className="flex flex-col divide-y divide-gray-100">
+                          {user.os_andamento.map((o: any, i: number) => (
+                            <li key={`${o.so_id}-${i}-${o.action}`} className="py-2 flex items-start gap-2.5">
+                              <span aria-hidden className={`mt-1 inline-block w-2.5 h-2.5 rounded-full shrink-0 ${o.action === 'in_progress' ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 leading-snug">
+                                  {o.so_number ? <span className="font-mono text-[11px] text-gray-400 mr-1.5">#{String(o.so_number).padStart(4,'0')}</span> : null}
+                                  {o.so_title}
+                                </p>
+                                {o.action === 'commented' && o.comment && (
+                                  <p className="text-[12px] text-gray-600 italic leading-snug mt-0.5 truncate">{o.comment}</p>
+                                )}
+                                <div className="flex items-center gap-x-3 mt-0.5 text-[10px] tabular-nums text-gray-500">
+                                  <span>{o.changed_at?.slice(0,16).replace('T',' ')}</span>
+                                  <span className="capitalize">{o.action === 'in_progress' ? 'Iniciou' : o.action === 'cancelled' ? 'Cancelou' : 'Comentou'}</span>
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </section>
                 )}
               </article>

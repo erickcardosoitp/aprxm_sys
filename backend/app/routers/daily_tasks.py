@@ -273,14 +273,20 @@ async def report_by_user(
     params: dict = {"aids": aids}
     date_filter_task = ""
     date_filter_comment = ""
+    date_filter_os_hist = ""
+    date_filter_os_comment = ""
     uid_filter = ""
     if date_from:
         date_filter_task += " AND t.created_at >= CAST(:df AS timestamptz)"
         date_filter_comment += " AND c.created_at >= CAST(:df AS timestamptz)"
+        date_filter_os_hist += " AND h.changed_at >= CAST(:df AS timestamptz)"
+        date_filter_os_comment += " AND c.created_at >= CAST(:df AS timestamptz)"
         params["df"] = date.fromisoformat(date_from)
     if date_to:
         date_filter_task += " AND t.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
         date_filter_comment += " AND c.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
+        date_filter_os_hist += " AND h.changed_at < CAST(:dt AS timestamptz) + interval '1 day'"
+        date_filter_os_comment += " AND c.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
         params["dt"] = date.fromisoformat(date_to)
     if user_id:
         uid_filter = " AND u.id = :uid"
@@ -315,13 +321,63 @@ async def report_by_user(
         ORDER BY c.created_at DESC
     """), params)).fetchall()
 
+    # OS: mudanças de status (service_order_history)
+    os_hist_rows = (await session.execute(text(f"""
+        SELECT
+            h.changed_by AS user_id,
+            u.full_name AS user_name,
+            h.to_status,
+            h.changed_at,
+            so.id AS so_id,
+            so.title AS so_title,
+            so.number AS so_number
+        FROM service_order_history h
+        JOIN users u ON u.id = h.changed_by
+        JOIN service_orders so ON so.id = h.service_order_id
+        WHERE h.association_id = ANY(:aids)
+          AND u.association_id = ANY(:aids)
+          AND h.to_status IN ('resolved', 'in_progress', 'cancelled')
+          {date_filter_os_hist}{uid_filter}
+        ORDER BY h.changed_at DESC
+    """), params)).fetchall()
+
+    # OS: comentários (service_order_comments)
+    os_comment_rows = (await session.execute(text(f"""
+        SELECT
+            c.created_by AS user_id,
+            u.full_name AS user_name,
+            c.id,
+            c.comment,
+            c.created_at,
+            so.id AS so_id,
+            so.title AS so_title,
+            so.number AS so_number
+        FROM service_order_comments c
+        JOIN users u ON u.id = c.created_by
+        JOIN service_orders so ON so.id = c.service_order_id
+        WHERE c.association_id = ANY(:aids)
+          {date_filter_os_comment}{uid_filter}
+        ORDER BY c.created_at DESC
+    """), params)).fetchall()
+
     import json as _json
+
+    def _ensure_user(uid: str, name: str, um: dict) -> None:
+        if uid not in um:
+            um[uid] = {
+                "user_id": uid, "user_name": name,
+                "tasks": [], "comments": [],
+                "os_entregas": [], "os_andamento": [],
+            }
+        elif "os_entregas" not in um[uid]:
+            um[uid]["os_entregas"] = []
+            um[uid]["os_andamento"] = []
+
     users_map: dict = {}
 
     for r in task_rows:
         uid = str(r[0])
-        if uid not in users_map:
-            users_map[uid] = {"user_id": uid, "user_name": r[1], "tasks": [], "comments": []}
+        _ensure_user(uid, r[1], users_map)
         if not any(t["id"] == str(r[2]) for t in users_map[uid]["tasks"]):
             checklist = r[7]
             if isinstance(checklist, str):
@@ -336,12 +392,32 @@ async def report_by_user(
 
     for r in comment_rows:
         uid = str(r[0])
-        if uid not in users_map:
-            users_map[uid] = {"user_id": uid, "user_name": r[1], "tasks": [], "comments": []}
+        _ensure_user(uid, r[1], users_map)
         users_map[uid]["comments"].append({
             "id": str(r[2]), "comment": r[3],
             "created_at": str(r[4])[:16],
             "task_id": str(r[5]), "task_title": r[6],
+        })
+
+    for r in os_hist_rows:
+        uid = str(r[0])
+        _ensure_user(uid, r[1], users_map)
+        entry = {
+            "so_id": str(r[4]), "so_title": r[5], "so_number": r[6],
+            "changed_at": str(r[3])[:16], "action": r[2],
+        }
+        if r[2] == "resolved":
+            users_map[uid]["os_entregas"].append(entry)
+        else:
+            users_map[uid]["os_andamento"].append(entry)
+
+    for r in os_comment_rows:
+        uid = str(r[0])
+        _ensure_user(uid, r[1], users_map)
+        users_map[uid]["os_andamento"].append({
+            "so_id": str(r[5]), "so_title": r[6], "so_number": r[7],
+            "changed_at": str(r[4])[:16], "action": "commented",
+            "comment": r[3],
         })
 
     result = []
@@ -349,6 +425,8 @@ async def report_by_user(
         tasks = entry["tasks"]
         concluidas = sum(1 for t in tasks if t["status"] == "done")
         atrasadas = sum(1 for t in tasks if t["status"] != "done" and t["due_date"] and t["due_date"] < str(date.today()))
+        os_e = entry["os_entregas"]
+        os_a = entry["os_andamento"]
         result.append({
             "user_id": entry["user_id"],
             "user_name": entry["user_name"],
@@ -358,9 +436,12 @@ async def report_by_user(
             "tasks": tasks,
             "comments": entry["comments"],
             "total_comments": len(entry["comments"]),
+            "os_entregas": os_e,
+            "os_andamento": os_a,
+            "total_os": len(os_e) + len(os_a),
         })
 
-    result.sort(key=lambda x: (-x["total_comments"] - x["total"], x["user_name"]))
+    result.sort(key=lambda x: (-x["total_comments"] - x["total"] - x["total_os"], x["user_name"]))
     return result
 
 
