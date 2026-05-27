@@ -465,6 +465,10 @@ async def report_pdf(
     IS_IMAGE = lambda u: bool(u and u.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")))
     STATUS_LABEL = {"pending": "PENDENTE", "in_progress": "ANDANDO", "done": "FEITA"}
 
+    def safe(s: str) -> str:
+        """Remove characters outside Latin-1 to avoid fpdf2 Helvetica corruption."""
+        return s.encode("latin-1", errors="replace").decode("latin-1")
+
     def embed_attachments(pdf: FPDF, urls: list):
         if not urls: return
         pdf.set_font("Helvetica", size=8)
@@ -508,30 +512,30 @@ async def report_pdf(
         pdf.add_page()
 
         pdf.set_font("Helvetica", "B", 13)
-        pdf.cell(130, 7, assoc_name, ln=False)
+        pdf.cell(130, 7, safe(assoc_name), ln=False)
         if period_label:
             pdf.set_font("Helvetica", size=9)
             pdf.set_text_color(120, 120, 120)
-            pdf.cell(0, 7, period_label, ln=True, align="R")
+            pdf.cell(0, 7, safe(period_label), ln=True, align="R")
             pdf.set_text_color(0, 0, 0)
         else:
             pdf.ln()
         pdf.set_font("Helvetica", size=10)
         pdf.set_text_color(60, 60, 60)
-        pdf.cell(0, 5, "Tarefas Diárias — Relatório de Entregas", ln=True)
+        pdf.cell(0, 5, "Tarefas Diarias - Relatorio de Entregas", ln=True)
         pdf.set_text_color(0, 0, 0)
         pdf.ln(3)
 
         pdf.set_fill_color(235, 242, 255)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 8, f"  COLABORADOR: {entry['user_name'].upper()}", fill=True, ln=True)
+        pdf.cell(0, 8, safe(f"  COLABORADOR: {entry['user_name'].upper()}"), fill=True, ln=True)
 
         tasks = entry["tasks"]
         total_items = sum(len(t["checklist"]) for t in tasks)
         done_items = sum(sum(1 for i in t["checklist"] if i.get("done")) for t in tasks)
         pdf.set_font("Helvetica", size=9)
         pdf.set_text_color(80, 80, 80)
-        pdf.cell(0, 6, f"  {len(tasks)} tarefa(s)  ·  {done_items} entrega(s) ✓  ·  {total_items - done_items} pendente(s) ✗", ln=True)
+        pdf.cell(0, 6, f"  {len(tasks)} tarefa(s)  |  {done_items} entrega(s) OK  |  {total_items - done_items} pendente(s)", ln=True)
         pdf.set_text_color(0, 0, 0)
         pdf.ln(3)
 
@@ -541,21 +545,21 @@ async def report_pdf(
 
             pdf.set_fill_color(245, 248, 255)
             pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 7, f"  ▸ {task['title']}{due_str}  [{badge}]", fill=True, ln=True)
+            pdf.cell(0, 7, safe(f"  > {task['title']}{due_str}  [{badge}]"), fill=True, ln=True)
 
             if task.get("so_title"):
                 pdf.set_font("Helvetica", "I", 8)
                 pdf.set_text_color(80, 80, 200)
-                pdf.cell(0, 4, f"    OS: {task['so_title']}", ln=True)
+                pdf.cell(0, 4, safe(f"    OS: {task['so_title']}"), ln=True)
                 pdf.set_text_color(0, 0, 0)
 
             pdf.set_font("Helvetica", size=9)
             if task["checklist"]:
                 for item in task["checklist"]:
-                    mark = "✓" if item.get("done") else "✗"
+                    mark = "[OK]" if item.get("done") else "[  ]"
                     col = (0, 120, 0) if item.get("done") else (160, 160, 160)
                     pdf.set_text_color(*col)
-                    pdf.cell(0, 5, f"    {mark}  {item['text']}", ln=True)
+                    pdf.cell(0, 5, safe(f"    {mark}  {item['text']}"), ln=True)
                 pdf.set_text_color(0, 0, 0)
             else:
                 pdf.set_text_color(140, 140, 140)
@@ -574,7 +578,7 @@ async def report_pdf(
                     text_line = f"    [{c['created_at']}] {c['author_name']}"
                     if c["comment"]:
                         text_line += f": {c['comment'][:80]}"
-                    pdf.cell(0, 4, text_line, ln=True)
+                    pdf.cell(0, 4, safe(text_line), ln=True)
                     embed_attachments(pdf, c["attachment_urls"])
                 pdf.set_text_color(0, 0, 0)
 
@@ -584,7 +588,7 @@ async def report_pdf(
         pdf.set_font("Helvetica", size=7)
         pdf.set_text_color(170, 170, 170)
         now_str = _dt.utcnow().strftime("%d/%m/%Y %H:%M")
-        pdf.cell(0, 5, f"Gerado em {now_str} · APRXM", align="C", ln=True)
+        pdf.cell(0, 5, f"Gerado em {now_str} - APRXM", align="C", ln=True)
 
     buf = _BytesIO()
     buf.write(bytes(pdf.output()))

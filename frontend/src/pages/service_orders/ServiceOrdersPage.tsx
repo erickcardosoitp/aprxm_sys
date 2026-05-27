@@ -2238,17 +2238,28 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tarefas</p>
                 <div className="flex flex-col gap-2">
                   {user.tasks.map((t: any) => (
-                    <div key={t.id} className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm ${t.status === 'done' ? 'bg-green-50 border-green-200' : t.due_date && t.due_date < today ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
-                      <span className={`mt-0.5 text-base ${t.status === 'done' ? 'text-green-500' : 'text-gray-300'}`}>{t.status === 'done' ? '✓' : '○'}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className={`font-medium ${t.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{t.title}</p>
-                        <div className="flex gap-2 mt-0.5 flex-wrap">
-                          {t.relation === 'created' && <span className="text-[10px] text-gray-400 italic">criou</span>}
-                          {t.due_date && <span className="text-[10px] text-gray-500">Prazo: {new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>}
-                          {t.so_title && <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{t.so_title}</span>}
-                          {t.checklist?.length > 0 && <span className="text-[10px] text-gray-500">{t.checklist.filter((c: any) => c.done).length}/{t.checklist.length} itens</span>}
+                    <div key={t.id} className={`flex flex-col gap-1.5 px-3 py-2 rounded-lg border text-sm ${t.status === 'done' ? 'bg-green-50 border-green-200' : t.due_date && t.due_date < today ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex items-start gap-2">
+                        <span className={`mt-0.5 text-base ${t.status === 'done' ? 'text-green-500' : 'text-gray-300'}`}>{t.status === 'done' ? '✓' : '○'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className={`font-medium ${t.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{t.title}</p>
+                          <div className="flex gap-2 mt-0.5 flex-wrap">
+                            {t.relation === 'created' && <span className="text-[10px] text-gray-400 italic">criou</span>}
+                            {t.due_date && <span className="text-[10px] text-gray-500">Prazo: {new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>}
+                            {t.so_title && <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{t.so_title}</span>}
+                          </div>
                         </div>
                       </div>
+                      {t.checklist?.length > 0 && (
+                        <ul className="ml-6 flex flex-col gap-0.5">
+                          {t.checklist.map((cl: any, ci: number) => (
+                            <li key={ci} className="flex items-center gap-1.5">
+                              <span className={`text-xs font-bold ${cl.done ? 'text-green-500' : 'text-gray-300'}`}>{cl.done ? '✓' : '○'}</span>
+                              <span className={`text-xs ${cl.done ? 'line-through text-gray-400' : 'text-gray-600'}`}>{cl.text}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   ))}
                 </div>
