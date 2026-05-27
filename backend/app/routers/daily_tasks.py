@@ -113,7 +113,7 @@ async def list_tasks(
         filters.append("t.status = :status")
         params["status"] = status
     if view == "default":
-        filters.append("(t.due_date = CURRENT_DATE OR (t.due_date IS NULL AND t.status != 'done'))")
+        filters.append("(t.status != 'done' OR t.updated_at::date = CURRENT_DATE)")
     else:
         if date_from:
             try:
