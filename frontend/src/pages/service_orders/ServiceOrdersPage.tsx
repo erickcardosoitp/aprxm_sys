@@ -1897,7 +1897,6 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   useEffect(() => { load(); loadUsers() }, [filterStatus, filterAssigned, filterPeriodFrom, filterPeriodTo])
 
   const loadComments = async (taskId: string) => {
-    if (comments[taskId]) return
     try {
       const res = await api.get<TaskComment[]>(`/daily-tasks/${taskId}/comments`)
       setComments(prev => ({ ...prev, [taskId]: res.data }))

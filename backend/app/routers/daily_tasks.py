@@ -1142,15 +1142,16 @@ async def list_comments(
 ) -> list[dict]:
     aids = await _group_assoc_ids(str(current.association_id), session)
     rows = (await session.execute(text("""
-        SELECT c.id, c.comment, c.attachment_urls, c.created_at, u.full_name, c.checklist_index
+        SELECT c.id, c.comment, c.attachment_urls, c.created_at,
+               COALESCE(u.full_name, 'Usuário') AS author_name, c.checklist_index
         FROM daily_task_comments c
-        JOIN users u ON u.id = c.created_by
+        LEFT JOIN users u ON u.id = c.created_by
         WHERE c.task_id = :tid AND c.association_id = ANY(:aids)
         ORDER BY c.created_at ASC
     """), {"tid": str(task_id), "aids": aids})).fetchall()
     return [
         {"id": str(r[0]), "comment": r[1], "attachment_urls": r[2] or [],
-         "created_at": str(r[3]), "author_name": r[4], "checklist_index": r[5]}
+         "created_at": str(r[3]), "author_name": r[4] or "Usuário", "checklist_index": r[5]}
         for r in rows
     ]
 
