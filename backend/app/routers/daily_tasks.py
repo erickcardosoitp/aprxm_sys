@@ -794,9 +794,11 @@ async def report_pdf(
         kpi_w = (pdf.w - pdf.r_margin - kpis_x - 6) / 4
         kpi_y = card_y + 4
         kpi_h = card_h - 8
+        done_tasks = sum(1 for t in tasks if t["status"] == "done")
+        blocked_tasks = sum(1 for t in tasks if t["status"] == "blocked")
         kpi_card(pdf, kpis_x + 0 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "Tarefas", str(len(tasks)), BRAND)
-        kpi_card(pdf, kpis_x + 1 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "Entregues", str(done_items), SUCCESS)
-        kpi_card(pdf, kpis_x + 2 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "Pendentes", str(pending_items), WARNING)
+        kpi_card(pdf, kpis_x + 1 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "Concluídas", str(done_tasks), SUCCESS)
+        kpi_card(pdf, kpis_x + 2 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "Atribuições", f"{done_items}/{total_items}", WARNING)
         kpi_card(pdf, kpis_x + 3 * (kpi_w + 1.5), kpi_y, kpi_w, kpi_h, "O.S Ativas", str(len(os_list)), INFO)
 
         pdf.set_y(card_y + card_h + 6)
@@ -857,7 +859,7 @@ async def report_pdf(
                         pdf.set_font("DejaVu", "B", 9)
                         pdf.set_text_color(*mark_color)
                         pdf.cell(4, 4, mark, ln=False)
-                        pdf.set_font("DejaVu", "", 8.5)
+                        pdf.set_font("DejaVu", "B", 8.5)
                         pdf.set_text_color(*INK)
                         pdf.multi_cell(0, 4, item.get("text", ""), new_x="LMARGIN", new_y="NEXT")
 
@@ -865,13 +867,9 @@ async def report_pdf(
                         item_comments = [c for c in task_comments if c.get("checklist_index") == ci]
                         for c in item_comments:
                             pdf.set_x(pdf.l_margin + 10)
-                            pdf.set_font("DejaVu", "", 7.5)
-                            pdf.set_text_color(*INK_MUTED)
-                            ts_author = f"[{c['created_at']}] {c['author_name']}:"
-                            pdf.cell(pdf.get_string_width(ts_author) + 1, 4, ts_author, ln=False)
                             pdf.set_font("DejaVu", "I", 7.5)
-                            pdf.set_text_color(*INK)
-                            pdf.multi_cell(0, 4, f" {c['comment'] or ''}", new_x="LMARGIN", new_y="NEXT")
+                            pdf.set_text_color(*INK_MUTED)
+                            pdf.multi_cell(0, 4, f"↳ {c['comment'] or ''}", new_x="LMARGIN", new_y="NEXT")
                 else:
                     pdf.set_x(pdf.l_margin + 4)
                     pdf.set_font("DejaVu", "I", 8)
@@ -888,13 +886,9 @@ async def report_pdf(
                     pdf.cell(0, 3.5, "OBSERVAÇÕES", ln=True)
                     for c in general_comments:
                         pdf.set_x(pdf.l_margin + 6)
-                        pdf.set_font("DejaVu", "", 7.5)
-                        pdf.set_text_color(*INK_MUTED)
-                        prefix = f"[{c['created_at']}] {c['author_name']}:"
-                        pdf.cell(pdf.get_string_width(prefix) + 1, 4, prefix, ln=False)
                         pdf.set_font("DejaVu", "I", 7.5)
-                        pdf.set_text_color(*INK)
-                        pdf.multi_cell(0, 4, f" {c['comment'] or ''}", new_x="LMARGIN", new_y="NEXT")
+                        pdf.set_text_color(*INK_MUTED)
+                        pdf.multi_cell(0, 4, f"↳ {c['comment'] or ''}", new_x="LMARGIN", new_y="NEXT")
 
                 if task.get("attachment_urls"):
                     pdf.ln(0.5)

@@ -2317,10 +2317,10 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                                         <li key={ci}>
                                           <div className="flex items-baseline gap-1.5 text-[11px] leading-snug">
                                             <span className={`font-mono shrink-0 text-[10px] ${cl.done ? 'text-green-600' : 'text-gray-300'}`}>{cl.done ? '✓' : '○'}</span>
-                                            <span className={`font-semibold ${cl.done ? 'line-through text-gray-400' : 'text-gray-800'}`}>{cl.text}</span>
+                                            <span className={`font-bold ${cl.done ? 'line-through text-gray-400' : 'text-gray-900'}`}>{cl.text}</span>
                                           </div>
                                           {itemComments.map((c: any) => (
-                                            <div key={c.id} className="flex items-baseline gap-1.5 pl-4 text-[10px] text-gray-400 leading-snug">
+                                            <div key={c.id} className="flex items-baseline gap-1.5 pl-4 text-[10px] text-gray-500 leading-snug">
                                               <span className="shrink-0">↳</span>
                                               <span className="italic">{c.comment}</span>
                                               <span className="shrink-0 tabular-nums ml-1">{c.created_at?.slice(0,10)}</span>
@@ -2333,7 +2333,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                                 )}
                                 {/* Comentários gerais (sem checklist_index) */}
                                 {(t.comments ?? []).filter((c: any) => c.checklist_index == null).map((c: any) => (
-                                  <div key={c.id} className="flex items-baseline gap-1.5 mt-0.5 pl-3 text-[10px] text-gray-400 leading-snug">
+                                  <div key={c.id} className="flex items-baseline gap-1.5 mt-0.5 pl-3 text-[10px] text-gray-500 leading-snug">
                                     <span className="shrink-0">↳</span>
                                     <span className="italic">{c.comment}</span>
                                     <span className="shrink-0 tabular-nums ml-1">{c.created_at?.slice(0,10)}</span>
