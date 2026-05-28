@@ -2478,7 +2478,15 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const displayedTasks = [...tasks]
     .filter(t => !onlyMine || t.assigned_to === userId)
     .sort((a, b) => {
-      if (!sortBy) return 0
+      // done sempre vai pro final, independente de qualquer coluna
+      const aDone = a.status === 'done' ? 1 : 0
+      const bDone = b.status === 'done' ? 1 : 0
+      if (aDone !== bDone) return aDone - bDone
+
+      if (!sortBy) {
+        // ordem padrão dentro dos não-concluídos: pending → in_progress → blocked
+        return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
+      }
       let va = '', vb = ''
       if (sortBy === 'title') { va = a.title.toLowerCase(); vb = b.title.toLowerCase() }
       else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
