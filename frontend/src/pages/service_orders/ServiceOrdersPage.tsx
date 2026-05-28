@@ -1857,6 +1857,9 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [fInitialStatus, setFInitialStatus] = useState('pending')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [reportUserId, setReportUserId] = useState('')
+  const [onlyMine, setOnlyMine] = useState(false)
+  const [sortBy, setSortBy] = useState<'title' | 'assigned' | 'due_date' | 'status' | ''>('')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const draftKey = (taskId: string, idx: number) => `${taskId}:${idx}`
   const getDraft = (taskId: string, idx: number) =>
@@ -2408,6 +2411,38 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     return `há ${Math.floor(h / 24)}d`
   }
 
+  const toggleSort = (col: typeof sortBy) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(col); setSortDir('asc') }
+  }
+
+  const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, done: 3 }
+
+  const displayedTasks = [...tasks]
+    .filter(t => !onlyMine || t.assigned_to === userId)
+    .sort((a, b) => {
+      if (!sortBy) return 0
+      let va = '', vb = ''
+      if (sortBy === 'title') { va = a.title.toLowerCase(); vb = b.title.toLowerCase() }
+      else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
+      else if (sortBy === 'due_date') { va = a.due_date ?? '9999'; vb = b.due_date ?? '9999' }
+      else if (sortBy === 'status') { va = String(statusOrder[a.status] ?? 9); vb = String(statusOrder[b.status] ?? 9) }
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+
+  const SortBtn = ({ col, label }: { col: typeof sortBy; label: string }) => (
+    <button
+      onClick={() => toggleSort(col)}
+      className={`flex items-center gap-0.5 text-xs font-medium transition select-none ${sortBy === col ? 'text-[#26619c]' : 'text-gray-500 hover:text-gray-700'}`}
+    >
+      {label}
+      <span className="text-[10px] ml-0.5">
+        {sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+      </span>
+    </button>
+  )
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2 flex-wrap">
@@ -2462,7 +2497,18 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
             className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
         </div>
 
-        <span className="text-sm text-gray-400">{tasks.length} tarefa(s)</span>
+        {/* Ver apenas as minhas */}
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={onlyMine}
+            onChange={e => setOnlyMine(e.target.checked)}
+            className="w-3.5 h-3.5 accent-[#26619c]"
+          />
+          <span className="text-xs text-gray-600 whitespace-nowrap">Ver apenas as minhas</span>
+        </label>
+
+        <span className="text-sm text-gray-400">{displayedTasks.length} tarefa(s)</span>
 
         {/* Botões direita */}
         <div className="ml-auto flex items-center gap-2">
@@ -2483,11 +2529,24 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
       {loading && <p className="text-sm text-gray-400 text-center py-8">Carregando…</p>}
 
-      {!loading && tasks.length === 0 && !showForm && (
-        <p className="text-sm text-gray-400 text-center py-10">Nenhuma tarefa. Crie a primeira!</p>
+      {!loading && displayedTasks.length === 0 && !showForm && (
+        <p className="text-sm text-gray-400 text-center py-10">{tasks.length === 0 ? 'Nenhuma tarefa. Crie a primeira!' : 'Nenhuma tarefa corresponde ao filtro.'}</p>
       )}
 
-      {tasks.map(task => {
+      {!loading && displayedTasks.length > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px]">
+          <div className="w-6 shrink-0" />
+          <div className="flex-1 flex items-center gap-4">
+            <SortBtn col="title" label="Título" />
+            <SortBtn col="assigned" label="Responsável" />
+            <SortBtn col="due_date" label="Prazo" />
+          </div>
+          <SortBtn col="status" label="Status" />
+          <div className="w-4 shrink-0" />
+        </div>
+      )}
+
+      {displayedTasks.map(task => {
         const isExpanded = expandedId === task.id
         const doneCount = task.checklist.filter(i => i.done).length
         const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
