@@ -2685,7 +2685,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                             >
                               {statusInfo.label}
                             </button>
-                            <span className={`text-sm flex-1 ${currentStatus === 'done' ? 'line-through text-gray-400' : currentStatus === 'cancelled' ? 'line-through text-red-400' : 'text-gray-800'}`}>
+                            <span className={`text-sm flex-1 ${currentStatus === 'done' ? 'line-through text-gray-400' : currentStatus === 'cancelled' ? 'line-through text-red-400' : currentStatus === 'postergado' ? 'line-through text-orange-400' : 'text-gray-800'}`}>
                               {item.text}
                             </span>
                             <button
