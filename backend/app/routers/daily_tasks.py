@@ -1157,6 +1157,31 @@ async def list_comments(
     ]
 
 
+@router.patch("/{task_id}/comments/{comment_id}", summary="Editar acompanhamento")
+async def edit_comment(
+    task_id: UUID,
+    comment_id: UUID,
+    body: dict,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    new_text = (body.get("comment") or "").strip()
+    if not new_text:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="Comentário não pode ser vazio.")
+    row = (await session.execute(text("""
+        UPDATE daily_task_comments
+        SET comment = :comment, updated_at = NOW()
+        WHERE id = :cid AND task_id = :tid AND created_by = :uid
+        RETURNING id, comment, updated_at
+    """), {"comment": new_text, "cid": str(comment_id), "tid": str(task_id), "uid": str(current.user_id)})).fetchone()
+    await session.commit()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Não autorizado ou comentário não encontrado.")
+    return {"id": str(row[0]), "comment": row[1], "updated_at": str(row[2])}
+
+
 @router.delete("/{task_id}", summary="Excluir Tarefa Diária")
 async def delete_task(
     task_id: UUID,

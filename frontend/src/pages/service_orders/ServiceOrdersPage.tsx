@@ -1861,7 +1861,11 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [expandedAcomp, setExpandedAcomp] = useState<Record<string, boolean>>({})
   // status change panel per item
   const [statusChangeOpen, setStatusChangeOpen] = useState<Record<string, boolean>>({})
-  const [statusChangeDraft, setStatusChangeDraft] = useState<Record<string, { newStatus: string; comment: string }>>({})
+  const [statusChangeDraft, setStatusChangeDraft] = useState<Record<string, { newStatus: string; comment: string }>>({}
+  )
+  // comment editing: key = commentId
+  const [editingComment, setEditingComment] = useState<Record<string, string | null>>({})
+  const [savingEditComment, setSavingEditComment] = useState<string | null>(null)
 
   // filtros avançados
   const today = new Date().toISOString().split('T')[0]
@@ -2054,6 +2058,20 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
       await api.patch(`/daily-tasks/${task.id}`, { checklist })
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, checklist } : t))
     } catch { toast.error('Erro ao atualizar checklist.') }
+  }
+
+  const saveCommentEdit = async (taskId: string, commentId: string, newText: string) => {
+    if (!newText.trim()) return
+    setSavingEditComment(commentId)
+    try {
+      await api.patch(`/daily-tasks/${taskId}/comments/${commentId}`, { comment: newText.trim() })
+      setComments(prev => ({
+        ...prev,
+        [taskId]: (prev[taskId] || []).map(c => c.id === commentId ? { ...c, comment: newText.trim() } : c),
+      }))
+      setEditingComment(prev => ({ ...prev, [commentId]: null }))
+    } catch { toast.error('Erro ao editar comentário.') }
+    finally { setSavingEditComment(null) }
   }
 
   const changeItemStatus = async (task: DailyTask, itemIdx: number, newStatus: string, comment: string) => {
@@ -2722,7 +2740,10 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                               {itemComments.length === 0 && (
                                 <p className="text-[10px] text-gray-400 italic">Nenhum acompanhamento ainda. Seja o primeiro!</p>
                               )}
-                              {itemComments.map(c => (
+                              {itemComments.map(c => {
+                                const isEditing = editingComment[c.id] !== null && editingComment[c.id] !== undefined
+                                const isMine = c.author_name !== 'Usuário' // complemented below
+                                return (
                                 <div key={c.id} className="flex items-start gap-2">
                                   <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold mt-0.5"
                                     style={{ backgroundColor: avatarColor(c.author_name) }}>
@@ -2731,9 +2752,43 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                                   <div className="flex-1 rounded-xl rounded-tl-sm px-3 py-2 bg-white border border-gray-100 shadow-sm flex flex-col gap-0.5">
                                     <div className="flex items-center justify-between">
                                       <span className="text-[10px] font-semibold text-gray-600">{c.author_name}</span>
-                                      <span className="text-[10px] text-gray-400" title={new Date(c.created_at).toLocaleString('pt-BR')}>{relTime(c.created_at)}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-gray-400" title={new Date(c.created_at).toLocaleString('pt-BR')}>{relTime(c.created_at)}</span>
+                                        <button
+                                          onClick={() => setEditingComment(prev => ({
+                                            ...prev,
+                                            [c.id]: isEditing ? null : c.comment,
+                                          }))}
+                                          className="text-[10px] text-gray-400 hover:text-[#26619c] transition px-1"
+                                          title="Editar"
+                                        >
+                                          {isEditing ? '✕' : '✏'}
+                                        </button>
+                                      </div>
                                     </div>
-                                    {c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{c.comment}</p>}
+                                    {isEditing ? (
+                                      <div className="flex flex-col gap-1.5 mt-1">
+                                        <textarea
+                                          value={editingComment[c.id] ?? ''}
+                                          onChange={e => setEditingComment(prev => ({ ...prev, [c.id]: e.target.value }))}
+                                          rows={2}
+                                          className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-[#26619c]"
+                                          autoFocus
+                                        />
+                                        <div className="flex justify-end gap-1.5">
+                                          <button onClick={() => setEditingComment(prev => ({ ...prev, [c.id]: null }))}
+                                            className="text-[10px] text-gray-500 px-2 py-1">Cancelar</button>
+                                          <button
+                                            onClick={() => saveCommentEdit(task.id, c.id, editingComment[c.id] ?? '')}
+                                            disabled={savingEditComment === c.id || !(editingComment[c.id] ?? '').trim()}
+                                            className="text-[10px] px-3 py-1 bg-[#26619c] text-white rounded-lg disabled:opacity-40 hover:bg-[#1a4a7a] transition">
+                                            {savingEditComment === c.id ? '...' : 'Salvar'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{c.comment}</p>
+                                    )}
                                     {c.attachment_urls?.length > 0 && (
                                       <div className="flex flex-wrap gap-1 mt-1">
                                         {c.attachment_urls.map((url, j) =>
@@ -2747,7 +2802,8 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                                     )}
                                   </div>
                                 </div>
-                              ))}
+                                )
+                              })}
                               {/* Input */}
                               <div className="flex flex-col gap-1.5 bg-white border border-gray-200 rounded-xl p-2.5 shadow-sm">
                                 <textarea
