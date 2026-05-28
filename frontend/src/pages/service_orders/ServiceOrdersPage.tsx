@@ -2048,18 +2048,20 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     } catch { toast.error('Erro ao excluir.') }
   }
 
-  const cycleStatus = async (task: DailyTask) => {
-    const cycle: DailyTask['status'][] = ['pending', 'in_progress', 'done', 'blocked']
-    const idx = cycle.indexOf(task.status)
-    const newStatus = cycle[(idx + 1) % cycle.length]
+  const TASK_STATUS_LABELS: Record<string, string> = {
+    pending: 'Pendente', in_progress: 'Em andamento', done: 'Concluída', blocked: 'Bloqueada',
+  }
+
+  const setTaskStatus = async (task: DailyTask, newStatus: DailyTask['status']) => {
+    if (newStatus === task.status) return
 
     if (newStatus === 'done' && task.checklist.length > 0) {
       const blocking = ['pending', 'in_progress', 'waiting_third', 'waiting_public']
       const openItems = task.checklist.filter(item => blocking.includes(getItemStatus(item)))
       if (openItems.length > 0) {
         toast.error(
-          `${openItems.length} item(s) ainda em aberto:\n${openItems.map(i => `• ${i.text.slice(0, 60)}`).join('\n')}\n\nConclua, cancele ou postergue todos antes de finalizar.`,
-          { duration: 6000 }
+          `Não é possível concluir: ${openItems.length} item(s) ainda em aberto. Abra a tarefa, atualize o status de cada item e registre um acompanhamento antes de finalizar.`,
+          { duration: 7000 }
         )
         return
       }
@@ -2078,8 +2080,18 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         return { ...t, status: newStatus, checklist }
       }))
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? 'Erro ao atualizar.', { duration: 6000 })
+      const detail = e?.response?.data?.detail
+      toast.error(
+        typeof detail === 'string' ? detail : 'Não foi possível atualizar o status. Verifique os itens da tarefa e tente novamente.',
+        { duration: 7000 }
+      )
     }
+  }
+
+  const cycleStatus = (task: DailyTask) => {
+    const cycle: DailyTask['status'][] = ['pending', 'in_progress', 'done', 'blocked']
+    const idx = cycle.indexOf(task.status)
+    setTaskStatus(task, cycle[(idx + 1) % cycle.length])
   }
 
   const toggleChecklist = async (task: DailyTask, idx: number) => {
@@ -2636,18 +2648,21 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           }`}>
             <div className="p-4">
               <div className="flex items-start gap-3">
-                {/* Status button — touch target mínimo 44px */}
-                <button
-                  onClick={() => cycleStatus(task)}
-                  title={task.status === 'pending' ? 'Pendente' : task.status === 'in_progress' ? 'Em andamento' : 'Concluída'}
-                  className={`w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 transition text-sm font-bold
-                    ${task.status === 'done' ? 'bg-green-500 border-green-500 text-white' :
-                      task.status === 'in_progress' ? 'bg-amber-400 border-amber-400 text-white' :
-                      task.status === 'blocked' ? 'bg-red-400 border-red-400 text-white' :
-                      'border-gray-300 hover:border-[#26619c] bg-white'}`}
+                {/* Status selector — visível e com rótulo */}
+                <select
+                  value={task.status}
+                  onChange={e => setTaskStatus(task, e.target.value as DailyTask['status'])}
+                  className={`shrink-0 text-xs font-semibold rounded-xl border px-2 py-1.5 cursor-pointer appearance-none text-center min-w-[100px] transition focus:outline-none focus:ring-2 focus:ring-[#26619c]
+                    ${task.status === 'done' ? 'bg-green-50 border-green-300 text-green-700' :
+                      task.status === 'in_progress' ? 'bg-amber-50 border-amber-300 text-amber-700' :
+                      task.status === 'blocked' ? 'bg-red-50 border-red-300 text-red-700' :
+                      'bg-gray-50 border-gray-300 text-gray-600'}`}
                 >
-                  {task.status === 'done' ? '✓' : task.status === 'in_progress' ? '↺' : task.status === 'blocked' ? '!' : ''}
-                </button>
+                  <option value="pending">⬜ Pendente</option>
+                  <option value="in_progress">🔄 Em andamento</option>
+                  <option value="done">✅ Concluída</option>
+                  <option value="blocked">🚫 Bloqueada</option>
+                </select>
 
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpanded(task.id)}>
                   {/* Badges */}
