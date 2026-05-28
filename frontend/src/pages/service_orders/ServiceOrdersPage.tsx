@@ -1892,7 +1892,6 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     try {
       const params: any = {}
       if (filterStatus) params.status = filterStatus
-      // managers podem filtrar por qualquer usuário; operadores veem só as suas
       if (filterAssigned) {
         params.assigned_to = filterAssigned
       } else if (!isManager && userId) {
@@ -1901,8 +1900,13 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
       if (filterPeriodFrom || filterPeriodTo) {
         if (filterPeriodFrom) params.date_from = filterPeriodFrom
         if (filterPeriodTo) params.date_to = filterPeriodTo
-      } else {
+      } else if (viewDate === today) {
+        // hoje: view=default inclui tarefas atrasadas
         params.view = 'default'
+      } else {
+        // outro dia: filtra exatamente pelo dia navegado
+        params.date_from = viewDate
+        params.date_to = viewDate
       }
       const res = await api.get<DailyTask[]>('/daily-tasks', { params })
       setTasks(res.data)
@@ -1917,7 +1921,8 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     } catch { /* silent */ }
   }
 
-  useEffect(() => { load(); loadUsers() }, [filterStatus, filterAssigned, filterPeriodFrom, filterPeriodTo])
+  useEffect(() => { load() }, [viewDate, filterStatus, filterAssigned, filterPeriodFrom, filterPeriodTo])
+  useEffect(() => { loadUsers() }, [])
 
   const loadComments = async (taskId: string) => {
     try {
@@ -2664,7 +2669,15 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                 {task.description && <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{task.description}</p>}
                 {task.checklist.length > 0 && (
                   <ul className="flex flex-col gap-2">
-                    {task.checklist.map((item, i) => {
+                    {task.checklist
+                      .map((item, i) => ({ item, i }))
+                      .sort((a, b) => {
+                        const terminal = ['done', 'cancelled', 'postergado']
+                        const aT = terminal.includes(getItemStatus(a.item)) ? 1 : 0
+                        const bT = terminal.includes(getItemStatus(b.item)) ? 1 : 0
+                        return aT - bT
+                      })
+                      .map(({ item, i }) => {
                       const itemComments = (comments[task.id] || []).filter(c => c.checklist_index === i)
                       const scKey = `${task.id}:${i}`
                       const currentStatus = getItemStatus(item)
@@ -2849,7 +2862,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                     })}
                   </ul>
                 )}
-                {/* Comentários gerais (sem checklist_index) */}
+                {/* Comentários gerais */}
                 {(comments[task.id] || []).filter(c => c.checklist_index == null).length > 0 && (
                   <div className="flex flex-col gap-2 border-t border-gray-100 pt-2">
                     <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Observações gerais</p>
