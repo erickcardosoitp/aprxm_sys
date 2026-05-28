@@ -174,8 +174,8 @@ async def create_task(
                   created_by, NULL, created_at, updated_at, attachment_urls
     """), {
         "aid": str(current.association_id),
-        "title": body.title,
-        "desc": body.description,
+        "title": body.title.strip(),
+        "desc": body.description.strip() or None if body.description else None,
         "at": str(body.assigned_to) if body.assigned_to else None,
         "at_name": body.assigned_to_name,
         "due": date_type.fromisoformat(body.due_date) if body.due_date else None,
@@ -224,8 +224,8 @@ async def update_task(
     import json
     aids = await _group_assoc_ids(str(current.association_id), session)
     sets, params = [], {"id": str(task_id), "aids": aids}
-    if body.title is not None: sets.append("title = :title"); params["title"] = body.title
-    if body.description is not None: sets.append("description = :desc"); params["desc"] = body.description
+    if body.title is not None: sets.append("title = :title"); params["title"] = body.title.strip()
+    if body.description is not None: sets.append("description = :desc"); params["desc"] = body.description.strip() or None
     if body.assigned_to is not None: sets.append("assigned_to = :at"); params["at"] = str(body.assigned_to)
     if body.assigned_to_name is not None: sets.append("assigned_to_name = :at_name"); params["at_name"] = body.assigned_to_name
     if body.due_date is not None: sets.append("due_date = :due"); params["due"] = date_type.fromisoformat(body.due_date)
