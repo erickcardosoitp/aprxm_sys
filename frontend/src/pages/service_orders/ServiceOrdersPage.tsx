@@ -2759,10 +2759,10 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                                             ...prev,
                                             [c.id]: isEditing ? null : c.comment,
                                           }))}
-                                          className="text-[10px] text-gray-400 hover:text-[#26619c] transition px-1"
-                                          title="Editar"
+                                          className={`text-xs px-2 py-1 rounded-lg border transition min-w-[36px] min-h-[28px] flex items-center justify-center ${isEditing ? 'border-red-200 text-red-500 bg-red-50 hover:bg-red-100' : 'border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100 hover:text-[#26619c]'}`}
+                                          title={isEditing ? 'Cancelar edição' : 'Editar comentário'}
                                         >
-                                          {isEditing ? '✕' : '✏'}
+                                          {isEditing ? '✕' : '✏️'}
                                         </button>
                                       </div>
                                     </div>
