@@ -2054,7 +2054,16 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     const newStatus = cycle[(idx + 1) % cycle.length]
     try {
       await api.patch(`/daily-tasks/${task.id}`, { status: newStatus })
-      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
+      setTasks(prev => prev.map(t => {
+        if (t.id !== task.id) return t
+        const checklist = newStatus === 'done'
+          ? t.checklist.map(item => {
+              const st = getItemStatus(item)
+              return ['cancelled', 'postergado'].includes(st) ? item : { ...item, done: true, status: 'done' }
+            })
+          : t.checklist
+        return { ...t, status: newStatus, checklist }
+      }))
     } catch { toast.error('Erro ao atualizar.') }
   }
 

@@ -230,7 +230,29 @@ async def update_task(
     if body.assigned_to_name is not None: sets.append("assigned_to_name = :at_name"); params["at_name"] = body.assigned_to_name
     if body.due_date is not None: sets.append("due_date = :due"); params["due"] = date_type.fromisoformat(body.due_date)
     if body.reminder_at is not None: sets.append("reminder_at = :reminder"); params["reminder"] = datetime.fromisoformat(body.reminder_at)
-    if body.checklist is not None: sets.append("checklist = CAST(:checklist AS jsonb)"); params["checklist"] = json.dumps(body.checklist)
+    if body.checklist is not None:
+        checklist = body.checklist
+    elif body.status == "done":
+        # ao concluir a tarefa, marca todos os itens como concluídos
+        row_cl = (await session.execute(
+            text("SELECT checklist FROM daily_tasks WHERE id = :id AND association_id = ANY(:aids)"),
+            {"id": str(task_id), "aids": aids},
+        )).fetchone()
+        if row_cl and row_cl[0]:
+            cl = row_cl[0] if isinstance(row_cl[0], list) else []
+            checklist = [
+                {**item, "done": True, "status": "done"}
+                if (item.get("status") or ("done" if item.get("done") else "pending")) not in ("cancelled", "postergado")
+                else item
+                for item in cl
+            ]
+        else:
+            checklist = None
+    else:
+        checklist = None
+    if checklist is not None:
+        sets.append("checklist = CAST(:checklist AS jsonb)")
+        params["checklist"] = json.dumps(checklist)
     if body.attachment_urls is not None: sets.append("attachment_urls = CAST(:attachments AS jsonb)"); params["attachments"] = json.dumps(body.attachment_urls)
     if body.status is not None: sets.append("status = :status"); params["status"] = body.status
     if body.service_order_id is not None: sets.append("service_order_id = :so_id"); params["so_id"] = str(body.service_order_id)
