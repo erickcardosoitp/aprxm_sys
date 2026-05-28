@@ -230,24 +230,52 @@ async def update_task(
     if body.assigned_to_name is not None: sets.append("assigned_to_name = :at_name"); params["at_name"] = body.assigned_to_name
     if body.due_date is not None: sets.append("due_date = :due"); params["due"] = date_type.fromisoformat(body.due_date)
     if body.reminder_at is not None: sets.append("reminder_at = :reminder"); params["reminder"] = datetime.fromisoformat(body.reminder_at)
+    BLOCKING = {"pending", "in_progress", "waiting_third", "waiting_public"}
+    TERMINAL = {"done", "cancelled", "postergado"}
+
     if body.checklist is not None:
         checklist = body.checklist
     elif body.status == "done":
-        # ao concluir a tarefa, marca todos os itens como concluídos
+        # valida e carrega checklist atual
         row_cl = (await session.execute(
             text("SELECT checklist FROM daily_tasks WHERE id = :id AND association_id = ANY(:aids)"),
             {"id": str(task_id), "aids": aids},
         )).fetchone()
-        if row_cl and row_cl[0]:
-            cl = row_cl[0] if isinstance(row_cl[0], list) else []
-            checklist = [
-                {**item, "done": True, "status": "done"}
-                if (item.get("status") or ("done" if item.get("done") else "pending")) not in ("cancelled", "postergado")
-                else item
-                for item in cl
-            ]
-        else:
-            checklist = None
+        cl: list = (row_cl[0] if isinstance(row_cl[0], list) else []) if (row_cl and row_cl[0]) else []
+
+        if cl:
+            def _st(item: dict) -> str:
+                return item.get("status") or ("done" if item.get("done") else "pending")
+
+            # Regra 1: nenhum item pode estar em status bloqueante
+            open_items = [item["text"] for item in cl if _st(item) in BLOCKING]
+            if open_items:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Existem itens ainda em aberto: {'; '.join(t[:50] for t in open_items[:5])}. "
+                           "Conclua, cancele ou postergue todos os itens antes de finalizar a tarefa.",
+                )
+
+            # Regra 2: todos os itens devem ter ao menos um acompanhamento
+            comment_rows = (await session.execute(
+                text("SELECT DISTINCT checklist_index FROM daily_task_comments WHERE task_id = :tid AND checklist_index IS NOT NULL"),
+                {"tid": str(task_id)},
+            )).fetchall()
+            commented = {r[0] for r in comment_rows}
+            missing = [item["text"] for idx, item in enumerate(cl) if idx not in commented]
+            if missing:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Itens sem acompanhamento: {'; '.join(t[:50] for t in missing[:5])}. "
+                           "Registre um acompanhamento em cada item antes de concluir.",
+                )
+
+        checklist = [
+            {**item, "done": True, "status": "done"}
+            if _st(item) not in TERMINAL
+            else item
+            for item in cl
+        ] if cl else None
     else:
         checklist = None
     if checklist is not None:

@@ -2052,6 +2052,19 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     const cycle: DailyTask['status'][] = ['pending', 'in_progress', 'done', 'blocked']
     const idx = cycle.indexOf(task.status)
     const newStatus = cycle[(idx + 1) % cycle.length]
+
+    if (newStatus === 'done' && task.checklist.length > 0) {
+      const blocking = ['pending', 'in_progress', 'waiting_third', 'waiting_public']
+      const openItems = task.checklist.filter(item => blocking.includes(getItemStatus(item)))
+      if (openItems.length > 0) {
+        toast.error(
+          `${openItems.length} item(s) ainda em aberto:\n${openItems.map(i => `• ${i.text.slice(0, 60)}`).join('\n')}\n\nConclua, cancele ou postergue todos antes de finalizar.`,
+          { duration: 6000 }
+        )
+        return
+      }
+    }
+
     try {
       await api.patch(`/daily-tasks/${task.id}`, { status: newStatus })
       setTasks(prev => prev.map(t => {
@@ -2064,7 +2077,9 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           : t.checklist
         return { ...t, status: newStatus, checklist }
       }))
-    } catch { toast.error('Erro ao atualizar.') }
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail ?? 'Erro ao atualizar.', { duration: 6000 })
+    }
   }
 
   const toggleChecklist = async (task: DailyTask, idx: number) => {
