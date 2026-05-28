@@ -40,8 +40,8 @@ function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
 
 function RedirectByRole() {
   const role = useAuthStore((s) => s.role)
-  const isAggregator = useAuthStore((s) => s.isAggregator())
-  if (isAggregator) return <Navigate to="/geral" replace />
+  const isOffice = useAuthStore((s) => s.isOffice)
+  if (isOffice) return <Navigate to="/geral" replace />
   if (role === 'operator' || role === 'viewer') return <Navigate to="/finance" replace />
   return <Navigate to="/overview" replace />
 }
