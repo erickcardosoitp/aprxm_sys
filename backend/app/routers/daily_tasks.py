@@ -163,7 +163,7 @@ async def create_task(
           (:aid, :title, :desc, :at, :at_name,
            :due, :reminder,
            CAST(:checklist AS jsonb), CAST(:attachments AS jsonb),
-           :so_id, :so_title, :created_by, :status)
+           :so_id, :so_title, (SELECT id FROM users WHERE id = :created_by LIMIT 1), :status)
         RETURNING id, title, description, assigned_to, assigned_to_name,
                   due_date, reminder_at, status, checklist,
                   service_order_id, service_order_title,
