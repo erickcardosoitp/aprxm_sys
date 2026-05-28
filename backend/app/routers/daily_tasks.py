@@ -1167,7 +1167,7 @@ async def add_comment(
     import json
     row = (await session.execute(text("""
         INSERT INTO daily_task_comments (task_id, association_id, created_by, comment, attachment_urls, checklist_index)
-        VALUES (:tid, :aid, :uid, :comment, CAST(:attachments AS jsonb), :cidx)
+        VALUES (:tid, :aid, (SELECT id FROM users WHERE id = :uid LIMIT 1), :comment, CAST(:attachments AS jsonb), :cidx)
         RETURNING id, created_at
     """), {
         "tid": str(task_id),
