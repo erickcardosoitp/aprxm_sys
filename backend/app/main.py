@@ -16,10 +16,6 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    try:
-        await _run_migrations()
-    except Exception:
-        pass  # deadlock entre instâncias serverless — outra instância já aplicou
     yield
 
 

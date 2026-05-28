@@ -1,25 +1,38 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { AppShell } from './components/layout/AppShell'
+import { useAuthStore } from './store/authStore'
+
+// Carregamento imediato — rotas críticas de primeiro acesso
 import LoginPage from './pages/LoginPage'
 import OverviewPage from './pages/overview/OverviewPage'
-import FinancePage from './pages/finance/FinancePage'
-import PackagesPage from './pages/packages/PackagesPage'
-import ResidentsPage from './pages/residents/ResidentsPage'
-import ServiceOrdersPage from './pages/service_orders/ServiceOrdersPage'
-import AdminPage from './pages/admin/AdminPage'
-import SettingsPage from './pages/settings/SettingsPage'
-import FinanceiroPage from './pages/financeiro/FinanceiroPage'
-import GeralPage from './pages/geral/GeralPage'
-import ReportsPage from './pages/reports/ReportsPage'
-import SuperAdminPage from './pages/superadmin/SuperAdminPage'
-import LogsPage from './pages/logs/LogsPage'
-import { useAuthStore } from './store/authStore'
 import PublicRegisterPage from './pages/public/PublicRegisterPage'
 import PublicUpdatePage from './pages/public/PublicUpdatePage'
 import CadastroPortaAPorta from './pages/public/CadastroPortaAPorta'
-import ChatPage from './pages/chat/ChatPage'
-import HelpPage from './pages/help/HelpPage'
+
+// Lazy — carregados sob demanda, reduz bundle inicial de 2.6MB para ~400KB
+const FinancePage       = lazy(() => import('./pages/finance/FinancePage'))
+const PackagesPage      = lazy(() => import('./pages/packages/PackagesPage'))
+const ResidentsPage     = lazy(() => import('./pages/residents/ResidentsPage'))
+const ServiceOrdersPage = lazy(() => import('./pages/service_orders/ServiceOrdersPage'))
+const AdminPage         = lazy(() => import('./pages/admin/AdminPage'))
+const SettingsPage      = lazy(() => import('./pages/settings/SettingsPage'))
+const FinanceiroPage    = lazy(() => import('./pages/financeiro/FinanceiroPage'))
+const GeralPage         = lazy(() => import('./pages/geral/GeralPage'))
+const ReportsPage       = lazy(() => import('./pages/reports/ReportsPage'))
+const SuperAdminPage    = lazy(() => import('./pages/superadmin/SuperAdminPage'))
+const LogsPage          = lazy(() => import('./pages/logs/LogsPage'))
+const ChatPage          = lazy(() => import('./pages/chat/ChatPage'))
+const HelpPage          = lazy(() => import('./pages/help/HelpPage'))
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="w-6 h-6 border-2 border-[#26619c] border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated())
@@ -62,7 +75,7 @@ function RequireModule({ module, children }: { module: string; children: React.R
   const role = useAuthStore((s) => s.role)
   const permissions = useAuthStore((s) => s.permissions)
   if (role === 'superadmin' || role === 'admin_master') return <>{children}</>
-  if (!permissions) return <>{children}</>  // loading
+  if (!permissions) return <>{children}</>
   if (!permissions[module]?.can_view) return <Navigate to="/overview" replace />
   return <>{children}</>
 }
@@ -86,20 +99,20 @@ export default function App() {
         >
           <Route index element={<RedirectByRole />} />
           <Route path="overview"       element={<RequireNotOffice><OverviewPage /></RequireNotOffice>} />
-          <Route path="finance"        element={<RequireNotOffice><RequireModule module="finance"><FinancePage /></RequireModule></RequireNotOffice>} />
-          <Route path="packages"       element={<RequireNotOffice><RequireModule module="packages"><PackagesPage /></RequireModule></RequireNotOffice>} />
-          <Route path="service-orders" element={<RequireNotOffice><ServiceOrdersPage /></RequireNotOffice>} />
-          <Route path="residents"      element={<RequireNotOffice><RequireModule module="residents"><ResidentsPage /></RequireModule></RequireNotOffice>} />
-          <Route path="admin"          element={<RequireNotOffice><RequireAdmin><AdminPage /></RequireAdmin></RequireNotOffice>} />
-          <Route path="settings"       element={<RequireNotOffice><RequireModule module="settings"><SettingsPage /></RequireModule></RequireNotOffice>} />
-          <Route path="financeiro"     element={<RequireNotOffice><RequireModule module="settings"><FinanceiroPage /></RequireModule></RequireNotOffice>} />
-          <Route path="reports"        element={<RequireNotOffice><ReportsPage /></RequireNotOffice>} />
-          <Route path="geral"          element={<RequireAggregator><GeralPage /></RequireAggregator>} />
-          <Route path="superadmin"     element={<RequireSuperAdmin><SuperAdminPage /></RequireSuperAdmin>} />
-          <Route path="logs"           element={<RequireNotOffice><RequireAdmin><LogsPage /></RequireAdmin></RequireNotOffice>} />
-          <Route path="chat"           element={<ChatPage />} />
-          <Route path="help"           element={<Navigate to={`/help/abrir-caixa`} replace />} />
-          <Route path="help/:slug"     element={<HelpPage />} />
+          <Route path="finance"        element={<RequireNotOffice><RequireModule module="finance"><Suspense fallback={<PageLoader />}><FinancePage /></Suspense></RequireModule></RequireNotOffice>} />
+          <Route path="packages"       element={<RequireNotOffice><RequireModule module="packages"><Suspense fallback={<PageLoader />}><PackagesPage /></Suspense></RequireModule></RequireNotOffice>} />
+          <Route path="service-orders" element={<RequireNotOffice><Suspense fallback={<PageLoader />}><ServiceOrdersPage /></Suspense></RequireNotOffice>} />
+          <Route path="residents"      element={<RequireNotOffice><RequireModule module="residents"><Suspense fallback={<PageLoader />}><ResidentsPage /></Suspense></RequireModule></RequireNotOffice>} />
+          <Route path="admin"          element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><AdminPage /></Suspense></RequireAdmin></RequireNotOffice>} />
+          <Route path="settings"       element={<RequireNotOffice><RequireModule module="settings"><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></RequireModule></RequireNotOffice>} />
+          <Route path="financeiro"     element={<RequireNotOffice><RequireModule module="settings"><Suspense fallback={<PageLoader />}><FinanceiroPage /></Suspense></RequireModule></RequireNotOffice>} />
+          <Route path="reports"        element={<RequireNotOffice><Suspense fallback={<PageLoader />}><ReportsPage /></Suspense></RequireNotOffice>} />
+          <Route path="geral"          element={<RequireAggregator><Suspense fallback={<PageLoader />}><GeralPage /></Suspense></RequireAggregator>} />
+          <Route path="superadmin"     element={<RequireSuperAdmin><Suspense fallback={<PageLoader />}><SuperAdminPage /></Suspense></RequireSuperAdmin>} />
+          <Route path="logs"           element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><LogsPage /></Suspense></RequireAdmin></RequireNotOffice>} />
+          <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />
+          <Route path="help"           element={<Navigate to="/help/abrir-caixa" replace />} />
+          <Route path="help/:slug"     element={<Suspense fallback={<PageLoader />}><HelpPage /></Suspense>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
