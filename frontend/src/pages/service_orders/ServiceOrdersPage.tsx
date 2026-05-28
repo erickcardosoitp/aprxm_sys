@@ -2501,84 +2501,67 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   )
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        {/* Date navigator */}
-        <div className="flex items-center gap-1">
+    <div className="flex flex-col gap-3">
+      {/* ── Linha 1: navegação de data + ações ── */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 flex-1">
           <button onClick={() => {
             const d = new Date(viewDate + 'T12:00:00'); d.setDate(d.getDate() - 1)
             setViewDate(d.toISOString().slice(0, 10)); setFilterPeriodFrom(''); setFilterPeriodTo('')
-          }} className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">←</button>
-          <span className="text-sm font-medium text-gray-700 px-2 min-w-[80px] text-center">
-            {viewDate === today ? 'Hoje' : new Date(viewDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+          }} className="w-9 h-9 flex items-center justify-center border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 active:bg-gray-100 shrink-0">←</button>
+          <span className="flex-1 text-sm font-semibold text-gray-800 text-center">
+            {viewDate === today ? 'Hoje' : new Date(viewDate + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
           </span>
           <button onClick={() => {
             const d = new Date(viewDate + 'T12:00:00'); d.setDate(d.getDate() + 1)
             setViewDate(d.toISOString().slice(0, 10)); setFilterPeriodFrom(''); setFilterPeriodTo('')
-          }} className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">→</button>
+          }} className="w-9 h-9 flex items-center justify-center border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 active:bg-gray-100 shrink-0">→</button>
         </div>
+        <button onClick={() => { setShowReport(true); loadReport() }}
+          className="w-9 h-9 flex items-center justify-center border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition shrink-0" title="Ver relatório">
+          <FileText className="w-4 h-4" />
+        </button>
+        {canWrite && !showForm && (
+          <button onClick={() => setShowForm(true)}
+            className="h-9 flex items-center gap-1.5 bg-[#26619c] hover:bg-[#1a4f87] active:bg-[#163d6e] text-white px-3 rounded-xl text-sm font-semibold transition shrink-0">
+            <Plus className="w-4 h-4" /><span className="hidden sm:inline">Nova Tarefa</span><span className="sm:hidden">Nova</span>
+          </button>
+        )}
+      </div>
 
-        {/* Status */}
+      {/* ── Linha 2: filtros ── */}
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white">
-          <option value="">Todos</option>
+          className="col-span-1 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-white w-full">
+          <option value="">Todos os status</option>
           <option value="pending">Pendentes</option>
           <option value="in_progress">Em andamento</option>
           <option value="done">Concluídas</option>
         </select>
-
-        {/* Responsável */}
         <select value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white">
+          className="col-span-1 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-white w-full">
           <option value="">Todos responsáveis</option>
           {users.map(u => {
             const dup = users.filter(x => x.full_name === u.full_name).length > 1
             return <option key={u.id} value={u.id}>{u.full_name}{dup && u.assoc_name ? ` — ${u.assoc_name}` : ''}</option>
           })}
         </select>
-
-        {/* Período */}
-        <div className="flex items-center gap-1">
+        <div className="col-span-2 flex items-center gap-1.5">
           <input type="date" value={filterPeriodFrom}
-            onChange={e => {
-              const v = e.target.value
-              if (!v || (v.length === 10 && parseInt(v.slice(0, 4)) >= 2020)) { setFilterPeriodFrom(v); setViewDate(today) }
-            }}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
-          <span className="text-xs text-gray-400">–</span>
+            onChange={e => { const v = e.target.value; if (!v || (v.length === 10 && parseInt(v.slice(0, 4)) >= 2020)) { setFilterPeriodFrom(v); setViewDate(today) } }}
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm min-w-0" />
+          <span className="text-xs text-gray-400 shrink-0">–</span>
           <input type="date" value={filterPeriodTo}
-            onChange={e => {
-              const v = e.target.value
-              if (!v || (v.length === 10 && parseInt(v.slice(0, 4)) >= 2020)) { setFilterPeriodTo(v); setViewDate(today) }
-            }}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+            onChange={e => { const v = e.target.value; if (!v || (v.length === 10 && parseInt(v.slice(0, 4)) >= 2020)) { setFilterPeriodTo(v); setViewDate(today) } }}
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm min-w-0" />
         </div>
-
-        {/* Ver apenas as minhas */}
-        <label className="flex items-center gap-1.5 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={onlyMine}
-            onChange={e => setOnlyMine(e.target.checked)}
-            className="w-3.5 h-3.5 accent-[#26619c]"
-          />
-          <span className="text-xs text-gray-600 whitespace-nowrap">Ver apenas as minhas</span>
-        </label>
-
-        <span className="text-sm text-gray-400">{displayedTasks.length} tarefa(s)</span>
-
-        {/* Botões direita */}
-        <div className="ml-auto flex items-center gap-2">
-          <button onClick={() => { setShowReport(true); loadReport() }}
-            className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
-            <FileText className="w-4 h-4" /> Ver relatório
-          </button>
-          {canWrite && !showForm && (
-            <button onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white px-4 py-2 rounded-xl text-sm font-medium transition">
-              <Plus className="w-4 h-4" /> Nova Tarefa
-            </button>
-          )}
+        <div className="col-span-2 flex items-center justify-between">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={onlyMine} onChange={e => setOnlyMine(e.target.checked)}
+              className="w-4 h-4 accent-[#26619c]" />
+            <span className="text-sm text-gray-600">Ver apenas as minhas</span>
+          </label>
+          <span className="text-sm text-gray-400">{displayedTasks.length} tarefa(s)</span>
         </div>
       </div>
 
@@ -2591,8 +2574,8 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
       )}
 
       {!loading && displayedTasks.length > 0 && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px]">
-          <div className="w-6 shrink-0" />
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px]">
+          <div className="w-8 shrink-0" />
           <div className="flex-1 flex items-center gap-4">
             <SortBtn col="title" label="Título" />
             <SortBtn col="assigned" label="Responsável" />
@@ -2608,61 +2591,69 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         const doneCount = task.checklist.filter(i => ['done', 'cancelled', 'postergado'].includes(getItemStatus(i))).length
         const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
         return (
-          <div key={task.id} className={`rounded-xl border shadow-sm overflow-hidden ${
+          <div key={task.id} className={`rounded-2xl border shadow-sm overflow-hidden ${
             task.status === 'done' ? 'border-gray-200 bg-gray-50' :
-            task.status === 'in_progress' ? 'border-amber-200 bg-amber-50/30' :
+            task.status === 'in_progress' ? 'border-amber-200 bg-amber-50/40' :
             isOverdue ? 'border-red-200 bg-red-50/30' :
             'border-gray-200 bg-white'
           }`}>
-            <div className="p-3">
+            <div className="p-4">
               <div className="flex items-start gap-3">
+                {/* Status button — touch target mínimo 44px */}
                 <button
                   onClick={() => cycleStatus(task)}
                   title={task.status === 'pending' ? 'Pendente' : task.status === 'in_progress' ? 'Em andamento' : 'Concluída'}
-                  className={`mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition text-xs
+                  className={`w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 transition text-sm font-bold
                     ${task.status === 'done' ? 'bg-green-500 border-green-500 text-white' :
                       task.status === 'in_progress' ? 'bg-amber-400 border-amber-400 text-white' :
-                      'border-gray-400 hover:border-[#26619c]'}`}
+                      task.status === 'blocked' ? 'bg-red-400 border-red-400 text-white' :
+                      'border-gray-300 hover:border-[#26619c] bg-white'}`}
                 >
-                  {task.status === 'done' ? '✓' : task.status === 'in_progress' ? '↺' : ''}
+                  {task.status === 'done' ? '✓' : task.status === 'in_progress' ? '↺' : task.status === 'blocked' ? '!' : ''}
                 </button>
+
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpanded(task.id)}>
-                  <div className="flex flex-wrap gap-1.5 mb-1">
+                  {/* Badges */}
+                  <div className="flex flex-wrap gap-1.5 mb-2">
                     {task.assigned_to_name && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1">
+                      <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1 leading-none">
                         👤 {task.assigned_to_name}
                       </span>
                     )}
-                    {task.service_order_title && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">{task.service_order_title}</span>
-                    )}
                     {task.due_date && (
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
-                        {isOverdue ? '⚠ Atrasada — ' : ''}Prazo: {new Date(task.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium leading-none ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                        {isOverdue ? '⚠ Atrasada · ' : ''}📅 {new Date(task.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                       </span>
                     )}
-                    {task.reminder_at && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700">
-                        🔔 {new Date(task.reminder_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                    {task.service_order_title && (
+                      <span className="text-xs px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 leading-none truncate max-w-[140px]">{task.service_order_title}</span>
                     )}
                   </div>
-                  <p className={`text-sm font-semibold ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{task.title}</p>
+                  {/* Título */}
+                  <p className={`text-base font-semibold leading-snug ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{task.title}</p>
+                  {/* Progresso */}
                   {task.checklist.length > 0 && (
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <div className="flex-1 bg-gray-200 rounded-full h-1.5 max-w-[80px]">
-                        <div className="bg-[#26619c] h-1.5 rounded-full" style={{ width: `${(doneCount / task.checklist.length) * 100}%` }} />
+                    <div className="flex items-center gap-2 mt-2">
+                      <div className="flex-1 bg-gray-200 rounded-full h-2 max-w-[100px]">
+                        <div className="bg-[#26619c] h-2 rounded-full transition-all" style={{ width: `${(doneCount / task.checklist.length) * 100}%` }} />
                       </div>
-                      <span className="text-xs text-gray-500">{doneCount}/{task.checklist.length}</span>
+                      <span className="text-xs text-gray-500 font-medium">{doneCount}/{task.checklist.length} itens</span>
                     </div>
                   )}
                 </div>
-                <span className="text-gray-300 text-xs mt-1 cursor-pointer" onClick={() => toggleExpanded(task.id)}>{isExpanded ? '▲' : '▼'}</span>
+
+                {/* Chevron expand */}
+                <button
+                  onClick={() => toggleExpanded(task.id)}
+                  className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 transition shrink-0"
+                >
+                  {isExpanded ? '▲' : '▼'}
+                </button>
               </div>
             </div>
             {isExpanded && (
-              <div className="border-t border-gray-100 p-3 flex flex-col gap-3">
-                {task.description && <p className="text-sm text-gray-600 whitespace-pre-wrap">{task.description}</p>}
+              <div className="border-t border-gray-100 p-4 flex flex-col gap-4">
+                {task.description && <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{task.description}</p>}
                 {task.checklist.length > 0 && (
                   <ul className="flex flex-col gap-2">
                     {task.checklist.map((item, i) => {
@@ -2675,28 +2666,33 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                       const acompOpen = expandedAcomp[scKey] ?? false
                       const draft = getDraft(task.id, i)
                       return (
-                        <li key={i} className="flex flex-col rounded-xl border border-gray-100 overflow-hidden bg-white shadow-sm">
+                        <li key={i} className="flex flex-col rounded-2xl border border-gray-100 overflow-hidden bg-white shadow-sm">
                           {/* Item header */}
-                          <div className="flex items-center gap-2 px-3 py-2.5">
-                            <button
-                              onClick={() => setStatusChangeOpen(prev => ({ ...prev, [scKey]: !scOpen }))}
-                              title="Alterar status do item"
-                              className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border transition hover:opacity-80 ${statusInfo.badge}`}
-                            >
-                              {statusInfo.label}
-                            </button>
-                            <span className={`text-sm flex-1 ${currentStatus === 'done' ? 'line-through text-gray-400' : currentStatus === 'cancelled' ? 'line-through text-red-400' : currentStatus === 'postergado' ? 'line-through text-orange-400' : 'text-gray-800'}`}>
-                              {item.text}
-                            </span>
+                          <div className="flex items-start gap-3 px-4 py-3">
+                            <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                              {/* Status pill */}
+                              <button
+                                onClick={() => setStatusChangeOpen(prev => ({ ...prev, [scKey]: !scOpen }))}
+                                title="Alterar status do item"
+                                className={`self-start px-3 py-1 rounded-full text-xs font-semibold border transition hover:opacity-80 whitespace-nowrap ${statusInfo.badge}`}
+                              >
+                                {statusInfo.label}
+                              </button>
+                              {/* Texto do item */}
+                              <span className={`text-sm leading-snug ${currentStatus === 'done' ? 'line-through text-gray-400' : currentStatus === 'cancelled' ? 'line-through text-red-400' : currentStatus === 'postergado' ? 'line-through text-orange-400' : 'text-gray-800'}`}>
+                                {item.text}
+                              </span>
+                            </div>
+                            {/* Botão acompanhar */}
                             <button
                               onClick={() => {
                                 setExpandedAcomp(prev => ({ ...prev, [scKey]: !acompOpen }))
                                 if (!acompOpen) loadComments(task.id)
                               }}
-                              className={`flex items-center gap-1 text-[11px] px-2.5 py-1.5 rounded-lg font-medium transition shrink-0 ${acompOpen ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                              className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl font-semibold transition shrink-0 min-w-[44px] min-h-[36px] ${acompOpen ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                             >
-                              <MessageSquare className="w-3 h-3" />
-                              {itemComments.length > 0 ? itemComments.length : 'Acompanhar'}
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              {itemComments.length > 0 ? itemComments.length : <span className="hidden sm:inline">Acompanhar</span>}
                             </button>
                           </div>
 
