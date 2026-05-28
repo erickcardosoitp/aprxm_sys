@@ -1798,6 +1798,7 @@ const ITEM_STATUSES = [
   { value: 'cancelled',     label: 'Cancelado',             badge: 'bg-red-50 text-red-600 border-red-200',            sel: 'bg-red-100 text-red-900 border-red-400' },
   { value: 'waiting_third', label: 'Ag. Terceiros',         badge: 'bg-purple-50 text-purple-600 border-purple-200',   sel: 'bg-purple-100 text-purple-900 border-purple-400' },
   { value: 'waiting_public', label: 'Ag. Órgão Público',  badge: 'bg-blue-50 text-blue-600 border-blue-200',         sel: 'bg-blue-100 text-blue-900 border-blue-400' },
+  { value: 'postergado',     label: 'Postergado',          badge: 'bg-orange-50 text-orange-600 border-orange-200',    sel: 'bg-orange-100 text-orange-900 border-orange-400' },
 ] as const
 
 const getItemStatus = (item: { done: boolean; status?: string }) =>
@@ -2604,7 +2605,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
       {displayedTasks.map(task => {
         const isExpanded = expandedId === task.id
-        const doneCount = task.checklist.filter(i => getItemStatus(i) === 'done').length
+        const doneCount = task.checklist.filter(i => ['done', 'cancelled', 'postergado'].includes(getItemStatus(i))).length
         const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
         return (
           <div key={task.id} className={`rounded-xl border shadow-sm overflow-hidden ${
