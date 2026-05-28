@@ -125,7 +125,16 @@ async def my_associations(
         result = await session.execute(select(User).where(User.id == current.user_id))
         user = result.scalar_one_or_none()
         if not user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+            # Token válido mas user não existe no banco (ghost user / token stale).
+            # Retorna a associação do token para não quebrar o app.
+            from sqlmodel import select as _sel
+            assoc = (await session.execute(
+                _sel(Association).where(Association.id == current.association_id)
+            )).scalar_one_or_none()
+            if assoc:
+                return [{"id": str(assoc.id), "name": assoc.name, "slug": assoc.slug,
+                         "role": current.role, "current": True}]
+            return []
         stmt = (
             select(Association, User)
             .join(User, User.association_id == Association.id)
