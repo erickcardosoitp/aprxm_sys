@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import DebouncedInput, { type DebouncedInputHandle } from '../../components/ui/DebouncedInput'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -2343,15 +2343,15 @@ export default function PackagesPage() {
               ] as { label: string; key: keyof typeof editPkgForm }[]).map(({ label, key }) => (
                 <div key={key}>
                   <label className="block text-xs text-gray-600 mb-1">{label}</label>
-                  <input value={editPkgForm[key]} onChange={e => setEditPkgForm(f => ({ ...f, [key]: e.target.value }))}
+                  <input value={editPkgForm[key]} onChange={e => { const v = e.target.value; startTransition(() => setEditPkgForm(f => ({ ...f, [key]: v }))) }}
                     className={inputCls} placeholder={label} />
                 </div>
               ))}
               {editPkg?.resident_id && (
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">CEP do morador</label>
-                  <input value={editPkgForm.resident_cep} onChange={e => setEditPkgForm(f => ({ ...f, resident_cep: e.target.value }))}
-                    className={inputCls} placeholder="00000-000" maxLength={9} />
+                  <input value={editPkgForm.resident_cep} onChange={e => { const v = e.target.value; startTransition(() => setEditPkgForm(f => ({ ...f, resident_cep: v }))) }}
+                    className={inputCls} placeholder="00000-000" maxLength={9} inputMode="numeric" />
                 </div>
               )}
             </div>
@@ -2598,10 +2598,10 @@ export default function PackagesPage() {
                     </div>
                     {newResType === 'member' && (
                       <>
-                        <input value={newResCpf} onChange={e => setNewResCpf(e.target.value)}
-                          className={inputCls} placeholder="CPF (opcional)" />
-                        <input value={guest.phone_primary} onChange={e => setGuest(g => ({ ...g, phone_primary: e.target.value }))}
-                          className={inputCls} placeholder="Telefone (opcional)" type="tel" />
+                        <input value={newResCpf} onChange={e => { const v = e.target.value; startTransition(() => setNewResCpf(v)) }}
+                          className={inputCls} placeholder="CPF (opcional)" inputMode="numeric" />
+                        <input value={guest.phone_primary} onChange={e => { const v = e.target.value; startTransition(() => setGuest(g => ({ ...g, phone_primary: v }))) }}
+                          className={inputCls} placeholder="Telefone (opcional)" type="tel" inputMode="tel" />
                       </>
                     )}
                     {newResType === 'dependent' && (
@@ -2625,22 +2625,22 @@ export default function PackagesPage() {
                     )}
                     {newResType === 'guest' && (
                       <>
-                        <input value={guest.phone_primary} onChange={e => setGuest(g => ({ ...g, phone_primary: e.target.value }))}
-                          className={inputCls} placeholder="Telefone (opcional)" type="tel" />
+                        <input value={guest.phone_primary} onChange={e => { const v = e.target.value; startTransition(() => setGuest(g => ({ ...g, phone_primary: v }))) }}
+                          className={inputCls} placeholder="Telefone (opcional)" type="tel" inputMode="tel" />
                         <div className="grid grid-cols-3 gap-2">
                           <div>
                             <input value={guest.address_cep}
-                              onChange={e => { setGuest(g => ({ ...g, address_cep: e.target.value })); lookupCep(e.target.value) }}
-                              className={inputCls} placeholder="CEP" maxLength={9} />
+                              onChange={e => { const v = e.target.value; startTransition(() => setGuest(g => ({ ...g, address_cep: v }))); lookupCep(v) }}
+                              className={inputCls} placeholder="CEP" maxLength={9} inputMode="numeric" />
                             {cepLoading && <p className="text-xs text-gray-400 mt-0.5">Buscando…</p>}
                           </div>
-                          <input value={guest.address_number} onChange={e => setGuest(g => ({ ...g, address_number: e.target.value }))} className={inputCls} placeholder="Número" />
-                          <input value={guest.address_complement} onChange={e => setGuest(g => ({ ...g, address_complement: e.target.value }))} className={inputCls} placeholder="Compl." />
+                          <input value={guest.address_number} onChange={e => { const v = e.target.value; startTransition(() => setGuest(g => ({ ...g, address_number: v }))) }} className={inputCls} placeholder="Número" inputMode="numeric" />
+                          <input value={guest.address_complement} onChange={e => { const v = e.target.value; startTransition(() => setGuest(g => ({ ...g, address_complement: v }))) }} className={inputCls} placeholder="Compl." />
                         </div>
-                        <input value={guest.address_street} onChange={e => setGuest(g => ({ ...g, address_street: e.target.value }))} className={inputCls} placeholder="Rua (opcional)" />
+                        <input value={guest.address_street} onChange={e => { const v = e.target.value; startTransition(() => setGuest(g => ({ ...g, address_street: v }))) }} className={inputCls} placeholder="Rua (opcional)" />
                         <div className="grid grid-cols-2 gap-2">
-                          <input value={guest.address_district} onChange={e => setGuest(g => ({ ...g, address_district: e.target.value }))} className={inputCls} placeholder="Bairro" />
-                          <input value={guest.address_city} onChange={e => setGuest(g => ({ ...g, address_city: e.target.value }))} className={inputCls} placeholder="Cidade" />
+                          <input value={guest.address_district} onChange={e => { const v = e.target.value; startTransition(() => setGuest(g => ({ ...g, address_district: v }))) }} className={inputCls} placeholder="Bairro" />
+                          <input value={guest.address_city} onChange={e => { const v = e.target.value; startTransition(() => setGuest(g => ({ ...g, address_city: v }))) }} className={inputCls} placeholder="Cidade" />
                         </div>
                       </>
                     )}
