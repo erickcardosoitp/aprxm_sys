@@ -2041,11 +2041,34 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Excluir esta tarefa?')) return
+    if (!confirm('Excluir esta tarefa? Ela ficará na lixeira por 30 dias e pode ser restaurada.')) return
     try {
       await api.delete(`/daily-tasks/${id}`)
       setTasks(prev => prev.filter(t => t.id !== id))
+      toast.success('Tarefa movida para a lixeira.')
     } catch { toast.error('Erro ao excluir.') }
+  }
+
+  const [deletedTasks, setDeletedTasks] = useState<any[]>([])
+  const [showDeleted, setShowDeleted] = useState(false)
+  const [loadingDeleted, setLoadingDeleted] = useState(false)
+
+  const loadDeleted = async () => {
+    setLoadingDeleted(true)
+    try {
+      const r = await api.get('/daily-tasks/deleted')
+      setDeletedTasks(r.data)
+    } catch { /* silent */ }
+    finally { setLoadingDeleted(false) }
+  }
+
+  const handleRestore = async (id: string, title: string) => {
+    try {
+      await api.post(`/daily-tasks/${id}/restore`)
+      setDeletedTasks(prev => prev.filter(t => t.id !== id))
+      toast.success(`"${title}" restaurada.`)
+      load()
+    } catch { toast.error('Erro ao restaurar.') }
   }
 
   const TASK_STATUS_LABELS: Record<string, string> = {
@@ -2949,6 +2972,44 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           </div>
         )
       })}
+
+      {/* Lixeira — tarefas excluídas nos últimos 30 dias */}
+      {role !== 'operator' && role !== 'viewer' && (
+        <div className="border border-dashed border-gray-300 rounded-2xl overflow-hidden">
+          <button
+            onClick={() => { setShowDeleted(v => !v); if (!showDeleted) loadDeleted() }}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-500 hover:bg-gray-50 transition"
+          >
+            🗑 Lixeira
+            {deletedTasks.length > 0 && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{deletedTasks.length}</span>}
+            <span className="ml-auto text-gray-300">{showDeleted ? '▲' : '▼'}</span>
+          </button>
+          {showDeleted && (
+            <div className="border-t border-dashed border-gray-200 px-4 py-3 flex flex-col gap-2">
+              {loadingDeleted && <p className="text-xs text-gray-400 text-center py-2">Carregando…</p>}
+              {!loadingDeleted && deletedTasks.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-2">Nenhuma tarefa excluída nos últimos 30 dias.</p>
+              )}
+              {deletedTasks.map(t => (
+                <div key={t.id} className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-700 font-medium truncate">{t.title}</p>
+                    <p className="text-xs text-gray-400">
+                      {t.assigned_to_name && `Para: ${t.assigned_to_name} · `}Excluída em {t.deleted_at}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleRestore(t.id, t.title)}
+                    className="text-xs px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition shrink-0"
+                  >
+                    ↩ Restaurar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {lightboxUrl && (
         <div

@@ -108,7 +108,7 @@ async def list_tasks(
 ) -> list[dict]:
     from datetime import date as _date
     aids = await _group_assoc_ids(str(current.association_id), session)
-    filters = ["t.association_id = ANY(:aids)"]
+    filters = ["t.association_id = ANY(:aids)", "t.deleted_at IS NULL"]
     params: dict = {"aids": aids}
     if assigned_to:
         filters.append("t.assigned_to = :at")
@@ -1234,17 +1234,58 @@ async def edit_comment(
     return {"id": str(row[0]), "comment": row[1], "updated_at": str(row[2])}
 
 
-@router.delete("/{task_id}", summary="Excluir Tarefa Diária")
+@router.delete("/{task_id}", summary="Excluir Tarefa Diária (soft delete — recuperável em 30 dias)")
 async def delete_task(
     task_id: UUID,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    aids = await _group_assoc_ids(str(current.association_id), session)
     await session.execute(text(
-        "DELETE FROM daily_tasks WHERE id = :id AND association_id = :aid"
-    ), {"id": str(task_id), "aid": str(current.association_id)})
+        "UPDATE daily_tasks SET deleted_at = NOW() WHERE id = :id AND association_id = ANY(:aids) AND deleted_at IS NULL"
+    ), {"id": str(task_id), "aids": aids})
     await session.commit()
     return {"ok": True}
+
+
+@router.post("/{task_id}/restore", summary="Restaurar tarefa excluída")
+async def restore_task(
+    task_id: UUID,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    aids = await _group_assoc_ids(str(current.association_id), session)
+    row = (await session.execute(text(
+        "UPDATE daily_tasks SET deleted_at = NULL WHERE id = :id AND association_id = ANY(:aids) AND deleted_at IS NOT NULL RETURNING id, title"
+    ), {"id": str(task_id), "aids": aids})).fetchone()
+    await session.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada ou já ativa.")
+    return {"ok": True, "title": row[1]}
+
+
+@router.get("/deleted", summary="Listar tarefas excluídas (últimos 30 dias)")
+async def list_deleted_tasks(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    aids = await _group_assoc_ids(str(current.association_id), session)
+    rows = (await session.execute(text("""
+        SELECT t.id, t.title, t.assigned_to_name, t.due_date, t.deleted_at,
+               COALESCE(u.full_name, 'Usuário') AS deleted_context
+        FROM daily_tasks t
+        LEFT JOIN users u ON u.id = t.created_by
+        WHERE t.association_id = ANY(:aids)
+          AND t.deleted_at IS NOT NULL
+          AND t.deleted_at > NOW() - INTERVAL '30 days'
+        ORDER BY t.deleted_at DESC
+    """), {"aids": aids})).fetchall()
+    return [
+        {"id": str(r[0]), "title": r[1], "assigned_to_name": r[2],
+         "due_date": str(r[3]) if r[3] else None,
+         "deleted_at": str(r[4])[:16], "created_by_name": r[5]}
+        for r in rows
+    ]
 
 
 def _row_to_dict(r) -> dict:
