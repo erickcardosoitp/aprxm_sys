@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>APRXM — Modo Simplifica</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  * { -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Inter', system-ui, sans-serif; overscroll-behavior: none; }
+  .tile { transition: transform 0.1s, opacity 0.1s; }
+  .tile:active { transform: scale(0.95); opacity: 0.8; }
+  .screen { display: none; }
+  .screen.active { display: flex; }
+  #loading-screen { transition: opacity 0.3s; }
+</style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen flex flex-col">
+
+<!-- LOADING SCREEN -->
+<div id="loading-screen" class="screen active fixed inset-0 z-50 bg-gray-950 flex-col items-center justify-center gap-4">
+  <div class="text-2xl font-bold tracking-widest text-white">APRXM</div>
+  <div class="text-sm text-gray-400 animate-pulse">Carregando Simplifica...</div>
+  <div class="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mt-2"></div>
+</div>
+
+<!-- HOME -->
+<div id="screen-home" class="screen flex-col min-h-screen">
+  <!-- Header -->
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+    <span class="text-lg font-bold tracking-widest text-white">APRXM</span>
+    <div class="flex items-center gap-2">
+      <button onclick="goTo('screen-chat')" class="text-xs bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded-full font-medium">IA</button>
+      <button onclick="alert('Voltar ao modo completo?')" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-full font-medium">Simplifica</button>
+    </div>
+  </header>
+
+  <!-- Caixa status bar -->
+  <div id="caixa-bar" class="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
+    <!-- Estado: fechado -->
+    <div id="caixa-fechado" class="flex items-center gap-3 w-full">
+      <button onclick="abrirCaixa()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold py-2 px-4 rounded-lg text-center">
+        ABRIR CAIXA
+      </button>
+      <!-- Carrossel de caixas abertos por outros -->
+      <div class="flex gap-2 overflow-x-auto max-w-[180px] pb-0.5">
+        <div class="flex-shrink-0 bg-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 whitespace-nowrap">
+          João • 08:12
+        </div>
+        <div class="flex-shrink-0 bg-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 whitespace-nowrap">
+          Maria • 09:45
+        </div>
+      </div>
+    </div>
+    <!-- Estado: aberto (oculto por padrão) -->
+    <div id="caixa-aberto" class="hidden items-center gap-2 w-full">
+      <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+      <span class="text-sm text-emerald-400 font-medium">Aberto em: 10:23</span>
+    </div>
+  </div>
+
+  <!-- Grade principal -->
+  <main class="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
+    <button onclick="goTo('screen-caixa')" class="tile bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">💰</span>
+      <span class="text-sm font-semibold text-gray-100">Caixa</span>
+    </button>
+    <button onclick="goTo('screen-encomendas')" class="tile bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">📦</span>
+      <span class="text-sm font-semibold text-gray-100">Encomendas</span>
+    </button>
+    <button onclick="goTo('screen-moradores')" class="tile bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">👥</span>
+      <span class="text-sm font-semibold text-gray-100">Moradores</span>
+    </button>
+    <button onclick="goTo('screen-ordens')" class="tile bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">🔧</span>
+      <span class="text-sm font-semibold text-gray-100">Ordens</span>
+    </button>
+    <button onclick="goTo('screen-chat')" class="tile bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">💬</span>
+      <span class="text-sm font-semibold text-gray-100">Chat</span>
+    </button>
+    <button onclick="goTo('screen-config')" class="tile bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">⚙️</span>
+      <span class="text-sm font-semibold text-gray-100">Configurações</span>
+    </button>
+  </main>
+</div>
+
+<!-- CAIXA -->
+<div id="screen-caixa" class="screen flex-col min-h-screen">
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+    <button onclick="goTo('screen-home')" class="text-gray-400 hover:text-white text-xl">←</button>
+    <span class="text-base font-bold text-white">Caixa</span>
+  </header>
+  <main class="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
+    <button onclick="showForm('Mensalidades')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">🏷️</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Mensalidades</span>
+    </button>
+    <button onclick="showForm('Comprovante de Residência')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">🏠</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Comp. Residência</span>
+    </button>
+    <button onclick="showForm('Outras Entradas')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">➕</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Outras Entradas</span>
+    </button>
+    <button onclick="showForm('Registrar Saída')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">➖</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Registrar Saída</span>
+    </button>
+    <button onclick="showForm('Consultar Movimentações')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">📊</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Consultar Movim.</span>
+    </button>
+    <button onclick="showForm('Informar Incidente')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">⚠️</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Informar Incidente</span>
+    </button>
+  </main>
+</div>
+
+<!-- ENCOMENDAS -->
+<div id="screen-encomendas" class="screen flex-col min-h-screen">
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+    <button onclick="goTo('screen-home')" class="text-gray-400 hover:text-white text-xl">←</button>
+    <span class="text-base font-bold text-white">Encomendas</span>
+  </header>
+  <main class="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
+    <button onclick="showForm('Receber Encomenda')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">📥</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Receber</span>
+    </button>
+    <button onclick="showForm('Retirada de Encomenda')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">📤</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Retirada</span>
+    </button>
+    <button onclick="showForm('Devolução de Encomenda')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">🔄</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Devolução</span>
+    </button>
+    <button onclick="showForm('Cadastrar Encomenda')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">➕</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Cadastrar</span>
+    </button>
+    <button onclick="showForm('Consultar Encomenda')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">🔍</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Consultar</span>
+    </button>
+    <button onclick="showForm('Minhas Encomendas')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">📋</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Minhas</span>
+    </button>
+  </main>
+</div>
+
+<!-- MORADORES -->
+<div id="screen-moradores" class="screen flex-col min-h-screen">
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+    <button onclick="goTo('screen-home')" class="text-gray-400 hover:text-white text-xl">←</button>
+    <span class="text-base font-bold text-white">Moradores</span>
+  </header>
+  <main class="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
+    <button onclick="showForm('Cadastrar Morador')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">➕</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Cadastrar</span>
+    </button>
+    <button onclick="showForm('Consultar Cadastro')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">🔍</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Consultar</span>
+    </button>
+    <button onclick="showForm('Inadimplentes')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">🚨</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Inadimplentes</span>
+    </button>
+    <button onclick="showForm('Mapa de Moradores')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">🗺️</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Mapa Moradores</span>
+    </button>
+  </main>
+</div>
+
+<!-- ORDENS -->
+<div id="screen-ordens" class="screen flex-col min-h-screen">
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+    <button onclick="goTo('screen-home')" class="text-gray-400 hover:text-white text-xl">←</button>
+    <span class="text-base font-bold text-white">Ordens</span>
+  </header>
+  <main class="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
+    <button onclick="showForm('Criar Ordem de Serviço')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">📝</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Criar OS</span>
+    </button>
+    <button onclick="showForm('Consultar Ordens')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">🔍</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Consultar Ordens</span>
+    </button>
+    <button onclick="showForm('Tarefas Diárias')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">✅</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Tarefas Diárias</span>
+    </button>
+    <button onclick="showForm('Minhas Ordens')" class="tile bg-gray-800 border border-gray-700 rounded-2xl aspect-square flex flex-col items-center justify-center gap-3">
+      <span class="text-4xl">📋</span>
+      <span class="text-sm font-semibold text-center text-gray-100">Minhas Ordens</span>
+    </button>
+  </main>
+</div>
+
+<!-- CHAT -->
+<div id="screen-chat" class="screen flex-col min-h-screen">
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+    <button onclick="goTo('screen-home')" class="text-gray-400 hover:text-white text-xl">←</button>
+    <span class="text-base font-bold text-white">Chat</span>
+  </header>
+  <div class="flex-1 flex items-center justify-center text-gray-500 text-sm">
+    Chat integrado aqui
+  </div>
+</div>
+
+<!-- CONFIGURAÇÕES -->
+<div id="screen-config" class="screen flex-col min-h-screen">
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+    <button onclick="goTo('screen-home')" class="text-gray-400 hover:text-white text-xl">←</button>
+    <span class="text-base font-bold text-white">Configurações</span>
+  </header>
+  <main class="flex-1 p-4 flex flex-col gap-6">
+    <div>
+      <label class="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Tamanho da fonte</label>
+      <div class="flex gap-2">
+        <button class="flex-1 bg-gray-800 border border-gray-600 rounded-xl py-3 text-sm font-medium">P</button>
+        <button class="flex-1 bg-blue-600 border border-blue-500 rounded-xl py-3 text-sm font-medium">M</button>
+        <button class="flex-1 bg-gray-800 border border-gray-700 rounded-xl py-3 text-lg font-medium">G</button>
+        <button class="flex-1 bg-gray-800 border border-gray-700 rounded-xl py-3 text-xl font-medium">GG</button>
+      </div>
+    </div>
+    <div>
+      <label class="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Tipo de fonte</label>
+      <div class="flex gap-2">
+        <button class="flex-1 bg-blue-600 border border-blue-500 rounded-xl py-3 text-sm">Sistema</button>
+        <button class="flex-1 bg-gray-800 border border-gray-700 rounded-xl py-3 text-sm" style="font-family: serif">Serif</button>
+        <button class="flex-1 bg-gray-800 border border-gray-700 rounded-xl py-3 text-sm" style="font-family: monospace">Mono</button>
+      </div>
+    </div>
+    <div>
+      <label class="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Tema</label>
+      <div class="flex gap-2">
+        <button class="flex-1 bg-gray-800 border border-gray-600 rounded-xl py-3 text-sm">☀️ Claro</button>
+        <button class="flex-1 bg-blue-600 border border-blue-500 rounded-xl py-3 text-sm">🌙 Escuro</button>
+      </div>
+    </div>
+    <div class="mt-4 pt-4 border-t border-gray-800">
+      <button onclick="alert('Voltando ao modo completo...')" class="w-full bg-gray-800 border border-gray-600 text-gray-300 rounded-xl py-4 text-sm font-medium">
+        Voltar ao modo completo
+      </button>
+    </div>
+  </main>
+</div>
+
+<!-- FORM MODAL -->
+<div id="modal-form" class="hidden fixed inset-0 z-50 bg-black/70 flex items-end">
+  <div class="bg-gray-900 border-t border-gray-700 rounded-t-2xl w-full p-5 pb-8">
+    <div class="flex items-center justify-between mb-4">
+      <span id="modal-title" class="text-base font-bold text-white"></span>
+      <button onclick="closeForm()" class="text-gray-400 hover:text-white text-2xl leading-none">×</button>
+    </div>
+    <div id="modal-body" class="text-sm text-gray-300">
+      <!-- Form placeholder -->
+    </div>
+  </div>
+</div>
+
+<script>
+  function goTo(screenId) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(screenId).classList.add('active');
+    window.scrollTo(0, 0);
+  }
+
+  function abrirCaixa() {
+    document.getElementById('caixa-fechado').style.display = 'none';
+    const aberto = document.getElementById('caixa-aberto');
+    aberto.classList.remove('hidden');
+    aberto.style.display = 'flex';
+  }
+
+  function showForm(title) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-body').innerHTML = `
+      <p class="text-gray-500 text-center py-8">Formulário de <strong class="text-white">${title}</strong><br><span class="text-xs">[ protótipo ]</span></p>
+    `;
+    document.getElementById('modal-form').classList.remove('hidden');
+  }
+
+  function closeForm() {
+    document.getElementById('modal-form').classList.add('hidden');
+  }
+
+  // Simula loading na entrada
+  setTimeout(() => {
+    document.getElementById('loading-screen').style.opacity = '0';
+    setTimeout(() => {
+      document.getElementById('loading-screen').classList.remove('active');
+      goTo('screen-home');
+    }, 300);
+  }, 1800);
+</script>
+</body>
+</html>
