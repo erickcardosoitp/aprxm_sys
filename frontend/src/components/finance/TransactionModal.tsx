@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { financeService } from '../../services/finance'
 import { settingsService } from '../../services/settings'
+import { packageService } from '../../services/packages'
 import { useAuthStore } from '../../store/authStore'
 import { PhotoCapture } from '../packages/PhotoCapture'
 import type { AssociationSettings, TransactionCategory, PaymentMethod, Resident } from '../../types'
@@ -13,6 +14,7 @@ interface Props {
   onClose: () => void
   onSuccess: () => void
   initialSubtype?: IncomeSubtype
+  skipAutoPrint?: boolean
   initialTxType?: 'income' | 'expense'
   initialStep?: number
 }
@@ -39,7 +41,7 @@ const INCOME_SUBTYPES: { value: IncomeSubtype; label: string; icon: string }[] =
 
 const STEP_TITLES = ['Tipo', 'Dados', 'Confirmação']
 
-function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, setRegCpf, regUnit, setRegUnit, regCep, setRegCep, regProofUrl, setRegProofUrl, registerAs, setRegisterAs, registering, onRegister, onlyMember = false }: {
+function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, setRegCpf, regUnit, setRegUnit, regCep, setRegCep, regProofUrl, setRegProofUrl, registerAs, setRegisterAs, registering, onRegister, onlyMember = false, onCepResolved }: {
   regName: string; setRegName: (v: string) => void
   regPhone: string; setRegPhone: (v: string) => void
   regCpf: string; setRegCpf: (v: string) => void
@@ -49,10 +51,24 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
   registerAs: 'member' | 'guest' | null; setRegisterAs: (v: 'member' | 'guest' | null) => void
   registering: boolean; onRegister: () => void
   onlyMember?: boolean
+  onCepResolved?: (data: { street: string; district: string; city: string; state: string }) => void
 }) {
+  const [cepResult, setCepResult] = useState<{ street: string; district: string; city: string; state: string } | null>(null)
+  const [cepLoading, setCepLoading] = useState(false)
+
   useEffect(() => {
     if (onlyMember) setRegisterAs('member')
   }, [onlyMember])
+
+  useEffect(() => {
+    const digits = regCep.replace(/\D/g, '')
+    if (digits.length !== 8) { setCepResult(null); return }
+    setCepLoading(true)
+    packageService.lookupCep(digits)
+      .then(r => { setCepResult(r.data); onCepResolved?.(r.data) })
+      .catch(() => setCepResult(null))
+      .finally(() => setCepLoading(false))
+  }, [regCep])
 
   const inputCls = 'border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40'
 
@@ -93,12 +109,20 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
           </div>
           {(registerAs === 'member') && (
             <div className="grid grid-cols-2 gap-2">
-              <input value={regCep} onChange={e => setRegCep(e.target.value)}
-                placeholder={onlyMember ? 'CEP *' : 'CEP'} inputMode="numeric"
-                className={inputCls} />
+              <div>
+                <input value={regCep} onChange={e => setRegCep(e.target.value)}
+                  placeholder={onlyMember ? 'CEP *' : 'CEP'} inputMode="numeric"
+                  className={`w-full ${inputCls}`} />
+                {cepLoading && <p className="text-[11px] text-gray-400 mt-1">Consultando…</p>}
+                {cepResult && (
+                  <p className="text-[11px] text-emerald-700 mt-1 truncate">
+                    {cepResult.street}, {cepResult.district}
+                  </p>
+                )}
+              </div>
               <input value={regUnit} onChange={e => setRegUnit(e.target.value)}
                 placeholder={onlyMember ? 'Nº da casa/apto *' : 'Unidade (ex: 201)'}
-                className={inputCls} />
+                className={`w-full ${inputCls}`} />
             </div>
           )}
           <div>
@@ -120,7 +144,7 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
 }
 
 
-export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTxType, initialStep = 0 }: Props) {
+export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTxType, initialStep = 0, skipAutoPrint = false }: Props) {
   const role = useAuthStore((s) => s.role)
   const canPickSession = role === 'admin' || role === 'superadmin' || role === 'conferente'
 
@@ -172,6 +196,10 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   const [regCpf, setRegCpf] = useState('')
   const [regUnit, setRegUnit] = useState('')
   const [regCep, setRegCep] = useState('')
+  const [regStreet, setRegStreet] = useState('')
+  const [regDistrict, setRegDistrict] = useState('')
+  const [regCity, setRegCity] = useState('')
+  const [regStateAddr, setRegStateAddr] = useState('')
   const [regProofUrl, setRegProofUrl] = useState('')
   const [registering, setRegistering] = useState(false)
 
@@ -280,7 +308,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
     }
   }, [incomeSubtype, resident, txType])
 
-  const resetNotFound = () => { setNotFound(false); setRegisterAs(null); setRegName(''); setRegPhone(''); setRegCpf(''); setRegUnit(''); setRegCep(''); setRegProofUrl('') }
+  const resetNotFound = () => { setNotFound(false); setRegisterAs(null); setRegName(''); setRegPhone(''); setRegCpf(''); setRegUnit(''); setRegCep(''); setRegStreet(''); setRegDistrict(''); setRegCity(''); setRegStateAddr(''); setRegProofUrl('') }
 
   const searchFeeResident = async (q: string) => {
     setFeeQuery(q)
@@ -343,6 +371,10 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         cpf: regCpf || undefined,
         unit: regUnit || undefined,
         address_cep: regCep || undefined,
+        address_street: regStreet || undefined,
+        address_neighborhood: regDistrict || undefined,
+        address_city: regCity || undefined,
+        address_state: regStateAddr || undefined,
         status: 'active',
         is_member_confirmed: registerAs === 'member',
         terms_accepted: false,
@@ -554,8 +586,8 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
       onSuccess()
       onClose()
 
-      // Print carnê after mensalidade
-      if (txType === 'income' && incomeSubtype === 'mensalidade' && resident) {
+      // Print carnê after mensalidade (skip in Simplifica)
+      if (!skipAutoPrint && txType === 'income' && incomeSubtype === 'mensalidade' && resident) {
         try {
           const allRes = await api.get<any[]>(`/mensalidades/residents/${resident.id}`)
           printCarneUtil(resident, allRes.data, assocInfo?.association_name ?? '', { logoUrl: assocInfo?.assoc_logo_url ?? undefined })
@@ -944,6 +976,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                         regProofUrl={regProofUrl} setRegProofUrl={setRegProofUrl}
                         registerAs={registerAs} setRegisterAs={setRegisterAs}
                         registering={registering} onRegister={registerResident}
+                        onCepResolved={d => { setRegStreet(d.street); setRegDistrict(d.district); setRegCity(d.city); setRegStateAddr(d.state) }}
                       />}
                     </div>
                   ) : (
@@ -984,7 +1017,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                         <p className="font-medium">{resident.full_name}</p>
                         <p className="text-xs text-blue-600">
                           {resident.type === 'member' ? 'Associado' : resident.type === 'guest' ? 'Visitante' : 'Dependente'}
-                          {resident.unit ? ` · Unid. ${resident.unit}` : ''}
+                          {resident.unit ? ` · Casa/Apto ${resident.unit}` : ''}
                         </p>
                       </div>
                       <button type="button" onClick={() => { setResident(null); setFeeQuery(''); setPaymentHistory(null) }}
@@ -1005,6 +1038,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                     registerAs={registerAs} setRegisterAs={setRegisterAs}
                     registering={registering} onRegister={registerResident}
                     onlyMember={incomeSubtype === 'mensalidade'}
+                    onCepResolved={d => { setRegStreet(d.street); setRegDistrict(d.district); setRegCity(d.city); setRegStateAddr(d.state) }}
                   />}
 
                   {/* Mensalidade payment history */}
