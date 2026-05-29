@@ -582,7 +582,14 @@ function EsteiraStepper({ status }: { status: string }) {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function PackagesPage() {
+interface PackagesPageProps {
+  /** Quando true, não carrega a lista — só exibe modais de recebimento */
+  modalMode?: boolean
+  /** Chamado quando todos os modais de recebimento fecham */
+  onModalClosed?: () => void
+}
+
+export default function PackagesPage({ modalMode = false, onModalClosed }: PackagesPageProps) {
   const { fullName, role, associationId } = useAuthStore()
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
@@ -616,8 +623,9 @@ export default function PackagesPage() {
   const [savingEditPkg, setSavingEditPkg] = useState(false)
   const [photoPreviewUrls, setPhotoPreviewUrls] = useState<{ url: string; label?: string }[] | null>(null)
 
-  // Auto-abre modal via ?action= (usado pelo Modo Simplifica)
+  // Auto-abre modal via ?action= (URL) ou via modalMode (prop)
   useEffect(() => {
+    if (modalMode) { setShowReceiveMode(true); return }
     const action = searchParams.get('action')
     if (action === 'receive') { setShowReceiveMode(true); navigate('/packages', { replace: true }) }
     if (action === 'esteira') { setViewMode('esteira') }
@@ -1013,7 +1021,7 @@ export default function PackagesPage() {
       setReceiveHistory(res.data)
     } catch { /* silent */ } finally { setRxHistoryLoading(false) }
   }
-  useEffect(() => { loadReceiveHistory() }, [])
+  useEffect(() => { if (!modalMode) loadReceiveHistory() }, [modalMode])
 
   // Bulk delivery flow
   const [showBulkDeliver, setShowBulkDeliver] = useState(false)
@@ -1374,9 +1382,10 @@ export default function PackagesPage() {
   }
 
   useEffect(() => {
+    if (modalMode) return
     const t = setTimeout(loadPackages, filterQ ? 300 : 0)
     return () => clearTimeout(t)
-  }, [filterStatus, filterQ, filterDateFrom, filterDateTo])
+  }, [filterStatus, filterQ, filterDateFrom, filterDateTo, modalMode])
 
   useEffect(() => {
     api.get<{ resident_id: string }[]>('/mensalidades/delinquent')
@@ -1385,6 +1394,12 @@ export default function PackagesPage() {
   }, [])
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
   useEffect(() => { if (showBulkReceive && bulkRxStep === 'add') setTimeout(() => brxBarcodeRef.current?.focus(), 200) }, [showBulkReceive, bulkRxStep])
+  const anyReceiveModalOpen = showReceiveMode || showReceive || showBulkReceive
+  const anyModalWasOpenRef = useRef(false)
+  useEffect(() => {
+    if (anyReceiveModalOpen) { anyModalWasOpenRef.current = true; return }
+    if (anyModalWasOpenRef.current) { anyModalWasOpenRef.current = false; onModalClosed?.() }
+  }, [anyReceiveModalOpen])
   useEffect(() => {
     if (bulkRxQueue.length > 0) {
       localStorage.setItem(brxStorageKey, JSON.stringify(bulkRxQueue))
