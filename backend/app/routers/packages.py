@@ -109,20 +109,23 @@ async def delivery_check(
     overdue_count = 0
 
     if is_member:
-        mens_svc = MensalidadeService(session)
-        is_delinquent = await mens_svc.has_delinquent_mensalidade(current.association_id, resident_id)
-        if is_delinquent:
-            from sqlalchemy import text as _t
-            from datetime import date, timedelta
-            grace = (await session.execute(sa_text(
-                "SELECT COALESCE(delinquency_grace_days, 2) FROM association_settings WHERE association_id = :aid"
-            ), {"aid": str(current.association_id)})).scalar() or 2
-            cutoff = date.today() - timedelta(days=grace)
-            overdue_count = (await session.execute(sa_text("""
-                SELECT COUNT(*) FROM mensalidades
-                WHERE resident_id = :rid AND association_id = :aid
-                  AND status NOT IN ('paid', 'agreement') AND due_date < :cutoff
-            """), {"rid": str(resident_id), "aid": str(current.association_id), "cutoff": cutoff})).scalar() or 0
+        # Query única: grace_days + overdue_count em uma só chamada ao banco
+        from datetime import date, timedelta
+        check = (await session.execute(sa_text("""
+            SELECT
+                COALESCE(s.delinquency_grace_days, 2) AS grace,
+                COUNT(m.id) FILTER (
+                    WHERE m.status NOT IN ('paid','agreement')
+                      AND m.due_date < CURRENT_DATE - (COALESCE(s.delinquency_grace_days,2) || ' days')::interval
+                ) AS overdue
+            FROM association_settings s
+            LEFT JOIN mensalidades m ON m.resident_id = :rid AND m.association_id = :aid
+            WHERE s.association_id = :aid
+            GROUP BY s.delinquency_grace_days
+        """), {"rid": str(resident_id), "aid": str(current.association_id)})).fetchone()
+        if check:
+            overdue_count = int(check[1] or 0)
+            is_delinquent = overdue_count > 0
 
     fee_will_apply = (not is_member and not is_dependent) or is_delinquent
     return {
@@ -370,6 +373,18 @@ async def list_packages(
     if date_to:
         filters.append("p.received_at < (:date_to::date + interval '1 day')")
         params["date_to"] = date_to
+    # Filtros de busca no SQL (eliminam o filtro em Python)
+    if q:
+        filters.append("(r.full_name ILIKE :q OR p.tracking_code ILIKE :q OR p.unit ILIKE :q)")
+        params["q"] = f"%{q}%"
+    if cpf:
+        cpf_clean = cpf.replace(".", "").replace("-", "")
+        filters.append("REPLACE(REPLACE(r.cpf, '.', ''), '-', '') = :cpf")
+        params["cpf"] = cpf_clean
+    if cep:
+        cep_clean = cep.replace("-", "")
+        filters.append("REPLACE(r.address_cep, '-', '') = :cep")
+        params["cep"] = cep_clean
     where_clause = " AND ".join(filters)
     result = await session.execute(
         sa_text(f"""
@@ -392,6 +407,7 @@ async def list_packages(
             LEFT JOIN users u_del ON u_del.id = p.delivered_by
             WHERE {where_clause}
             ORDER BY p.received_at DESC
+            LIMIT 300
         """),
         params,
     )
@@ -401,12 +417,6 @@ async def list_packages(
         rname = row[21]
         rcpf = row[22]
         rcep = row[24]
-        if q and not (q.lower() in (rname or "").lower() or q.lower() in (row[5] or "").lower()):
-            continue
-        if cpf and (rcpf or "").replace(".", "").replace("-", "") != cpf.replace(".", "").replace("-", ""):
-            continue
-        if cep and (rcep or "").replace("-", "") != cep.replace("-", ""):
-            continue
         out.append({
             "id": str(row[0]),
             "status": row[1],
