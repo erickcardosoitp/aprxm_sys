@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
+import { SECTOR_COLORS } from './theme'
 import api from '../../services/api'
 
 interface CaixaAberto {
@@ -74,12 +75,12 @@ export default function SimplificaHome() {
 
       {/* Grade principal */}
       <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
-        <SimplificaTile icon="💰" label="Caixa"       onClick={() => navigate('/simplifica/caixa')} />
-        <SimplificaTile icon="📦" label="Encomendas"  onClick={() => navigate('/simplifica/encomendas')} />
-        <SimplificaTile icon="👥" label="Moradores"   onClick={() => navigate('/simplifica/moradores')} />
-        <SimplificaTile icon="🔧" label="Ordens"      onClick={() => navigate('/simplifica/ordens')} />
-        <SimplificaTile icon="💬" label="Chat"        onClick={() => navigate('/simplifica/chat')} />
-        <SimplificaTile icon="⚙️" label="Configurações" onClick={() => navigate('/simplifica/configuracoes')} />
+        <SimplificaTile icon="💰" label="Caixa"        color={SECTOR_COLORS.caixa}      onClick={() => navigate('/simplifica/caixa')} />
+        <SimplificaTile icon="📦" label="Encomendas"   color={SECTOR_COLORS.encomendas} onClick={() => navigate('/simplifica/encomendas')} />
+        <SimplificaTile icon="👥" label="Moradores"    color={SECTOR_COLORS.moradores}  onClick={() => navigate('/simplifica/moradores')} />
+        <SimplificaTile icon="🔧" label="Ordens"       color={SECTOR_COLORS.ordens}     onClick={() => navigate('/simplifica/ordens')} />
+        <SimplificaTile icon="💬" label="Chat"         color={SECTOR_COLORS.chat}       onClick={() => navigate('/simplifica/chat')} />
+        <SimplificaTile icon="⚙️" label="Configurações" color={SECTOR_COLORS.config}    onClick={() => navigate('/simplifica/configuracoes')} />
       </main>
     </div>
   )

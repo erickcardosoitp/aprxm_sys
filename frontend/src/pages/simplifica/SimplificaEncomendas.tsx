@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
 import { SimplificaBottomSheet } from './components/SimplificaBottomSheet'
+import { SECTOR_COLORS } from './theme'
 
 const ACOES = [
   { icon: '📥', label: 'Receber',          sheet: 'receber' },
@@ -34,7 +35,7 @@ export default function SimplificaEncomendas() {
 
       <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
         {ACOES.map(a => (
-          <SimplificaTile key={a.sheet} icon={a.icon} label={a.label} onClick={() => setSheet(a.sheet)} />
+          <SimplificaTile key={a.sheet} icon={a.icon} label={a.label} color={SECTOR_COLORS.encomendas} onClick={() => setSheet(a.sheet)} />
         ))}
       </main>
 
