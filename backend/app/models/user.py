@@ -31,6 +31,7 @@ class User(SQLModel, table=True):
     role: UserRole = Field(default=UserRole.operator, sa_column=Column(SAEnum(UserRole, name='user_role', create_type=False), nullable=False))
     avatar_url: str | None = None
     is_active: bool = Field(default=True)
+    simplifica_mode: bool = Field(default=False)
     last_login_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

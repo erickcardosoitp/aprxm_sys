@@ -28,5 +28,6 @@ class Association(SQLModel, table=True):
     plan_name: str = Field(default="basic", max_length=50)
     plan_expires_at: datetime | None = None
     # linked_association_slugs: TEXT[] — acessado via SQL raw (evita bug asyncpg+ARRAY)
+    simplifica_enabled: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

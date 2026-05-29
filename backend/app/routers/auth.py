@@ -199,13 +199,33 @@ async def me(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from sqlmodel import select
-    stmt = select(User).where(User.id == current.user_id)
-    result = await session.execute(stmt)
-    user = result.scalar_one_or_none()
+    user = (await session.execute(select(User).where(User.id == current.user_id))).scalar_one_or_none()
+    assoc = (await session.execute(select(Association).where(Association.id == current.association_id))).scalar_one_or_none()
     return {
         "user_id": str(current.user_id),
         "association_id": str(current.association_id),
         "role": current.role,
         "full_name": user.full_name if user else "",
         "email": user.email if user else "",
+        "simplifica_mode": user.simplifica_mode if user else False,
+        "simplifica_enabled": assoc.simplifica_enabled if assoc else False,
     }
+
+
+class PreferencesRequest(BaseModel):
+    simplifica_mode: bool
+
+
+@router.patch("/me/preferences", summary="Atualizar preferências do usuário")
+async def update_preferences(
+    body: PreferencesRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    user = (await session.execute(select(User).where(User.id == current.user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    user.simplifica_mode = body.simplifica_mode
+    session.add(user)
+    await session.commit()
+    return {"simplifica_mode": user.simplifica_mode}

@@ -75,9 +75,14 @@ export function AppShell() {
   const [pushPerm, setPushPerm] = useState<NotificationPermission | 'unsupported'>('default')
   const [pushDismissed, setPushDismissed] = useState(() => localStorage.getItem('push-dismissed') === '1')
 
-  const isOffice     = useAuthStore((s) => s.isOffice)
+  const isOffice           = useAuthStore((s) => s.isOffice)
+  const simplificaEnabled  = useAuthStore((s) => s.simplificaEnabled)
+  const setSimplificaPrefs = useAuthStore((s) => s.setSimplificaPrefs)
+  const setSimplificaMode  = useAuthStore((s) => s.setSimplificaMode)
   const isSuperAdmin = role === 'superadmin' || role === 'admin_master'
   const isAdmin      = role === 'admin' || role === 'diretoria' || role === 'conselho' || isSuperAdmin
+
+  const [simplificaLoading, setSimplificaLoading] = useState(false)
 
   const [themeColor, setThemeColor] = useState(() => localStorage.getItem('aprxm-theme') ?? '#1a3f6f')
 
@@ -119,6 +124,25 @@ export function AppShell() {
     if (!role || isSuperAdmin) return
     api.get('/admin/my-permissions').then(r => setPermissions(r.data)).catch(() => {})
   }, [role])
+
+  useEffect(() => {
+    if (!role) return
+    api.get<{ simplifica_mode: boolean; simplifica_enabled: boolean }>('/auth/me')
+      .then(r => setSimplificaPrefs(r.data.simplifica_mode, r.data.simplifica_enabled))
+      .catch(() => {})
+  }, [role])
+
+  const handleSimplificaToggle = async () => {
+    if (!confirm('Mudar para o Modo Simplifica?')) return
+    try {
+      await api.patch('/auth/me/preferences', { simplifica_mode: true })
+      setSimplificaMode(true)
+      setSimplificaLoading(true)
+      setTimeout(() => { navigate('/simplifica', { replace: true }) }, 1500)
+    } catch {
+      toast.error('Erro ao ativar Modo Simplifica.')
+    }
+  }
 
   const fetchUnread = useCallback(() => {
     api.get<{ count: number }>('/notifications/unread-count').then(r => setUnreadCount(r.data.count)).catch(() => {})
@@ -317,6 +341,13 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
+      {simplificaLoading && (
+        <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center gap-4" style={{ backgroundColor: 'var(--brand-header)' }}>
+          <span className="text-2xl font-extrabold tracking-widest text-white">APRXM</span>
+          <span className="text-sm text-white/70 animate-pulse">Carregando Simplifica...</span>
+          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mt-1" />
+        </div>
+      )}
       {!pushDismissed && (pushPerm === 'default' || pushPerm === 'denied') && (
         <div className="bg-blue-600 text-white text-xs flex flex-col items-center gap-1.5 px-4 py-2.5 text-center" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))' }}>
           {pushPerm === 'denied' ? (
@@ -349,6 +380,16 @@ export function AppShell() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Simplifica toggle */}
+          {simplificaEnabled && !isOffice && (
+            <button
+              onClick={handleSimplificaToggle}
+              className="text-xs font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg transition"
+            >
+              Simplifica
+            </button>
+          )}
+
           {/* Theme color picker */}
           <label className="relative p-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition cursor-pointer" title="Cor do tema">
             <Palette className="w-5 h-5" />

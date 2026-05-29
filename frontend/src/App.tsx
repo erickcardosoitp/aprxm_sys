@@ -4,6 +4,15 @@ import { Toaster } from 'react-hot-toast'
 import { AppShell } from './components/layout/AppShell'
 import { useAuthStore } from './store/authStore'
 
+const SimplificaLayout     = lazy(() => import('./pages/simplifica/SimplificaLayout'))
+const SimplificaHome       = lazy(() => import('./pages/simplifica/SimplificaHome'))
+const SimplificaCaixa      = lazy(() => import('./pages/simplifica/SimplificaCaixa'))
+const SimplificaEncomendas = lazy(() => import('./pages/simplifica/SimplificaEncomendas'))
+const SimplificaMoradores  = lazy(() => import('./pages/simplifica/SimplificaMoradores'))
+const SimplificaOrdens     = lazy(() => import('./pages/simplifica/SimplificaOrdens'))
+const SimplificaChat       = lazy(() => import('./pages/simplifica/SimplificaChat'))
+const SimplificaConfig     = lazy(() => import('./pages/simplifica/SimplificaConfig'))
+
 // Carregamento imediato — rotas críticas de primeiro acesso
 import LoginPage from './pages/LoginPage'
 import OverviewPage from './pages/overview/OverviewPage'
@@ -53,11 +62,20 @@ function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
 }
 
 function RedirectByRole() {
-  const role = useAuthStore((s) => s.role)
-  const isOffice = useAuthStore((s) => s.isOffice)
+  const role             = useAuthStore((s) => s.role)
+  const isOffice         = useAuthStore((s) => s.isOffice)
+  const simplificaMode   = useAuthStore((s) => s.simplificaMode)
+  const simplificaEnabled = useAuthStore((s) => s.simplificaEnabled)
+  if (simplificaMode && simplificaEnabled) return <Navigate to="/simplifica" replace />
   if (isOffice) return <Navigate to="/geral" replace />
   if (role === 'operator' || role === 'viewer') return <Navigate to="/finance" replace />
   return <Navigate to="/overview" replace />
+}
+
+function RequireSimplificaEnabled({ children }: { children: React.ReactNode }) {
+  const simplificaEnabled = useAuthStore((s) => s.simplificaEnabled)
+  if (simplificaEnabled === false) return <Navigate to="/" replace />
+  return <>{children}</>
 }
 
 function RequireAggregator({ children }: { children: React.ReactNode }) {
@@ -116,6 +134,28 @@ export default function App() {
           <Route path="help"           element={<Navigate to="/help/abrir-caixa" replace />} />
           <Route path="help/:slug"     element={<Suspense fallback={<PageLoader />}><HelpPage /></Suspense>} />
         </Route>
+        {/* Simplifica — layout próprio */}
+        <Route
+          path="/simplifica"
+          element={
+            <RequireAuth>
+              <RequireSimplificaEnabled>
+                <Suspense fallback={<PageLoader />}>
+                  <SimplificaLayout />
+                </Suspense>
+              </RequireSimplificaEnabled>
+            </RequireAuth>
+          }
+        >
+          <Route index element={<Suspense fallback={<PageLoader />}><SimplificaHome /></Suspense>} />
+          <Route path="caixa"         element={<Suspense fallback={<PageLoader />}><SimplificaCaixa /></Suspense>} />
+          <Route path="encomendas"    element={<Suspense fallback={<PageLoader />}><SimplificaEncomendas /></Suspense>} />
+          <Route path="moradores"     element={<Suspense fallback={<PageLoader />}><SimplificaMoradores /></Suspense>} />
+          <Route path="ordens"        element={<Suspense fallback={<PageLoader />}><SimplificaOrdens /></Suspense>} />
+          <Route path="chat"          element={<Suspense fallback={<PageLoader />}><SimplificaChat /></Suspense>} />
+          <Route path="configuracoes" element={<Suspense fallback={<PageLoader />}><SimplificaConfig /></Suspense>} />
+        </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

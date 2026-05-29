@@ -11,9 +11,13 @@ interface AuthStore extends AuthState {
   rememberDevice: boolean
   permissions: Permissions | null
   isOffice: boolean
+  simplificaMode: boolean
+  simplificaEnabled: boolean
   setAuth: (token: string, userId: string, associationId: string, role: UserRole, fullName: string, linkedAssociationIds?: string[], associationName?: string, rememberDevice?: boolean, isOffice?: boolean) => void
   clearAuth: () => void
   setPermissions: (p: Permissions) => void
+  setSimplificaPrefs: (mode: boolean, enabled: boolean) => void
+  setSimplificaMode: (mode: boolean) => void
   isAuthenticated: () => boolean
   isAggregator: () => boolean
 }
@@ -31,6 +35,8 @@ export const useAuthStore = create<AuthStore>()(
       rememberDevice: false,
       permissions: null,
       isOffice: false,
+      simplificaMode: false,
+      simplificaEnabled: false,
 
       setAuth: (token, userId, associationId, role, fullName, linkedAssociationIds = [], associationName = '', rememberDevice = false, isOffice = false) => {
         set({ token, userId, associationId, role, fullName, linkedAssociationIds, associationName, rememberDevice, permissions: null, isOffice })
@@ -38,10 +44,12 @@ export const useAuthStore = create<AuthStore>()(
 
       clearAuth: () => {
         localStorage.removeItem('aprxm-auth')
-        set({ token: null, userId: null, associationId: null, role: null, fullName: null, linkedAssociationIds: [], associationName: '', rememberDevice: false, permissions: null, isOffice: false })
+        set({ token: null, userId: null, associationId: null, role: null, fullName: null, linkedAssociationIds: [], associationName: '', rememberDevice: false, permissions: null, isOffice: false, simplificaMode: false, simplificaEnabled: false })
       },
 
       setPermissions: (permissions) => set({ permissions }),
+      setSimplificaPrefs: (simplificaMode, simplificaEnabled) => set({ simplificaMode, simplificaEnabled }),
+      setSimplificaMode: (simplificaMode) => set({ simplificaMode }),
 
       isAuthenticated: () => !!get().token,
       isAggregator: () => (get().linkedAssociationIds?.length ?? 0) > 0,
