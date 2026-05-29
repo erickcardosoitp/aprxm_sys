@@ -12,6 +12,9 @@ import type { AssociationSettings, TransactionCategory, PaymentMethod, Resident 
 interface Props {
   onClose: () => void
   onSuccess: () => void
+  initialSubtype?: IncomeSubtype
+  initialTxType?: 'income' | 'expense'
+  initialStep?: number
 }
 
 type OpenSession = { id: string; opened_by: string; opened_by_name: string; opening_balance: string; opened_at: string; is_mine: boolean }
@@ -100,16 +103,16 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
 }
 
 
-export function TransactionModal({ onClose, onSuccess }: Props) {
+export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTxType, initialStep }: Props) {
   const role = useAuthStore((s) => s.role)
   const canPickSession = role === 'admin' || role === 'superadmin' || role === 'conferente'
 
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(initialStep ?? 0)
   const [saving, setSaving] = useState(false)
 
   // Step 1
-  const [txType, setTxType] = useState<'income' | 'expense'>('income')
-  const [incomeSubtype, setIncomeSubtype] = useState<IncomeSubtype>('other')
+  const [txType, setTxType] = useState<'income' | 'expense'>(initialTxType ?? 'income')
+  const [incomeSubtype, setIncomeSubtype] = useState<IncomeSubtype>(initialSubtype ?? 'other')
 
   // Settings
   const [settings, setSettings] = useState<AssociationSettings | null>(null)

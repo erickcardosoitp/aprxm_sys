@@ -12,7 +12,7 @@ const TransactionModal = lazy(() =>
   import('../../components/finance/TransactionModal').then(m => ({ default: m.TransactionModal }))
 )
 
-type ActiveModal = 'transaction' | 'sangria' | null
+type ActiveModal = 'mensalidades' | 'residencia' | 'outras' | 'sangria' | null
 type ActiveSheet = 'movimentacoes' | 'incidente' | null
 
 const fmt = (v: string | number) =>
@@ -79,21 +79,31 @@ export default function SimplificaCaixa() {
       <SimplificaHeader title="Caixa" showBack />
 
       <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
-        <SimplificaTile icon="🏷️" label="Mensalidades"       color={SECTOR_COLORS.caixa} onClick={() => setModal('transaction')} />
-        <SimplificaTile icon="🏠" label="Comp. Residência"   color={SECTOR_COLORS.caixa} onClick={() => setModal('transaction')} />
-        <SimplificaTile icon="➕" label="Outras Entradas"    color={SECTOR_COLORS.caixa} onClick={() => setModal('transaction')} />
+        <SimplificaTile icon="🏷️" label="Mensalidades"       color={SECTOR_COLORS.caixa} onClick={() => setModal('mensalidades')} />
+        <SimplificaTile icon="🏠" label="Comp. Residência"   color={SECTOR_COLORS.caixa} onClick={() => setModal('residencia')} />
+        <SimplificaTile icon="➕" label="Outras Entradas"    color={SECTOR_COLORS.caixa} onClick={() => setModal('outras')} />
         <SimplificaTile icon="➖" label="Registrar Saída"    color={SECTOR_COLORS.caixa} onClick={() => setModal('sangria')} />
         <SimplificaTile icon="📊" label="Consultar Movim."  color={SECTOR_COLORS.caixa} onClick={() => handleOpenSheet('movimentacoes')} />
         <SimplificaTile icon="⚠️" label="Informar Incidente" color={SECTOR_COLORS.caixa} onClick={() => handleOpenSheet('incidente')} />
       </main>
 
       {/* Modais completos existentes — renderizados como overlay fixo */}
-      {modal === 'transaction' && (
+      {modal === 'mensalidades' && (
         <Suspense fallback={null}>
-          <TransactionModal
-            onClose={() => setModal(null)}
-            onSuccess={() => setModal(null)}
-          />
+          <TransactionModal initialTxType="income" initialSubtype="mensalidade" initialStep={1}
+            onClose={() => setModal(null)} onSuccess={() => setModal(null)} />
+        </Suspense>
+      )}
+      {modal === 'residencia' && (
+        <Suspense fallback={null}>
+          <TransactionModal initialTxType="income" initialSubtype="proof_of_residence" initialStep={1}
+            onClose={() => setModal(null)} onSuccess={() => setModal(null)} />
+        </Suspense>
+      )}
+      {modal === 'outras' && (
+        <Suspense fallback={null}>
+          <TransactionModal initialTxType="income" initialSubtype="other" initialStep={1}
+            onClose={() => setModal(null)} onSuccess={() => setModal(null)} />
         </Suspense>
       )}
       {modal === 'sangria' && (
