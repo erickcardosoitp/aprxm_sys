@@ -244,8 +244,8 @@ export default function TIPage() {
                       <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-16">Método</th>
                       <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Path</th>
                       {([
-                        ['avg_ms',   'Média'],
-                        ['p95_ms',   'P95'],
+                        ['avg_ms',   'Média (s)'],
+                        ['p95_ms',   'P95 (s)'],
                         ['requests', 'Requests'],
                         ['errors',   'Erros'],
                       ] as const).map(([col, label]) => (
@@ -273,10 +273,10 @@ export default function TIPage() {
                             </td>
                             <td className="px-3 py-2 font-mono text-xs text-gray-700 max-w-[300px] truncate">{r.path}</td>
                             <td className={`px-3 py-2 text-right text-sm tabular-nums ${avgColor}`}>
-                              {r.avg_ms >= 1000 ? `${(r.avg_ms/1000).toFixed(1)}s` : `${r.avg_ms}ms`}
+                              {(r.avg_ms / 1000).toFixed(2)}s
                             </td>
                             <td className="px-3 py-2 text-right text-xs text-gray-500 tabular-nums">
-                              {r.p95_ms >= 1000 ? `${(r.p95_ms/1000).toFixed(1)}s` : `${r.p95_ms}ms`}
+                              {(r.p95_ms / 1000).toFixed(2)}s
                             </td>
                             <td className="px-3 py-2 text-right text-xs text-gray-600 tabular-nums">{r.requests.toLocaleString('pt-BR')}</td>
                             <td className={`px-3 py-2 text-right text-xs tabular-nums ${r.errors > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
@@ -290,9 +290,9 @@ export default function TIPage() {
                 </table>
               </div>
               <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex gap-4 text-[10px] text-gray-400">
-                <span className="text-green-700 font-medium">■ Verde</span> &lt; 800ms
-                <span className="text-yellow-600 font-medium">■ Amarelo</span> 800ms–2s
-                <span className="text-red-600 font-medium">■ Vermelho</span> &gt; 2s (gargalo)
+                <span className="text-green-700 font-medium">■ Verde</span> &lt; 0.80s
+                <span className="text-yellow-600 font-medium">■ Amarelo</span> 0.80s – 2.00s
+                <span className="text-red-600 font-medium">■ Vermelho</span> &gt; 2.00s (gargalo)
               </div>
             </div>
           )}
