@@ -103,7 +103,7 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
 }
 
 
-export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTxType, initialStep }: Props) {
+export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTxType, initialStep = 0 }: Props) {
   const role = useAuthStore((s) => s.role)
   const canPickSession = role === 'admin' || role === 'superadmin' || role === 'conferente'
 
@@ -678,17 +678,19 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* Step indicator */}
-        <div className="flex border-b border-gray-100">
-          {stepTitles.map((title, i) => (
-            <div key={i} className={`flex-1 py-2.5 text-center text-xs font-medium transition border-b-2 ${
-              step === i ? 'text-[#26619c] border-[#26619c]' :
-              i < step ? 'text-green-600 border-green-400' : 'text-gray-400 border-transparent'
-            }`}>
-              {i + 1}. {title}
-            </div>
-          ))}
-        </div>
+        {/* Step indicator — oculto quando começa no meio (initialStep > 0 pula steps anteriores) */}
+        {initialStep === 0 && (
+          <div className="flex border-b border-gray-100">
+            {stepTitles.map((title, i) => (
+              <div key={i} className={`flex-1 py-2.5 text-center text-xs font-medium transition border-b-2 ${
+                step === i ? 'text-[#26619c] border-[#26619c]' :
+                i < step ? 'text-green-600 border-green-400' : 'text-gray-400 border-transparent'
+              }`}>
+                {i + 1}. {title}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Content */}
         <div className="px-6 py-5 flex flex-col gap-4">
@@ -1395,10 +1397,10 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
           ) : step === 3 && proofDone ? (
             <span />
           ) : (
-            <button onClick={step === 0 ? onClose : () => setStep(step - 1)}
+            <button onClick={step === 0 || step === initialStep ? onClose : () => setStep(step - 1)}
               className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
               <ChevronLeft className="w-4 h-4" />
-              {step === 0 ? 'Cancelar' : 'Anterior'}
+              {step === 0 || step === initialStep ? 'Cancelar' : 'Anterior'}
             </button>
           )}
           {step === 3 && proofDone ? (
