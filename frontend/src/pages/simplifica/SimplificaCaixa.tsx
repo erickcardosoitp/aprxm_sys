@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { ChevronLeft, RefreshCw, Search } from 'lucide-react'
+import { ChevronLeft, RefreshCw, Search, Tag, Home, PlusCircle, MinusCircle, ListOrdered, CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
@@ -292,12 +292,12 @@ export default function SimplificaCaixa() {
       <SimplificaHeader title="Caixa" showBack />
 
       <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
-        <SimplificaTile icon="🏷️" label="Mensalidades"       color={SECTOR_COLORS.caixa} onClick={() => setModal('mensalidades')} />
-        <SimplificaTile icon="🏠" label="Comp. Residência"   color={SECTOR_COLORS.caixa} onClick={() => setModal('residencia')} />
-        <SimplificaTile icon="➕" label="Outras Entradas"    color={SECTOR_COLORS.caixa} onClick={() => setModal('outras')} />
-        <SimplificaTile icon="➖" label="Registrar Saída"    color={SECTOR_COLORS.caixa} onClick={() => setModal('sangria')} />
-        <SimplificaTile icon="📊" label="Consultar Movim."  color={SECTOR_COLORS.caixa} onClick={() => setMovOpen(true)} />
-        <SimplificaTile icon="💳" label="Consultar Pgtos"   color={SECTOR_COLORS.caixa} onClick={() => setPagamentosOpen(true)} />
+        <SimplificaTile icon={Tag}        label="Mensalidades"      color={SECTOR_COLORS.caixa} onClick={() => setModal('mensalidades')} />
+        <SimplificaTile icon={Home}       label="Comp. Residência"  color={SECTOR_COLORS.caixa} onClick={() => setModal('residencia')} />
+        <SimplificaTile icon={PlusCircle} label="Outras Entradas"   color={SECTOR_COLORS.caixa} onClick={() => setModal('outras')} />
+        <SimplificaTile icon={MinusCircle} label="Registrar Saída"  color={SECTOR_COLORS.caixa} onClick={() => setModal('sangria')} />
+        <SimplificaTile icon={ListOrdered} label="Consultar Movim." color={SECTOR_COLORS.caixa} onClick={() => setMovOpen(true)} />
+        <SimplificaTile icon={CreditCard} label="Consultar Pgtos"   color={SECTOR_COLORS.caixa} onClick={() => setPagamentosOpen(true)} />
       </main>
 
       {movOpen && <MovimentacoesTela onClose={() => setMovOpen(false)} />}

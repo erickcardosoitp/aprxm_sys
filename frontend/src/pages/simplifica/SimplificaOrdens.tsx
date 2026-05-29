@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { FilePlus2, Search, ListChecks, ClipboardList } from 'lucide-react'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
 import { SimplificaBottomSheet } from './components/SimplificaBottomSheet'
 import { SECTOR_COLORS } from './theme'
 
 const ACOES = [
-  { icon: '📝', label: 'Criar OS',           sheet: 'criar' },
-  { icon: '🔍', label: 'Consultar Ordens',   sheet: 'consultar' },
-  { icon: '✅', label: 'Tarefas Diárias',    sheet: 'tarefas' },
-  { icon: '📋', label: 'Minhas Ordens',      sheet: 'minhas' },
+  { icon: FilePlus2,     label: 'Criar OS',         sheet: 'criar' },
+  { icon: Search,        label: 'Consultar Ordens', sheet: 'consultar' },
+  { icon: ListChecks,    label: 'Tarefas Diárias',  sheet: 'tarefas' },
+  { icon: ClipboardList, label: 'Minhas Ordens',    sheet: 'minhas' },
 ] as const
 
 type Sheet = typeof ACOES[number]['sheet'] | null

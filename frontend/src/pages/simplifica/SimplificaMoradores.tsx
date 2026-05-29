@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { UserPlus, Search, AlertTriangle, Map } from 'lucide-react'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
 import { SimplificaBottomSheet } from './components/SimplificaBottomSheet'
 import { SECTOR_COLORS } from './theme'
 
 const ACOES = [
-  { icon: '➕', label: 'Cadastrar',        sheet: 'cadastrar' },
-  { icon: '🔍', label: 'Consultar',        sheet: 'consultar' },
-  { icon: '🚨', label: 'Inadimplentes',    sheet: 'inadimplentes' },
-  { icon: '🗺️', label: 'Mapa Moradores',   sheet: 'mapa' },
+  { icon: UserPlus,      label: 'Cadastrar',      sheet: 'cadastrar' },
+  { icon: Search,        label: 'Consultar',      sheet: 'consultar' },
+  { icon: AlertTriangle, label: 'Inadimplentes',  sheet: 'inadimplentes' },
+  { icon: Map,           label: 'Mapa Moradores', sheet: 'mapa' },
 ] as const
 
 type Sheet = typeof ACOES[number]['sheet'] | null

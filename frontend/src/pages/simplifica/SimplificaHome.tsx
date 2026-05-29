@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { Wallet, Package, Users, Wrench, MessageSquare, Settings } from 'lucide-react'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
 import { SimplificaBottomSheet } from './components/SimplificaBottomSheet'
@@ -93,12 +94,12 @@ export default function SimplificaHome() {
 
       {/* Grade principal */}
       <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
-        <SimplificaTile icon="💰" label="Caixa"         color={SECTOR_COLORS.caixa}      onClick={() => navigate('/simplifica/caixa')} />
-        <SimplificaTile icon="📦" label="Encomendas"    color={SECTOR_COLORS.encomendas} onClick={() => navigate('/simplifica/encomendas')} />
-        <SimplificaTile icon="👥" label="Moradores"     color={SECTOR_COLORS.moradores}  onClick={() => navigate('/simplifica/moradores')} />
-        <SimplificaTile icon="🔧" label="Ordens"        color={SECTOR_COLORS.ordens}     onClick={() => navigate('/simplifica/ordens')} />
-        <SimplificaTile icon="💬" label="Chat"          color={SECTOR_COLORS.chat}       onClick={() => navigate('/simplifica/chat')} />
-        <SimplificaTile icon="⚙️" label="Configurações" color={SECTOR_COLORS.config}     onClick={() => navigate('/simplifica/configuracoes')} />
+        <SimplificaTile icon={Wallet}        label="Caixa"         color={SECTOR_COLORS.caixa}      onClick={() => navigate('/simplifica/caixa')} />
+        <SimplificaTile icon={Package}       label="Encomendas"    color={SECTOR_COLORS.encomendas} onClick={() => navigate('/simplifica/encomendas')} />
+        <SimplificaTile icon={Users}         label="Moradores"     color={SECTOR_COLORS.moradores}  onClick={() => navigate('/simplifica/moradores')} />
+        <SimplificaTile icon={Wrench}        label="Ordens"        color={SECTOR_COLORS.ordens}     onClick={() => navigate('/simplifica/ordens')} />
+        <SimplificaTile icon={MessageSquare} label="Chat"          color={SECTOR_COLORS.chat}       onClick={() => navigate('/simplifica/chat')} />
+        <SimplificaTile icon={Settings}      label="Configurações" color={SECTOR_COLORS.config}     onClick={() => navigate('/simplifica/configuracoes')} />
       </main>
 
       {/* Sheet: Abrir Caixa */}

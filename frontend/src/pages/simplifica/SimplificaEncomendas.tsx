@@ -1,17 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { PackagePlus, PackageCheck, Undo2, Plus, Search, ClipboardList } from 'lucide-react'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
 import { SimplificaBottomSheet } from './components/SimplificaBottomSheet'
 import { SECTOR_COLORS } from './theme'
 
 const ACOES = [
-  { icon: '📥', label: 'Receber',          sheet: 'receber' },
-  { icon: '📤', label: 'Retirada',         sheet: 'retirada' },
-  { icon: '🔄', label: 'Devolução',        sheet: 'devolucao' },
-  { icon: '➕', label: 'Cadastrar',        sheet: 'cadastrar' },
-  { icon: '🔍', label: 'Consultar',        sheet: 'consultar' },
-  { icon: '📋', label: 'Minhas Encomendas', sheet: 'minhas' },
+  { icon: PackagePlus,   label: 'Receber',          sheet: 'receber' },
+  { icon: PackageCheck,  label: 'Retirada',         sheet: 'retirada' },
+  { icon: Undo2,         label: 'Devolução',        sheet: 'devolucao' },
+  { icon: Plus,          label: 'Cadastrar',        sheet: 'cadastrar' },
+  { icon: Search,        label: 'Consultar',        sheet: 'consultar' },
+  { icon: ClipboardList, label: 'Minhas Encomendas', sheet: 'minhas' },
 ] as const
 
 type Sheet = typeof ACOES[number]['sheet'] | null
