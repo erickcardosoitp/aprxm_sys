@@ -23,6 +23,7 @@ const GeralPage         = lazy(() => import('./pages/geral/GeralPage'))
 const ReportsPage       = lazy(() => import('./pages/reports/ReportsPage'))
 const SuperAdminPage    = lazy(() => import('./pages/superadmin/SuperAdminPage'))
 const LogsPage          = lazy(() => import('./pages/logs/LogsPage'))
+const TIPage            = lazy(() => import('./pages/ti/TIPage'))
 const ChatPage          = lazy(() => import('./pages/chat/ChatPage'))
 const HelpPage          = lazy(() => import('./pages/help/HelpPage'))
 
@@ -110,6 +111,7 @@ export default function App() {
           <Route path="geral"          element={<RequireAggregator><Suspense fallback={<PageLoader />}><GeralPage /></Suspense></RequireAggregator>} />
           <Route path="superadmin"     element={<RequireSuperAdmin><Suspense fallback={<PageLoader />}><SuperAdminPage /></Suspense></RequireSuperAdmin>} />
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><LogsPage /></Suspense></RequireAdmin></RequireNotOffice>} />
+          <Route path="ti"             element={<RequireAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireAdmin>} />
           <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />
           <Route path="help"           element={<Navigate to="/help/abrir-caixa" replace />} />
           <Route path="help/:slug"     element={<Suspense fallback={<PageLoader />}><HelpPage /></Suspense>} />
