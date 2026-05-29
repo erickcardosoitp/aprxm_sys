@@ -2934,9 +2934,14 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                 )}
 
                 {canWrite && (
-                  <div className="flex gap-2 pt-1 border-t border-gray-100">
+                  <div className="flex items-center gap-3 pt-1 border-t border-gray-100">
                     <button onClick={() => startEdit(task)} className="text-xs text-[#26619c] hover:underline">✏ Editar</button>
-                    <button onClick={() => handleDelete(task.id)} className="text-xs text-red-500 hover:underline">🗑 Excluir</button>
+                    {role !== 'operator' && role !== 'viewer' && (
+                      <button onClick={() => handleDelete(task.id)}
+                        className="text-xs text-red-400 hover:text-red-600 ml-auto border border-red-200 px-2 py-0.5 rounded-lg hover:bg-red-50 transition">
+                        🗑 Excluir
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
