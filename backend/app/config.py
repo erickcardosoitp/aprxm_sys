@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str
+    database_url_direct: str = ""
 
     # Security
     secret_key: str

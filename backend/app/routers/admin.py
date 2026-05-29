@@ -322,6 +322,13 @@ BUILT_IN_TASKS = [
         "schedule_cron": "0 8 * * 1",
         "schedule_label": "Toda segunda-feira às 08h",
     },
+    {
+        "task_key": "vacuum_dead_rows",
+        "name": "Limpeza de Dead Rows (VACUUM)",
+        "description": "Toda domingo às 02h, limpa registros obsoletos das tabelas mais ativas (notifications, transactions, packages, chat_message_reads, residents). Libera espaço e mantém performance das queries.",
+        "schedule_cron": "0 2 * * 0",
+        "schedule_label": "Todo domingo às 02h",
+    },
 ]
 
 
@@ -441,6 +448,31 @@ async def run_task_now(
                 except Exception:
                     pass
             result_msg = f"{created} mensalidade(s) gerada(s) para {ref_month}."
+        elif task_key == "vacuum_dead_rows":
+            tables = [
+                "notifications", "transactions", "packages",
+                "chat_message_reads", "residents", "mensalidades",
+                "daily_task_comments", "api_request_logs",
+            ]
+            # VACUUM não pode rodar dentro de transação — usa conexão raw direta
+            import asyncpg
+            from app.config import get_settings as _gs
+            _settings = _gs()
+            # Prefere DATABASE_URL_DIRECT (sem pooler); fallback para url principal
+            raw_url = _settings.database_url_direct or str(_settings.database_url).replace("+asyncpg", "")
+            raw_conn = await asyncpg.connect(raw_url)
+            vacuumed = []
+            try:
+                for tbl in tables:
+                    try:
+                        await raw_conn.execute(f"VACUUM ANALYZE {tbl}")
+                        vacuumed.append(tbl)
+                    except Exception:
+                        pass
+            finally:
+                await raw_conn.close()
+            result_msg = f"VACUUM ANALYZE executado em {len(vacuumed)} tabelas: {', '.join(vacuumed)}."
+
         else:
             raise HTTPException(400, "Tarefa desconhecida.")
 
