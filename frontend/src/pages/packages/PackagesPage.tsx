@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import DebouncedInput, { type DebouncedInputHandle } from '../../components/ui/DebouncedInput'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, Barcode, Camera, FileText, MapPin, MessageCircle, Package as PackageIcon, Plus,
   Search, Shield, User, UserX, List, Columns, Workflow, X, ChevronDown, Layers, Truck, Pencil, Trash2,
@@ -587,6 +587,7 @@ export default function PackagesPage() {
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [upgradedResidentInfo, setUpgradedResidentInfo] = useState<{ id: string; name: string } | null>(null)
   const [pageTab, setPageTab] = useState<'encomendas' | 'recebimentos' | 'cadastros'>('encomendas')
   const [packages, setPackages] = useState<Package[]>([])
@@ -614,6 +615,13 @@ export default function PackagesPage() {
   const [editPkgForm, setEditPkgForm] = useState({ sender_name: '', carrier_name: '', tracking_code: '', object_type: '', notes: '', resident_cep: '' })
   const [savingEditPkg, setSavingEditPkg] = useState(false)
   const [photoPreviewUrls, setPhotoPreviewUrls] = useState<{ url: string; label?: string }[] | null>(null)
+
+  // Auto-abre modal via ?action= (usado pelo Modo Simplifica)
+  useEffect(() => {
+    const action = searchParams.get('action')
+    if (action === 'receive') { setShowReceiveMode(true); navigate('/packages', { replace: true }) }
+    if (action === 'esteira') { setViewMode('esteira') }
+  }, [])
 
   useEffect(() => {
     if (detailPkg?.resident_id) {
