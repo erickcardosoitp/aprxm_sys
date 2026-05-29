@@ -1,17 +1,52 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, Component } from 'react'
+import type { ReactNode } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { AppShell } from './components/layout/AppShell'
 import { useAuthStore } from './store/authStore'
 
-const SimplificaLayout     = lazy(() => import('./pages/simplifica/SimplificaLayout'))
-const SimplificaHome       = lazy(() => import('./pages/simplifica/SimplificaHome'))
-const SimplificaCaixa      = lazy(() => import('./pages/simplifica/SimplificaCaixa'))
-const SimplificaEncomendas = lazy(() => import('./pages/simplifica/SimplificaEncomendas'))
-const SimplificaMoradores  = lazy(() => import('./pages/simplifica/SimplificaMoradores'))
-const SimplificaOrdens     = lazy(() => import('./pages/simplifica/SimplificaOrdens'))
-const SimplificaChat       = lazy(() => import('./pages/simplifica/SimplificaChat'))
-const SimplificaConfig     = lazy(() => import('./pages/simplifica/SimplificaConfig'))
+// Retry lazy imports once — reloads if chunk hash changed after deploy
+function lazyWithReload(factory: () => Promise<{ default: React.ComponentType<any> }>) {
+  return lazy(() =>
+    factory().catch((e: Error) => {
+      const isChunkError =
+        e.name === 'ChunkLoadError' ||
+        e.message?.includes('Failed to fetch dynamically imported module') ||
+        e.message?.includes('Importing a module script failed')
+      if (isChunkError) {
+        window.location.reload()
+        return new Promise<never>(() => {})
+      }
+      throw e
+    })
+  )
+}
+
+class ChunkErrorBoundary extends Component<{ children: ReactNode }, { crashed: boolean }> {
+  state = { crashed: false }
+  componentDidCatch(e: Error) {
+    if (
+      e.message?.includes('Failed to fetch dynamically imported module') ||
+      e.message?.includes('Importing a module script failed')
+    ) {
+      window.location.reload()
+    }
+    this.setState({ crashed: true })
+  }
+  render() {
+    if (this.state.crashed) return null
+    return this.props.children
+  }
+}
+
+const SimplificaLayout     = lazyWithReload(() => import('./pages/simplifica/SimplificaLayout'))
+const SimplificaHome       = lazyWithReload(() => import('./pages/simplifica/SimplificaHome'))
+const SimplificaCaixa      = lazyWithReload(() => import('./pages/simplifica/SimplificaCaixa'))
+const SimplificaEncomendas = lazyWithReload(() => import('./pages/simplifica/SimplificaEncomendas'))
+const SimplificaMoradores  = lazyWithReload(() => import('./pages/simplifica/SimplificaMoradores'))
+const SimplificaOrdens     = lazyWithReload(() => import('./pages/simplifica/SimplificaOrdens'))
+const SimplificaChat       = lazyWithReload(() => import('./pages/simplifica/SimplificaChat'))
+const SimplificaConfig     = lazyWithReload(() => import('./pages/simplifica/SimplificaConfig'))
 
 // Carregamento imediato — rotas críticas de primeiro acesso
 import LoginPage from './pages/LoginPage'
@@ -20,21 +55,21 @@ import PublicRegisterPage from './pages/public/PublicRegisterPage'
 import PublicUpdatePage from './pages/public/PublicUpdatePage'
 import CadastroPortaAPorta from './pages/public/CadastroPortaAPorta'
 
-// Lazy — carregados sob demanda, reduz bundle inicial de 2.6MB para ~400KB
-const FinancePage       = lazy(() => import('./pages/finance/FinancePage'))
-const PackagesPage      = lazy(() => import('./pages/packages/PackagesPage'))
-const ResidentsPage     = lazy(() => import('./pages/residents/ResidentsPage'))
-const ServiceOrdersPage = lazy(() => import('./pages/service_orders/ServiceOrdersPage'))
-const AdminPage         = lazy(() => import('./pages/admin/AdminPage'))
-const SettingsPage      = lazy(() => import('./pages/settings/SettingsPage'))
-const FinanceiroPage    = lazy(() => import('./pages/financeiro/FinanceiroPage'))
-const GeralPage         = lazy(() => import('./pages/geral/GeralPage'))
-const ReportsPage       = lazy(() => import('./pages/reports/ReportsPage'))
-const SuperAdminPage    = lazy(() => import('./pages/superadmin/SuperAdminPage'))
-const LogsPage          = lazy(() => import('./pages/logs/LogsPage'))
-const TIPage            = lazy(() => import('./pages/ti/TIPage'))
-const ChatPage          = lazy(() => import('./pages/chat/ChatPage'))
-const HelpPage          = lazy(() => import('./pages/help/HelpPage'))
+// Lazy — carregados sob demanda, auto-reload se chunk mudar após deploy
+const FinancePage       = lazyWithReload(() => import('./pages/finance/FinancePage'))
+const PackagesPage      = lazyWithReload(() => import('./pages/packages/PackagesPage'))
+const ResidentsPage     = lazyWithReload(() => import('./pages/residents/ResidentsPage'))
+const ServiceOrdersPage = lazyWithReload(() => import('./pages/service_orders/ServiceOrdersPage'))
+const AdminPage         = lazyWithReload(() => import('./pages/admin/AdminPage'))
+const SettingsPage      = lazyWithReload(() => import('./pages/settings/SettingsPage'))
+const FinanceiroPage    = lazyWithReload(() => import('./pages/financeiro/FinanceiroPage'))
+const GeralPage         = lazyWithReload(() => import('./pages/geral/GeralPage'))
+const ReportsPage       = lazyWithReload(() => import('./pages/reports/ReportsPage'))
+const SuperAdminPage    = lazyWithReload(() => import('./pages/superadmin/SuperAdminPage'))
+const LogsPage          = lazyWithReload(() => import('./pages/logs/LogsPage'))
+const TIPage            = lazyWithReload(() => import('./pages/ti/TIPage'))
+const ChatPage          = lazyWithReload(() => import('./pages/chat/ChatPage'))
+const HelpPage          = lazyWithReload(() => import('./pages/help/HelpPage'))
 
 function PageLoader() {
   return (
@@ -101,6 +136,7 @@ function RequireModule({ module, children }: { module: string; children: React.R
 
 export default function App() {
   return (
+    <ChunkErrorBoundary>
     <BrowserRouter>
       <Toaster position="top-center" toastOptions={{ duration: 3500 }} />
       <Routes>
@@ -159,5 +195,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </ChunkErrorBoundary>
   )
 }
