@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Database, Globe, RefreshCw, ChevronDown, ChevronRight, Activity } from 'lucide-react'
+import { Database, Globe, RefreshCw, ChevronDown, ChevronRight, Activity, Zap } from 'lucide-react'
 import api from '../../services/api'
 
-type Tab = 'endpoints' | 'banco'
+type Tab = 'endpoints' | 'banco' | 'perf'
 
 interface Route {
   path: string
@@ -30,6 +30,17 @@ interface IndexStat {
   size: string
   scans: number
   tuples_read: number
+}
+
+interface PerfRow {
+  method: string
+  path: string
+  requests: number
+  avg_ms: number
+  p95_ms: number
+  max_ms: number
+  errors: number
+  last_seen: string | null
 }
 
 interface ActiveQuery {
@@ -61,10 +72,13 @@ export default function TIPage() {
   const [tab, setTab] = useState<Tab>('endpoints')
   const [routes, setRoutes] = useState<Route[]>([])
   const [db, setDb] = useState<DbData | null>(null)
+  const [perf, setPerf] = useState<PerfRow[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set())
   const [searchRoute, setSearchRoute] = useState('')
+  const [searchPerf, setSearchPerf] = useState('')
   const [sortCol, setSortCol] = useState<'name' | 'total_bytes' | 'row_estimate' | 'dead_rows'>('total_bytes')
+  const [sortPerf, setSortPerf] = useState<'avg_ms' | 'p95_ms' | 'requests' | 'errors'>('avg_ms')
 
   const loadRoutes = async () => {
     setLoading(true)
@@ -87,9 +101,19 @@ export default function TIPage() {
     finally { setLoading(false) }
   }
 
+  const loadPerf = async () => {
+    setLoading(true)
+    try {
+      const r = await api.get<PerfRow[]>('/ti/perf')
+      setPerf(r.data)
+    } catch { /* silent */ }
+    finally { setLoading(false) }
+  }
+
   useEffect(() => {
     if (tab === 'endpoints') loadRoutes()
-    else loadDb()
+    else if (tab === 'banco') loadDb()
+    else loadPerf()
   }, [tab])
 
   const toggleTag = (tag: string) => {
@@ -133,7 +157,7 @@ export default function TIPage() {
           <h1 className="text-lg font-bold text-gray-800">Painel de TI</h1>
           <p className="text-xs text-gray-500">Endpoints, banco de dados e performance</p>
         </div>
-        <button onClick={() => tab === 'endpoints' ? loadRoutes() : loadDb()}
+        <button onClick={() => tab === 'endpoints' ? loadRoutes() : tab === 'banco' ? loadDb() : loadPerf()}
           disabled={loading}
           className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-xl text-sm hover:bg-gray-50 transition disabled:opacity-50">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
@@ -144,7 +168,8 @@ export default function TIPage() {
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
         {([
           { key: 'endpoints', label: 'Endpoints', icon: Globe },
-          { key: 'banco',     label: 'Banco de Dados', icon: Database },
+          { key: 'perf',      label: 'Performance', icon: Zap },
+          { key: 'banco',     label: 'Banco', icon: Database },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${tab === key ? 'bg-white shadow-sm text-[#26619c]' : 'text-gray-600 hover:text-gray-800'}`}>
@@ -193,6 +218,84 @@ export default function TIPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── PERFORMANCE ── */}
+      {tab === 'perf' && !loading && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <input value={searchPerf} onChange={e => setSearchPerf(e.target.value)}
+              placeholder="Filtrar por path…"
+              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#26619c]" />
+            <span className="text-xs text-gray-400 shrink-0">{perf.length} endpoints · últimas 24h</span>
+          </div>
+
+          {perf.length === 0 ? (
+            <div className="text-center text-gray-400 text-sm py-12">
+              Nenhum dado ainda. Os tempos aparecem após os primeiros requests.
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-gray-100 bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-16">Método</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Path</th>
+                      {([
+                        ['avg_ms',   'Média'],
+                        ['p95_ms',   'P95'],
+                        ['requests', 'Requests'],
+                        ['errors',   'Erros'],
+                      ] as const).map(([col, label]) => (
+                        <th key={col}
+                          onClick={() => setSortPerf(col)}
+                          className={`px-3 py-2 text-right text-xs font-semibold cursor-pointer select-none hover:text-[#26619c] ${sortPerf === col ? 'text-[#26619c]' : 'text-gray-500'}`}>
+                          {label} {sortPerf === col ? '↓' : ''}
+                        </th>
+                      ))}
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 hidden sm:table-cell">Último</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {[...perf]
+                      .filter(r => !searchPerf || r.path.includes(searchPerf))
+                      .sort((a, b) => b[sortPerf] - a[sortPerf])
+                      .map((r, i) => {
+                        const slow = r.avg_ms > 2000
+                        const medium = r.avg_ms > 800
+                        const avgColor = slow ? 'text-red-600 font-bold' : medium ? 'text-yellow-600 font-semibold' : 'text-green-700'
+                        return (
+                          <tr key={i} className={`hover:bg-gray-50 transition ${slow ? 'bg-red-50/30' : ''}`}>
+                            <td className="px-3 py-2">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${METHOD_COLORS[r.method] || 'bg-gray-100 text-gray-600'}`}>{r.method}</span>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs text-gray-700 max-w-[300px] truncate">{r.path}</td>
+                            <td className={`px-3 py-2 text-right text-sm tabular-nums ${avgColor}`}>
+                              {r.avg_ms >= 1000 ? `${(r.avg_ms/1000).toFixed(1)}s` : `${r.avg_ms}ms`}
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs text-gray-500 tabular-nums">
+                              {r.p95_ms >= 1000 ? `${(r.p95_ms/1000).toFixed(1)}s` : `${r.p95_ms}ms`}
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs text-gray-600 tabular-nums">{r.requests.toLocaleString('pt-BR')}</td>
+                            <td className={`px-3 py-2 text-right text-xs tabular-nums ${r.errors > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
+                              {r.errors > 0 ? r.errors : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-400 hidden sm:table-cell">{r.last_seen || '—'}</td>
+                          </tr>
+                        )
+                      })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex gap-4 text-[10px] text-gray-400">
+                <span className="text-green-700 font-medium">■ Verde</span> &lt; 800ms
+                <span className="text-yellow-600 font-medium">■ Amarelo</span> 800ms–2s
+                <span className="text-red-600 font-medium">■ Vermelho</span> &gt; 2s (gargalo)
+              </div>
+            </div>
+          )}
         </div>
       )}
 

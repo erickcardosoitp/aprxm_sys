@@ -1,3 +1,4 @@
+import time
 import traceback
 from contextlib import asynccontextmanager
 
@@ -711,6 +712,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_SKIP_LOG = {"/health", "/api/v1/health", "/api/v1/notifications/unread-count", "/api/v1/chat/unread-count"}
+
+@app.middleware("http")
+async def request_timing_middleware(request: Request, call_next):
+    start = time.monotonic()
+    response = await call_next(request)
+    duration_ms = int((time.monotonic() - start) * 1000)
+    path = request.url.path
+    if path not in _SKIP_LOG and not path.startswith("/api/v1/ti/"):
+        try:
+            from app.database import AsyncSessionLocal
+            from sqlalchemy import text as _t
+            async with AsyncSessionLocal() as s:
+                await s.execute(_t(
+                    "INSERT INTO api_request_logs (path, method, status_code, duration_ms) VALUES (:p, :m, :s, :d)"
+                ), {"p": path, "m": request.method, "s": response.status_code, "d": duration_ms})
+                await s.commit()
+                # Limpa logs com mais de 48h automaticamente (a cada ~500 requests)
+                import random
+                if random.random() < 0.002:
+                    await s.execute(_t("DELETE FROM api_request_logs WHERE created_at < NOW() - INTERVAL '48 hours'"))
+                    await s.commit()
+        except Exception:
+            pass
+    return response
+
 
 @app.exception_handler(Exception)
 async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:

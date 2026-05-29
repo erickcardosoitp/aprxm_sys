@@ -8,6 +8,37 @@ from app.database import get_session
 router = APIRouter(prefix="/ti", tags=["TI"])
 
 
+@router.get("/perf", summary="Tempo médio por endpoint (últimas 24h)")
+async def perf_stats(
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    rows = (await session.execute(text("""
+        SELECT
+            method,
+            path,
+            COUNT(*)                                    AS requests,
+            ROUND(AVG(duration_ms))::int                AS avg_ms,
+            ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms))::int AS p95_ms,
+            MAX(duration_ms)                            AS max_ms,
+            COUNT(*) FILTER (WHERE status_code >= 400)  AS errors,
+            MAX(created_at)                             AS last_seen
+        FROM api_request_logs
+        WHERE created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY method, path
+        ORDER BY avg_ms DESC
+        LIMIT 100
+    """))).fetchall()
+    return [
+        {
+            "method": r[0], "path": r[1], "requests": r[2],
+            "avg_ms": r[3], "p95_ms": r[4], "max_ms": r[5],
+            "errors": r[6], "last_seen": str(r[7])[:16] if r[7] else None,
+        }
+        for r in rows
+    ]
+
+
 @router.get("/routes", summary="Listar todos os endpoints registrados")
 async def list_routes(
     request: Request,
