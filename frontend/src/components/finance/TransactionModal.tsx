@@ -121,6 +121,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   // Step 2 — shared
   const [categories, setCategories] = useState<TransactionCategory[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [methodsLoading, setMethodsLoading] = useState(true)
   const [categoryId, setCategoryId] = useState('')
   const [paymentMethodId, setPaymentMethodId] = useState('')
   const [splitEnabled, setSplitEnabled] = useState(false)
@@ -202,6 +203,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   }, [])
 
   useEffect(() => {
+    setMethodsLoading(true)
     const load = async () => {
       try {
         const [cats, methods] = await Promise.all([
@@ -213,6 +215,8 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         setCategoryId('')
       } catch {
         // ignore
+      } finally {
+        setMethodsLoading(false)
       }
     }
     load()
@@ -1143,7 +1147,12 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                     </div>
                   )}
-                  {paymentMethods.length > 0 && (
+                  {methodsLoading ? (
+                    <div className="flex items-center gap-2 py-2 text-xs text-gray-400">
+                      <div className="w-4 h-4 border-2 border-gray-300 border-t-[#26619c] rounded-full animate-spin shrink-0" />
+                      Carregando formas de pagamento…
+                    </div>
+                  ) : paymentMethods.length > 0 ? (
                     <div className="flex flex-col gap-2">
                       <label className="block text-xs font-medium text-gray-600">
                         {splitEnabled ? '1ª forma de pagamento' : 'Forma de pagamento'}
@@ -1208,7 +1217,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                         </div>
                       )}
                     </div>
-                  )}
+                  ) : null}
                   {/* PIX payer identification */}
                   {txType === 'income' && paymentMethods.find(m => m.id === paymentMethodId)?.name?.toLowerCase().includes('pix') && (
                     <div className="flex flex-col gap-2 border border-blue-100 rounded-xl p-3 bg-blue-50">

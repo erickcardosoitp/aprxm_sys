@@ -184,19 +184,19 @@ export default function SimplificaCaixa() {
       {/* Modais existentes */}
       {modal === 'mensalidades' && (
         <Suspense fallback={null}>
-          <TransactionModal initialTxType="income" initialSubtype="mensalidade"
+          <TransactionModal initialTxType="income" initialSubtype="mensalidade" initialStep={1}
             onClose={() => setModal(null)} onSuccess={() => setModal(null)} />
         </Suspense>
       )}
       {modal === 'residencia' && (
         <Suspense fallback={null}>
-          <TransactionModal initialTxType="income" initialSubtype="proof_of_residence"
+          <TransactionModal initialTxType="income" initialSubtype="proof_of_residence" initialStep={1}
             onClose={() => setModal(null)} onSuccess={() => setModal(null)} />
         </Suspense>
       )}
       {modal === 'outras' && (
         <Suspense fallback={null}>
-          <TransactionModal initialTxType="income" initialSubtype="other"
+          <TransactionModal initialTxType="income" initialSubtype="other" initialStep={1}
             onClose={() => setModal(null)} onSuccess={() => setModal(null)} />
         </Suspense>
       )}
