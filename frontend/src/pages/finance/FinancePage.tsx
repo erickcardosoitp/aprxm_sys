@@ -1277,7 +1277,7 @@ export default function FinancePage() {
                 </button>
                 <button onClick={() => setShowSangria(true)}
                   className="flex items-center justify-center gap-2 border border-amber-400 text-amber-600 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-amber-50 transition">
-                  <ArrowDownLeft className="w-4 h-4" /> Sangria
+                  <ArrowDownLeft className="w-4 h-4" /> Registrar Saída
                 </button>
                 <button onClick={loadTransactions}
                   className="flex items-center justify-center gap-2 border border-gray-300 text-gray-600 py-2.5 px-3 rounded-xl text-sm hover:bg-gray-50 transition">

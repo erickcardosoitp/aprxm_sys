@@ -8,12 +8,13 @@ import { PhotoCapture } from '../packages/PhotoCapture'
 interface Props {
   onClose: () => void
   onSuccess: () => void
+  title?: string
 }
 
 interface Dest { id: string; name: string }
 interface CashBox { id: string; name: string; balance: string }
 
-export function SangriaModal({ onClose, onSuccess }: Props) {
+export function SangriaModal({ onClose, onSuccess, title = 'Registrar Saída' }: Props) {
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
   const [destinationId, setDestinationId] = useState('')
@@ -64,7 +65,7 @@ export function SangriaModal({ onClose, onSuccess }: Props) {
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-500" />
-            Realizar Sangria
+            {title}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
