@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # Cron
     cron_secret: str = ""
 
+    # Cloudflare R2 — Data Lake
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = "aprxm-datalake"
+
     # WebAuthn
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "APRXM"
