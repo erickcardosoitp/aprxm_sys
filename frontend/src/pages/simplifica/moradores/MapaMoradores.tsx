@@ -130,32 +130,41 @@ function MapView({ groups, filter, onMarkerClick }: {
 
     visible.forEach(g => {
       const count = countForFilter(g, filter)
-      const radius = 12 + Math.min(Math.sqrt(count) * 5, 28)
+      const size = Math.max(44, 24 + Math.min(Math.sqrt(count) * 8, 36)) // mínimo 44px (touch target)
 
-      // bubblingMouseEvents:false evita que o clique "afunde" antes de ser processado
-      const circle = L.circleMarker([g.lat, g.lng], {
-        radius,
-        color: filterInfo.color,
-        fillColor: filterInfo.color,
-        fillOpacity: 0.75,
-        weight: 2,
-        bubblingMouseEvents: false,
+      // divIcon com botão DOM real — 100% confiável em iOS/Android
+      const btn = document.createElement('button')
+      btn.style.cssText = [
+        `width:${size}px`, `height:${size}px`,
+        'border-radius:50%',
+        `background:${filterInfo.color}`,
+        'border:2.5px solid rgba(255,255,255,0.9)',
+        'box-shadow:0 2px 8px rgba(0,0,0,0.25)',
+        'color:white',
+        `font-size:${size > 44 ? '13px' : '11px'}`,
+        'font-weight:700',
+        'display:flex', 'align-items:center', 'justify-content:center',
+        'cursor:pointer',
+        'touch-action:manipulation',
+        '-webkit-tap-highlight-color:transparent',
+        'line-height:1',
+      ].join(';')
+      btn.textContent = String(count)
+      btn.title = `${g.street || g.cep} — ${count} morador(es)`
+
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        cbRef.current(g)
       })
 
-      circle.bindTooltip(
-        `<b>${g.street || g.cep}</b><br/>${count} morador(es)`,
-        { permanent: false, direction: 'top', className: 'text-xs' }
-      )
-
-      // click cobre desktop; touchend cobre mobile (iOS/Android)
-      const handleClick = () => cbRef.current(g)
-      circle.on('click', handleClick)
-      circle.on('touchend', (e: L.LeafletEvent) => {
-        L.DomEvent.stopPropagation(e as any)
-        handleClick()
+      const icon = L.divIcon({
+        html: btn,
+        className: '',
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
       })
 
-      circle.addTo(map)
+      L.marker([g.lat, g.lng], { icon }).addTo(map)
     })
 
     return () => { map.remove(); mapRef.current = null }

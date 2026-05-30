@@ -37,7 +37,7 @@ interface ChatUser {
   name: string
 }
 
-export default function ChatPage({ offsetTop = 130 }: { offsetTop?: number }) {
+export default function ChatPage({ offsetTop = 130, fillHeight = false }: { offsetTop?: number; fillHeight?: boolean }) {
   const userId = useAuthStore(s => s.userId)
   const associationName = useAuthStore(s => s.associationName)
 
@@ -366,7 +366,7 @@ export default function ChatPage({ offsetTop = 130 }: { offsetTop?: number }) {
   const grouped = groupByDate(messages)
 
   return (
-    <div className="flex flex-col" style={{ height: `calc(100vh - ${offsetTop}px)`, background: 'var(--brand-deeper)' }}>
+    <div className={`flex flex-col ${fillHeight ? 'flex-1 overflow-hidden' : ''}`} style={{ height: fillHeight ? '100%' : `calc(100dvh - ${offsetTop}px)`, background: 'var(--brand-deeper)' }}>
       {/* Header */}
       <div className="px-4 py-3 shrink-0" style={{ background: 'var(--brand-dark)', borderBottom: '1px solid rgba(var(--brand-rgb), 0.4)' }}>
         <h1 className="font-semibold text-white text-sm">Chat da Associação</h1>
