@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.tenant import require_admin, CurrentUser
+from app.core.tenant import require_admin, CurrentUser, get_current_user
 from app.database import get_session
 from app.services.datalake_service import run_full_etl
 
@@ -10,45 +10,35 @@ router = APIRouter(prefix="/datalake", tags=["Data Lake"])
 settings = get_settings()
 
 
-@router.post("/run", summary="Executar ETL completo Bronze→Silver→Gold")
-async def trigger_etl(
+@router.post("/run", summary="Executar ETL completo (cron)")
+async def trigger_etl_cron(
     x_cron_secret: str | None = Header(default=None),
     session: AsyncSession = Depends(get_session),
-    current: CurrentUser | None = None,
 ) -> dict:
-    """
-    Executa o pipeline ETL completo e faz upload para o Cloudflare R2.
-    Pode ser chamado:
-    - Via cron (header X-Cron-Secret)
-    - Via admin autenticado
-    """
-    # Autentica por cron secret OU por admin logado
-    is_cron = x_cron_secret and x_cron_secret == settings.cron_secret
-    if not is_cron:
-        # Fallback: requer admin autenticado
-        try:
-            from app.core.tenant import get_current_user
-            from fastapi import Request
-        except Exception:
-            raise HTTPException(status_code=401, detail="Não autorizado.")
-        if not current:
-            raise HTTPException(status_code=401, detail="Não autorizado.")
-
-    if not settings.r2_account_id or not settings.r2_access_key_id:
-        raise HTTPException(
-            status_code=503,
-            detail="Cloudflare R2 não configurado. Defina R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY e R2_BUCKET_NAME nas env vars."
-        )
-
-    result = await run_full_etl(session)
-    return result
+    """Chamado pelo Vercel Cron (header X-Cron-Secret)."""
+    if not x_cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="Cron secret inválido.")
+    if not settings.r2_account_id:
+        raise HTTPException(status_code=503, detail="R2 não configurado.")
+    return await run_full_etl(session)
 
 
-@router.get("/status", summary="Verificar última exportação no R2")
+@router.post("/run/manual", summary="Executar ETL manualmente (admin)")
+async def trigger_etl_manual(
+    session: AsyncSession = Depends(get_session),
+    current: CurrentUser = Depends(require_admin),
+) -> dict:
+    """Disparo manual por admin autenticado."""
+    if not settings.r2_account_id:
+        raise HTTPException(status_code=503, detail="R2 não configurado. Adicione R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME nas env vars.")
+    return await run_full_etl(session)
+
+
+@router.get("/status", summary="Status da última exportação no R2")
 async def etl_status(
     current: CurrentUser = Depends(require_admin),
 ) -> dict:
-    """Verifica quando foi o último ETL e quais arquivos existem no R2."""
+    """Lista arquivos gold/ no bucket e quando foi o último ETL."""
     import boto3
     from botocore.exceptions import ClientError
 
