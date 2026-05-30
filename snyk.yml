@@ -1,0 +1,67 @@
+name: Snyk Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 10 * * 1'
+
+jobs:
+  snyk:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Instala Snyk CLI
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
+      # ── Frontend ────────────────────────────────────────────────────────
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: frontend
+
+      - name: Snyk test — frontend
+        run: snyk test --severity-threshold=high || true
+        working-directory: frontend
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Snyk monitor — frontend
+        if: github.ref == 'refs/heads/main'
+        run: snyk monitor --project-name=aprxm-frontend || true
+        working-directory: frontend
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      # ── Backend ─────────────────────────────────────────────────────────
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install backend deps
+        run: pip install -r requirements.txt -q
+        working-directory: backend
+
+      - name: Snyk test — backend
+        run: snyk test --severity-threshold=high || true
+        working-directory: backend
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Snyk monitor — backend
+        if: github.ref == 'refs/heads/main'
+        run: snyk monitor --project-name=aprxm-backend || true
+        working-directory: backend
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
