@@ -25,7 +25,7 @@ export default function SimplificaEncomendas() {
     <div className="flex flex-col min-h-screen">
       <SimplificaHeader title="Encomendas" showBack />
 
-      <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
+      <main className="flex-1 p-4 grid grid-cols-2 gap-3" style={{ gridAutoRows: '1fr' }}>
         <SimplificaTile icon={PackagePlus}  label="Receber"            color={SECTOR_COLORS.encomendas} onClick={() => setModo('receber')} />
         <SimplificaTile icon={PackageCheck} label="Retirada"           color={SECTOR_COLORS.encomendas} onClick={() => setModo('retirada')} />
         <SimplificaTile icon={Undo2}        label="Devolução"          color={SECTOR_COLORS.encomendas} onClick={() => setModo('devolucao')} />

@@ -108,7 +108,7 @@ export default function SimplificaHome() {
       )}
 
       {/* Grade principal */}
-      <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
+      <main className="flex-1 p-4 grid grid-cols-2 gap-3" style={{ gridAutoRows: '1fr' }}>
         <SimplificaTile icon={Wallet}        label="Caixa"         color={SECTOR_COLORS.caixa}      onClick={() => navigate('/simplifica/caixa')} />
         <SimplificaTile icon={Package}       label="Encomendas"    color={SECTOR_COLORS.encomendas} onClick={() => navigate('/simplifica/encomendas')} />
         <SimplificaTile icon={Users}         label="Moradores"     color={SECTOR_COLORS.moradores}  onClick={() => navigate('/simplifica/moradores')} />

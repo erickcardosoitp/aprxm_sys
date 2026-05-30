@@ -290,7 +290,7 @@ export default function SimplificaCaixa() {
     <div className="flex flex-col min-h-screen">
       <SimplificaHeader title="Caixa" showBack />
 
-      <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
+      <main className="flex-1 p-4 grid grid-cols-2 gap-3" style={{ gridAutoRows: '1fr' }}>
         <SimplificaTile icon={Tag}        label="Mensalidades"      color={SECTOR_COLORS.caixa} onClick={() => setModal('mensalidades')} />
         <SimplificaTile icon={Home}       label="Comp. Residência"  color={SECTOR_COLORS.caixa} onClick={() => setModal('residencia')} />
         <SimplificaTile icon={PlusCircle} label="Outras Entradas"   color={SECTOR_COLORS.caixa} onClick={() => setModal('outras')} />
