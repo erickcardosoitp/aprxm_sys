@@ -119,6 +119,33 @@ class UpdateResidentRequest(BaseModel):
     notes: str | None = None
 
 
+def _serialize_list(r: Resident) -> dict:
+    """Serialização leve para listagem — omite campos de censo e arrays pesados."""
+    return {
+        "id": str(r.id),
+        "type": r.type,
+        "status": r.status,
+        "full_name": r.full_name,
+        "cpf": r.cpf,
+        "phone_primary": r.phone_primary,
+        "phone_secondary": r.phone_secondary,
+        "unit": r.unit,
+        "block": r.block,
+        "address_cep": r.address_cep,
+        "address_street": r.address_street,
+        "address_neighborhood": getattr(r, "address_neighborhood", None),
+        "responsible_id": str(r.responsible_id) if r.responsible_id else None,
+        "is_member_confirmed": r.is_member_confirmed,
+        "monthly_payment_day": r.monthly_payment_day,
+        "photo_url": r.photo_url if hasattr(r, "photo_url") else None,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        # Arrays/censo omitidos na lista — disponíveis em GET /residents/{id}
+        "neighborhood_problems": [],
+        "household_profiles": [],
+        "address_access": [],
+    }
+
+
 def _serialize(r: Resident) -> dict:
     return {
         "id": str(r.id),
@@ -302,9 +329,10 @@ async def list_residents(
             filters.append(Resident.phone_primary.ilike(f"%{q}%"))
             filters.append(Resident.phone_secondary.ilike(f"%{q}%"))
         stmt = stmt.where(or_(*filters))
-    stmt = stmt.order_by(Resident.full_name)
+    stmt = stmt.order_by(Resident.full_name).limit(200)
     result = await session.execute(stmt)
-    return [_serialize(r) for r in result.scalars().all()]
+    # Lista usa serialização leve — campos pesados (census) omitidos
+    return [_serialize_list(r) for r in result.scalars().all()]
 
 
 @router.get("/reports/by-street", summary="Relatório de moradores por rua")

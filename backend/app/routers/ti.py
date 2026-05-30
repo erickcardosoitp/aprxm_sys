@@ -1,3 +1,6 @@
+import time as _time
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +9,66 @@ from app.core.tenant import CurrentUser, get_current_user, require_admin
 from app.database import get_session
 
 router = APIRouter(prefix="/ti", tags=["TI"])
+
+
+@router.get("/health", summary="Saúde do sistema em tempo real")
+async def health_check(
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    t0 = _time.monotonic()
+    # Ping DB
+    try:
+        await session.execute(text("SELECT 1"))
+        db_ms = round((_time.monotonic() - t0) * 1000)
+        db_ok = True
+    except Exception:
+        db_ms = -1
+        db_ok = False
+
+    # Sessoes de caixa abertas
+    open_sessions = (await session.execute(
+        text("SELECT COUNT(*) FROM cash_sessions WHERE status = 'open'")
+    )).scalar() or 0
+
+    # Erros nas ultimas 1h
+    errors_1h = (await session.execute(text("""
+        SELECT COUNT(*) FROM api_request_logs
+        WHERE status_code >= 400 AND created_at > NOW() - INTERVAL '1 hour'
+    """))).scalar() or 0
+
+    # Requests na ultima hora
+    req_1h = (await session.execute(text("""
+        SELECT COUNT(*), ROUND(AVG(duration_ms))
+        FROM api_request_logs
+        WHERE created_at > NOW() - INTERVAL '1 hour'
+    """))).fetchone()
+
+    # Moradores ativos
+    residents_count = (await session.execute(
+        text("SELECT COUNT(*) FROM residents WHERE status = 'active'")
+    )).scalar() or 0
+
+    # Encomendas pendentes
+    packages_pending = (await session.execute(
+        text("SELECT COUNT(*) FROM packages WHERE status IN ('received','notified')")
+    )).scalar() or 0
+
+    # Tamanho total do banco
+    db_size = (await session.execute(
+        text("SELECT pg_size_pretty(pg_database_size(current_database()))")
+    )).scalar() or "?"
+
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "db": {"ok": db_ok, "ping_ms": db_ms, "size": db_size},
+        "api": {"requests_1h": int(req_1h[0] or 0), "avg_ms": int(req_1h[1] or 0), "errors_1h": int(errors_1h)},
+        "business": {
+            "open_cash_sessions": int(open_sessions),
+            "active_residents": int(residents_count),
+            "pending_packages": int(packages_pending),
+        },
+    }
 
 
 @router.get("/perf", summary="Tempo médio por endpoint (últimas 24h)")

@@ -106,7 +106,7 @@ export default function ChatPage({ offsetTop = 130, fillHeight = false }: { offs
         tick++
         if (tick % 8 === 0) fetchReads()
       } catch { /* silent */ }
-    }, 2000)
+    }, 10_000)
   }, [fetchReads])
 
   useEffect(() => {
