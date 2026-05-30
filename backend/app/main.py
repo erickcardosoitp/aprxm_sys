@@ -5,6 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.core.limiter import limiter
 
 from app.config import get_settings
 from app.database import init_db
@@ -695,6 +698,22 @@ async def _run_migrations() -> None:
             ON reconciliations (statement_id)
         """))
 
+        # refresh_tokens — suporte a refresh token de 7 dias
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                association_id UUID        NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                token_hash     TEXT        NOT NULL UNIQUE,
+                expires_at     TIMESTAMPTZ NOT NULL,
+                revoked        BOOLEAN     NOT NULL DEFAULT FALSE,
+                created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_refresh_tokens_user ON refresh_tokens(user_id)"
+        ))
+
         await session.commit()
 
 
@@ -705,6 +724,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -712,6 +734,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "1; mode=block",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+}
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    for key, value in _SECURITY_HEADERS.items():
+        response.headers[key] = value
+    return response
 
 _SKIP_LOG = {"/health", "/api/v1/health", "/api/v1/notifications/unread-count", "/api/v1/chat/unread-count"}
 

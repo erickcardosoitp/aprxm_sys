@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -7,6 +9,17 @@ from jose import JWTError, jwt
 from app.config import get_settings
 
 settings = get_settings()
+
+
+def generate_refresh_token() -> tuple[str, str]:
+    """Retorna (token_raw, token_hash). Armazenar apenas o hash."""
+    raw = secrets.token_urlsafe(48)
+    hashed = hashlib.sha256(raw.encode()).hexdigest()
+    return raw, hashed
+
+
+def hash_refresh_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def hash_password(password: str) -> str:

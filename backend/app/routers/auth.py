@@ -1,17 +1,23 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.security import hash_password, verify_password
+from datetime import UTC, datetime, timedelta
+
+from app.config import get_settings
+from app.core.security import hash_password, verify_password, generate_refresh_token, hash_refresh_token, create_access_token
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
 from app.models.association import Association
 from app.models.user import User, UserRole
 from app.services.auth_service import AuthService
+from app.core.limiter import limiter
+
+_settings = get_settings()
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
@@ -19,6 +25,11 @@ router = APIRouter(prefix="/auth", tags=["Autenticação"])
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str | None = None
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class LoginRequest(BaseModel):
@@ -29,7 +40,9 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/token", response_model=TokenResponse, summary="Login")
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
@@ -44,13 +57,93 @@ async def login(
 
 
 @router.post("/login", response_model=TokenResponse, summary="Login (JSON)")
+@limiter.limit("10/minute")
 async def login_json(
+    request: Request,
     body: LoginRequest,
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
+    from sqlalchemy import text as _t
     svc = AuthService(session)
-    token = await svc.authenticate(body.email, body.password, body.association_id, body.remember_me)
-    return TokenResponse(access_token=token)
+    access_token = await svc.authenticate(body.email, body.password, body.association_id, body.remember_me)
+
+    # Busca user para gerar refresh token
+    user = (await session.execute(
+        select(User).where(User.email == body.email, User.is_active == True)  # noqa: E712
+    )).scalars().first()
+
+    refresh_raw: str | None = None
+    if user:
+        raw, hashed = generate_refresh_token()
+        expires = datetime.now(UTC) + timedelta(days=_settings.refresh_token_expire_days)
+        await session.execute(_t("""
+            INSERT INTO refresh_tokens (user_id, association_id, token_hash, expires_at)
+            VALUES (:uid, :aid, :hash, :exp)
+        """), {"uid": str(user.id), "aid": str(user.association_id), "hash": hashed, "exp": expires})
+        await session.commit()
+        refresh_raw = raw
+
+    return TokenResponse(access_token=access_token, refresh_token=refresh_raw)
+
+
+@router.post("/refresh", response_model=TokenResponse, summary="Renovar access token")
+@limiter.limit("20/minute")
+async def refresh_token(
+    request: Request,
+    body: RefreshRequest,
+    session: AsyncSession = Depends(get_session),
+) -> TokenResponse:
+    from sqlalchemy import text as _t
+    token_hash = hash_refresh_token(body.refresh_token)
+    row = (await session.execute(_t("""
+        SELECT rt.id, rt.user_id, rt.association_id, rt.expires_at,
+               u.full_name, u.role, u.is_active
+        FROM refresh_tokens rt
+        JOIN users u ON u.id = rt.user_id
+        WHERE rt.token_hash = :hash AND rt.revoked = FALSE
+    """), {"hash": token_hash})).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=401, detail="Refresh token inválido.")
+    if not row[6]:  # is_active
+        raise HTTPException(status_code=401, detail="Usuário inativo.")
+    if row[3] < datetime.now(UTC):
+        raise HTTPException(status_code=401, detail="Refresh token expirado.")
+
+    # Revoga o token atual (rotação)
+    await session.execute(_t(
+        "UPDATE refresh_tokens SET revoked = TRUE WHERE id = :id"
+    ), {"id": str(row[0])})
+
+    # Emite novo access token
+    access_token = create_access_token(
+        row[1], row[2], row[5], row[4],
+    )
+
+    # Emite novo refresh token (rotação)
+    raw, hashed = generate_refresh_token()
+    expires = datetime.now(UTC) + timedelta(days=_settings.refresh_token_expire_days)
+    await session.execute(_t("""
+        INSERT INTO refresh_tokens (user_id, association_id, token_hash, expires_at)
+        VALUES (:uid, :aid, :hash, :exp)
+    """), {"uid": str(row[1]), "aid": str(row[2]), "hash": hashed, "exp": expires})
+    await session.commit()
+
+    return TokenResponse(access_token=access_token, refresh_token=raw)
+
+
+@router.post("/logout", summary="Revogar refresh token")
+async def logout(
+    body: RefreshRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from sqlalchemy import text as _t
+    token_hash = hash_refresh_token(body.refresh_token)
+    await session.execute(_t(
+        "UPDATE refresh_tokens SET revoked = TRUE WHERE token_hash = :hash"
+    ), {"hash": token_hash})
+    await session.commit()
+    return {"detail": "Logout realizado."}
 
 
 @router.get("/associations", summary="Associações disponíveis para um e-mail")
