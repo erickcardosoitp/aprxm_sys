@@ -3,13 +3,18 @@ import { UserPlus, Search, AlertTriangle, Map } from 'lucide-react'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
 import { SECTOR_COLORS } from './theme'
+import { MapaMoradores } from './moradores/MapaMoradores'
+import { CadastrarMorador } from './moradores/CadastrarMorador'
 
+// ResidentsPage apenas para Consultar e Inadimplentes
 const ResidentsPage = lazy(() => import('../../pages/residents/ResidentsPage'))
 
-type Modo = 'cadastrar' | 'consultar' | 'inadimplentes' | 'mapa' | null
+type Modo = 'consultar' | 'inadimplentes' | null
 
 export default function SimplificaMoradores() {
   const [modo, setModo] = useState<Modo>(null)
+  const [mapaOpen, setMapaOpen] = useState(false)
+  const [cadastrarOpen, setCadastrarOpen] = useState(false)
 
   const offscreen: React.CSSProperties = {
     position: 'fixed', left: '-99999px', width: '1px', height: '1px', overflow: 'hidden',
@@ -20,21 +25,33 @@ export default function SimplificaMoradores() {
       <SimplificaHeader title="Moradores" showBack />
 
       <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
-        <SimplificaTile icon={UserPlus}      label="Cadastrar"      color={SECTOR_COLORS.moradores} onClick={() => setModo('cadastrar')} />
+        {/* Cadastrar: form simplificado (6 campos) */}
+        <SimplificaTile icon={UserPlus}      label="Cadastrar"      color={SECTOR_COLORS.moradores} onClick={() => setCadastrarOpen(true)} />
+        {/* Consultar: picker de busca → ResidentProfileModal original */}
         <SimplificaTile icon={Search}        label="Consultar"      color={SECTOR_COLORS.moradores} onClick={() => setModo('consultar')} />
+        {/* Inadimplentes: lista de moradores em atraso */}
         <SimplificaTile icon={AlertTriangle} label="Inadimplentes"  color={SECTOR_COLORS.moradores} onClick={() => setModo('inadimplentes')} />
-        <SimplificaTile icon={Map}           label="Mapa Moradores" color={SECTOR_COLORS.moradores} onClick={() => setModo('mapa')} />
+        {/* Mapa: Leaflet com marcadores por rua + lista suspensa */}
+        <SimplificaTile icon={Map}           label="Mapa Moradores" color={SECTOR_COLORS.moradores} onClick={() => setMapaOpen(true)} />
       </main>
 
-      {/* ResidentsPage off-screen — mesmo padrão do PackagesPage */}
+      {/* Formulário simplificado de cadastro (overlay direto) */}
+      {cadastrarOpen && (
+        <CadastrarMorador onClose={() => setCadastrarOpen(false)} />
+      )}
+
+      {/* Mapa GPS completo */}
+      {mapaOpen && (
+        <MapaMoradores onClose={() => setMapaOpen(false)} />
+      )}
+
+      {/* ResidentsPage off-screen para Consultar e Inadimplentes */}
       {modo && (
         <div aria-hidden="true" style={offscreen}>
           <Suspense fallback={null}>
             <ResidentsPage
-              cadastrarMode={modo === 'cadastrar'}
               consultarMode={modo === 'consultar'}
               inadimplentesMode={modo === 'inadimplentes'}
-              mapaMode={modo === 'mapa'}
               onModalClosed={() => setModo(null)}
             />
           </Suspense>
