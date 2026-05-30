@@ -346,7 +346,7 @@ async def add_package_event(
 @router.get("", summary="Listar encomendas")
 async def list_packages(
     status: PackageStatus | None = None,
-    statuses: str | None = None,
+    statuses: str | None = None,   # comma-separated: received,notified,reversed
     q: str | None = None,
     cpf: str | None = None,
     cep: str | None = None,
@@ -375,7 +375,12 @@ async def list_packages(
         params["date_to"] = date_to
     # Filtros de busca no SQL (eliminam o filtro em Python)
     if q:
-        filters.append("(r.full_name ILIKE :q OR p.tracking_code ILIKE :q OR p.unit ILIKE :q)")
+        filters.append(
+            "(unaccent(r.full_name) ILIKE unaccent(:q) "
+            "OR p.tracking_code ILIKE :q "
+            "OR p.unit ILIKE :q "
+            "OR unaccent(p.carrier_name) ILIKE unaccent(:q))"
+        )
         params["q"] = f"%{q}%"
     if cpf:
         cpf_clean = cpf.replace(".", "").replace("-", "")

@@ -8,7 +8,7 @@ import { SECTOR_COLORS } from './theme'
 // PackagesPage lazy — carregado ao usar Receber / Retirada / Devolução
 const PackagesPage = lazy(() => import('../../pages/packages/PackagesPage'))
 
-type Modo = 'receber' | 'retirada' | 'devolucao' | null
+type Modo = 'receber' | 'retirada' | 'devolucao' | 'consultar' | 'minhas' | null
 
 export default function SimplificaEncomendas() {
   const [modo, setModo] = useState<Modo>(null)
@@ -30,33 +30,22 @@ export default function SimplificaEncomendas() {
         <SimplificaTile icon={PackageCheck} label="Retirada"           color={SECTOR_COLORS.encomendas} onClick={() => setModo('retirada')} />
         <SimplificaTile icon={Undo2}        label="Devolução"          color={SECTOR_COLORS.encomendas} onClick={() => setModo('devolucao')} />
         <SimplificaTile icon={Users2}       label="Cadastros"          color={SECTOR_COLORS.encomendas} onClick={() => setCadastrosOpen(true)} />
-        <SimplificaTile icon={Search}       label="Consultar"          color={SECTOR_COLORS.encomendas} onClick={() => setModo('retirada')} />
-        <SimplificaTile icon={ClipboardList} label="Minhas Encomendas" color={SECTOR_COLORS.encomendas} onClick={() => setModo('retirada')} />
+        <SimplificaTile icon={Search}       label="Consultar"          color={SECTOR_COLORS.encomendas} onClick={() => setModo('consultar')} />
+        <SimplificaTile icon={ClipboardList} label="Minhas Encomendas" color={SECTOR_COLORS.encomendas} onClick={() => setModo('minhas')} />
       </main>
 
-      {/* Receber — seletor unitário/múltiplo suspenso */}
-      {modo === 'receber' && (
+      {/* PackagesPage off-screen — cada modo abre o modal/picker correto */}
+      {modo && (
         <div aria-hidden="true" style={offscreen}>
           <Suspense fallback={null}>
-            <PackagesPage modalMode onModalClosed={() => setModo(null)} />
-          </Suspense>
-        </div>
-      )}
-
-      {/* Retirada — picker de encomendas pendentes suspenso */}
-      {modo === 'retirada' && (
-        <div aria-hidden="true" style={offscreen}>
-          <Suspense fallback={null}>
-            <PackagesPage retiradaMode onModalClosed={() => setModo(null)} />
-          </Suspense>
-        </div>
-      )}
-
-      {/* Devolução — picker + detail modal suspenso */}
-      {modo === 'devolucao' && (
-        <div aria-hidden="true" style={offscreen}>
-          <Suspense fallback={null}>
-            <PackagesPage devolucaoMode onModalClosed={() => setModo(null)} />
+            <PackagesPage
+              modalMode={modo === 'receber'}
+              retiradaMode={modo === 'retirada'}
+              devolucaoMode={modo === 'devolucao'}
+              consultarMode={modo === 'consultar'}
+              minhasMode={modo === 'minhas'}
+              onModalClosed={() => setModo(null)}
+            />
           </Suspense>
         </div>
       )}
