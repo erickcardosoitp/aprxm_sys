@@ -583,13 +583,17 @@ function EsteiraStepper({ status }: { status: string }) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 interface PackagesPageProps {
-  /** Quando true, não carrega a lista — só exibe modais de recebimento */
+  /** Receber — não carrega lista, abre seletor unitário/múltiplo */
   modalMode?: boolean
-  /** Chamado quando todos os modais de recebimento fecham */
+  /** Retirada — abre picker de encomendas pendentes para entrega */
+  retiradaMode?: boolean
+  /** Devolução — abre picker de encomendas para devolver */
+  devolucaoMode?: boolean
+  /** Chamado quando todos os modais do modo ativo fecham */
   onModalClosed?: () => void
 }
 
-export default function PackagesPage({ modalMode = false, onModalClosed }: PackagesPageProps) {
+export default function PackagesPage({ modalMode = false, retiradaMode = false, devolucaoMode = false, onModalClosed }: PackagesPageProps) {
   const { fullName, role, associationId } = useAuthStore()
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
@@ -601,6 +605,12 @@ export default function PackagesPage({ modalMode = false, onModalClosed }: Packa
   const [showReceive, setShowReceive] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
   const [deliveryCheck, setDeliveryCheck] = useState<{ is_delinquent: boolean; overdue_count: number; fee_will_apply: boolean; is_member: boolean } | null>(null)
+  // Pickers do Simplifica
+  const [showRetiradaPicker, setShowRetiradaPicker] = useState(false)
+  const [showDevolucaoPicker, setShowDevolucaoPicker] = useState(false)
+  const [pickerSearch, setPickerSearch] = useState('')
+  const [pickerPackages, setPickerPackages] = useState<Package[]>([])
+  const [pickerLoading, setPickerLoading] = useState(false)
   const [delinquentIds, setDelinquentIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [packagesLoading, setPackagesLoading] = useState(true)
@@ -623,9 +633,11 @@ export default function PackagesPage({ modalMode = false, onModalClosed }: Packa
   const [savingEditPkg, setSavingEditPkg] = useState(false)
   const [photoPreviewUrls, setPhotoPreviewUrls] = useState<{ url: string; label?: string }[] | null>(null)
 
-  // Auto-abre modal via ?action= (URL) ou via modalMode (prop)
+  // Auto-abre modal via prop de modo (Simplifica) ou ?action= (URL)
   useEffect(() => {
-    if (modalMode) { setShowReceiveMode(true); return }
+    if (modalMode)    { setShowReceiveMode(true); return }
+    if (retiradaMode) { setShowRetiradaPicker(true); return }
+    if (devolucaoMode){ setShowDevolucaoPicker(true); return }
     const action = searchParams.get('action')
     if (action === 'receive') { setShowReceiveMode(true); navigate('/packages', { replace: true }) }
     if (action === 'esteira') { setViewMode('esteira') }
@@ -1394,12 +1406,15 @@ export default function PackagesPage({ modalMode = false, onModalClosed }: Packa
   }, [])
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
   useEffect(() => { if (showBulkReceive && bulkRxStep === 'add') setTimeout(() => brxBarcodeRef.current?.focus(), 200) }, [showBulkReceive, bulkRxStep])
-  const anyReceiveModalOpen = showReceiveMode || showReceive || showBulkReceive
+  const anyModeModalOpen = showReceiveMode || showReceive || showBulkReceive
+    || showRetiradaPicker || !!deliveryTarget
+    || showDevolucaoPicker || !!detailPkg
   const anyModalWasOpenRef = useRef(false)
   useEffect(() => {
-    if (anyReceiveModalOpen) { anyModalWasOpenRef.current = true; return }
-    if (anyModalWasOpenRef.current) { anyModalWasOpenRef.current = false; onModalClosed?.() }
-  }, [anyReceiveModalOpen])
+    if (!onModalClosed) return
+    if (anyModeModalOpen) { anyModalWasOpenRef.current = true; return }
+    if (anyModalWasOpenRef.current) { anyModalWasOpenRef.current = false; onModalClosed() }
+  }, [anyModeModalOpen])
   useEffect(() => {
     if (bulkRxQueue.length > 0) {
       localStorage.setItem(brxStorageKey, JSON.stringify(bulkRxQueue))
@@ -3495,6 +3510,150 @@ export default function PackagesPage({ modalMode = false, onModalClosed }: Packa
               </div>
             )}
           </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Simplifica: Picker de Retirada ── */}
+      {showRetiradaPicker && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">Retirada de Encomenda</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Busque a encomenda pelo nome do morador</p>
+              </div>
+              <button onClick={() => { setShowRetiradaPicker(false); setPickerSearch(''); setPickerPackages([]) }}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="px-5 py-3 border-b border-gray-100 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  value={pickerSearch}
+                  onChange={async e => {
+                    const q = e.target.value
+                    setPickerSearch(q)
+                    if (q.length < 2) { setPickerPackages([]); return }
+                    setPickerLoading(true)
+                    try {
+                      const r = await api.get<Package[]>('/packages', { params: { q, status: 'received,notified,reversed' } })
+                      setPickerPackages(r.data.slice(0, 15))
+                    } catch { /* silent */ } finally { setPickerLoading(false) }
+                  }}
+                  placeholder="Nome do morador, unidade ou rastreio…"
+                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                  autoFocus
+                />
+                {pickerLoading && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">…</span>}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+              {pickerPackages.length === 0 && pickerSearch.length >= 2 && !pickerLoading && (
+                <p className="text-sm text-gray-400 text-center py-8">Nenhuma encomenda pendente encontrada.</p>
+              )}
+              {pickerSearch.length < 2 && (
+                <p className="text-xs text-gray-400 text-center py-8">Digite o nome do morador para buscar</p>
+              )}
+              {pickerPackages.map(pkg => (
+                <button key={pkg.id} onClick={() => {
+                  setShowRetiradaPicker(false)
+                  setPickerSearch('')
+                  setPickerPackages([])
+                  setDeliveryTarget(pkg)
+                  setRecipientName(pkg.resident_name ?? '')
+                  setDeliveryPersonName(fullName ?? '')
+                }}
+                  className="w-full flex items-start gap-3 px-5 py-3 hover:bg-blue-50 transition text-left"
+                >
+                  <PackageIcon className="w-5 h-5 mt-0.5 text-[#26619c] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{pkg.resident_name ?? '—'}</p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {pkg.unit ? `Casa/Apto ${pkg.unit}` : ''}
+                      {pkg.carrier_name ? ` · ${pkg.carrier_name}` : ''}
+                      {pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
+                    </p>
+                    <p className="text-xs text-gray-400">{new Date(pkg.received_at).toLocaleDateString('pt-BR')}</p>
+                  </div>
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[pkg.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                    {STATUS_LABELS[pkg.status] ?? pkg.status}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Simplifica: Picker de Devolução ── */}
+      {showDevolucaoPicker && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">Devolução de Encomenda</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Busque a encomenda pelo nome do morador</p>
+              </div>
+              <button onClick={() => { setShowDevolucaoPicker(false); setPickerSearch(''); setPickerPackages([]) }}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="px-5 py-3 border-b border-gray-100 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  value={pickerSearch}
+                  onChange={async e => {
+                    const q = e.target.value
+                    setPickerSearch(q)
+                    if (q.length < 2) { setPickerPackages([]); return }
+                    setPickerLoading(true)
+                    try {
+                      const r = await api.get<Package[]>('/packages', { params: { q, status: 'received,notified' } })
+                      setPickerPackages(r.data.slice(0, 15))
+                    } catch { /* silent */ } finally { setPickerLoading(false) }
+                  }}
+                  placeholder="Nome do morador, unidade ou rastreio…"
+                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                  autoFocus
+                />
+                {pickerLoading && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">…</span>}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+              {pickerPackages.length === 0 && pickerSearch.length >= 2 && !pickerLoading && (
+                <p className="text-sm text-gray-400 text-center py-8">Nenhuma encomenda encontrada.</p>
+              )}
+              {pickerSearch.length < 2 && (
+                <p className="text-xs text-gray-400 text-center py-8">Digite o nome do morador para buscar</p>
+              )}
+              {pickerPackages.map(pkg => (
+                <button key={pkg.id} onClick={() => {
+                  setShowDevolucaoPicker(false)
+                  setPickerSearch('')
+                  setPickerPackages([])
+                  setDetailPkg(pkg)
+                }}
+                  className="w-full flex items-start gap-3 px-5 py-3 hover:bg-orange-50 transition text-left"
+                >
+                  <PackageIcon className="w-5 h-5 mt-0.5 text-orange-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{pkg.resident_name ?? '—'}</p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {pkg.unit ? `Casa/Apto ${pkg.unit}` : ''}
+                      {pkg.carrier_name ? ` · ${pkg.carrier_name}` : ''}
+                      {pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
+                    </p>
+                    <p className="text-xs text-gray-400">{new Date(pkg.received_at).toLocaleDateString('pt-BR')}</p>
+                  </div>
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[pkg.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                    {STATUS_LABELS[pkg.status] ?? pkg.status}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
