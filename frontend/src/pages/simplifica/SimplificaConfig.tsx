@@ -26,11 +26,11 @@ export default function SimplificaConfig() {
     setFontType(type)
     localStorage.setItem('simplifica-font-type', type)
     const map: Record<string, string> = {
-      system: "Inter, system-ui, sans-serif",
-      serif:  "Georgia, serif",
-      mono:   "monospace",
+      system: 'Inter, system-ui, sans-serif',
+      serif:  'Georgia, serif',
+      mono:   'ui-monospace, monospace',
     }
-    document.documentElement.style.fontFamily = map[type] ?? map.system
+    document.body.style.fontFamily = map[type] ?? map.system
   }
 
   function toggleDark(on: boolean) {

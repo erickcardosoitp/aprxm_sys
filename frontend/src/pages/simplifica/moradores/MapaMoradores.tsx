@@ -98,6 +98,10 @@ function MapView({ groups, filter, onMarkerClick }: {
 }) {
   const divRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
+  // Ref para evitar closure stale — o handler sempre usa a versão mais recente
+  const cbRef = useRef(onMarkerClick)
+  useEffect(() => { cbRef.current = onMarkerClick }, [onMarkerClick])
+
   const filterInfo = FILTERS.find(f => f.key === filter)!
 
   useEffect(() => {
@@ -111,34 +115,53 @@ function MapView({ groups, filter, onMarkerClick }: {
       visible.reduce((s, p) => s + p.lat, 0) / visible.length,
       visible.reduce((s, p) => s + p.lng, 0) / visible.length,
     ]
-    const map = L.map(divRef.current).setView(center, 15)
+
+    // tap:false previne conflito entre tap simulator do Leaflet e eventos touch nativos
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = L.map(divRef.current, { tap: false } as any).setView(center, 15)
     mapRef.current = map
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap',
     }).addTo(map)
 
+    // invalidateSize garante que o mapa ocupa o container correto após o layout
+    setTimeout(() => map.invalidateSize(), 200)
+
     visible.forEach(g => {
       const count = countForFilter(g, filter)
       const radius = 12 + Math.min(Math.sqrt(count) * 5, 28)
+
+      // bubblingMouseEvents:false evita que o clique "afunde" antes de ser processado
       const circle = L.circleMarker([g.lat, g.lng], {
         radius,
         color: filterInfo.color,
         fillColor: filterInfo.color,
         fillOpacity: 0.75,
         weight: 2,
+        bubblingMouseEvents: false,
       })
+
       circle.bindTooltip(
         `<b>${g.street || g.cep}</b><br/>${count} morador(es)`,
         { permanent: false, direction: 'top', className: 'text-xs' }
       )
-      circle.on('click', () => onMarkerClick(g))
+
+      // click cobre desktop; touchend cobre mobile (iOS/Android)
+      const handleClick = () => cbRef.current(g)
+      circle.on('click', handleClick)
+      circle.on('touchend', (e: L.LeafletEvent) => {
+        L.DomEvent.stopPropagation(e as any)
+        handleClick()
+      })
+
       circle.addTo(map)
     })
 
     return () => { map.remove(); mapRef.current = null }
   }, [groups, filter])
 
-  return <div ref={divRef} className="w-full h-full" />
+  return <div ref={divRef} className="w-full h-full" style={{ touchAction: 'pan-x pan-y' }} />
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────

@@ -730,7 +730,18 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
       <div className="w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl mx-0 sm:mx-4 max-h-[95dvh] overflow-y-auto flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">Nova Transação</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="font-bold text-gray-900">Nova Transação</h2>
+            {initialStep > 0 && (
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                txType === 'income'
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-red-100 text-red-700'
+              }`}>
+                {txType === 'income' ? '↑ Entrada' : '↓ Saída'}
+              </span>
+            )}
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
 

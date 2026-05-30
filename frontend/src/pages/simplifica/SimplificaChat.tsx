@@ -19,7 +19,7 @@ export default function SimplificaChat() {
       </div>
       <div className="flex-1">
         <Suspense fallback={<div className="flex items-center justify-center h-40"><div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--brand-header)' }} /></div>}>
-          <ChatPage />
+          <ChatPage offsetTop={56} />
         </Suspense>
       </div>
     </div>
