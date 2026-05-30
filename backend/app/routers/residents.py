@@ -230,11 +230,11 @@ async def search_residents_global(
               {type_clause}
               {street_clause}
               AND (
-                r.full_name ILIKE :q
+                unaccent(r.full_name) ILIKE unaccent(:q)
                 OR r.cpf ILIKE :qraw
                 OR r.phone_primary ILIKE :q
                 OR r.phone_secondary ILIKE :q
-                OR r.address_street ILIKE :q
+                OR unaccent(r.address_street) ILIKE unaccent(:q)
                 OR r.address_city ILIKE :q
                 OR r.address_cep ILIKE :q
                 OR (r.unit || ' ' || COALESCE(r.block,'')) ILIKE :q

@@ -1339,7 +1339,19 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
-export default function ResidentsPage() {
+interface ResidentsPageProps {
+  /** Cadastrar — abre ResidentForm direto */
+  cadastrarMode?: boolean
+  /** Consultar — picker de busca, abre ResidentProfileModal ao selecionar */
+  consultarMode?: boolean
+  /** Inadimplentes — lista de moradores com mensalidades em atraso */
+  inadimplentesMode?: boolean
+  /** Mapa — lista de moradores agrupada por unidade/bloco */
+  mapaMode?: boolean
+  onModalClosed?: () => void
+}
+
+export default function ResidentsPage({ cadastrarMode = false, consultarMode = false, inadimplentesMode = false, mapaMode = false, onModalClosed }: ResidentsPageProps) {
   const [residents, setResidents] = useState<Resident[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editTarget, setEditTarget] = useState<Resident | null>(null)
@@ -1389,6 +1401,16 @@ export default function ResidentsPage() {
   const [mergePrimaryId, setMergePrimaryId] = useState<string | null>(null)
   const [mergeSaving, setMergeSaving] = useState(false)
 
+  // Pickers do Modo Simplifica
+  const [showPickerConsultar, setShowPickerConsultar] = useState(false)
+  const [showPickerInadimplentes, setShowPickerInadimplentes] = useState(false)
+  const [showPickerMapa, setShowPickerMapa] = useState(false)
+  const [pickerSearch, setPickerSearch] = useState('')
+  const [pickerResults, setPickerResults] = useState<Resident[]>([])
+  const [pickerLoading, setPickerLoading] = useState(false)
+  const [inadimplentesData, setInadimplentesData] = useState<Resident[]>([])
+  const [mapaData, setMapaData] = useState<Resident[]>([])
+
   const load = async () => {
     try {
       const params: Record<string, string> = {}
@@ -1422,10 +1444,46 @@ export default function ResidentsPage() {
     } catch { /* silent */ }
   }
 
+  const isSimplificaMode = cadastrarMode || consultarMode || inadimplentesMode || mapaMode
   useEffect(() => {
+    if (isSimplificaMode) return
     if (activeTab !== 'atualizacoes') { load(); loadKpis(activeTab) }
   }, [activeTab, filterStatus, search])
-  useEffect(() => { if (activeTab === 'atualizacoes') loadUpdateRequests() }, [activeTab])
+  useEffect(() => { if (!isSimplificaMode && activeTab === 'atualizacoes') loadUpdateRequests() }, [activeTab])
+
+  // Modo Simplifica — auto-abertura + dados
+  const modalModeRef = useRef(false)
+  useEffect(() => {
+    if (cadastrarMode) { setShowForm(true); return }
+    if (consultarMode) { setShowPickerConsultar(true); return }
+    if (inadimplentesMode) {
+      setShowPickerInadimplentes(true)
+      api.get<{ resident_id: string }[]>('/mensalidades/delinquent')
+        .then(async r => {
+          const ids = r.data.map((d: any) => d.resident_id ?? d.id)
+          if (ids.length === 0) { setInadimplentesData([]); return }
+          const res = await api.get<Resident[]>('/residents', { params: { status: 'active' } })
+          setInadimplentesData(res.data.filter(r => ids.includes(r.id)))
+        })
+        .catch(() => {})
+      return
+    }
+    if (mapaMode) {
+      setShowPickerMapa(true)
+      api.get<Resident[]>('/residents', { params: { status: 'active', type: 'member' } })
+        .then(r => setMapaData(r.data.sort((a, b) => (a.unit ?? '').localeCompare(b.unit ?? '', undefined, { numeric: true }))))
+        .catch(() => {})
+      return
+    }
+  }, [])
+
+  const anySimplificaModalOpen = showForm || !!profileResident
+    || showPickerConsultar || showPickerInadimplentes || showPickerMapa
+  useEffect(() => {
+    if (!onModalClosed) return
+    if (anySimplificaModalOpen) { modalModeRef.current = true; return }
+    if (modalModeRef.current) { modalModeRef.current = false; onModalClosed() }
+  }, [anySimplificaModalOpen])
   const loadKpis = (tab: ResidentTab) => {
     const typeByTab: Record<string, string> = { associados: 'member', dependentes: 'dependent', visitantes: 'guest' }
     const rtype = typeByTab[tab] ?? 'member'
@@ -1767,6 +1825,139 @@ export default function ResidentsPage() {
           resident={profileResident}
           onClose={() => setProfileResident(null)}
         />
+      )}
+
+      {/* ── Simplifica: Picker Consultar ── */}
+      {showPickerConsultar && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">Consultar Morador</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Busque por nome, CPF ou telefone</p>
+              </div>
+              <button onClick={() => { setShowPickerConsultar(false); setPickerSearch(''); setPickerResults([]) }}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="px-5 py-3 border-b border-gray-100 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  value={pickerSearch}
+                  onChange={async e => {
+                    const q = e.target.value
+                    setPickerSearch(q)
+                    if (q.length < 2) { setPickerResults([]); return }
+                    setPickerLoading(true)
+                    try {
+                      const r = await api.get<Resident[]>('/residents', { params: { q } })
+                      setPickerResults(r.data.slice(0, 15))
+                    } catch { /* silent */ } finally { setPickerLoading(false) }
+                  }}
+                  placeholder="Nome, CPF ou telefone…"
+                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+                  autoFocus
+                />
+                {pickerLoading && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">…</span>}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+              {pickerResults.length === 0 && pickerSearch.length >= 2 && !pickerLoading && (
+                <p className="text-sm text-gray-400 text-center py-8">Nenhum morador encontrado.</p>
+              )}
+              {pickerSearch.length < 2 && <p className="text-xs text-gray-400 text-center py-8">Digite para buscar</p>}
+              {pickerResults.map(r => (
+                <button key={r.id} onClick={() => { setShowPickerConsultar(false); setPickerSearch(''); setPickerResults([]); setProfileResident(r) }}
+                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-blue-50 transition text-left">
+                  <div className="w-8 h-8 rounded-full bg-[#26619c]/10 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-[#26619c]">{r.full_name[0]}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
+                    <p className="text-xs text-gray-500">{r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}{r.unit ? ` · Casa/Apto ${r.unit}` : ''}{r.phone_primary ? ` · ${r.phone_primary}` : ''}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Simplifica: Picker Inadimplentes ── */}
+      {showPickerInadimplentes && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">Inadimplentes</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{inadimplentesData.length} morador(es) com mensalidade em atraso</p>
+              </div>
+              <button onClick={() => setShowPickerInadimplentes(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+              {inadimplentesData.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-8">Nenhum inadimplente encontrado.</p>
+              )}
+              {inadimplentesData.map(r => (
+                <button key={r.id} onClick={() => { setShowPickerInadimplentes(false); setProfileResident(r) }}
+                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-red-50 transition text-left">
+                  <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
+                    <p className="text-xs text-gray-500">{r.unit ? `Casa/Apto ${r.unit}` : ''}{r.phone_primary ? ` · ${r.phone_primary}` : ''}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Simplifica: Mapa Moradores (lista por unidade) ── */}
+      {showPickerMapa && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">Mapa de Moradores</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Associados ativos por unidade</p>
+              </div>
+              <button onClick={() => setShowPickerMapa(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {mapaData.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-8">Nenhum morador ativo encontrado.</p>
+              )}
+              {Array.from(new Set(mapaData.map(r => r.unit ?? '(sem unidade)'))).map(unit => {
+                const group = mapaData.filter(r => (r.unit ?? '(sem unidade)') === unit)
+                return (
+                  <div key={unit} className="border-b border-gray-50 last:border-0">
+                    <div className="flex items-center gap-2 px-5 py-2 bg-gray-50 sticky top-0">
+                      <span className="text-xs font-bold text-[#26619c]">Casa/Apto {unit}</span>
+                      <span className="text-[10px] text-gray-400">{group.length} morador(es)</span>
+                    </div>
+                    {group.map(r => (
+                      <button key={r.id} onClick={() => { setShowPickerMapa(false); setProfileResident(r) }}
+                        className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-blue-50 transition text-left">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
+                          {r.phone_primary && <p className="text-xs text-gray-400">{r.phone_primary}</p>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
       )}
 
       {deleteTarget && (

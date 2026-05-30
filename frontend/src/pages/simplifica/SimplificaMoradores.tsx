@@ -1,29 +1,18 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { lazy, Suspense, useState } from 'react'
 import { UserPlus, Search, AlertTriangle, Map } from 'lucide-react'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
-import { SimplificaBottomSheet } from './components/SimplificaBottomSheet'
 import { SECTOR_COLORS } from './theme'
 
-const ACOES = [
-  { icon: UserPlus,      label: 'Cadastrar',      sheet: 'cadastrar' },
-  { icon: Search,        label: 'Consultar',      sheet: 'consultar' },
-  { icon: AlertTriangle, label: 'Inadimplentes',  sheet: 'inadimplentes' },
-  { icon: Map,           label: 'Mapa Moradores', sheet: 'mapa' },
-] as const
+const ResidentsPage = lazy(() => import('../../pages/residents/ResidentsPage'))
 
-type Sheet = typeof ACOES[number]['sheet'] | null
+type Modo = 'cadastrar' | 'consultar' | 'inadimplentes' | 'mapa' | null
 
 export default function SimplificaMoradores() {
-  const navigate = useNavigate()
-  const [sheet, setSheet] = useState<Sheet>(null)
+  const [modo, setModo] = useState<Modo>(null)
 
-  const titles: Record<NonNullable<Sheet>, string> = {
-    'cadastrar':    'Cadastrar Morador',
-    'consultar':    'Consultar Cadastro',
-    'inadimplentes': 'Inadimplentes',
-    'mapa':         'Mapa de Moradores',
+  const offscreen: React.CSSProperties = {
+    position: 'fixed', left: '-99999px', width: '1px', height: '1px', overflow: 'hidden',
   }
 
   return (
@@ -31,27 +20,26 @@ export default function SimplificaMoradores() {
       <SimplificaHeader title="Moradores" showBack />
 
       <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
-        {ACOES.map(a => (
-          <SimplificaTile key={a.sheet} icon={a.icon} label={a.label} color={SECTOR_COLORS.moradores} onClick={() => setSheet(a.sheet)} />
-        ))}
+        <SimplificaTile icon={UserPlus}      label="Cadastrar"      color={SECTOR_COLORS.moradores} onClick={() => setModo('cadastrar')} />
+        <SimplificaTile icon={Search}        label="Consultar"      color={SECTOR_COLORS.moradores} onClick={() => setModo('consultar')} />
+        <SimplificaTile icon={AlertTriangle} label="Inadimplentes"  color={SECTOR_COLORS.moradores} onClick={() => setModo('inadimplentes')} />
+        <SimplificaTile icon={Map}           label="Mapa Moradores" color={SECTOR_COLORS.moradores} onClick={() => setModo('mapa')} />
       </main>
 
-      <SimplificaBottomSheet
-        open={!!sheet}
-        title={sheet ? titles[sheet] : ''}
-        onClose={() => setSheet(null)}
-      >
-        <div className="flex flex-col items-center gap-4 py-6">
-          <p className="text-gray-500 text-sm text-center">Em breve disponível aqui.</p>
-          <button
-            onClick={() => navigate('/residents')}
-            className="w-full py-3 rounded-xl text-sm font-semibold text-white"
-            style={{ backgroundColor: 'var(--brand-header)' }}
-          >
-            Abrir no modo completo
-          </button>
+      {/* ResidentsPage off-screen — mesmo padrão do PackagesPage */}
+      {modo && (
+        <div aria-hidden="true" style={offscreen}>
+          <Suspense fallback={null}>
+            <ResidentsPage
+              cadastrarMode={modo === 'cadastrar'}
+              consultarMode={modo === 'consultar'}
+              inadimplentesMode={modo === 'inadimplentes'}
+              mapaMode={modo === 'mapa'}
+              onModalClosed={() => setModo(null)}
+            />
+          </Suspense>
         </div>
-      </SimplificaBottomSheet>
+      )}
     </div>
   )
 }
