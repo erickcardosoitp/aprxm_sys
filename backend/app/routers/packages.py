@@ -2,7 +2,7 @@ from datetime import date
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -395,10 +395,15 @@ async def list_packages(
         sa_text(f"""
             SELECT p.id, p.status, p.unit, p.block, p.carrier_name, p.tracking_code,
                    p.has_delivery_fee, p.delivery_fee_amount, p.received_at,
-                   p.resident_id, p.photo_urls, p.notes, p.object_type,
+                   p.resident_id,
+                   '[]'::jsonb AS photo_urls,
+                   p.notes, p.object_type,
                    p.sender_name, p.delivered_to_name, p.delivered_to_cpf,
-                   p.deliverer_name, p.signature_url, p.deliverer_signature_url,
-                   p.delivered_at, p.proof_of_residence_url,
+                   p.deliverer_name,
+                   NULL AS signature_url,
+                   NULL AS deliverer_signature_url,
+                   p.delivered_at,
+                   NULL AS proof_of_residence_url,
                    r.full_name AS resident_name, r.cpf AS resident_cpf,
                    r.type AS resident_type, r.address_cep AS resident_cep,
                    r.phone_primary AS resident_phone,
@@ -412,7 +417,7 @@ async def list_packages(
             LEFT JOIN users u_del ON u_del.id = p.delivered_by
             WHERE {where_clause}
             ORDER BY p.received_at DESC
-            LIMIT 300
+            LIMIT 100
         """),
         params,
     )
@@ -737,6 +742,7 @@ async def count_packages(
     date_to: str | None = None,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    response: Response = None,  # type: ignore[assignment]
 ) -> dict:
     from sqlalchemy import text as sa_text
     filters = ["association_id = :aid"]
@@ -762,6 +768,8 @@ async def count_packages(
         FROM packages WHERE {where}
     """), params)
     r = result.fetchone()
+    if response:
+        response.headers["Cache-Control"] = "private, max-age=15"
     return {"received": r[0], "notified": r[1], "delivered": r[2], "returned": r[3], "reversed": r[4], "total": r[5]}
 
 

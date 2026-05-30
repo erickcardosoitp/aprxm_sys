@@ -1,6 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Database, Globe, RefreshCw, ChevronDown, ChevronRight, Activity, Zap, AlertTriangle } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Database, Globe, RefreshCw, ChevronDown, ChevronRight, Activity, Zap, AlertTriangle, Heart, Package, Users, Wallet, GitBranch } from 'lucide-react'
 import api from '../../services/api'
+
+interface HealthData {
+  timestamp: string
+  db: { ok: boolean; ping_ms: number; size: string }
+  api: { requests_1h: number; avg_ms: number; errors_1h: number }
+  business: { open_cash_sessions: number; active_residents: number; pending_packages: number }
+}
 
 interface Route { path: string; methods: string[]; name: string; tags: string[]; summary: string | null }
 interface PerfRow { method: string; path: string; requests: number; avg_ms: number; p95_ms: number; max_ms: number; errors: number; last_seen: string | null }
@@ -13,8 +20,120 @@ const MC: Record<string, string> = {
   GET: 'bg-green-100 text-green-700', POST: 'bg-blue-100 text-blue-700',
   PATCH: 'bg-amber-100 text-amber-700', PUT: 'bg-orange-100 text-orange-700', DELETE: 'bg-red-100 text-red-700',
 }
-const fmt = (ms: number) => `${(ms / 1000).toFixed(2)}s`
+const fmtMs = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms}ms`
 const perfColor = (ms: number) => ms > 2000 ? 'text-red-600 font-bold' : ms > 800 ? 'text-amber-600 font-semibold' : 'text-green-700'
+const AUTO_REFRESH_INTERVAL = 10 // segundos
+
+// ── Diagrama de Arquitetura SVG ─────────────────────────────────────────────
+
+function ArchDiagram() {
+  const box = (x: number, y: number, w: number, h: number, color: string, label: string, sublabel?: string) => (
+    <g key={label}>
+      <rect x={x} y={y} width={w} height={h} rx={10} fill={color} opacity={0.15} stroke={color} strokeWidth={1.5} />
+      <text x={x + w / 2} y={y + h / 2 - (sublabel ? 7 : 0)} textAnchor="middle" fontSize={13} fontWeight="700" fill={color}>{label}</text>
+      {sublabel && <text x={x + w / 2} y={y + h / 2 + 12} textAnchor="middle" fontSize={10} fill={color} opacity={0.8}>{sublabel}</text>}
+    </g>
+  )
+  const arrow = (x1: number, y1: number, x2: number, y2: number, label?: string, color = '#6b7280') => {
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2
+    return (
+      <g key={`${x1}${y1}${x2}${y2}`}>
+        <defs><marker id={`ah-${x1}-${y2}`} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill={color} /></marker></defs>
+        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={1.5} markerEnd={`url(#ah-${x1}-${y2})`} strokeDasharray="4 2" />
+        {label && <text x={mx + 4} y={my - 4} fontSize={9} fill={color}>{label}</text>}
+      </g>
+    )
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+      <div className="flex items-center gap-2 mb-4">
+        <GitBranch className="w-4 h-4 text-[#26619c]" />
+        <h3 className="text-sm font-bold text-gray-800">Arquitetura do Sistema</h3>
+        <span className="text-xs text-gray-400 ml-2">APRXM ERP/SaaS Multi-tenant</span>
+      </div>
+      <div className="overflow-x-auto">
+        <svg viewBox="0 0 820 520" className="w-full" style={{ minWidth: 600 }} fontFamily="Inter, system-ui, sans-serif">
+
+          {/* Camada: Usuários */}
+          <text x={10} y={25} fontSize={10} fill="#9ca3af" fontWeight="600">CLIENTES</text>
+          {box(10, 30, 120, 50, '#6d28d9', 'Operadores', 'Browser/PWA')}
+          {box(145, 30, 120, 50, '#1a3f6f', 'Admins', 'Browser')}
+          {box(280, 30, 130, 50, '#0d7490', 'API Pública', 'Moradores')}
+
+          {/* Camada: Frontend */}
+          <text x={10} y={115} fontSize={10} fill="#9ca3af" fontWeight="600">FRONTEND</text>
+          {box(10, 120, 280, 60, '#0f7a4d', 'React SPA (Vite)', 'Vercel CDN · aprxm-sysfrontend.vercel.app')}
+          {box(300, 120, 120, 60, '#6d28d9', 'Modo Simplifica', 'Mobile-first')}
+          {box(430, 120, 120, 60, '#0d7490', 'Cadastro Público', '/cadastro/:slug')}
+
+          {/* Setas clients → frontend */}
+          {arrow(70, 80, 70, 118, 'HTTPS')}
+          {arrow(205, 80, 205, 118, 'HTTPS')}
+          {arrow(345, 80, 480, 118, 'HTTPS')}
+
+          {/* Camada: Backend */}
+          <text x={10} y={215} fontSize={10} fill="#9ca3af" fontWeight="600">BACKEND</text>
+          {box(10, 220, 540, 65, '#1a3f6f', 'FastAPI 0.136 (Python)', 'Vercel Serverless · backend-git-main.vercel.app · /api/v1/*')}
+
+          {/* Setas frontend → backend */}
+          {arrow(140, 180, 140, 218, 'REST/JSON')}
+          {arrow(360, 180, 360, 218, '')}
+          {arrow(490, 180, 490, 218, '')}
+
+          {/* Camada: Serviços */}
+          <text x={10} y={320} fontSize={10} fill="#9ca3af" fontWeight="600">DADOS & SERVIÇOS EXTERNOS</text>
+          {box(10, 328, 140, 55, '#c2620a', 'Neon PostgreSQL', 'Serverless · asyncpg')}
+          {box(160, 328, 110, 55, '#6d28d9', 'Supabase', 'Storage · fotos')}
+          {box(280, 328, 100, 55, '#0f7a4d', 'Gmail SMTP', 'Emails')}
+          {box(390, 328, 100, 55, '#0d7490', 'VAPID', 'Web Push')}
+          {box(500, 328, 90, 55, '#c2620a', 'BrasilAPI', 'CEP lookup')}
+          {box(600, 328, 90, 55, '#1a3f6f', 'Nominatim', 'Geocoding')}
+          {box(700, 328, 90, 55, '#dc2626', 'Snyk', 'Security')}
+
+          {/* Setas backend → serviços */}
+          {arrow(80, 285, 80, 326, 'SQL async')}
+          {arrow(200, 285, 215, 326, 'upload')}
+          {arrow(280, 285, 330, 326, 'email')}
+          {arrow(360, 285, 440, 326, 'push')}
+          {arrow(420, 285, 550, 326, 'HTTP')}
+          {arrow(460, 285, 645, 326, 'HTTP')}
+
+          {/* Camada: Segurança */}
+          <text x={10} y={415} fontSize={10} fill="#9ca3af" fontWeight="600">SEGURANÇA & AUTH</text>
+          {box(10, 423, 140, 50, '#dc2626', 'JWT HS256', 'Access 2h · Refresh 7d')}
+          {box(160, 423, 100, 50, '#6d28d9', 'WebAuthn', 'Passkeys')}
+          {box(270, 423, 110, 50, '#c2620a', 'bcrypt', 'Senhas')}
+          {box(390, 423, 120, 50, '#0f7a4d', 'Rate Limit', '10/min login')}
+          {box(520, 423, 100, 50, '#0d7490', 'CSP / HSTS', 'Headers')}
+          {box(630, 423, 100, 50, '#1a3f6f', 'Multi-tenant', 'assoc_id')}
+          {box(740, 423, 70, 50, '#dc2626', 'Audit Log', 'Rastreio')}
+
+          {/* Setas segurança */}
+          {arrow(80, 473, 80, 495, '')}
+          <text x={250} y={505} textAnchor="middle" fontSize={10} fill="#9ca3af">9 roles · permissões por módulo · soft delete · LGPD</text>
+        </svg>
+      </div>
+
+      {/* Legenda */}
+      <div className="flex flex-wrap gap-3 mt-3 text-[10px] text-gray-500">
+        {[
+          { color: '#0f7a4d', label: 'Financeiro' },
+          { color: '#c2620a', label: 'Dados/Infra' },
+          { color: '#6d28d9', label: 'Auth/Simplifica' },
+          { color: '#1a3f6f', label: 'Core/Backend' },
+          { color: '#0d7490', label: 'Comunicação' },
+          { color: '#dc2626', label: 'Segurança' },
+        ].map(l => (
+          <span key={l.label} className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: l.color, opacity: 0.7 }} />
+            {l.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function Section({ title, icon: Icon, count, children, defaultOpen = true }: {
   title: string; icon: React.ComponentType<any>; count?: number; children: React.ReactNode; defaultOpen?: boolean
@@ -38,14 +157,26 @@ export default function TIPage() {
   const [routes, setRoutes] = useState<Route[]>([])
   const [perf, setPerf] = useState<PerfRow[]>([])
   const [db, setDb] = useState<DbData | null>(null)
+  const [health, setHealth] = useState<HealthData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL)
+  const [activeTab, setActiveTab] = useState<'health' | 'perf' | 'db' | 'routes' | 'arch'>('health')
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set())
   const [searchRoute, setSearchRoute] = useState('')
   const [searchPerf, setSearchPerf] = useState('')
   const [sortPerf, setSortPerf] = useState<'avg_ms' | 'p95_ms' | 'requests' | 'errors'>('avg_ms')
   const [sortTable, setSortTable] = useState<'total_bytes' | 'row_estimate' | 'dead_rows' | 'name'>('total_bytes')
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const countRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const loadAll = async () => {
+  const loadHealth = useCallback(async () => {
+    try {
+      const r = await api.get<HealthData>('/ti/health')
+      setHealth(r.data)
+    } catch { /* silent */ }
+  }, [])
+
+  const loadAll = useCallback(async () => {
     setLoading(true)
     try {
       const [rRoutes, rPerf, rDb] = await Promise.all([
@@ -59,9 +190,25 @@ export default function TIPage() {
       setDb(rDb.data)
     } catch { /* silent */ }
     finally { setLoading(false) }
-  }
+  }, [])
 
-  useEffect(() => { loadAll() }, [])
+  const refresh = useCallback(() => {
+    loadHealth()
+    loadAll()
+    setCountdown(AUTO_REFRESH_INTERVAL)
+  }, [loadHealth, loadAll])
+
+  useEffect(() => {
+    refresh()
+    // Auto-refresh a cada N segundos
+    timerRef.current = setInterval(refresh, AUTO_REFRESH_INTERVAL * 1000)
+    // Countdown visual
+    countRef.current = setInterval(() => setCountdown(c => c > 0 ? c - 1 : AUTO_REFRESH_INTERVAL), 1000)
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+      if (countRef.current) clearInterval(countRef.current)
+    }
+  }, [])
 
   const toggleTag = (tag: string) =>
     setExpandedTags(prev => { const n = new Set(prev); n.has(tag) ? n.delete(tag) : n.add(tag); return n })
@@ -95,16 +242,141 @@ export default function TIPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-gray-800">Painel de TI</h1>
-          <p className="text-xs text-gray-500">Endpoints · Performance · Banco de dados</p>
+          <p className="text-xs text-gray-500">Saúde · Performance · Banco · Endpoints · Arquitetura</p>
         </div>
-        <button onClick={loadAll} disabled={loading}
-          className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-xl text-sm hover:bg-gray-50 transition disabled:opacity-50">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar tudo
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400 tabular-nums">
+            Refresh em <span className="font-bold text-[#26619c]">{countdown}s</span>
+          </span>
+          <button onClick={refresh} disabled={loading}
+            className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-xl text-sm hover:bg-gray-50 transition disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
+          </button>
+        </div>
       </div>
 
-      {/* Cards de resumo */}
-      {db && (
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
+        {(['health','perf','db','routes','arch'] as const).map(tab => {
+          const labels: Record<string,string> = { health: '🟢 Saúde', perf: '⚡ Performance', db: '🗄️ Banco', routes: '🌐 Endpoints', arch: '🏗️ Arquitetura' }
+          return (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${activeTab === tab ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              {labels[tab]}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ── TAB: SAÚDE ── */}
+      {activeTab === 'health' && health && (
+        <div className="flex flex-col gap-3">
+          {/* Status geral */}
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border ${health.db.ok ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+            <div className={`w-3 h-3 rounded-full ${health.db.ok ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+            <span className={`text-sm font-bold ${health.db.ok ? 'text-green-700' : 'text-red-700'}`}>
+              {health.db.ok ? 'Sistema operacional' : 'Problema detectado no banco de dados'}
+            </span>
+            <span className="ml-auto text-xs text-gray-400">
+              {new Date(health.timestamp).toLocaleTimeString('pt-BR')}
+            </span>
+          </div>
+
+          {/* Cards de saúde */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <Database className="w-4 h-4 text-[#26619c]" />
+                <p className="text-xs font-semibold text-gray-600">Banco de Dados</p>
+              </div>
+              <p className={`text-2xl font-bold tabular-nums ${health.db.ping_ms < 100 ? 'text-green-600' : health.db.ping_ms < 300 ? 'text-amber-600' : 'text-red-600'}`}>
+                {fmtMs(health.db.ping_ms)}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Ping · Tamanho: {health.db.size}</p>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <Activity className="w-4 h-4 text-[#26619c]" />
+                <p className="text-xs font-semibold text-gray-600">API (última hora)</p>
+              </div>
+              <p className="text-2xl font-bold text-gray-800 tabular-nums">{health.api.requests_1h}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                Média: {fmtMs(health.api.avg_ms)} ·
+                <span className={health.api.errors_1h > 0 ? ' text-red-500 font-semibold' : ' text-green-600'}> {health.api.errors_1h} erros</span>
+              </p>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <Wallet className="w-4 h-4 text-[#26619c]" />
+                <p className="text-xs font-semibold text-gray-600">Caixas Abertos</p>
+              </div>
+              <p className={`text-2xl font-bold tabular-nums ${health.business.open_cash_sessions > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
+                {health.business.open_cash_sessions}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">sessões ativas agora</p>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="w-4 h-4 text-[#26619c]" />
+                <p className="text-xs font-semibold text-gray-600">Moradores Ativos</p>
+              </div>
+              <p className="text-2xl font-bold text-gray-800 tabular-nums">{health.business.active_residents}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">status = active</p>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <Package className="w-4 h-4 text-[#26619c]" />
+                <p className="text-xs font-semibold text-gray-600">Encomendas Pendentes</p>
+              </div>
+              <p className={`text-2xl font-bold tabular-nums ${health.business.pending_packages > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                {health.business.pending_packages}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">aguardando retirada</p>
+            </div>
+
+            {db && (
+              <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <Heart className="w-4 h-4 text-[#26619c]" />
+                  <p className="text-xs font-semibold text-gray-600">Cache do Banco</p>
+                </div>
+                <p className={`text-2xl font-bold tabular-nums ${db.cache.hit_pct >= 95 ? 'text-green-600' : db.cache.hit_pct >= 80 ? 'text-amber-600' : 'text-red-600'}`}>
+                  {db.cache.hit_pct}%
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">hit ratio · ideal ≥ 95%</p>
+              </div>
+            )}
+          </div>
+
+          {/* Queries ativas */}
+          {db && db.active_queries.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                <p className="text-sm font-semibold text-amber-800">Queries em execução agora</p>
+              </div>
+              {db.active_queries.map(q => (
+                <div key={q.pid} className="bg-white rounded-xl border border-amber-100 p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-mono text-gray-500">PID {q.pid}</span>
+                    <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{q.state}</span>
+                    {q.wait_event && <span className="text-[10px] text-gray-400">{q.wait_type}: {q.wait_event}</span>}
+                    <span className="ml-auto text-sm font-bold text-amber-700">{q.duration_s.toFixed(2)}s</span>
+                  </div>
+                  <code className="text-xs text-gray-700 block truncate">{q.query}</code>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB: DB (cards de resumo legacy + tabelas) ── */}
+      {(activeTab === 'db' || activeTab === 'perf') && db && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
             <p className="text-xs text-gray-500 mb-1">Cache Hit (DB)</p>
@@ -148,7 +420,9 @@ export default function TIPage() {
         </div>
       )}
 
-      {/* ── PERFORMANCE ── */}
+      {/* ── TAB: PERFORMANCE ── */}
+      {activeTab === 'perf' && (<>
+      {/* PERFORMANCE */}
       <Section title="Performance — tempo médio por endpoint (24h)" icon={Zap} count={perf.length}>
         <div className="p-3 flex items-center gap-2 border-b border-gray-100 bg-gray-50">
           <input value={searchPerf} onChange={e => setSearchPerf(e.target.value)}
@@ -181,8 +455,8 @@ export default function TIPage() {
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${MC[r.method] || 'bg-gray-100 text-gray-600'}`}>{r.method}</span>
                     </td>
                     <td className="px-3 py-2 font-mono text-xs text-gray-700 max-w-[280px] truncate">{r.path}</td>
-                    <td className={`px-3 py-2 text-right text-sm tabular-nums font-semibold ${perfColor(r.avg_ms)}`}>{fmt(r.avg_ms)}</td>
-                    <td className="px-3 py-2 text-right text-xs text-gray-500 tabular-nums">{fmt(r.p95_ms)}</td>
+                    <td className={`px-3 py-2 text-right text-sm tabular-nums font-semibold ${perfColor(r.avg_ms)}`}>{fmtMs(r.avg_ms)}</td>
+                    <td className="px-3 py-2 text-right text-xs text-gray-500 tabular-nums">{fmtMs(r.p95_ms)}</td>
                     <td className="px-3 py-2 text-right text-xs text-gray-600 tabular-nums">{r.requests.toLocaleString('pt-BR')}</td>
                     <td className={`px-3 py-2 text-right text-xs tabular-nums ${r.errors > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>{r.errors > 0 ? r.errors : '—'}</td>
                     <td className="px-3 py-2 text-xs text-gray-400 hidden sm:table-cell">{r.last_seen || '—'}</td>
@@ -194,8 +468,9 @@ export default function TIPage() {
         )}
       </Section>
 
-      {/* ── BANCO ── */}
-      {db && (
+      </>)}
+      {/* ── TAB: BANCO ── */}
+      {activeTab === 'db' && db && (
         <Section title="Banco de Dados — tabelas" icon={Database} count={db.tables.length}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -260,8 +535,8 @@ export default function TIPage() {
         </Section>
       )}
 
-      {/* ── ENDPOINTS ── */}
-      <Section title="Endpoints registrados" icon={Globe} count={routes.length} defaultOpen={false}>
+      {/* ── TAB: ENDPOINTS ── */}
+      {activeTab === 'routes' && <Section title="Endpoints registrados" icon={Globe} count={routes.length} defaultOpen={true}>
         <div className="p-3 border-b border-gray-100 bg-gray-50">
           <input value={searchRoute} onChange={e => setSearchRoute(e.target.value)}
             placeholder="Buscar endpoint ou path…"
@@ -291,7 +566,11 @@ export default function TIPage() {
             </div>
           ))}
         </div>
-      </Section>
+      </Section>}
+
+      {/* ── TAB: ARQUITETURA ── */}
+      {activeTab === 'arch' && <ArchDiagram />}
+
     </div>
   )
 }
