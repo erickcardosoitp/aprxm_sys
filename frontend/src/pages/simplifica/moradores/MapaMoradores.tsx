@@ -22,16 +22,37 @@ interface StreetSheet {
   residents: Resident[]
 }
 
-async function geocodeCep(cep: string): Promise<{ lat: number; lng: number } | null> {
+async function geocodeCep(cep: string, streetHint?: string): Promise<{ lat: number; lng: number } | null> {
   const clean = cep.replace(/\D/g, '')
   try {
+    // Tenta BrasilAPI primeiro (tem coordenadas para muitos CEPs)
     const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${clean}`)
-    if (!r.ok) return null
-    const d = await r.json()
-    const lat = d?.location?.coordinates?.latitude
-    const lng = d?.location?.coordinates?.longitude
-    if (!lat || !lng) return null
-    return { lat: parseFloat(lat), lng: parseFloat(lng) }
+    if (r.ok) {
+      const d = await r.json()
+      const lat = d?.location?.coordinates?.latitude
+      const lng = d?.location?.coordinates?.longitude
+      if (lat && lng && (parseFloat(lat) !== 0 || parseFloat(lng) !== 0)) {
+        return { lat: parseFloat(lat), lng: parseFloat(lng) }
+      }
+      // Fallback: Nominatim com rua + cidade retornados pelo BrasilAPI
+      const street = streetHint || d?.street || ''
+      const city   = d?.city   || ''
+      const state  = d?.state  || ''
+      if (city) {
+        const q = street ? `${street}, ${city}, ${state}, Brasil` : `${city}, ${state}, Brasil`
+        const nom = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`,
+          { headers: { 'Accept-Language': 'pt-BR', 'User-Agent': 'APRXM-Simplifica/1.0' } }
+        )
+        if (nom.ok) {
+          const nd = await nom.json()
+          if (nd[0]?.lat && nd[0]?.lon) {
+            return { lat: parseFloat(nd[0].lat), lng: parseFloat(nd[0].lon) }
+          }
+        }
+      }
+    }
+    return null
   } catch { return null }
 }
 
@@ -110,7 +131,7 @@ export function MapaMoradores({ onClose }: Props) {
       const BATCH = 4
       for (let i = 0; i < data.length; i += BATCH) {
         const batch = data.slice(i, i + BATCH)
-        const geos = await Promise.all(batch.map(d => geocodeCep(d.cep)))
+        const geos = await Promise.all(batch.map(d => geocodeCep(d.cep, d.street)))
         batch.forEach((d, j) => {
           if (geos[j]) resolved.push({ ...d, ...geos[j]! })
         })

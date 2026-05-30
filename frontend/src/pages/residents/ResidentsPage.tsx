@@ -1868,16 +1868,31 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
               )}
               {pickerSearch.length < 2 && <p className="text-xs text-gray-400 text-center py-8">Digite para buscar</p>}
               {pickerResults.map(r => (
-                <button key={r.id} onClick={() => { setShowPickerConsultar(false); setPickerSearch(''); setPickerResults([]); setProfileResident(r) }}
-                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-blue-50 transition text-left">
+                <div key={r.id} className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0">
                   <div className="w-8 h-8 rounded-full bg-[#26619c]/10 flex items-center justify-center shrink-0">
                     <span className="text-xs font-bold text-[#26619c]">{r.full_name[0]}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
-                    <p className="text-xs text-gray-500">{r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}{r.unit ? ` · Casa/Apto ${r.unit}` : ''}{r.phone_primary ? ` · ${r.phone_primary}` : ''}</p>
+                    <p className="text-xs text-gray-500">
+                      {r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}
+                      {r.unit ? ` · Casa/Apto ${r.unit}` : ''}
+                      {r.phone_primary ? ` · ${r.phone_primary}` : ''}
+                    </p>
                   </div>
-                </button>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <button
+                      onClick={() => { setShowPickerConsultar(false); setPickerSearch(''); setPickerResults([]); setProfileResident(r) }}
+                      className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-[#26619c]/10 text-[#26619c] hover:bg-[#26619c]/20 transition whitespace-nowrap">
+                      Histórico
+                    </button>
+                    <button
+                      onClick={() => { setShowPickerConsultar(false); setPickerSearch(''); setPickerResults([]); setEditTarget(r); setShowForm(true) }}
+                      className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition whitespace-nowrap">
+                      Editar
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
