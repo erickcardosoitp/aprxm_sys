@@ -47,5 +47,8 @@
     "typescript": "^5.4.5",
     "vite": "^5.2.12",
     "vite-plugin-pwa": "^1.2.0"
+  },
+  "overrides": {
+    "follow-redirects": "^1.16.0"
   }
 }
