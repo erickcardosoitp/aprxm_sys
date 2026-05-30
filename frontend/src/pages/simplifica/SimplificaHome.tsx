@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Wallet, Package, Users, Wrench, MessageSquare, Settings } from 'lucide-react'
@@ -23,6 +23,21 @@ export default function SimplificaHome() {
   const [abrirSheet, setAbrirSheet] = useState(false)
   const [saldo, setSaldo] = useState('')
   const [abrindo, setAbrindo] = useState(false)
+
+  const [chatUnread, setChatUnread] = useState(0)
+  const chatLastReadRef = useRef<string>(localStorage.getItem('chatLastRead') ?? new Date(0).toISOString())
+
+  const fetchChatUnread = useCallback(() => {
+    api.get<{ count: number }>('/chat/unread-count', { params: { since: chatLastReadRef.current } })
+      .then(r => setChatUnread(r.data.count))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetchChatUnread()
+    const id = setInterval(fetchChatUnread, 30_000)
+    return () => clearInterval(id)
+  }, [fetchChatUnread])
 
   const fetchCaixas = () => {
     api.get<CaixaAberto[]>('/finance/sessions/open')
@@ -98,7 +113,8 @@ export default function SimplificaHome() {
         <SimplificaTile icon={Package}       label="Encomendas"    color={SECTOR_COLORS.encomendas} onClick={() => navigate('/simplifica/encomendas')} />
         <SimplificaTile icon={Users}         label="Moradores"     color={SECTOR_COLORS.moradores}  onClick={() => navigate('/simplifica/moradores')} />
         <SimplificaTile icon={Wrench}        label="Ordens"        color={SECTOR_COLORS.ordens}     onClick={() => navigate('/simplifica/ordens')} />
-        <SimplificaTile icon={MessageSquare} label="Chat"          color={SECTOR_COLORS.chat}       onClick={() => navigate('/simplifica/chat')} />
+        <SimplificaTile icon={MessageSquare} label="Chat"          color={SECTOR_COLORS.chat}       onClick={() => navigate('/simplifica/chat')}
+          badge={chatUnread > 0 ? (chatUnread > 9 ? '9+' : String(chatUnread)) : undefined} />
         <SimplificaTile icon={Settings}      label="Configurações" color={SECTOR_COLORS.config}     onClick={() => navigate('/simplifica/configuracoes')} />
       </main>
 

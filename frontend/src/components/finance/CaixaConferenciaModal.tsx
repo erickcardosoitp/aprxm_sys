@@ -251,7 +251,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                 </div>
                 <div className="bg-red-50 rounded-xl p-3">
                   <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wide mb-1">Saídas</p>
-                  <p className="text-2xl font-bold text-red-600">-{fmt(baixas)}</p>
+                  <p className="text-2xl font-bold text-red-600">-{fmt(baixas + expense)}</p>
                 </div>
                 <div className="bg-green-50 border border-green-200 rounded-xl p-3">
                   <p className="text-[10px] text-green-600 font-semibold uppercase tracking-wide mb-1">Líquido</p>

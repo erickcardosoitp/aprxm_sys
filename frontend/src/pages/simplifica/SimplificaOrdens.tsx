@@ -1,57 +1,69 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { FilePlus2, Search, ListChecks, ClipboardList } from 'lucide-react'
+import { lazy, Suspense, useState } from 'react'
+import { ChevronLeft, FilePlus2, Search, ListChecks, ClipboardList } from 'lucide-react'
 import { SimplificaHeader } from './components/SimplificaHeader'
 import { SimplificaTile } from './components/SimplificaTile'
-import { SimplificaBottomSheet } from './components/SimplificaBottomSheet'
 import { SECTOR_COLORS } from './theme'
 
-const ACOES = [
-  { icon: FilePlus2,     label: 'Criar OS',         sheet: 'criar' },
-  { icon: Search,        label: 'Consultar Ordens', sheet: 'consultar' },
-  { icon: ListChecks,    label: 'Tarefas Diárias',  sheet: 'tarefas' },
-  { icon: ClipboardList, label: 'Minhas Ordens',    sheet: 'minhas' },
-] as const
+const ServiceOrdersPage = lazy(() => import('../../pages/service_orders/ServiceOrdersPage'))
 
-type Sheet = typeof ACOES[number]['sheet'] | null
+type Modo = 'criar' | 'consultar' | 'minhas' | null
 
 export default function SimplificaOrdens() {
-  const navigate = useNavigate()
-  const [sheet, setSheet] = useState<Sheet>(null)
+  const [modo, setModo] = useState<Modo>(null)
+  const [tarefasOpen, setTarefasOpen] = useState(false)
 
-  const titles: Record<NonNullable<Sheet>, string> = {
-    'criar':     'Criar Ordem de Serviço',
-    'consultar': 'Consultar Ordens',
-    'tarefas':   'Tarefas Diárias',
-    'minhas':    'Minhas Ordens',
+  const offscreen: React.CSSProperties = {
+    position: 'fixed', left: '-99999px', width: '1px', height: '1px', overflow: 'hidden',
   }
+  const color = SECTOR_COLORS.ordens
 
   return (
     <div className="flex flex-col min-h-screen">
       <SimplificaHeader title="Ordens" showBack />
 
       <main className="flex-1 p-4 grid grid-cols-2 gap-4 content-start">
-        {ACOES.map(a => (
-          <SimplificaTile key={a.sheet} icon={a.icon} label={a.label} color={SECTOR_COLORS.ordens} onClick={() => setSheet(a.sheet)} />
-        ))}
+        <SimplificaTile icon={FilePlus2}     label="Criar OS"         color={color} onClick={() => setModo('criar')} />
+        <SimplificaTile icon={Search}        label="Consultar Ordens" color={color} onClick={() => setModo('consultar')} />
+        <SimplificaTile icon={ListChecks}    label="Tarefas Diárias"  color={color} onClick={() => setTarefasOpen(true)} />
+        <SimplificaTile icon={ClipboardList} label="Minhas Ordens"    color={color} onClick={() => setModo('minhas')} />
       </main>
 
-      <SimplificaBottomSheet
-        open={!!sheet}
-        title={sheet ? titles[sheet] : ''}
-        onClose={() => setSheet(null)}
-      >
-        <div className="flex flex-col items-center gap-4 py-6">
-          <p className="text-gray-500 text-sm text-center">Em breve disponível aqui.</p>
-          <button
-            onClick={() => navigate('/service-orders')}
-            className="w-full py-3 rounded-xl text-sm font-semibold text-white"
-            style={{ backgroundColor: 'var(--brand-header)' }}
-          >
-            Abrir no modo completo
-          </button>
+      {/* Criar / Consultar / Minhas — off-screen, modais fixed escapam */}
+      {modo && (
+        <div aria-hidden="true" style={offscreen}>
+          <Suspense fallback={null}>
+            <ServiceOrdersPage
+              criarMode={modo === 'criar'}
+              consultarMode={modo === 'consultar'}
+              minhasMode={modo === 'minhas'}
+              onModalClosed={() => setModo(null)}
+            />
+          </Suspense>
         </div>
-      </SimplificaBottomSheet>
+      )}
+
+      {/* Tarefas Diárias — tela cheia (tab content não é fixed overlay) */}
+      {tarefasOpen && (
+        <div className="fixed inset-0 z-40 bg-white flex flex-col">
+          {/* Back button sobreposto ao header do ServiceOrdersPage */}
+          <div className="flex items-center gap-3 px-4 py-3 text-white shrink-0"
+            style={{ backgroundColor: color, paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+            <button onClick={() => setTarefasOpen(false)} className="p-1 -ml-1 rounded-lg hover:bg-white/10">
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+            <span className="font-bold text-base">Tarefas Diárias</span>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <Suspense fallback={
+              <div className="flex justify-center py-12">
+                <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: color }} />
+              </div>
+            }>
+              <ServiceOrdersPage tarefasMode />
+            </Suspense>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

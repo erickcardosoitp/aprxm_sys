@@ -1416,7 +1416,8 @@ export default function FinancePage() {
                   {sessions.map(s => {
                     const bruto = parseFloat(s.total_bruto ?? '0')
                     const baixas = parseFloat(s.total_baixas ?? '0')
-                    const liquido = bruto - baixas
+                    const expense = parseFloat((s as any).total_expense ?? '0')
+                    const liquido = bruto - baixas - expense
                     const rawDiff = s.difference != null ? parseFloat(s.difference) : null
                     const displayDiff = rawDiff != null ? -rawDiff : null
                     const isSobra = displayDiff != null && displayDiff < 0
@@ -1446,7 +1447,7 @@ export default function FinancePage() {
                         <td className="px-5 py-4 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_pix ?? '0'))}</td>
                         <td className="px-5 py-4 text-right text-gray-700 whitespace-nowrap">{fmtV(parseFloat(s.total_dinheiro ?? '0'))}</td>
                         <td className="px-5 py-4 text-right font-bold text-green-700 whitespace-nowrap text-base">{fmtV(bruto)}</td>
-                        <td className="px-5 py-4 text-right text-amber-700 whitespace-nowrap">{fmtV(baixas)}</td>
+                        <td className="px-5 py-4 text-right text-amber-700 whitespace-nowrap">{fmtV(baixas + expense)}</td>
                         <td className="px-5 py-4 text-right font-bold text-[#26619c] whitespace-nowrap text-base">{fmtV(liquido)}</td>
                         <td className="px-5 py-4 text-right text-gray-700 whitespace-nowrap font-medium">
                           {s.closing_balance != null ? fmtV(parseFloat(s.closing_balance)) : '—'}

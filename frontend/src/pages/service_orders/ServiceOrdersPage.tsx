@@ -3025,17 +3025,38 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function ServiceOrdersPage() {
-  const { role, permissions } = useAuthStore()
+interface ServiceOrdersPageProps {
+  /** Criar OS — abre NewOSModal direto */
+  criarMode?: boolean
+  /** Consultar — picker de busca de OS */
+  consultarMode?: boolean
+  /** Tarefas Diárias — abre aba tarefas */
+  tarefasMode?: boolean
+  /** Minhas Ordens — picker filtrado pelo usuário atual */
+  minhasMode?: boolean
+  onModalClosed?: () => void
+}
+
+export default function ServiceOrdersPage({ criarMode = false, consultarMode = false, tarefasMode = false, minhasMode = false, onModalClosed }: ServiceOrdersPageProps) {
+  const { role, permissions, fullName, userId } = useAuthStore()
   const canWrite = permissions?.service_orders?.can_write ?? CAN_WRITE_ROLES.includes(role ?? '')
   const canViewOS = role === 'superadmin' || role === 'admin_master' || permissions?.service_orders?.can_view !== false
 
-  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'tarefas'>(canViewOS ? 'ordens' : 'tarefas')
+  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'tarefas'>(
+    tarefasMode ? 'tarefas' : (canViewOS ? 'ordens' : 'tarefas')
+  )
 
   const [orders, setOrders] = useState<ServiceOrder[]>([])
   const [loading, setLoading] = useState(false)
   const [showNewOS, setShowNewOS] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null)
+
+  // Pickers do Simplifica
+  const [showPickerConsultar, setShowPickerConsultar] = useState(false)
+  const [showPickerMinhas, setShowPickerMinhas] = useState(false)
+  const [pickerSearch, setPickerSearch] = useState('')
+  const [pickerOrders, setPickerOrders] = useState<ServiceOrder[]>([])
+  const [pickerLoading, setPickerLoading] = useState(false)
 
   // Report state
   const [showReport, setShowReport] = useState(false)
@@ -3079,7 +3100,30 @@ export default function ServiceOrdersPage() {
     }
   }, [filterStatus, filterPriority, search])
 
-  useEffect(() => { load() }, [load])
+  const isSimplificaMode = criarMode || consultarMode || tarefasMode || minhasMode
+  useEffect(() => { if (!isSimplificaMode) load() }, [load])
+
+  // Simplifica: auto-abertura
+  const soModalWasOpenRef = useRef(false)
+  useEffect(() => {
+    if (criarMode)    { setShowNewOS(true); return }
+    if (consultarMode){ setShowPickerConsultar(true); return }
+    if (minhasMode)   {
+      setShowPickerMinhas(true)
+      api.get<ServiceOrder[]>('/service-orders').then(r => {
+        const mine = r.data.filter(o => o.assigned_to === fullName || (o as any).created_by_name === fullName)
+        setPickerOrders(mine)
+      }).catch(() => {})
+      return
+    }
+  }, [])
+
+  const anySOModalOpen = showNewOS || !!selectedOrder || showPickerConsultar || showPickerMinhas
+  useEffect(() => {
+    if (!onModalClosed) return
+    if (anySOModalOpen) { soModalWasOpenRef.current = true; return }
+    if (soModalWasOpenRef.current) { soModalWasOpenRef.current = false; onModalClosed() }
+  }, [anySOModalOpen])
 
   // KPIs
   const total = orders.length
@@ -3245,6 +3289,91 @@ export default function ServiceOrdersPage() {
           </ul>
         )}
       </div>
+
+      {/* ── Simplifica: Picker Consultar OS ── */}
+      {showPickerConsultar && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">Consultar Ordens de Serviço</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Busque por título ou número</p>
+              </div>
+              <button onClick={() => { setShowPickerConsultar(false); setPickerSearch(''); setPickerOrders([]) }}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="px-5 py-3 border-b border-gray-100 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  value={pickerSearch}
+                  onChange={async e => {
+                    const q = e.target.value
+                    setPickerSearch(q)
+                    if (q.length < 2) { setPickerOrders([]); return }
+                    setPickerLoading(true)
+                    try {
+                      const r = await api.get<ServiceOrder[]>('/service-orders', { params: { q } })
+                      setPickerOrders(r.data.slice(0, 15))
+                    } catch { /* silent */ } finally { setPickerLoading(false) }
+                  }}
+                  placeholder="Título ou número da OS…"
+                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6d28d9]/40 focus:border-[#6d28d9]"
+                  autoFocus
+                />
+                {pickerLoading && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">…</span>}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+              {pickerOrders.length === 0 && pickerSearch.length >= 2 && !pickerLoading && (
+                <p className="text-sm text-gray-400 text-center py-8">Nenhuma OS encontrada.</p>
+              )}
+              {pickerSearch.length < 2 && <p className="text-xs text-gray-400 text-center py-8">Digite para buscar</p>}
+              {pickerOrders.map(o => (
+                <button key={o.id} onClick={() => { setShowPickerConsultar(false); setPickerSearch(''); setPickerOrders([]); setSelectedOrder(o) }}
+                  className="w-full flex items-start gap-3 px-5 py-3 hover:bg-purple-50 transition text-left">
+                  <FileText className="w-4 h-4 mt-0.5 text-[#6d28d9] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">#{o.number} — {o.title}</p>
+                    <p className="text-xs text-gray-500">{o.status} · {o.priority}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Simplifica: Picker Minhas Ordens ── */}
+      {showPickerMinhas && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">Minhas Ordens</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{pickerOrders.length} OS atribuídas a você</p>
+              </div>
+              <button onClick={() => setShowPickerMinhas(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+              {pickerOrders.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-8">Nenhuma OS encontrada para você.</p>
+              )}
+              {pickerOrders.map(o => (
+                <button key={o.id} onClick={() => { setShowPickerMinhas(false); setPickerOrders([]); setSelectedOrder(o) }}
+                  className="w-full flex items-start gap-3 px-5 py-3 hover:bg-purple-50 transition text-left">
+                  <FileText className="w-4 h-4 mt-0.5 text-[#6d28d9] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">#{o.number} — {o.title}</p>
+                    <p className="text-xs text-gray-500">{o.status} · {o.priority}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {showNewOS && (

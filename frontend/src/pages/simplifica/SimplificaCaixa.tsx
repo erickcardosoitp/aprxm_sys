@@ -6,7 +6,6 @@ import { SimplificaTile } from './components/SimplificaTile'
 import { SimplificaBottomSheet } from './components/SimplificaBottomSheet'
 import { SECTOR_COLORS } from './theme'
 import { financeService } from '../../services/finance'
-import { SangriaModal } from '../../components/finance/SangriaModal'
 import { useAuthStore } from '../../store/authStore'
 import type { CashSession, Transaction, Resident } from '../../types'
 import api from '../../services/api'
@@ -15,7 +14,7 @@ const TransactionModal = lazy(() =>
   import('../../components/finance/TransactionModal').then(m => ({ default: m.TransactionModal }))
 )
 
-type ActiveModal = 'mensalidades' | 'residencia' | 'outras' | 'sangria' | null
+type ActiveModal = 'mensalidades' | 'residencia' | 'outras' | 'saida' | null
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -295,7 +294,7 @@ export default function SimplificaCaixa() {
         <SimplificaTile icon={Tag}        label="Mensalidades"      color={SECTOR_COLORS.caixa} onClick={() => setModal('mensalidades')} />
         <SimplificaTile icon={Home}       label="Comp. Residência"  color={SECTOR_COLORS.caixa} onClick={() => setModal('residencia')} />
         <SimplificaTile icon={PlusCircle} label="Outras Entradas"   color={SECTOR_COLORS.caixa} onClick={() => setModal('outras')} />
-        <SimplificaTile icon={MinusCircle} label="Registrar Saída"  color={SECTOR_COLORS.caixa} onClick={() => setModal('sangria')} />
+        <SimplificaTile icon={MinusCircle} label="Registrar Saída"  color={SECTOR_COLORS.caixa} onClick={() => setModal('saida')} />
         <SimplificaTile icon={ListOrdered} label="Consultar Movim." color={SECTOR_COLORS.caixa} onClick={() => setMovOpen(true)} />
         <SimplificaTile icon={CreditCard} label="Consultar Pgtos"   color={SECTOR_COLORS.caixa} onClick={() => setPagamentosOpen(true)} />
       </main>
@@ -320,8 +319,11 @@ export default function SimplificaCaixa() {
             skipAutoPrint onClose={() => setModal(null)} onSuccess={() => setModal(null)} />
         </Suspense>
       )}
-      {modal === 'sangria' && (
-        <SangriaModal onClose={() => setModal(null)} onSuccess={() => setModal(null)} />
+      {modal === 'saida' && (
+        <Suspense fallback={null}>
+          <TransactionModal initialTxType="expense" initialStep={1}
+            skipAutoPrint onClose={() => setModal(null)} onSuccess={() => setModal(null)} />
+        </Suspense>
       )}
 
       <ConsultarPagamentosSheet open={pagamentosOpen} onClose={() => setPagamentosOpen(false)} />
