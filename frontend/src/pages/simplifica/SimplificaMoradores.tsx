@@ -24,7 +24,7 @@ export default function SimplificaMoradores() {
     <div className="flex flex-col min-h-screen">
       <SimplificaHeader title="Moradores" showBack />
 
-      <main className="flex-1 p-4 grid grid-cols-2 gap-3" style={{ gridAutoRows: '1fr' }}>
+      <main className="flex-1 p-4 grid grid-cols-2 gap-3 content-start">
         {/* Cadastrar: form simplificado (6 campos) */}
         <SimplificaTile icon={UserPlus}      label="Cadastrar"      color={SECTOR_COLORS.moradores} onClick={() => setCadastrarOpen(true)} />
         {/* Consultar: picker de busca → ResidentProfileModal original */}

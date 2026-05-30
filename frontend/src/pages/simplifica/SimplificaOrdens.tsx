@@ -23,7 +23,7 @@ export default function SimplificaOrdens() {
     <div className="flex flex-col min-h-screen">
       <SimplificaHeader title="Ordens" showBack />
 
-      <main className="flex-1 p-4 grid grid-cols-2 gap-3" style={{ gridAutoRows: '1fr' }}>
+      <main className="flex-1 p-4 grid grid-cols-2 gap-3 content-start">
         <SimplificaTile icon={FilePlus2}     label="Criar OS"         color={color} onClick={() => setModo('criar')} />
         <SimplificaTile icon={Search}        label="Consultar Ordens" color={color} onClick={() => setModo('consultar')} />
         <SimplificaTile icon={ListChecks}    label="Tarefas Diárias"  color={color} onClick={() => setTarefasOpen(true)} />
