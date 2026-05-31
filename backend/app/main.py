@@ -714,6 +714,47 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_refresh_tokens_user ON refresh_tokens(user_id)"
         ))
 
+        # etl_runs — log de execucoes do pipeline de Data Lake
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS etl_runs (
+                id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                run_date     DATE        NOT NULL,
+                mode         VARCHAR(20) NOT NULL DEFAULT 'incremental',
+                status       VARCHAR(20) NOT NULL DEFAULT 'running',
+                started_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                completed_at TIMESTAMPTZ,
+                duration_s   NUMERIC(8,1),
+                bronze_rows  INTEGER     DEFAULT 0,
+                silver_rows  INTEGER     DEFAULT 0,
+                gold_files   INTEGER     DEFAULT 0,
+                neon_kb      NUMERIC(8,1) DEFAULT 0,
+                error_msg    TEXT,
+                triggered_by VARCHAR(50) DEFAULT 'cron'
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_etl_runs_date ON etl_runs(run_date DESC)"
+        ))
+
+        # etl_task_runs — log por tarefa individual (Bronze/Silver/Gold/Validate)
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS etl_task_runs (
+                id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                run_id      UUID        NOT NULL REFERENCES etl_runs(id) ON DELETE CASCADE,
+                task_name   VARCHAR(50) NOT NULL,
+                status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+                started_at  TIMESTAMPTZ,
+                completed_at TIMESTAMPTZ,
+                duration_s  NUMERIC(8,1),
+                rows_in     INTEGER DEFAULT 0,
+                rows_out    INTEGER DEFAULT 0,
+                detail      JSONB
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_etl_task_runs_run ON etl_task_runs(run_id)"
+        ))
+
         await session.commit()
 
 

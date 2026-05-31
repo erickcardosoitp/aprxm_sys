@@ -664,41 +664,181 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 
 # ── Orchestrator ───────────────────────────────────────────────────────────────
 
-async def run_full_etl(session: AsyncSession, force_full: bool = False) -> dict:
+def _validate_gold(silver: dict, gold_stats: dict) -> list[str]:
+    """Validacoes basicas antes de considerar o ETL bem-sucedido."""
+    errors = []
+    tx = silver.get("transactions_enriched", pd.DataFrame())
+    res = silver.get("residents_clean", pd.DataFrame())
+    pkgs = silver.get("packages_enriched", pd.DataFrame())
+
+    if tx.empty:
+        errors.append("transactions_enriched vazio — nenhuma transacao encontrada")
+    if res.empty:
+        errors.append("residents_clean vazio — nenhum morador encontrado")
+    if not gold_stats.get("daily_revenue"):
+        errors.append("daily_revenue nao gerado")
+    if not gold_stats.get("operational_kpis"):
+        errors.append("operational_kpis nao gerado")
+    if not tx.empty and tx["amount"].isnull().mean() > 0.5:
+        errors.append("transactions: > 50% de valores nulos em amount")
+
+    return errors
+
+
+async def _log_task(session: AsyncSession, run_id: str, task: str, status: str,
+                    started: datetime, rows_in: int = 0, rows_out: int = 0,
+                    detail: dict | None = None) -> None:
+    duration = round((datetime.now(timezone.utc) - started).total_seconds(), 1)
+    try:
+        await session.execute(text("""
+            INSERT INTO etl_task_runs (run_id, task_name, status, started_at, completed_at,
+                                       duration_s, rows_in, rows_out, detail)
+            VALUES (:rid, :task, :status, :started, NOW(), :dur, :ri, :ro, :det::jsonb)
+        """), {
+            "rid": run_id, "task": task, "status": status,
+            "started": started, "dur": duration,
+            "ri": rows_in, "ro": rows_out,
+            "det": json.dumps(detail or {}),
+        })
+        await session.commit()
+    except Exception as e:
+        logger.warning("Falha ao logar task %s: %s", task, e)
+
+
+async def _send_alert(error_msg: str, mode: str) -> None:
+    """Envia email de alerta quando o ETL falha."""
+    try:
+        from app.services.email_service import send_email
+        await send_email(
+            to=settings.smtp_user,
+            subject=f"[APRXM] ETL Data Lake falhou — {date.today()}",
+            body=f"Modo: {mode}\n\nErro:\n{error_msg}\n\nVerifique em /api/v1/datalake/runs",
+        )
+    except Exception as e:
+        logger.error("Falha ao enviar alerta de email: %s", e)
+
+
+async def run_full_etl(session: AsyncSession, force_full: bool = False,
+                       triggered_by: str = "cron") -> dict:
     today      = date.today().isoformat()
     started_at = datetime.now(timezone.utc)
     client     = _r2_client()
 
-    # Le metadata da ultima execucao
     last_run = _get_last_run(client)
     if force_full:
         last_run = {"last_extracted_at": None, "is_initial": True}
 
-    mode = "FULL (carga inicial)" if last_run.get("is_initial", True) else f"INCREMENTAL desde {last_run.get('last_extracted_at','?')[:19]}"
-    logger.info("ETL iniciado — modo: %s", mode)
+    is_initial = last_run.get("is_initial", True)
+    mode       = "full" if is_initial else "incremental"
+    mode_label = "FULL (carga inicial)" if is_initial else f"INCREMENTAL desde {last_run.get('last_extracted_at','?')[:19]}"
+    logger.info("ETL iniciado — %s | by=%s", mode_label, triggered_by)
 
-    # 1. Bronze: unica conexao ao Neon (full ou incremental)
-    bronze_stats, bronze_frames = await export_bronze(session, today, last_run, client)
+    # Cria registro do run no banco
+    run_id = None
+    try:
+        row = (await session.execute(text("""
+            INSERT INTO etl_runs (run_date, mode, status, started_at, triggered_by)
+            VALUES (:d, :m, 'running', :s, :t)
+            RETURNING id
+        """), {"d": today, "m": mode, "s": started_at, "t": triggered_by})).fetchone()
+        await session.commit()
+        run_id = str(row[0]) if row else None
+    except Exception as e:
+        logger.warning("Falha ao criar etl_run: %s", e)
 
-    # 2. Silver: pandas (zero banco)
-    silver_stats, silver_frames = build_silver(bronze_frames, today, client)
+    error_msg = None
+    bronze_stats = silver_stats = gold_stats = {}
 
-    # 3. Gold: pandas (zero banco)
-    gold_stats = build_gold(bronze_frames, silver_frames, client)
+    try:
+        # ── Task 1: BRONZE ──────────────────────────────────────────────────
+        t1 = datetime.now(timezone.utc)
+        bronze_stats, bronze_frames = await export_bronze(session, today, last_run, client)
+        bronze_rows = sum(len(v) for v in bronze_frames.values() if isinstance(v, pd.DataFrame))
+        if run_id:
+            await _log_task(session, run_id, "bronze", "success", t1,
+                            rows_out=bronze_rows, detail={"tables": list(bronze_frames.keys())})
 
-    # 4. Atualiza metadata
-    _save_last_run(client, started_at)
+        # ── Task 2: SILVER ──────────────────────────────────────────────────
+        t2 = datetime.now(timezone.utc)
+        silver_stats, silver_frames = build_silver(bronze_frames, today, client)
+        silver_rows = sum(len(v) for v in silver_frames.values() if isinstance(v, pd.DataFrame))
+        if run_id:
+            await _log_task(session, run_id, "silver", "success", t2,
+                            rows_in=bronze_rows, rows_out=silver_rows)
 
-    duration    = round((datetime.now(timezone.utc) - started_at).total_seconds(), 1)
+        # ── Task 3: GOLD ────────────────────────────────────────────────────
+        t3 = datetime.now(timezone.utc)
+        gold_stats = build_gold(bronze_frames, silver_frames, client)
+        gold_files = sum(1 for v in gold_stats.values() if isinstance(v, int) and v > 0)
+        if run_id:
+            await _log_task(session, run_id, "gold", "success", t3,
+                            rows_in=silver_rows, rows_out=gold_files,
+                            detail={"files": list(gold_stats.keys())})
+
+        # ── Task 4: VALIDATE ────────────────────────────────────────────────
+        t4 = datetime.now(timezone.utc)
+        validation_errors = _validate_gold(silver_frames, gold_stats)
+        v_status = "warning" if validation_errors else "success"
+        if run_id:
+            await _log_task(session, run_id, "validate", v_status, t4,
+                            detail={"errors": validation_errors})
+        if validation_errors:
+            logger.warning("Validacao com avisos: %s", validation_errors)
+
+        # ── Metadata ─────────────────────────────────────────────────────────
+        _save_last_run(client, started_at)
+
+    except Exception as exc:
+        error_msg = str(exc)
+        logger.error("ETL falhou: %s", error_msg, exc_info=True)
+        if run_id:
+            await _log_task(session, run_id, "error", "failed", started_at,
+                            detail={"error": error_msg})
+        await _send_alert(error_msg, mode_label)
+
+    finally:
+        duration = round((datetime.now(timezone.utc) - started_at).total_seconds(), 1)
+        neon_kb  = round(sum(len(v) for v in bronze_frames.values()
+                             if isinstance(v, pd.DataFrame)) * 0.4, 1)  # estimativa bytes→KB
+
+        if run_id:
+            try:
+                await session.execute(text("""
+                    UPDATE etl_runs SET
+                        status       = :s,
+                        completed_at = NOW(),
+                        duration_s   = :d,
+                        bronze_rows  = :br,
+                        silver_rows  = :sr,
+                        gold_files   = :gf,
+                        neon_kb      = :nk,
+                        error_msg    = :err
+                    WHERE id = :rid
+                """), {
+                    "s":   "failed" if error_msg else "success",
+                    "d":   duration,
+                    "br":  sum(len(v) for v in bronze_frames.values() if isinstance(v, pd.DataFrame)),
+                    "sr":  sum(len(v) for v in silver_frames.values() if isinstance(v, pd.DataFrame)),
+                    "gf":  sum(1 for v in gold_stats.values() if isinstance(v, int) and v > 0),
+                    "nk":  neon_kb,
+                    "err": error_msg,
+                    "rid": run_id,
+                })
+                await session.commit()
+            except Exception as e:
+                logger.warning("Falha ao atualizar etl_run: %s", e)
+
     total_files = sum(1 for k, v in {**bronze_stats, **silver_stats, **gold_stats}.items()
                       if isinstance(v, int) and v > 0 and "delta_rows" not in k)
 
     return {
-        "status":      "ok",
-        "mode":        mode,
+        "status":      "failed" if error_msg else "success",
+        "run_id":      run_id,
+        "mode":        mode_label,
         "date":        today,
         "duration_s":  duration,
         "files_total": total_files,
+        "error":       error_msg,
         "bronze":      bronze_stats,
         "silver":      silver_stats,
         "gold":        gold_stats,

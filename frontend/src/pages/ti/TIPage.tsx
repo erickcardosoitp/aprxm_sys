@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Database, Globe, RefreshCw, ChevronDown, ChevronRight, Activity, Zap, AlertTriangle, Heart, Package, Users, Wallet, GitBranch } from 'lucide-react'
+import { Database, Globe, RefreshCw, ChevronDown, ChevronRight, Activity, Zap, AlertTriangle, Heart, Package, Users, Wallet, GitBranch, Play, CheckCircle2, XCircle, Clock, BarChart2 } from 'lucide-react'
 import api from '../../services/api'
 
 interface HealthData {
@@ -25,6 +25,257 @@ const perfColor = (ms: number) => ms > 2000 ? 'text-red-600 font-bold' : ms > 80
 const AUTO_REFRESH_INTERVAL = 10 // segundos
 
 // ── Diagrama de Arquitetura SVG ─────────────────────────────────────────────
+
+// ── Analytics Panel — Pipeline ETL tipo Airflow ───────────────────────────────
+
+interface EtlRun {
+  id: string; run_date: string; mode: string; status: string
+  started_at: string; completed_at: string | null; duration_s: number | null
+  bronze_rows: number; silver_rows: number; gold_files: number
+  neon_kb: number | null; error_msg: string | null; triggered_by: string
+}
+
+interface EtlTask { task_name: string; status: string; started_at: string; completed_at: string | null; duration_s: number | null; rows_in: number; rows_out: number }
+interface R2File   { key: string; size_kb: number; last_modified: string }
+interface DlStatus { configured: boolean; metadata?: Record<string,string>; last_run_db?: EtlRun; gold_files?: R2File[]; bronze_tables?: R2File[] }
+
+const TASK_ICON: Record<string, React.ReactNode> = {
+  bronze:   <Database className="w-4 h-4" />,
+  silver:   <Activity className="w-4 h-4" />,
+  gold:     <BarChart2 className="w-4 h-4" />,
+  validate: <CheckCircle2 className="w-4 h-4" />,
+  error:    <XCircle className="w-4 h-4" />,
+}
+const STATUS_COLOR: Record<string, string> = {
+  success: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+  warning: 'text-amber-600 bg-amber-50 border-amber-200',
+  failed:  'text-red-600 bg-red-50 border-red-200',
+  running: 'text-blue-600 bg-blue-50 border-blue-200',
+  pending: 'text-gray-500 bg-gray-50 border-gray-200',
+}
+const fmtDur = (s: number | null) => s == null ? '—' : s >= 60 ? `${(s/60).toFixed(1)}min` : `${s.toFixed(1)}s`
+const fmtDate = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+
+function PipelineFlow({ tasks }: { tasks: EtlTask[] }) {
+  const steps = ['bronze','silver','gold','validate']
+  return (
+    <div className="flex items-center gap-2 py-4 overflow-x-auto">
+      {steps.map((step, i) => {
+        const task = tasks.find(t => t.task_name === step)
+        const status = task?.status ?? 'pending'
+        const cls = STATUS_COLOR[status] ?? STATUS_COLOR.pending
+        return (
+          <div key={step} className="flex items-center gap-2 shrink-0">
+            <div className={`flex flex-col items-center gap-1 px-4 py-3 rounded-2xl border-2 min-w-[100px] ${cls}`}>
+              <div className="flex items-center gap-1.5">
+                {TASK_ICON[step] ?? <Activity className="w-4 h-4" />}
+                <span className="text-xs font-bold uppercase tracking-wide">{step}</span>
+              </div>
+              {task && (
+                <>
+                  <span className="text-[10px] font-semibold">{status}</span>
+                  <span className="text-[10px] opacity-70">{fmtDur(task.duration_s)}</span>
+                  {task.rows_out > 0 && <span className="text-[10px] opacity-70">{task.rows_out.toLocaleString('pt-BR')} {step === 'gold' ? 'files' : 'rows'}</span>}
+                </>
+              )}
+              {!task && <span className="text-[10px] opacity-50">aguardando</span>}
+            </div>
+            {i < steps.length - 1 && (
+              <div className={`h-0.5 w-6 ${task?.status === 'success' ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function AnalyticsPanel() {
+  const [runs, setRuns] = useState<EtlRun[]>([])
+  const [status, setStatus] = useState<DlStatus | null>(null)
+  const [selectedRun, setSelectedRun] = useState<(EtlRun & { tasks: EtlTask[] }) | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [triggering, setTriggering] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [runsRes, statusRes] = await Promise.all([
+        api.get<EtlRun[]>('/datalake/runs?limit=10'),
+        api.get<DlStatus>('/datalake/status'),
+      ])
+      setRuns(runsRes.data)
+      setStatus(statusRes.data)
+    } catch { /* silent */ } finally { setLoading(false) }
+  }
+
+  const loadRun = async (id: string) => {
+    const r = await api.get(`/datalake/runs/${id}`)
+    setSelectedRun(r.data)
+  }
+
+  const triggerManual = async (forceFull = false) => {
+    setTriggering(true)
+    try {
+      await api.post(`/datalake/run/manual?force_full=${forceFull}`)
+      await load()
+    } catch { /* silent */ } finally { setTriggering(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const lastRun = runs[0]
+  const r2Configured = status?.configured
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Header com botoes */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-bold text-gray-800">Pipeline Data Lake — APROXIMA</h2>
+          <p className="text-xs text-gray-400">Medalion Architecture · Bronze → Silver → Gold → R2</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => triggerManual(false)} disabled={triggering || !r2Configured}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-[#26619c] text-white hover:bg-[#1a4f87] disabled:opacity-40 transition">
+            <Play className="w-3.5 h-3.5" /> {triggering ? 'Executando…' : 'Executar Incremental'}
+          </button>
+          <button onClick={() => triggerManual(true)} disabled={triggering || !r2Configured}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition">
+            Carga Completa
+          </button>
+        </div>
+      </div>
+
+      {/* Status R2 */}
+      {!r2Configured && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-700">
+          ⚠️ Cloudflare R2 não configurado. Adicione <code className="bg-amber-100 px-1 rounded">R2_ACCOUNT_ID</code>, <code className="bg-amber-100 px-1 rounded">R2_ACCESS_KEY_ID</code>, <code className="bg-amber-100 px-1 rounded">R2_SECRET_ACCESS_KEY</code> e <code className="bg-amber-100 px-1 rounded">R2_BUCKET_NAME</code> nas env vars do Vercel.
+        </div>
+      )}
+
+      {/* Pipeline da última execução */}
+      {lastRun && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLOR[lastRun.status] ?? ''}`}>
+                {lastRun.status.toUpperCase()}
+              </span>
+              <span className="text-xs text-gray-500">
+                {lastRun.mode} · {fmtDate(lastRun.started_at)} · {fmtDur(lastRun.duration_s)}
+              </span>
+            </div>
+            <button onClick={() => loadRun(lastRun.id)} className="text-xs text-[#26619c] hover:underline">
+              ver detalhe →
+            </button>
+          </div>
+
+          {selectedRun?.id === lastRun.id ? (
+            <PipelineFlow tasks={selectedRun.tasks} />
+          ) : (
+            <div className="flex gap-4 py-3 text-center">
+              {[
+                { label: 'Bronze', value: lastRun.bronze_rows.toLocaleString('pt-BR'), sub: 'linhas extraídas', color: 'text-amber-600' },
+                { label: 'Silver', value: lastRun.silver_rows.toLocaleString('pt-BR'), sub: 'linhas enriquecidas', color: 'text-blue-600' },
+                { label: 'Gold', value: lastRun.gold_files, sub: 'arquivos gerados', color: 'text-emerald-600' },
+                { label: 'Neon', value: `${lastRun.neon_kb ?? 0} KB`, sub: 'transferidos', color: 'text-gray-500' },
+              ].map(s => (
+                <div key={s.label} className="flex-1 bg-gray-50 rounded-xl p-3">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{s.label}</p>
+                  <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                  <p className="text-[10px] text-gray-400">{s.sub}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {lastRun.error_msg && (
+            <div className="mt-2 bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-mono truncate">
+              {lastRun.error_msg}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Detalhe de run selecionado (tasks) */}
+      {selectedRun && selectedRun.id !== lastRun?.id && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold text-gray-800">{fmtDate(selectedRun.started_at)} — {selectedRun.mode}</span>
+            <button onClick={() => setSelectedRun(null)} className="text-xs text-gray-400">fechar</button>
+          </div>
+          <PipelineFlow tasks={selectedRun.tasks} />
+        </div>
+      )}
+
+      {/* Arquivos no R2 */}
+      {status?.gold_files && status.gold_files.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            Arquivos Gold no R2 ({status.gold_files.length} tabelas)
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {status.gold_files.map(f => (
+              <div key={f.key} className="bg-gray-50 rounded-xl px-3 py-2">
+                <p className="text-xs font-medium text-gray-700 truncate">{f.key.replace('gold/latest/', '')}</p>
+                <p className="text-[10px] text-gray-400">{f.size_kb} KB · {fmtDate(f.last_modified)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Histórico de execuções */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-xs font-semibold text-gray-600">Histórico de execuções</p>
+          <button onClick={load} className="text-gray-400 hover:text-gray-600">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#26619c] border-t-transparent rounded-full animate-spin" /></div>
+        ) : runs.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-8">Nenhuma execução registrada ainda.</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-500">
+              <tr>
+                {['Data','Modo','Status','Duração','Bronze','Gold','Neon KB','Por'].map(h => (
+                  <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {runs.map(r => (
+                <tr key={r.id} className="hover:bg-gray-50 transition cursor-pointer"
+                  onClick={() => loadRun(r.id)}>
+                  <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{fmtDate(r.started_at)}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${r.mode === 'full' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {r.mode}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${STATUS_COLOR[r.status] ?? ''}`}>
+                      {r.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-gray-600 tabular-nums">{fmtDur(r.duration_s)}</td>
+                  <td className="px-3 py-2 text-gray-600 tabular-nums">{r.bronze_rows.toLocaleString('pt-BR')}</td>
+                  <td className="px-3 py-2 text-gray-600 tabular-nums">{r.gold_files}</td>
+                  <td className="px-3 py-2 text-gray-500 tabular-nums">{r.neon_kb ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-400">{r.triggered_by}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function ArchDiagram() {
   const box = (x: number, y: number, w: number, h: number, color: string, label: string, sublabel?: string) => (
@@ -160,7 +411,7 @@ export default function TIPage() {
   const [health, setHealth] = useState<HealthData | null>(null)
   const [loading, setLoading] = useState(false)
   const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL)
-  const [activeTab, setActiveTab] = useState<'health' | 'perf' | 'db' | 'routes' | 'arch'>('health')
+  const [activeTab, setActiveTab] = useState<'health' | 'perf' | 'db' | 'routes' | 'arch' | 'analytics'>('health')
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set())
   const [searchRoute, setSearchRoute] = useState('')
   const [searchPerf, setSearchPerf] = useState('')
@@ -257,8 +508,8 @@ export default function TIPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
-        {(['health','perf','db','routes','arch'] as const).map(tab => {
-          const labels: Record<string,string> = { health: '🟢 Saúde', perf: '⚡ Performance', db: '🗄️ Banco', routes: '🌐 Endpoints', arch: '🏗️ Arquitetura' }
+        {(['health','perf','db','routes','arch','analytics'] as const).map(tab => {
+          const labels: Record<string,string> = { health: '🟢 Saúde', perf: '⚡ Performance', db: '🗄️ Banco', routes: '🌐 Endpoints', arch: '🏗️ Arquitetura', analytics: '📊 Analytics' }
           return (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${activeTab === tab ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -570,6 +821,7 @@ export default function TIPage() {
 
       {/* ── TAB: ARQUITETURA ── */}
       {activeTab === 'arch' && <ArchDiagram />}
+      {activeTab === 'analytics' && <AnalyticsPanel />}
 
     </div>
   )
