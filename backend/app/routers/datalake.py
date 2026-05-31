@@ -10,12 +10,12 @@ router = APIRouter(prefix="/datalake", tags=["Data Lake"])
 settings = get_settings()
 
 
-@router.post("/run", summary="Executar ETL completo (cron)")
+@router.post("/run", summary="Executar ETL (cron — incremental automático)")
 async def trigger_etl_cron(
     x_cron_secret: str | None = Header(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Chamado pelo Vercel Cron (header X-Cron-Secret)."""
+    """Chamado pelo Vercel Cron. 1ª execução = full, demais = incremental."""
     if not x_cron_secret or x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="Cron secret inválido.")
     if not settings.r2_account_id:
@@ -25,13 +25,17 @@ async def trigger_etl_cron(
 
 @router.post("/run/manual", summary="Executar ETL manualmente (admin)")
 async def trigger_etl_manual(
+    force_full: bool = False,
     session: AsyncSession = Depends(get_session),
     current: CurrentUser = Depends(require_admin),
 ) -> dict:
-    """Disparo manual por admin autenticado."""
+    """
+    Disparo manual por admin autenticado.
+    force_full=true: ignora metadata e faz carga completa (útil após migração).
+    """
     if not settings.r2_account_id:
-        raise HTTPException(status_code=503, detail="R2 não configurado. Adicione R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME nas env vars.")
-    return await run_full_etl(session)
+        raise HTTPException(status_code=503, detail="R2 não configurado.")
+    return await run_full_etl(session, force_full=force_full)
 
 
 @router.get("/status", summary="Status da última exportação no R2")
