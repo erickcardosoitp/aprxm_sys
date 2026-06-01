@@ -156,7 +156,7 @@ def _merge_bronze(existing: pd.DataFrame, delta: pd.DataFrame, id_col: str = "id
     combined = pd.concat([existing, delta], ignore_index=True)
 
     if ts_col in combined.columns:
-        combined[ts_col] = pd.to_datetime(combined[ts_col], utc=True, errors="coerce")
+        combined[ts_col] = _to_dt(combined[ts_col])  # sempre tz-naive para consistencia
         combined = combined.sort_values(ts_col, ascending=False)
 
     if id_col in combined.columns:
