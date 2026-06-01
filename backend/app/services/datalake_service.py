@@ -42,6 +42,7 @@ BRONZE_NAMES = {
     "transaction_categories":"categorias",
     "residents":             "moradores",
     "mensalidades":          "mensalidades",
+    "migration_payments":    "pagamentos_migrados",
     "transactions":          "transacoes",
     "cash_sessions":         "sessoes_caixa",
     "packages":              "encomendas",
@@ -239,6 +240,7 @@ async def export_bronze(session: AsyncSession, today: str,
         "users": "SELECT id, full_name, email, role, association_id, is_active, created_at FROM users WHERE is_active = TRUE",
         "payment_methods": "SELECT id, name, is_active, association_id FROM payment_methods WHERE is_active = TRUE",
         "transaction_categories": "SELECT id, name, type, association_id FROM transaction_categories WHERE is_active = TRUE",
+        "migration_payments": "SELECT id, resident_id, association_id, competencia, amount::float AS amount FROM migration_payments",
     }
 
     # Tabelas INCREMENTAIS: filtro por created_at/updated_at
@@ -415,10 +417,25 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df["association_name"] = df["association_id"].map(assoc_map)
         if not mens.empty:
             today_ts = pd.Timestamp.now().normalize()
-            overdue = mens[
-                (mens["status"] == "pending") &
-                (pd.to_datetime(mens["due_date"]) < today_ts)
-            ].groupby("resident_id").agg(
+            grace_cutoff = today_ts - pd.Timedelta(days=2)
+            migr = frames.get("migration_payments", pd.DataFrame())
+            # Meses cobertos por migration_payments (não são inadimplência real)
+            migr_keys = set()
+            if not migr.empty and "resident_id" in migr.columns and "competencia" in migr.columns:
+                migr_keys = set(zip(migr["resident_id"].astype(str), migr["competencia"].astype(str)))
+            # Aplica mesma lógica do sistema: grace 2d + exclui migration_payments
+            mens_overdue = mens[
+                (mens["status"].isin(["pending"])) &
+                (_to_dt(mens["due_date"]) < grace_cutoff)
+            ].copy()
+            if migr_keys:
+                mens_overdue = mens_overdue[
+                    ~mens_overdue.apply(
+                        lambda r: (str(r["resident_id"]), str(r["reference_month"])) in migr_keys,
+                        axis=1
+                    )
+                ]
+            overdue = mens_overdue.groupby("resident_id").agg(
                 overdue_months=("id", "count"),
                 total_owed=("amount", "sum")
             ).reset_index()
@@ -750,20 +767,40 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             if "Teste" in aname:
                 continue
 
-            # Saldo atual = soma dos saldos esperados das sessoes abertas
-            # Se nao houver sessao aberta, usa o ultimo saldo fechado
+            # Saldo atual: 3 estratégias em cascata
+            # 1) expected_balance da sessão aberta (ideal)
+            # 2) closing_balance da última sessão fechada
+            # 3) Fallback: opening da sessão mais recente + net das transações dela
             cs_assoc = cs[cs["association_id"] == aid] if not cs.empty else pd.DataFrame()
+            tx_assoc_all = tx[tx["association_id"] == aid] if not tx.empty else pd.DataFrame()
 
             saldo_atual = 0.0
             if not cs_assoc.empty:
                 open_sess = cs_assoc[cs_assoc["status"] == "open"]
                 if not open_sess.empty:
-                    saldo_atual = float(open_sess["expected_balance"].fillna(
-                        open_sess["opening_balance"]).sum() or 0)
+                    val = open_sess["expected_balance"].fillna(open_sess["opening_balance"])
+                    saldo_atual = float(val.sum() or 0)
+                    # Se expected_balance também for 0, recalcula via transações da sessão aberta
+                    if saldo_atual == 0 and not tx_assoc_all.empty:
+                        sess_ids = set(open_sess["id"].astype(str).tolist())
+                        tx_sess = tx_assoc_all[tx_assoc_all["cash_session_id"].astype(str).isin(sess_ids)]
+                        opening = float(open_sess["opening_balance"].fillna(0).sum())
+                        income  = float(tx_sess[tx_sess["type"] == "income"]["amount"].sum() or 0)
+                        expense = float(tx_sess[tx_sess["type"].isin(["expense","sangria"])]["amount"].sum() or 0)
+                        saldo_atual = opening + income - expense
                 else:
-                    last_closed = cs_assoc[cs_assoc["status"].isin(["closed","conferido"])].sort_values("opened_at").iloc[-1] if len(cs_assoc) > 0 else None
-                    if last_closed is not None:
-                        saldo_atual = float(last_closed.get("closing_balance") or last_closed.get("expected_balance") or 0)
+                    last_closed = cs_assoc[cs_assoc["status"].isin(["closed","conferido"])].sort_values("opened_at")
+                    if not last_closed.empty:
+                        row_lc = last_closed.iloc[-1]
+                        saldo_atual = float(row_lc.get("closing_balance") or row_lc.get("expected_balance") or 0)
+                        # Fallback via transações se closing_balance também nulo
+                        if saldo_atual == 0 and not tx_assoc_all.empty:
+                            sess_id = str(row_lc.get("id", ""))
+                            tx_sess = tx_assoc_all[tx_assoc_all["cash_session_id"].astype(str) == sess_id]
+                            opening = float(row_lc.get("opening_balance") or 0)
+                            income  = float(tx_sess[tx_sess["type"] == "income"]["amount"].sum() or 0)
+                            expense = float(tx_sess[tx_sess["type"].isin(["expense","sangria"])]["amount"].sum() or 0)
+                            saldo_atual = opening + income - expense
 
             # Despesa media semanal (ultimas 8 semanas)
             tx_assoc = tx[tx["association_id"] == aid] if not tx.empty else pd.DataFrame()
