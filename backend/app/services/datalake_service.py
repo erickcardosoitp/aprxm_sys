@@ -467,12 +467,14 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
 
 # ── GOLD — pandas puro, zero queries ao banco ─────────────────────────────────
 
-def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame], client) -> dict:
+def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame], client) -> tuple[dict, dict]:
     """
     17 arquivos gold construidos inteiramente com pandas groupby.
     Nenhuma conexao ao banco de dados.
+    Retorna (stats, gold_frames) para posterior carga no Analytics DB.
     """
     stats: dict = {}
+    gold_frames: dict[str, pd.DataFrame] = {}
 
     tx   = silver.get("transactions_enriched", pd.DataFrame())
     pkgs = silver.get("packages_enriched", pd.DataFrame())
@@ -485,6 +487,8 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         dominio, arquivo = GOLD_PATHS.get(name, ("outros", name))
         key = f"ouro/{dominio}/{arquivo}.parquet"
         stats[name] = _upload_df(client, df, key)
+        if not df.empty:
+            gold_frames[name] = df
 
     # 1. Receita diaria / semanal / mensal
     if not tx.empty:
@@ -813,7 +817,55 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         if rows_runway:
             up(pd.DataFrame(rows_runway), "runway")
 
-    return stats
+    return stats, gold_frames
+
+
+# ── Analytics Loader ──────────────────────────────────────────────────────────
+
+def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> int:
+    """Escreve todos os DataFrames Gold no Neon Analytics via SQLAlchemy sync."""
+    from sqlalchemy import create_engine
+    engine = create_engine(settings.analytics_database_url, pool_pre_ping=True)
+    total = 0
+    try:
+        with engine.begin() as conn:
+            for table_name, df in gold_frames.items():
+                if df.empty:
+                    continue
+                df_clean = df.copy()
+                for col in df_clean.columns:
+                    dtype_str = str(df_clean[col].dtype)
+                    # Period dtype → timestamp (psycopg2 nao suporta Period)
+                    if dtype_str.startswith("period["):
+                        try:
+                            df_clean[col] = df_clean[col].dt.to_timestamp()
+                        except Exception:
+                            df_clean[col] = df_clean[col].astype(str)
+                    # bool → int (evita tipo desconhecido em alguns drivers)
+                    elif dtype_str == "bool":
+                        df_clean[col] = df_clean[col].astype(int)
+                try:
+                    df_clean.to_sql(table_name, conn, if_exists="replace",
+                                    index=False, method="multi", chunksize=500)
+                    total += len(df_clean)
+                    logger.info("Analytics %-35s %5d rows", table_name, len(df_clean))
+                except Exception as e:
+                    logger.warning("Analytics: falha em %s: %s", table_name, e)
+    finally:
+        engine.dispose()
+    return total
+
+
+async def load_gold_to_analytics(gold_frames: dict[str, pd.DataFrame]) -> int:
+    """Task 5: carrega camada Gold no Neon Analytics (OLAP para Power BI)."""
+    if not settings.analytics_database_url:
+        logger.info("ANALYTICS_DATABASE_URL nao configurado — pulando carga OLAP")
+        return 0
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return await loop.run_in_executor(executor, _write_gold_sync, gold_frames)
 
 
 # ── Orchestrator ───────────────────────────────────────────────────────────────
@@ -924,19 +976,26 @@ async def run_full_etl(session: AsyncSession, force_full: bool = False,
 
         # ── Task 3: GOLD ────────────────────────────────────────────────────
         t3 = datetime.now(timezone.utc)
-        gold_stats = build_gold(bronze_frames, silver_frames, client)
+        gold_stats, gold_frames_result = build_gold(bronze_frames, silver_frames, client)
         gold_files = sum(1 for v in gold_stats.values() if isinstance(v, int) and v > 0)
         if run_id:
             await _log_task(session, run_id, "gold", "success", t3,
                             rows_in=silver_rows, rows_out=gold_files,
                             detail={"files": list(gold_stats.keys())})
 
-        # ── Task 4: VALIDATE ────────────────────────────────────────────────
-        t4 = datetime.now(timezone.utc)
+        # ── Task 4: ANALYTICS (Neon OLAP) ───────────────────────────────────
+        t4_analytics = datetime.now(timezone.utc)
+        analytics_rows = await load_gold_to_analytics(gold_frames_result)
+        if run_id:
+            await _log_task(session, run_id, "analytics_load", "success", t4_analytics,
+                            rows_in=gold_files, rows_out=analytics_rows)
+
+        # ── Task 5: VALIDATE ────────────────────────────────────────────────
+        t5 = datetime.now(timezone.utc)
         validation_errors = _validate_gold(silver_frames, gold_stats)
         v_status = "warning" if validation_errors else "success"
         if run_id:
-            await _log_task(session, run_id, "validate", v_status, t4,
+            await _log_task(session, run_id, "validate", v_status, t5,
                             detail={"errors": validation_errors})
         if validation_errors:
             logger.warning("Validacao com avisos: %s", validation_errors)
