@@ -381,11 +381,12 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
             res_slim = res.set_index("id")[["full_name", "type", "unit", "address_street"]].rename(
                 columns={"full_name": "resident_name", "type": "resident_type"})
             df = df.join(res_slim, on="resident_id", how="left")
-        df["date"]       = pd.to_datetime(df["transaction_at"]).dt.normalize()
+        _ta              = _to_dt(df["transaction_at"])
+        df["date"]       = _ta.dt.normalize()
         df["week"]       = _week(df["transaction_at"])
         df["month"]      = _month(df["transaction_at"])
-        df["hour"]       = pd.to_datetime(df["transaction_at"]).dt.hour
-        df["day_of_week"]= pd.to_datetime(df["transaction_at"]).dt.day_name()
+        df["hour"]       = _ta.dt.hour
+        df["day_of_week"]= _ta.dt.day_name()
         silver["transactions_enriched"] = df
         stats["transactions_enriched"] = _upload_df(client, df, f"prata/{today}/{SILVER_NAMES['transactions_enriched']}.parquet")
 
