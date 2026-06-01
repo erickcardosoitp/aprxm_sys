@@ -169,7 +169,17 @@ async def _fetch(session: AsyncSession, sql: str) -> pd.DataFrame:
     rows = (await session.execute(text(sql))).fetchall()
     if not rows:
         return pd.DataFrame()
-    return pd.DataFrame(rows, columns=list(rows[0]._mapping.keys()))
+    df = pd.DataFrame(rows, columns=list(rows[0]._mapping.keys()))
+    # Converte UUID e tipos asyncpg nao suportados pelo PyArrow para str/primitivos
+    for col in df.columns:
+        if df[col].dtype == object:
+            try:
+                sample = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
+                if sample is not None and hasattr(sample, 'hex'):  # UUID
+                    df[col] = df[col].apply(lambda x: str(x) if x is not None else None)
+            except Exception:
+                pass
+    return df
 
 
 def _parse_jsonb(val) -> list:
