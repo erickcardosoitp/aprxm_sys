@@ -179,6 +179,9 @@ async def _fetch(session: AsyncSession, sql: str) -> pd.DataFrame:
                     df[col] = df[col].apply(lambda x: str(x) if x is not None else None)
             except Exception:
                 pass
+        # Remove timezone de colunas datetime para comparacoes uniformes
+        elif hasattr(df[col], 'dt') and df[col].dt.tz is not None:
+            df[col] = df[col].dt.tz_localize(None)
     return df
 
 
@@ -397,7 +400,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df = res.copy()
         df["association_name"] = df["association_id"].map(assoc_map)
         if not mens.empty:
-            today_ts = pd.Timestamp.now(tz="UTC").normalize()
+            today_ts = pd.Timestamp.now().normalize()
             overdue = mens[
                 (mens["status"] == "pending") &
                 (pd.to_datetime(mens["due_date"]) < today_ts)
@@ -440,7 +443,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df["overdue"] = (
             (df["status"] != "done") &
             df["due_date"].notna() &
-            (pd.to_datetime(df["due_date"], utc=True) < pd.Timestamp.now(tz="UTC").normalize())
+            (pd.to_datetime(df["due_date"]).dt.tz_localize(None) < pd.Timestamp.now().normalize())
         )
         silver["daily_tasks_enriched"] = df
         stats["daily_tasks_enriched"] = _upload_df(client, df, f"prata/{today}/{SILVER_NAMES['daily_tasks_enriched']}.parquet")
@@ -495,7 +498,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     # 3. Snapshot de moradores
     if not res.empty:
         active = res[res["status"] == "active"]
-        now    = pd.Timestamp.now(tz="UTC")
+        now    = pd.Timestamp.now()
         week0  = now - pd.Timedelta(days=now.dayofweek)
         month0 = now.replace(day=1)
         df = active.groupby(["association_id","association_name"]).apply(lambda g: pd.Series({
