@@ -673,6 +673,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     if not res.empty:
         active = res[res["status"]=="active"].copy()
         active["street"] = active["address_street"].fillna("Nao informado").str.strip().replace("","Nao informado")
+        # Converte booleanos para int para evitar erro no PyArrow
+        for bcol in ["has_pests","has_sewage","uses_public_transport","sem_internet","has_problems"]:
+            if bcol in active.columns:
+                active[bcol] = pd.to_numeric(active[bcol].fillna(False), errors="coerce").fillna(0).astype(int)
         up(active.groupby(["street","association_id","association_name"]).agg(
             total        =("id","count"),
             associados   =("type", lambda x: (x=="member").sum()),
