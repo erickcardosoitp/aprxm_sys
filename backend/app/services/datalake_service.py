@@ -803,13 +803,18 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                             saldo_atual = opening + income - expense
 
             # Despesa media semanal (ultimas 8 semanas)
+            # Exclui sangrias de repasse interno para caixinha (movimentacao interna,
+            # nao e despesa operacional — dinheiro permanece na associacao)
             tx_assoc = tx[tx["association_id"] == aid] if not tx.empty else pd.DataFrame()
             despesa_semanal = 0.0
             if not tx_assoc.empty:
                 cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=8)
+                desc_col = tx_assoc["description"].fillna("").str.lower() if "description" in tx_assoc.columns else pd.Series("", index=tx_assoc.index)
+                is_repasse = desc_col.str.contains("repasse|caixinha", na=False)
                 tx_recent = tx_assoc[
                     (tx_assoc["type"].isin(["expense", "sangria"])) &
-                    (_to_dt(tx_assoc["transaction_at"]) >= cutoff)
+                    (_to_dt(tx_assoc["transaction_at"]) >= cutoff) &
+                    ~((tx_assoc["type"] == "sangria") & is_repasse)
                 ]
                 if not tx_recent.empty:
                     despesa_semanal = float(tx_recent["amount"].sum() / 8)
