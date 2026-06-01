@@ -352,6 +352,8 @@ async def list_packages(
     cep: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
@@ -417,9 +419,9 @@ async def list_packages(
             LEFT JOIN users u_del ON u_del.id = p.delivered_by
             WHERE {where_clause}
             ORDER BY p.received_at DESC
-            LIMIT 100
+            LIMIT :limit OFFSET :offset
         """),
-        params,
+        {**params, "limit": limit, "offset": offset},
     )
     rows = result.fetchall()
     out = []

@@ -1351,7 +1351,10 @@ interface ResidentsPageProps {
 }
 
 export default function ResidentsPage({ cadastrarMode = false, consultarMode = false, inadimplentesMode = false, mapaMode = false, onModalClosed }: ResidentsPageProps) {
+  const PAGE_SIZE = 50
   const [residents, setResidents] = useState<Resident[]>([])
+  const [resOffset, setResOffset] = useState(0)
+  const [hasMoreRes, setHasMoreRes] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editTarget, setEditTarget] = useState<Resident | null>(null)
   const [showDepForm, setShowDepForm] = useState(false)
@@ -1410,19 +1413,30 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
   const [inadimplentesData, setInadimplentesData] = useState<Resident[]>([])
   const [mapaData, setMapaData] = useState<Resident[]>([])
 
-  const load = async () => {
+  const load = async (append = false, offsetOverride?: number) => {
     try {
-      const params: Record<string, string> = {}
+      const params: Record<string, string | number> = {}
       const q = search.trim()
       const typeByTab: Record<string, string> = { associados: 'member', dependentes: 'dependent', visitantes: 'guest' }
       if (activeTab in typeByTab) params.type = typeByTab[activeTab]
       if (q.length >= 2) params.q = q
       if (filterStatus) params.status = filterStatus
+      const off = offsetOverride ?? (append ? resOffset : 0)
+      params.limit = PAGE_SIZE
+      params.offset = off
       const res = await api.get<Resident[]>('/residents', { params })
-      setResidents(res.data)
+      setResidents(prev => append ? [...prev, ...res.data] : res.data)
+      setHasMoreRes(res.data.length === PAGE_SIZE)
+      if (!append) setResOffset(0)
     } catch {
       toast.error('Erro ao carregar moradores.')
     }
+  }
+
+  const loadMore = async () => {
+    const next = resOffset + PAGE_SIZE
+    setResOffset(next)
+    await load(true, next)
   }
 
   const loadDelinquents = async () => {
@@ -1815,6 +1829,14 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
               </li>
             ))}
           </ul>
+          {hasMoreRes && !search.trim() && !filterDelinquent && (
+            <div className="flex justify-center py-4">
+              <button onClick={loadMore}
+                className="text-sm text-[#26619c] border border-[#26619c] px-5 py-2 rounded-xl hover:bg-[#26619c]/5 transition">
+                Carregar mais
+              </button>
+            </div>
+          )}
         )}
       </div>
       )}

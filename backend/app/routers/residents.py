@@ -300,6 +300,8 @@ async def list_residents(
     type: ResidentType | None = None,
     q: str | None = None,
     responsible_id: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
@@ -329,7 +331,7 @@ async def list_residents(
             filters.append(Resident.phone_primary.ilike(f"%{q}%"))
             filters.append(Resident.phone_secondary.ilike(f"%{q}%"))
         stmt = stmt.where(or_(*filters))
-    stmt = stmt.order_by(Resident.full_name).limit(200)
+    stmt = stmt.order_by(Resident.full_name).limit(limit).offset(offset)
     result = await session.execute(stmt)
     # Lista usa serialização leve — campos pesados (census) omitidos
     return [_serialize_list(r) for r in result.scalars().all()]
