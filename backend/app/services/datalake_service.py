@@ -77,6 +77,7 @@ GOLD_PATHS = {
     "operational_kpis":          ("operacional","kpis_operacionais"),
     "tasks_weekly":              ("equipe",     "tarefas_semanais"),
     "tasks_by_collaborator":     ("equipe",     "ranking_colaboradores"),
+    "runway":                    ("financeiro", "runway"),
 }
 
 
@@ -732,6 +733,85 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             })
         if rows_kpi:
             up(pd.DataFrame(rows_kpi), "operational_kpis")
+
+    # ── 18. RUNWAY FINANCEIRO ────────────────────────────────────────────────
+    # Quanto tempo (em semanas) a associacao consegue operar com o saldo atual
+    # sem nenhuma nova receita, baseado na media de despesas das ultimas 8 semanas
+    if not tx.empty and not cs.empty:
+        rows_runway = []
+        assocs_df = frames.get("associations", pd.DataFrame())
+        assoc_map_r = assocs_df.set_index("id")["name"].to_dict() if not assocs_df.empty else {}
+
+        for aid, aname in assoc_map_r.items():
+            if "Teste" in aname:
+                continue
+
+            # Saldo atual = soma dos saldos esperados das sessoes abertas
+            # Se nao houver sessao aberta, usa o ultimo saldo fechado
+            cs_assoc = cs[cs["association_id"] == aid] if not cs.empty else pd.DataFrame()
+
+            saldo_atual = 0.0
+            if not cs_assoc.empty:
+                open_sess = cs_assoc[cs_assoc["status"] == "open"]
+                if not open_sess.empty:
+                    saldo_atual = float(open_sess["expected_balance"].fillna(
+                        open_sess["opening_balance"]).sum() or 0)
+                else:
+                    last_closed = cs_assoc[cs_assoc["status"].isin(["closed","conferido"])].sort_values("opened_at").iloc[-1] if len(cs_assoc) > 0 else None
+                    if last_closed is not None:
+                        saldo_atual = float(last_closed.get("closing_balance") or last_closed.get("expected_balance") or 0)
+
+            # Despesa media semanal (ultimas 8 semanas)
+            tx_assoc = tx[tx["association_id"] == aid] if not tx.empty else pd.DataFrame()
+            despesa_semanal = 0.0
+            if not tx_assoc.empty:
+                cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=8)
+                tx_recent = tx_assoc[
+                    (tx_assoc["type"].isin(["expense", "sangria"])) &
+                    (_to_dt(tx_assoc["transaction_at"]) >= cutoff)
+                ]
+                if not tx_recent.empty:
+                    despesa_semanal = float(tx_recent["amount"].sum() / 8)
+
+            # Receita media semanal (ultimas 8 semanas)
+            receita_semanal = 0.0
+            if not tx_assoc.empty:
+                cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=8)
+                tx_rec = tx_assoc[
+                    (tx_assoc["type"] == "income") &
+                    (_to_dt(tx_assoc["transaction_at"]) >= cutoff)
+                ]
+                if not tx_rec.empty:
+                    receita_semanal = float(tx_rec["amount"].sum() / 8)
+
+            runway_semanas = None
+            if despesa_semanal > 0:
+                runway_semanas = round(saldo_atual / despesa_semanal, 1)
+
+            rows_runway.append({
+                "association_id":       aid,
+                "association_name":     aname,
+                "saldo_atual":          round(saldo_atual, 2),
+                "despesa_media_semanal":round(despesa_semanal, 2),
+                "receita_media_semanal":round(receita_semanal, 2),
+                "resultado_medio_semanal": round(receita_semanal - despesa_semanal, 2),
+                # Runway: semanas com saldo atual sem nova receita
+                "runway_semanas":       runway_semanas,
+                # Runway sustentavel: semanas ate saldo zerar considerando receita atual
+                "runway_sustentavel_semanas": (
+                    round(saldo_atual / max(despesa_semanal - receita_semanal, 0.01), 1)
+                    if despesa_semanal > receita_semanal else None
+                ),
+                "situacao": (
+                    "superavit" if receita_semanal > despesa_semanal
+                    else "equilibrio" if abs(receita_semanal - despesa_semanal) < despesa_semanal * 0.05
+                    else "deficit"
+                ),
+                "exportado_em": pd.Timestamp.now().isoformat(),
+            })
+
+        if rows_runway:
+            up(pd.DataFrame(rows_runway), "runway")
 
     return stats
 
