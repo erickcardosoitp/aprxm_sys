@@ -331,6 +331,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
                   <Input label="Complemento" value={form.address_complement} onChange={(v) => set('address_complement', v)} placeholder="Apto, casa…" />
                 </div>
               </div>
+              <Input label="Logradouro" value={form.address_street} onChange={(v) => set('address_street', v)} placeholder="Rua, Av…" />
               <Input label="Bairro" value={form.address_neighborhood} onChange={(v) => set('address_neighborhood', v)} placeholder="Bairro" />
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
