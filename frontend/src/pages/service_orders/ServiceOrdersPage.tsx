@@ -330,9 +330,8 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
     const digits = cep.replace(/\D/g, '')
     if (digits.length !== 8) return
     setCepLoading(true)
-    fetch(`https://viacep.com.br/ws/${digits}/json/`)
-      .then(r => r.json())
-      .then(data => { if (!data.erro) setAddressStreet(data.logradouro ?? '') })
+    api.get(`/packages/cep/${digits}`)
+      .then(res => { if (res.data?.street) setAddressStreet(res.data.street) })
       .catch(() => {})
       .finally(() => setCepLoading(false))
   }, [cep])
@@ -1565,9 +1564,8 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                           const digits = v.replace(/\D/g, '')
                           if (digits.length === 8) {
                             try {
-                              const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
-                              const d = await r.json()
-                              if (!d.erro) setEditForm(f => ({ ...f, address_street: d.logradouro ?? f.address_street }))
+                              const { data: d } = await api.get(`/packages/cep/${digits}`)
+                              if (d?.street) setEditForm(f => ({ ...f, address_street: d.street }))
                             } catch { /* silent */ }
                           }
                         }}

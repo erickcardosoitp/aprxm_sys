@@ -234,17 +234,15 @@ function ResidentForm({ initial, onSave, onCancel }: {
     if (cep.length !== 8) return
     setCepLoading(true)
     try {
-      const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
-      const data = await res.json()
-      if (data.erro) { toast.error('CEP não encontrado.'); return }
+      const { data } = await api.get(`/packages/cep/${cep}`)
+      if (!data || !data.street) { toast.error('CEP não encontrado.'); return }
       setForm((f) => ({
         ...f,
-        address_street: data.logradouro || f.address_street,
-        address_complement: data.complemento || f.address_complement,
-        address_neighborhood: data.bairro || f.address_neighborhood,
-        address_city: data.localidade || f.address_city,
-        address_state: data.uf || f.address_state,
-        address_country: f.address_country || 'Brasil',
+        address_street:       data.street       || f.address_street,
+        address_neighborhood: data.district     || f.address_neighborhood,
+        address_city:         data.city         || f.address_city,
+        address_state:        data.state        || f.address_state,
+        address_country:      f.address_country || 'Brasil',
       }))
     } catch {
       toast.error('Erro ao consultar CEP.')
