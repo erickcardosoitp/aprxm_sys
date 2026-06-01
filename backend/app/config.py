@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     r2_secret_access_key: str = ""
     r2_bucket_name: str = "aprxm-datalake"
 
+    # Neon Analytics (OLAP — Power BI)
+    analytics_database_url: str = ""
+
     # WebAuthn
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "APRXM"
