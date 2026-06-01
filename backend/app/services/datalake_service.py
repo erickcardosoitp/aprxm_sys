@@ -562,7 +562,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         # Encomendas paradas
         pending = pkgs[pkgs["status"].isin(["received","notified"])].copy()
         if not pending.empty:
-            now = pd.Timestamp.now(tz="UTC")
+            now = pd.Timestamp.now()
             pending["dias_parada"] = (now - pending["received_at"]).dt.days
             up(pending.groupby("association_id").agg(
                 paradas_3d=("dias_parada", lambda x: (x>=3).sum()),
@@ -701,7 +701,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     # 17. KPIs operacionais (snapshot)
     assocs_df = frames.get("associations", pd.DataFrame())
     if not assocs_df.empty:
-        now   = pd.Timestamp.now(tz="UTC")
+        now   = pd.Timestamp.now()
         week0 = now - pd.Timedelta(days=now.dayofweek)
         rows_kpi = []
         for _, assoc in assocs_df.iterrows():
