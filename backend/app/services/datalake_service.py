@@ -170,16 +170,20 @@ async def _fetch(session: AsyncSession, sql: str) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows, columns=list(rows[0]._mapping.keys()))
-    # Converte UUID e tipos asyncpg nao suportados pelo PyArrow para str/primitivos
+    # Converte UUID e tipos asyncpg nao suportados pelo PyArrow
     for col in df.columns:
         if df[col].dtype == object:
             try:
                 sample = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
-                if sample is not None and hasattr(sample, 'hex'):  # UUID
+                if sample is None:
+                    pass
+                elif hasattr(sample, 'hex'):  # UUID asyncpg
                     df[col] = df[col].apply(lambda x: str(x) if x is not None else None)
+                elif hasattr(sample, 'tzinfo'):  # datetime com timezone (object dtype)
+                    df[col] = pd.to_datetime(df[col], utc=True).dt.tz_localize(None)
             except Exception:
                 pass
-        # Remove timezone de colunas datetime para comparacoes uniformes
+        # Remove timezone de colunas datetime64 para comparacoes uniformes
         elif hasattr(df[col], 'dt') and df[col].dt.tz is not None:
             df[col] = df[col].dt.tz_localize(None)
     return df
@@ -194,12 +198,20 @@ def _parse_jsonb(val) -> list:
         return []
 
 
+def _to_dt(s: pd.Series) -> pd.Series:
+    """Converte para datetime64[ns] sem timezone (tz-naive) de forma segura."""
+    converted = pd.to_datetime(s, errors="coerce", utc=True)
+    if converted.dt.tz is not None:
+        converted = converted.dt.tz_localize(None)
+    return converted
+
+
 def _week(s: pd.Series) -> pd.Series:
-    return pd.to_datetime(s).dt.to_period("W").apply(lambda x: x.start_time)
+    return _to_dt(s).dt.to_period("W").apply(lambda x: x.start_time)
 
 
 def _month(s: pd.Series) -> pd.Series:
-    return pd.to_datetime(s).dt.to_period("M").apply(lambda x: x.start_time)
+    return _to_dt(s).dt.to_period("M").apply(lambda x: x.start_time)
 
 
 # ── BRONZE ────────────────────────────────────────────────────────────────────
@@ -387,8 +399,8 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
             res_slim = res.set_index("id")[["full_name", "type", "address_street"]].rename(
                 columns={"full_name": "resident_name", "type": "resident_type"})
             df = df.join(res_slim, on="resident_id", how="left")
-        df["received_at"]   = pd.to_datetime(df["received_at"])
-        df["delivered_at"]  = pd.to_datetime(df["delivered_at"])
+        df["received_at"]   = _to_dt(df["received_at"])
+        df["delivered_at"]  = _to_dt(df["delivered_at"])
         df["wait_hours"]    = (df["delivered_at"] - df["received_at"]).dt.total_seconds() / 3600
         df["received_week"] = _week(df["received_at"])
         df["received_month"]= _month(df["received_at"])
@@ -508,8 +520,8 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "dependents":    (g["type"]=="dependent").sum(),
             "confirmed":     g["is_member_confirmed"].sum(),
             "sem_internet":  g["sem_internet"].sum(),
-            "novos_semana":  (pd.to_datetime(g["created_at"]) >= week0).sum(),
-            "novos_mes":     (pd.to_datetime(g["created_at"]) >= month0).sum(),
+            "novos_semana":  (_to_dt(g["created_at"]) >= week0).sum(),
+            "novos_mes":     (_to_dt(g["created_at"]) >= month0).sum(),
         })).reset_index()
         up(df, "resident_overview")
 
@@ -710,7 +722,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 "associados_ativos":len(r_active),
                 "inadimplentes":    len(r_active[r_active.get("overdue_months",pd.Series(0,index=r_active.index))>0]) if not r_active.empty else 0,
                 "tarefas_abertas":  len(t_open),
-                "novos_semana":     len(r_active[pd.to_datetime(r_active["created_at"])>=week0]) if not r_active.empty else 0,
+                "novos_semana":     len(r_active[_to_dt(r_active["created_at"])>=week0]) if not r_active.empty else 0,
                 "snapshot_at":      now.isoformat(),
             })
         if rows_kpi:
