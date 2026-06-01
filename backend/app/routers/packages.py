@@ -957,20 +957,39 @@ async def receive_history(
     ]
 
 
-@router.get("/cep/{cep}", summary="Consultar endereço por CEP (proxy ViaCEP)")
+@router.get("/cep/{cep}", summary="Consultar endereço por CEP (proxy ViaCEP + BrasilAPI fallback)")
 async def lookup_cep(cep: str) -> dict:
-    clean = cep.replace("-", "").strip()
-    async with httpx.AsyncClient(timeout=5) as client:
-        resp = await client.get(f"https://viacep.com.br/ws/{clean}/json/")
-    data = resp.json()
-    if data.get("erro"):
+    clean = cep.replace("-", "").replace(".", "").strip()
+    if len(clean) != 8 or not clean.isdigit():
         return {}
-    return {
-        "street": data.get("logradouro", ""),
-        "district": data.get("bairro", ""),
-        "city": data.get("localidade", ""),
-        "state": data.get("uf", ""),
-    }
+    async with httpx.AsyncClient(timeout=5) as client:
+        # Tenta ViaCEP primeiro
+        try:
+            resp = await client.get(f"https://viacep.com.br/ws/{clean}/json/")
+            data = resp.json()
+            if not data.get("erro"):
+                return {
+                    "street":   data.get("logradouro", ""),
+                    "district": data.get("bairro", ""),
+                    "city":     data.get("localidade", ""),
+                    "state":    data.get("uf", ""),
+                }
+        except Exception:
+            pass
+        # Fallback: BrasilAPI
+        try:
+            resp = await client.get(f"https://brasilapi.com.br/api/cep/v2/{clean}")
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "street":   data.get("street", ""),
+                    "district": data.get("neighborhood", ""),
+                    "city":     data.get("city", ""),
+                    "state":    data.get("state", ""),
+                }
+        except Exception:
+            pass
+    return {}
 
 
 @router.get("/{package_id}/events", summary="Listar eventos da encomenda")
