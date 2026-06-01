@@ -32,7 +32,52 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-METADATA_KEY = "_metadata/last_run.json"
+METADATA_KEY = "_controle/estado_etl.json"
+
+# Mapeamento: nome interno -> nome no R2 (portugues)
+BRONZE_NAMES = {
+    "associations":          "associacoes",
+    "users":                 "usuarios",
+    "payment_methods":       "formas_pagamento",
+    "transaction_categories":"categorias",
+    "residents":             "moradores",
+    "mensalidades":          "mensalidades",
+    "transactions":          "transacoes",
+    "cash_sessions":         "sessoes_caixa",
+    "packages":              "encomendas",
+    "daily_tasks":           "tarefas",
+    "service_orders":        "ordens_servico",
+}
+
+SILVER_NAMES = {
+    "transactions_enriched":    "transacoes_enriquecidas",
+    "packages_enriched":        "encomendas_enriquecidas",
+    "residents_clean":          "moradores_limpos",
+    "cash_sessions_enriched":   "sessoes_enriquecidas",
+    "daily_tasks_enriched":     "tarefas_enriquecidas",
+}
+
+# Gold: (nome_interno, dominio, nome_arquivo)
+GOLD_PATHS = {
+    "daily_revenue":             ("financeiro", "receita_diaria"),
+    "collection_rate":           ("financeiro", "taxa_cobranca"),
+    "cash_breaks":               ("financeiro", "quebras_caixa"),
+    "sangria_reasons":           ("financeiro", "motivos_baixas"),
+    "delinquency_report":        ("financeiro", "inadimplencia"),
+    "resident_overview":         ("moradores",  "visao_geral"),
+    "member_growth_weekly":      ("moradores",  "crescimento_semanal"),
+    "census_by_street":          ("moradores",  "censo_por_rua"),
+    "community_problems":        ("moradores",  "problemas_comunidade"),
+    "sla_by_type":               ("encomendas", "sla_por_tipo"),
+    "packages_by_street":        ("encomendas", "encomendas_por_rua"),
+    "packages_stuck":            ("encomendas", "encomendas_paradas"),
+    "resident_package_ranking":  ("encomendas", "ranking_moradores"),
+    "operator_performance":      ("operacional","desempenho_operadores"),
+    "operator_revenue":          ("operacional","receita_por_operador"),
+    "operational_kpis":          ("operacional","kpis_operacionais"),
+    "tasks_weekly":              ("equipe",     "tarefas_semanais"),
+    "tasks_by_collaborator":     ("equipe",     "ranking_colaboradores"),
+}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -237,41 +282,39 @@ async def export_bronze(session: AsyncSession, today: str,
         """,
     }
 
+    # Particionamento de data para historico: YYYY/MM/DD
+    date_parts = today.replace("-", "/")  # 2026-06-01 -> 2026/06/01
+
     # 1. Tabelas small: sempre full, sem merge
     for name, sql in small_tables.items():
         df = await _fetch(session, sql)
         frames[name] = df
-        consolidated_key = f"bronze/current/{name}.parquet"
+        pt = BRONZE_NAMES.get(name, name)
+        consolidated_key = f"bronze/atual/{pt}.parquet"
         if not df.empty:
             stats[name] = _upload_df(client, df, consolidated_key)
-            # Tambem salva snapshot do dia
-            _upload_df(client, df, f"bronze/{today}/{name}.parquet")
 
     # 2. Tabelas incrementais: busca delta + merge com existente
     for name, sql in incremental_tables.items():
-        consolidated_key = f"bronze/current/{name}.parquet"
-        delta_key        = f"bronze/{today}/{name}_delta.parquet"
+        pt               = BRONZE_NAMES.get(name, name)
+        consolidated_key = f"bronze/atual/{pt}.parquet"
+        delta_key        = f"bronze/historico/{date_parts}/{pt}_delta.parquet"
 
-        # Busca delta do Neon (carga inicial: tudo; incremental: so novos/alterados)
         delta_df = await _fetch(session, sql)
-        logger.info("Bronze delta %-20s %d linhas do Neon", name, len(delta_df))
+        logger.info("Bronze delta %-25s %d linhas do Neon", pt, len(delta_df))
 
         if is_initial:
-            # Carga inicial: delta JA é o tudo
             consolidated = delta_df
         else:
-            # Incremental: merge delta com bronze existente no R2
             existing = _download_df(client, consolidated_key)
-            logger.info("Bronze existing %-18s %d linhas no R2", name, len(existing))
+            logger.info("Bronze atual  %-25s %d linhas no R2", pt, len(existing))
             consolidated = _merge_bronze(existing, delta_df)
 
         frames[name] = consolidated
 
-        # Salva bronze consolidado (fonte de verdade para Silver/Gold)
         if not consolidated.empty:
             stats[name] = _upload_df(client, consolidated, consolidated_key)
 
-        # Salva delta do dia (auditoria)
         if not delta_df.empty:
             _upload_df(client, delta_df, delta_key)
             stats[f"{name}_delta_rows"] = len(delta_df)
@@ -319,7 +362,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df["hour"]       = pd.to_datetime(df["transaction_at"]).dt.hour
         df["day_of_week"]= pd.to_datetime(df["transaction_at"]).dt.day_name()
         silver["transactions_enriched"] = df
-        stats["transactions_enriched"] = _upload_df(client, df, f"silver/{today}/transactions_enriched.parquet")
+        stats["transactions_enriched"] = _upload_df(client, df, f"prata/{today}/{SILVER_NAMES['transactions_enriched']}.parquet")
 
     # packages_enriched
     if not pkgs.empty:
@@ -337,7 +380,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df["received_week"] = _week(df["received_at"])
         df["received_month"]= _month(df["received_at"])
         silver["packages_enriched"] = df
-        stats["packages_enriched"] = _upload_df(client, df, f"silver/{today}/packages_enriched.parquet")
+        stats["packages_enriched"] = _upload_df(client, df, f"prata/{today}/{SILVER_NAMES['packages_enriched']}.parquet")
 
     # residents_clean
     if not res.empty:
@@ -362,7 +405,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df["created_week"]  = _week(df["created_at"])
         df["created_month"] = _month(df["created_at"])
         silver["residents_clean"] = df
-        stats["residents_clean"] = _upload_df(client, df, f"silver/{today}/residents_clean.parquet")
+        stats["residents_clean"] = _upload_df(client, df, f"prata/{today}/{SILVER_NAMES['residents_clean']}.parquet")
 
     # cash_sessions_enriched
     if not cs.empty:
@@ -374,7 +417,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df["week"]             = _week(df["opened_at"])
         df["month"]            = _month(df["opened_at"])
         silver["cash_sessions_enriched"] = df
-        stats["cash_sessions_enriched"] = _upload_df(client, df, f"silver/{today}/cash_sessions_enriched.parquet")
+        stats["cash_sessions_enriched"] = _upload_df(client, df, f"prata/{today}/{SILVER_NAMES['cash_sessions_enriched']}.parquet")
 
     # daily_tasks_enriched
     if not tasks.empty:
@@ -390,7 +433,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
             (pd.to_datetime(df["due_date"]) < pd.Timestamp.now().normalize())
         )
         silver["daily_tasks_enriched"] = df
-        stats["daily_tasks_enriched"] = _upload_df(client, df, f"silver/{today}/daily_tasks_enriched.parquet")
+        stats["daily_tasks_enriched"] = _upload_df(client, df, f"prata/{today}/{SILVER_NAMES['daily_tasks_enriched']}.parquet")
 
     return stats, silver
 
@@ -403,7 +446,6 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     Nenhuma conexao ao banco de dados.
     """
     stats: dict = {}
-    pfx = "gold/latest"
 
     tx   = silver.get("transactions_enriched", pd.DataFrame())
     pkgs = silver.get("packages_enriched", pd.DataFrame())
@@ -413,7 +455,9 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     mens = frames.get("mensalidades", pd.DataFrame())
 
     def up(df, name):
-        stats[name] = _upload_df(client, df, f"{pfx}/{name}.parquet")
+        dominio, arquivo = GOLD_PATHS.get(name, ("outros", name))
+        key = f"ouro/{dominio}/{arquivo}.parquet"
+        stats[name] = _upload_df(client, df, key)
 
     # 1. Receita diaria / semanal / mensal
     if not tx.empty:

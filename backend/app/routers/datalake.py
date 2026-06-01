@@ -97,11 +97,12 @@ async def etl_status(
         region_name="auto",
     )
 
-    def _list(prefix: str) -> list[dict]:
+    def _list(prefix: str, strip_prefix: bool = True) -> list[dict]:
         try:
             resp = client.list_objects_v2(Bucket=settings.r2_bucket_name, Prefix=prefix)
             return [
-                {"key": o["Key"], "size_kb": round(o["Size"]/1024, 1),
+                {"key": o["Key"].replace(prefix, "") if strip_prefix else o["Key"],
+                 "size_kb": round(o["Size"]/1024, 1),
                  "last_modified": o["LastModified"].isoformat()}
                 for o in resp.get("Contents", [])
             ]
@@ -123,12 +124,17 @@ async def etl_status(
     except Exception:
         metadata = {}
 
+    today = __import__('datetime').date.today().isoformat()
     return {
-        "configured":   True,
-        "bucket":       settings.r2_bucket_name,
-        "metadata":     metadata,
-        "last_run_db":  dict(last_run_db._mapping) if last_run_db else None,
-        "gold_files":   _list("gold/latest/"),
-        "bronze_tables":_list("bronze/current/"),
-        "silver_today": _list(f"silver/{__import__('datetime').date.today().isoformat()}/"),
+        "configured":        True,
+        "bucket":            settings.r2_bucket_name,
+        "metadata":          metadata,
+        "last_run_db":       dict(last_run_db._mapping) if last_run_db else None,
+        "ouro_financeiro":   _list("ouro/financeiro/"),
+        "ouro_moradores":    _list("ouro/moradores/"),
+        "ouro_encomendas":   _list("ouro/encomendas/"),
+        "ouro_operacional":  _list("ouro/operacional/"),
+        "ouro_equipe":       _list("ouro/equipe/"),
+        "bronze_atual":      _list("bronze/atual/"),
+        "prata_hoje":        _list(f"prata/{today}/"),
     }

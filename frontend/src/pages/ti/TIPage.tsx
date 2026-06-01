@@ -37,7 +37,14 @@ interface EtlRun {
 
 interface EtlTask { task_name: string; status: string; started_at: string; completed_at: string | null; duration_s: number | null; rows_in: number; rows_out: number }
 interface R2File   { key: string; size_kb: number; last_modified: string }
-interface DlStatus { configured: boolean; metadata?: Record<string,string>; last_run_db?: EtlRun; gold_files?: R2File[]; bronze_tables?: R2File[] }
+interface DlStatus {
+  configured: boolean
+  metadata?: Record<string,string>
+  last_run_db?: EtlRun
+  ouro_financeiro?: R2File[]; ouro_moradores?: R2File[]
+  ouro_encomendas?: R2File[]; ouro_operacional?: R2File[]; ouro_equipe?: R2File[]
+  bronze_atual?: R2File[]; prata_hoje?: R2File[]
+}
 
 const TASK_ICON: Record<string, React.ReactNode> = {
   bronze:   <Database className="w-4 h-4" />,
@@ -209,22 +216,33 @@ function AnalyticsPanel() {
         </div>
       )}
 
-      {/* Arquivos no R2 */}
-      {status?.gold_files && status.gold_files.length > 0 && (
+      {/* Camada Ouro no R2 por domínio */}
+      {status && (status.ouro_financeiro?.length || status.ouro_moradores?.length) ? (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            Arquivos Gold no R2 ({status.gold_files.length} tabelas)
+            Camada Ouro — arquivos por domínio
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {status.gold_files.map(f => (
-              <div key={f.key} className="bg-gray-50 rounded-xl px-3 py-2">
-                <p className="text-xs font-medium text-gray-700 truncate">{f.key.replace('gold/latest/', '')}</p>
-                <p className="text-[10px] text-gray-400">{f.size_kb} KB · {fmtDate(f.last_modified)}</p>
+          {([
+            { label: '💰 Financeiro',   files: status.ouro_financeiro },
+            { label: '👥 Moradores',    files: status.ouro_moradores },
+            { label: '📦 Encomendas',   files: status.ouro_encomendas },
+            { label: '⚙️ Operacional',  files: status.ouro_operacional },
+            { label: '🗂️ Equipe',      files: status.ouro_equipe },
+          ] as const).filter(d => d.files?.length).map(({ label, files }) => (
+            <div key={label} className="mb-3">
+              <p className="text-[11px] font-semibold text-gray-600 mb-1.5">{label}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {files!.map(f => (
+                  <div key={f.key} className="bg-gray-50 rounded-lg px-2.5 py-1.5">
+                    <p className="text-[11px] font-medium text-gray-700 truncate">{f.key.replace('.parquet','')}</p>
+                    <p className="text-[10px] text-gray-400">{f.size_kb} KB · {fmtDate(f.last_modified)}</p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
-      )}
+      ) : null}
 
       {/* Histórico de execuções */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
