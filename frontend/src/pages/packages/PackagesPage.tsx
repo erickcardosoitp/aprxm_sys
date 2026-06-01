@@ -605,7 +605,10 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const [searchParams] = useSearchParams()
   const [upgradedResidentInfo, setUpgradedResidentInfo] = useState<{ id: string; name: string } | null>(null)
   const [pageTab, setPageTab] = useState<'encomendas' | 'recebimentos' | 'cadastros'>('encomendas')
+  const PKG_PAGE_SIZE = 50
   const [packages, setPackages] = useState<Package[]>([])
+  const [pkgOffset, setPkgOffset] = useState(0)
+  const [hasMorePkgs, setHasMorePkgs] = useState(false)
   const [showReceive, setShowReceive] = useState(false)
   const [deliveryTarget, setDeliveryTarget] = useState<Package | null>(null)
   const [deliveryCheck, setDeliveryCheck] = useState<{ is_delinquent: boolean; overdue_count: number; fee_will_apply: boolean; is_member: boolean } | null>(null)
@@ -1384,30 +1387,43 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   useEffect(() => { loadDelivererOpts() }, [])
   useEffect(() => { if (showReceiveMode) loadDelivererOpts() }, [showReceiveMode])
 
-  const loadPackages = async () => {
+  const loadPackages = async (append = false, offsetOverride?: number) => {
     const key = ++loadPackagesKeyRef.current
     setPackagesLoading(true)
     try {
-      const params: Record<string, string> = {}
+      const params: Record<string, string | number> = {}
       if (filterStatus) params.status = filterStatus
       else params.statuses = 'received,notified,reversed'
       if (filterQ.trim()) params.q = filterQ.trim()
       if (filterDateFrom) params.date_from = filterDateFrom
       if (filterDateTo) params.date_to = filterDateTo
+      const off = offsetOverride ?? (append ? pkgOffset : 0)
+      params.limit = PKG_PAGE_SIZE
+      params.offset = off
       const [res, cntRes] = await Promise.all([
         api.get<Package[]>('/packages', { params }),
-        api.get<Record<string, number>>('/packages/counts', {
+        ...(append ? [] : [api.get<Record<string, number>>('/packages/counts', {
           params: { q: filterQ.trim() || undefined, date_from: filterDateFrom || undefined, date_to: filterDateTo || undefined },
-        }),
+        })]),
       ])
       if (key !== loadPackagesKeyRef.current) return
-      setPackages(res.data)
-      setStatusCounts(cntRes.data)
+      setPackages(prev => append ? [...prev, ...res.data] : res.data)
+      setHasMorePkgs(res.data.length === PKG_PAGE_SIZE)
+      if (!append) {
+        setPkgOffset(0)
+        setStatusCounts((cntRes as any).data ?? {})
+      }
     } catch {
       if (key === loadPackagesKeyRef.current) toast.error('Erro ao carregar encomendas.')
     } finally {
       if (key === loadPackagesKeyRef.current) setPackagesLoading(false)
     }
+  }
+
+  const loadMorePkgs = async () => {
+    const next = pkgOffset + PKG_PAGE_SIZE
+    setPkgOffset(next)
+    await loadPackages(true, next)
   }
 
   useEffect(() => {
@@ -2178,7 +2194,8 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
           {packages.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400 text-sm">Nenhuma encomenda encontrada.</div>
           ) : (
-            packages.map(pkg => (
+            <>
+            {packages.map(pkg => (
               <div
                 key={pkg.id}
                 className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 cursor-pointer hover:border-[#26619c]/40 transition"
@@ -2202,7 +2219,16 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                 </div>
                 <EsteiraStepper status={pkg.status} />
               </div>
-            ))
+            ))}
+            {hasMorePkgs && !filterQ.trim() && (
+              <div className="flex justify-center py-4">
+                <button onClick={loadMorePkgs}
+                  className="text-sm text-[#26619c] border border-[#26619c] px-5 py-2 rounded-xl hover:bg-[#26619c]/5 transition">
+                  Carregar mais
+                </button>
+              </div>
+            )}
+            </>
           )}
         </div>
       )}
