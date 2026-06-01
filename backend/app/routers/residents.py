@@ -446,6 +446,7 @@ async def residents_kpis(
 
     row = (await session.execute(sa_text("""
         SELECT
+            COUNT(*) AS total,
             COUNT(*) FILTER (WHERE (address_cep IS NULL OR TRIM(address_cep) = '')) AS sem_cep,
             COUNT(*) FILTER (WHERE (phone_primary IS NULL OR TRIM(phone_primary) = '')) AS sem_telefone,
             COUNT(*) FILTER (WHERE (cpf IS NULL OR TRIM(cpf) = '')) AS sem_cpf
@@ -476,9 +477,10 @@ async def residents_kpis(
         """), {"aid": str(current.association_id), "cutoff": grace_cutoff})).scalar() or 0)
 
     return {
-        "sem_cep": int(row[0]),
-        "sem_telefone": int(row[1]),
-        "sem_cpf": int(row[2]),
+        "total": int(row[0]),
+        "sem_cep": int(row[1]),
+        "sem_telefone": int(row[2]),
+        "sem_cpf": int(row[3]),
         "inadimplentes": inadimplentes,
     }
 
