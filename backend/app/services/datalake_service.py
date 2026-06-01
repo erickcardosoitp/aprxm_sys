@@ -240,7 +240,7 @@ async def export_bronze(session: AsyncSession, today: str,
         "users": "SELECT id, full_name, email, role, association_id, is_active, created_at FROM users WHERE is_active = TRUE",
         "payment_methods": "SELECT id, name, is_active, association_id FROM payment_methods WHERE is_active = TRUE",
         "transaction_categories": "SELECT id, name, type, association_id FROM transaction_categories WHERE is_active = TRUE",
-        "migration_payments": "SELECT id, resident_id, association_id, competencia, amount::float AS amount FROM migration_payments",
+        "migration_payments": "SELECT id, resident_id, association_id, competencia, valor_pago::float AS valor_pago FROM migration_payments",
     }
 
     # Tabelas INCREMENTAIS: filtro por created_at/updated_at
