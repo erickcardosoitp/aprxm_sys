@@ -792,6 +792,8 @@ async def run_full_etl(session: AsyncSession, force_full: bool = False,
 
     error_msg = None
     bronze_stats = silver_stats = gold_stats = {}
+    bronze_frames: dict = {}
+    silver_frames: dict = {}
 
     try:
         # ── Task 1: BRONZE ──────────────────────────────────────────────────
