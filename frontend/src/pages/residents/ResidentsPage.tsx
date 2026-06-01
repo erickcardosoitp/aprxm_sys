@@ -1771,6 +1771,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
         {displayedResidents.length === 0 ? (
           <div className="p-8 text-center text-gray-400 text-sm">Nenhum {TAB_LABELS[activeTab].toLowerCase().replace('s','')} encontrado.</div>
         ) : (
+          <>
           <ul className="divide-y divide-gray-100">
             {displayedResidents.map((r) => (
               <li key={r.id}
@@ -1837,6 +1838,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
               </button>
             </div>
           )}
+          </>
         )}
       </div>
       )}
