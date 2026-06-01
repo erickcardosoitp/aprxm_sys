@@ -583,18 +583,22 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         agg["taxa_pct"] = (agg["paid"] / agg["total"].replace(0, pd.NA) * 100).round(1)
         up(agg, "collection_rate")
 
-    # 5. Inadimplencia
+    # 5. Inadimplencia — apenas members ativos (alinhado com logica do sistema)
     if not res.empty and "overdue_months" in res.columns:
-        df = res[res["overdue_months"] > 0][[
+        df = res[
+            (res["overdue_months"] > 0) &
+            (res["type"] == "member") &
+            (res["status"] == "active")
+        ][[
             "full_name","unit","block","phone_primary","type",
             "address_street","association_id","association_name",
             "overdue_months","total_owed"
         ]].sort_values("total_owed", ascending=False)
         up(df, "delinquency_report")
 
-    # 6. SLA por tipo de morador
+    # 6. SLA por tipo de morador — exclui wait_hours=0 (entregue no mesmo momento, dado espúrio)
     if not pkgs.empty:
-        delivered = pkgs[pkgs["status"]=="delivered"]
+        delivered = pkgs[(pkgs["status"]=="delivered") & (pkgs["wait_hours"] > 0)]
         df = delivered.groupby(["received_week","association_id","association_name","resident_type"]).agg(
             entregues     =("id","count"),
             avg_wait_hours=("wait_hours","mean"),
@@ -637,18 +641,20 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             avg_wait    =("wait_hours","mean"),
         ).reset_index().sort_values("total",ascending=False), "packages_by_street")
 
-    # 9. Performance operadores
-    if not pkgs.empty:
+    # 9. Performance operadores — usa Bronze diretamente (received_by/delivered_by intactos)
+    pkgs_bronze = frames.get("packages", pd.DataFrame())
+    if not pkgs_bronze.empty:
         users_df = frames.get("users", pd.DataFrame())
         if not users_df.empty:
             ops = users_df[users_df["role"]=="operator"]
-            recv = pkgs.groupby("received_by").agg(enc_recv=("id","count")).reset_index().rename(columns={"received_by":"id"})
-            delv = pkgs.groupby("delivered_by").agg(enc_delv=("id","count")).reset_index().rename(columns={"delivered_by":"id"})
+            recv = pkgs_bronze.groupby("received_by").agg(enc_recv=("id","count")).reset_index().rename(columns={"received_by":"id"})
+            delv = pkgs_bronze.groupby("delivered_by").agg(enc_delv=("id","count")).reset_index().rename(columns={"delivered_by":"id"})
             sess_df = cs if not cs.empty else pd.DataFrame()
             sess = (sess_df.groupby("opened_by").agg(sessoes=("id","count")).reset_index().rename(columns={"opened_by":"id"})
                     if not sess_df.empty else pd.DataFrame(columns=["id","sessoes"]))
             df = ops.merge(recv,on="id",how="left").merge(delv,on="id",how="left").merge(sess,on="id",how="left")
-            assoc_map = frames["associations"].set_index("id")["name"].to_dict() if not frames.get("associations",pd.DataFrame()).empty else {}
+            assoc_map = frames.get("associations", pd.DataFrame())
+            assoc_map = assoc_map.set_index("id")["name"].to_dict() if not assoc_map.empty else {}
             df["association_name"] = df["association_id"].map(assoc_map)
             up(df[["full_name","association_id","association_name","sessoes","enc_recv","enc_delv"]].fillna(0),
                "operator_performance")
