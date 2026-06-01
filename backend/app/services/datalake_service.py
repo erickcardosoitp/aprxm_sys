@@ -208,6 +208,26 @@ def _to_dt(s: pd.Series) -> pd.Series:
     return converted
 
 
+def _normalize_street(s: pd.Series) -> pd.Series:
+    """Normaliza nomes de rua: strip + Title Case + remove duplicatas por acento/case."""
+    import unicodedata
+
+    def _clean(val):
+        if not val or not str(val).strip():
+            return "Não Informado"
+        v = str(val).strip()
+        # Remove acentos para comparação (normaliza NFD → só ASCII)
+        v_norm = unicodedata.normalize("NFD", v)
+        v_ascii = "".join(c for c in v_norm if unicodedata.category(c) != "Mn").lower()
+        # Retorna title case do original se válido, senão usa ascii limpo
+        if len(v_ascii) < 2:
+            return "Não Informado"
+        # Re-aplica title case na versão original (preserva acentos corretos)
+        return v.title()
+
+    return s.apply(_clean)
+
+
 def _week(s: pd.Series) -> pd.Series:
     return _to_dt(s).dt.to_period("W").apply(lambda x: x.start_time)
 
@@ -403,6 +423,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
             res_slim = res.set_index("id")[["full_name", "type", "address_street"]].rename(
                 columns={"full_name": "resident_name", "type": "resident_type"})
             df = df.join(res_slim, on="resident_id", how="left")
+        df["address_street"] = _normalize_street(df["address_street"])
         df["received_at"]   = _to_dt(df["received_at"])
         df["delivered_at"]  = _to_dt(df["delivered_at"])
         df["wait_hours"]    = (df["delivered_at"] - df["received_at"]).dt.total_seconds() / 3600
@@ -414,7 +435,8 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
     # residents_clean
     if not res.empty:
         df = res.copy()
-        df["association_name"] = df["association_id"].map(assoc_map)
+        df["association_name"]  = df["association_id"].map(assoc_map)
+        df["address_street"]    = _normalize_street(df["address_street"])
         if not mens.empty:
             today_ts = pd.Timestamp.now().normalize()
             grace_cutoff = today_ts - pd.Timedelta(days=2)
@@ -606,7 +628,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     # 8. Encomendas por rua
     if not pkgs.empty:
         df = pkgs.copy()
-        df["street"] = df["address_street"].fillna("Nao informado").str.strip().replace("","Nao informado")
+        df["street"] = _normalize_street(df["address_street"])
         up(df.groupby(["street","association_id","association_name"]).agg(
             total=("id","count"),
             distinct_res=("resident_id","nunique"),
@@ -694,7 +716,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     # 15. Censo por rua
     if not res.empty:
         active = res[res["status"]=="active"].copy()
-        active["street"] = active["address_street"].fillna("Nao informado").str.strip().replace("","Nao informado")
+        active["street"] = _normalize_street(active["address_street"])
         # Converte booleanos para int para evitar erro no PyArrow
         for bcol in ["has_pests","has_sewage","uses_public_transport","sem_internet","has_problems"]:
             if bcol in active.columns:
@@ -734,7 +756,8 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             aid, name = assoc["id"], assoc["name"]
             if "Teste" in name:
                 continue
-            r_active   = res[(res["association_id"]==aid)&(res["status"]=="active")] if not res.empty else pd.DataFrame()
+            # Somente membros ativos para KPIs de associados
+            r_members  = res[(res["association_id"]==aid)&(res["status"]=="active")&(res["type"]=="member")] if not res.empty else pd.DataFrame()
             p_pending  = pkgs[(pkgs["association_id"]==aid)&(pkgs["status"].isin(["received","notified"]))] if not pkgs.empty else pd.DataFrame()
             cs_open    = cs[(cs["association_id"]==aid)&(cs["status"]=="open")] if not cs.empty else pd.DataFrame()
             t_open     = tsk[(tsk["association_id"]==aid)&(~tsk["is_deleted"])&(tsk["status"]!="done")] if not tsk.empty else pd.DataFrame()
@@ -746,10 +769,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 "receita_hoje":     tx_hoje["amount"].sum() if not tx_hoje.empty else 0,
                 "enc_pendentes":    len(p_pending),
                 "enc_paradas_3d":   len(p_pending[p_pending["received_at"]<now-pd.Timedelta(days=3)]) if not p_pending.empty else 0,
-                "associados_ativos":len(r_active),
-                "inadimplentes":    len(r_active[r_active.get("overdue_months",pd.Series(0,index=r_active.index))>0]) if not r_active.empty else 0,
+                "associados_ativos":len(r_members),
+                "inadimplentes":    len(r_members[r_members.get("overdue_months",pd.Series(0,index=r_members.index))>0]) if not r_members.empty else 0,
                 "tarefas_abertas":  len(t_open),
-                "novos_semana":     len(r_active[_to_dt(r_active["created_at"])>=week0]) if not r_active.empty else 0,
+                "novos_semana":     len(r_members[_to_dt(r_members["created_at"])>=week0]) if not r_members.empty else 0,
                 "snapshot_at":      now.isoformat(),
             })
         if rows_kpi:
