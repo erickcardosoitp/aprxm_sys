@@ -37,14 +37,29 @@ interface EtlRun {
 
 interface EtlTask { task_name: string; status: string; started_at: string; completed_at: string | null; duration_s: number | null; rows_in: number; rows_out: number }
 interface R2File   { key: string; size_kb: number; last_modified: string }
-interface DlStatus {
+interface GovFile { arquivo: string; size_kb: number; atualizado_em: string }
+interface ProximaExec { utc: string; brasilia: string; em: string }
+interface Alerta { nivel: 'critico' | 'aviso' | 'info'; mensagem: string; run_id?: string }
+interface CamadaInfo { arquivos: GovFile[]; total_arquivos: number; total_kb: number }
+interface Governance {
   configured: boolean
-  metadata?: Record<string,string>
-  last_run_db?: EtlRun
-  ouro_financeiro?: R2File[]; ouro_moradores?: R2File[]
-  ouro_encomendas?: R2File[]; ouro_operacional?: R2File[]; ouro_equipe?: R2File[]
-  bronze_atual?: R2File[]; prata_hoje?: R2File[]
+  bucket?: string
+  timestamp?: string
+  saude?: 'ok' | 'critico'
+  proximas_execucoes?: ProximaExec[]
+  cron_horarios_brasilia?: string[]
+  ultimo_etl_metadata?: Record<string, string>
+  camadas?: {
+    bronze: { atual: CamadaInfo; historico: { datas_disponiveis: string[] } }
+    prata:  { hoje: CamadaInfo }
+    ouro:   { total_kb: number; financeiro: CamadaInfo; moradores: CamadaInfo; encomendas: CamadaInfo; operacional: CamadaInfo; equipe: CamadaInfo }
+  }
+  ultimas_execucoes?: EtlRun[]
+  estatisticas?: { total_runs: number; successos: number; falhas: number; avg_duracao_s: number; total_neon_kb: number; taxa_sucesso_pct: number }
+  alertas?: Alerta[]
 }
+// retrocompat
+interface DlStatus { configured: boolean; ouro_financeiro?: R2File[]; ouro_moradores?: R2File[]; ouro_encomendas?: R2File[]; ouro_operacional?: R2File[]; ouro_equipe?: R2File[]; bronze_atual?: R2File[] }
 
 const TASK_ICON: Record<string, React.ReactNode> = {
   bronze:   <Database className="w-4 h-4" />,
@@ -98,8 +113,7 @@ function PipelineFlow({ tasks }: { tasks: EtlTask[] }) {
 }
 
 function AnalyticsPanel() {
-  const [runs, setRuns] = useState<EtlRun[]>([])
-  const [status, setStatus] = useState<DlStatus | null>(null)
+  const [gov, setGov] = useState<Governance | null>(null)
   const [selectedRun, setSelectedRun] = useState<(EtlRun & { tasks: EtlTask[] }) | null>(null)
   const [loading, setLoading] = useState(true)
   const [triggering, setTriggering] = useState(false)
@@ -107,12 +121,8 @@ function AnalyticsPanel() {
   const load = async () => {
     setLoading(true)
     try {
-      const [runsRes, statusRes] = await Promise.all([
-        api.get<EtlRun[]>('/datalake/runs?limit=10'),
-        api.get<DlStatus>('/datalake/status'),
-      ])
-      setRuns(runsRes.data)
-      setStatus(statusRes.data)
+      const r = await api.get<Governance>('/datalake/governance')
+      setGov(r.data)
     } catch { /* silent */ } finally { setLoading(false) }
   }
 
@@ -125,87 +135,124 @@ function AnalyticsPanel() {
     setTriggering(true)
     try {
       await api.post(`/datalake/run/manual?force_full=${forceFull}`)
-      await load()
+      setTimeout(load, 3000)
     } catch { /* silent */ } finally { setTriggering(false) }
   }
 
   useEffect(() => { load() }, [])
 
+  const runs = gov?.ultimas_execucoes ?? []
   const lastRun = runs[0]
-  const r2Configured = status?.configured
+  const r2Configured = gov?.configured
+
+  const stats   = gov?.estatisticas
+  const alertas = gov?.alertas ?? []
+  const camadas = gov?.camadas
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Header com botoes */}
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-bold text-gray-800">Pipeline Data Lake — APROXIMA</h2>
-          <p className="text-xs text-gray-400">Medalion Architecture · Bronze → Silver → Gold → R2</p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-gray-800">Governança do Pipeline — Data Lake APRXM</h2>
+            {gov?.saude === 'ok'
+              ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">SAUDÁVEL</span>
+              : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">ATENÇÃO</span>
+            }
+          </div>
+          <p className="text-xs text-gray-400">Bronze → Silver → Gold · Cloudflare R2 · Atualização diária 09h e 17h</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={load} disabled={loading} className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 transition">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
           <button onClick={() => triggerManual(false)} disabled={triggering || !r2Configured}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-[#26619c] text-white hover:bg-[#1a4f87] disabled:opacity-40 transition">
-            <Play className="w-3.5 h-3.5" /> {triggering ? 'Executando…' : 'Executar Incremental'}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-[#26619c] text-white disabled:opacity-40">
+            <Play className="w-3.5 h-3.5" /> {triggering ? 'Executando…' : 'Incremental'}
           </button>
           <button onClick={() => triggerManual(true)} disabled={triggering || !r2Configured}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition">
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border border-gray-300 text-gray-600 disabled:opacity-40">
             Carga Completa
           </button>
         </div>
       </div>
 
-      {/* Status R2 */}
-      {!r2Configured && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-700">
-          ⚠️ Cloudflare R2 não configurado. Adicione <code className="bg-amber-100 px-1 rounded">R2_ACCOUNT_ID</code>, <code className="bg-amber-100 px-1 rounded">R2_ACCESS_KEY_ID</code>, <code className="bg-amber-100 px-1 rounded">R2_SECRET_ACCESS_KEY</code> e <code className="bg-amber-100 px-1 rounded">R2_BUCKET_NAME</code> nas env vars do Vercel.
+      {/* Alertas */}
+      {alertas.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {alertas.map((a, i) => (
+            <div key={i} className={`flex items-start gap-2 px-4 py-3 rounded-xl border text-xs font-medium ${
+              a.nivel === 'critico' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-amber-50 border-amber-200 text-amber-700'
+            }`}>
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{a.mensagem}</span>
+              {a.run_id && (
+                <button onClick={() => loadRun(a.run_id!)} className="ml-auto underline shrink-0">ver run →</button>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Pipeline da última execução */}
+      {/* Próximas execuções + estatísticas */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {gov?.proximas_execucoes?.map((p, i) => (
+          <div key={i} className="bg-white border border-gray-200 rounded-2xl p-3 shadow-sm">
+            <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Próxima execução {i+1}</p>
+            <p className="text-base font-bold text-[#26619c]">{p.brasilia}</p>
+            <p className="text-[10px] text-gray-400">em {p.em}</p>
+          </div>
+        ))}
+        {stats && (<>
+          <div className="bg-white border border-gray-200 rounded-2xl p-3 shadow-sm">
+            <p className="text-[10px] text-gray-400 font-semibold uppercase">Taxa de Sucesso</p>
+            <p className={`text-base font-bold ${(stats.taxa_sucesso_pct ?? 0) >= 90 ? 'text-emerald-600' : 'text-amber-600'}`}>{stats.taxa_sucesso_pct ?? '—'}%</p>
+            <p className="text-[10px] text-gray-400">{stats.successos} ok / {stats.falhas} falhas</p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-3 shadow-sm">
+            <p className="text-[10px] text-gray-400 font-semibold uppercase">Neon consumido</p>
+            <p className="text-base font-bold text-gray-700">{Math.round((stats.total_neon_kb ?? 0)/1024*10)/10} MB</p>
+            <p className="text-[10px] text-gray-400">acumulado total</p>
+          </div>
+        </>)}
+      </div>
+
+      {/* Pipeline última execução */}
       {lastRun && (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLOR[lastRun.status] ?? ''}`}>
-                {lastRun.status.toUpperCase()}
-              </span>
-              <span className="text-xs text-gray-500">
-                {lastRun.mode} · {fmtDate(lastRun.started_at)} · {fmtDur(lastRun.duration_s)}
-              </span>
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLOR[lastRun.status] ?? ''}`}>{lastRun.status.toUpperCase()}</span>
+              <span className="text-xs text-gray-500">{lastRun.mode} · {fmtDate(lastRun.started_at)} · {fmtDur(lastRun.duration_s)}</span>
             </div>
-            <button onClick={() => loadRun(lastRun.id)} className="text-xs text-[#26619c] hover:underline">
-              ver detalhe →
-            </button>
+            <button onClick={() => loadRun(lastRun.id)} className="text-xs text-[#26619c] hover:underline">tasks →</button>
           </div>
-
-          {selectedRun?.id === lastRun.id ? (
-            <PipelineFlow tasks={selectedRun.tasks} />
-          ) : (
-            <div className="flex gap-4 py-3 text-center">
-              {[
-                { label: 'Bronze', value: lastRun.bronze_rows.toLocaleString('pt-BR'), sub: 'linhas extraídas', color: 'text-amber-600' },
-                { label: 'Silver', value: lastRun.silver_rows.toLocaleString('pt-BR'), sub: 'linhas enriquecidas', color: 'text-blue-600' },
-                { label: 'Gold', value: lastRun.gold_files, sub: 'arquivos gerados', color: 'text-emerald-600' },
-                { label: 'Neon', value: `${lastRun.neon_kb ?? 0} KB`, sub: 'transferidos', color: 'text-gray-500' },
-              ].map(s => (
-                <div key={s.label} className="flex-1 bg-gray-50 rounded-xl p-3">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{s.label}</p>
-                  <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                  <p className="text-[10px] text-gray-400">{s.sub}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {lastRun.error_msg && (
-            <div className="mt-2 bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-mono truncate">
-              {lastRun.error_msg}
-            </div>
-          )}
+          {selectedRun?.id === lastRun.id
+            ? <PipelineFlow tasks={selectedRun.tasks} />
+            : (
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { l:'Bronze', v: lastRun.bronze_rows?.toLocaleString('pt-BR') ?? '—', s:'linhas extraídas', c:'text-amber-600' },
+                  { l:'Silver', v: lastRun.silver_rows?.toLocaleString('pt-BR') ?? '—', s:'linhas enriquecidas', c:'text-blue-600' },
+                  { l:'Gold',   v: lastRun.gold_files, s:'arquivos', c:'text-emerald-600' },
+                  { l:'Neon',   v: `${lastRun.neon_kb ?? 0} KB`, s:'transferidos', c:'text-gray-500' },
+                ].map(s => (
+                  <div key={s.l} className="bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-[10px] text-gray-400 font-semibold uppercase">{s.l}</p>
+                    <p className={`text-lg font-bold ${s.c}`}>{s.v}</p>
+                    <p className="text-[10px] text-gray-400">{s.s}</p>
+                  </div>
+                ))}
+              </div>
+            )
+          }
+          {lastRun.error_msg && <div className="mt-2 bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-mono truncate">{lastRun.error_msg}</div>}
         </div>
       )}
 
-      {/* Detalhe de run selecionado (tasks) */}
+      {/* Detalhe tasks de run selecionado */}
       {selectedRun && selectedRun.id !== lastRun?.id && (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
           <div className="flex items-center justify-between mb-2">
@@ -216,74 +263,96 @@ function AnalyticsPanel() {
         </div>
       )}
 
-      {/* Camada Ouro no R2 por domínio */}
-      {status && (status.ouro_financeiro?.length || status.ouro_moradores?.length) ? (
+      {/* Inventário R2 — todas as camadas */}
+      {camadas && (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            Camada Ouro — arquivos por domínio
-          </p>
-          {([
-            { label: '💰 Financeiro',   files: status.ouro_financeiro },
-            { label: '👥 Moradores',    files: status.ouro_moradores },
-            { label: '📦 Encomendas',   files: status.ouro_encomendas },
-            { label: '⚙️ Operacional',  files: status.ouro_operacional },
-            { label: '🗂️ Equipe',      files: status.ouro_equipe },
-          ] as const).filter(d => d.files?.length).map(({ label, files }) => (
-            <div key={label} className="mb-3">
-              <p className="text-[11px] font-semibold text-gray-600 mb-1.5">{label}</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {files!.map(f => (
-                  <div key={f.key} className="bg-gray-50 rounded-lg px-2.5 py-1.5">
-                    <p className="text-[11px] font-medium text-gray-700 truncate">{f.key.replace('.parquet','')}</p>
-                    <p className="text-[10px] text-gray-400">{f.size_kb} KB · {fmtDate(f.last_modified)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
+          <p className="text-xs font-bold text-gray-600 mb-3">Inventário R2 — {gov?.bucket}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 
-      {/* Histórico de execuções */}
+            {/* Bronze */}
+            <div>
+              <p className="text-[11px] font-semibold text-amber-700 mb-2">🥉 Bronze/atual ({camadas.bronze.atual.total_arquivos} tabelas · {camadas.bronze.atual.total_kb} KB)</p>
+              {camadas.bronze.atual.arquivos.map(f => (
+                <div key={f.arquivo} className="flex items-center justify-between py-1 border-b border-gray-50 last:border-0">
+                  <span className="text-[11px] text-gray-700 truncate">{f.arquivo.replace('.parquet','')}</span>
+                  <span className="text-[10px] text-gray-400 shrink-0 ml-2">{f.size_kb} KB</span>
+                </div>
+              ))}
+              {camadas.bronze.historico.datas_disponiveis.length > 0 && (
+                <p className="text-[10px] text-gray-400 mt-2">
+                  Histórico: {camadas.bronze.historico.datas_disponiveis.slice(0,3).join(', ')}
+                  {camadas.bronze.historico.datas_disponiveis.length > 3 && ` +${camadas.bronze.historico.datas_disponiveis.length-3}`}
+                </p>
+              )}
+            </div>
+
+            {/* Prata */}
+            <div>
+              <p className="text-[11px] font-semibold text-blue-700 mb-2">🥈 Prata/hoje ({camadas.prata.hoje.total_arquivos} · {camadas.prata.hoje.total_kb} KB)</p>
+              {camadas.prata.hoje.arquivos.length === 0
+                ? <p className="text-[10px] text-gray-400">Nenhum arquivo hoje ainda.</p>
+                : camadas.prata.hoje.arquivos.map(f => (
+                  <div key={f.arquivo} className="flex items-center justify-between py-1 border-b border-gray-50 last:border-0">
+                    <span className="text-[11px] text-gray-700 truncate">{f.arquivo.replace('.parquet','')}</span>
+                    <span className="text-[10px] text-gray-400 shrink-0 ml-2">{f.size_kb} KB</span>
+                  </div>
+                ))
+              }
+            </div>
+
+            {/* Ouro */}
+            <div>
+              <p className="text-[11px] font-semibold text-emerald-700 mb-2">🥇 Ouro ({camadas.ouro.total_kb} KB total)</p>
+              {[
+                { icon:'💰', label:'Financeiro',  data: camadas.ouro.financeiro  },
+                { icon:'👥', label:'Moradores',   data: camadas.ouro.moradores   },
+                { icon:'📦', label:'Encomendas',  data: camadas.ouro.encomendas  },
+                { icon:'⚙️', label:'Operacional', data: camadas.ouro.operacional },
+                { icon:'🗂️', label:'Equipe',      data: camadas.ouro.equipe      },
+              ].map(d => (
+                <div key={d.label} className="mb-2">
+                  <p className="text-[10px] font-semibold text-gray-500">{d.icon} {d.label} ({d.data.total_arquivos} · {d.data.total_kb} KB)</p>
+                  <div className="grid grid-cols-2 gap-1 mt-1">
+                    {d.data.arquivos.map(f => (
+                      <span key={f.arquivo} className="text-[9px] bg-gray-50 rounded px-1.5 py-0.5 text-gray-600 truncate">
+                        {f.arquivo.replace('.parquet','')} ({f.size_kb}KB)
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Histórico */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-gray-100">
           <p className="text-xs font-semibold text-gray-600">Histórico de execuções</p>
-          <button onClick={load} className="text-gray-400 hover:text-gray-600">
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
         </div>
         {loading ? (
           <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#26619c] border-t-transparent rounded-full animate-spin" /></div>
         ) : runs.length === 0 ? (
-          <p className="text-xs text-gray-400 text-center py-8">Nenhuma execução registrada ainda.</p>
+          <p className="text-xs text-gray-400 text-center py-8">Nenhuma execução registrada.</p>
         ) : (
           <table className="w-full text-xs">
             <thead className="bg-gray-50 text-gray-500">
-              <tr>
-                {['Data','Modo','Status','Duração','Bronze','Gold','Neon KB','Por'].map(h => (
-                  <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
-                ))}
-              </tr>
+              <tr>{['Data','Modo','Status','Duração','Bronze','Silver','Gold','KB Neon','Por'].map(h => (
+                <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
+              ))}</tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {runs.map(r => (
-                <tr key={r.id} className="hover:bg-gray-50 transition cursor-pointer"
-                  onClick={() => loadRun(r.id)}>
+                <tr key={r.id} className="hover:bg-gray-50 transition cursor-pointer" onClick={() => loadRun(r.id)}>
                   <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{fmtDate(r.started_at)}</td>
-                  <td className="px-3 py-2">
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${r.mode === 'full' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                      {r.mode}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${STATUS_COLOR[r.status] ?? ''}`}>
-                      {r.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-gray-600 tabular-nums">{fmtDur(r.duration_s)}</td>
-                  <td className="px-3 py-2 text-gray-600 tabular-nums">{r.bronze_rows.toLocaleString('pt-BR')}</td>
-                  <td className="px-3 py-2 text-gray-600 tabular-nums">{r.gold_files}</td>
-                  <td className="px-3 py-2 text-gray-500 tabular-nums">{r.neon_kb ?? '—'}</td>
+                  <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${r.mode==='full'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>{r.mode}</span></td>
+                  <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_COLOR[r.status]??''}`}>{r.status}</span></td>
+                  <td className="px-3 py-2 tabular-nums">{fmtDur(r.duration_s)}</td>
+                  <td className="px-3 py-2 tabular-nums text-amber-700">{r.bronze_rows?.toLocaleString('pt-BR') ?? '—'}</td>
+                  <td className="px-3 py-2 tabular-nums text-blue-700">{r.silver_rows?.toLocaleString('pt-BR') ?? '—'}</td>
+                  <td className="px-3 py-2 tabular-nums text-emerald-700">{r.gold_files}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-500">{r.neon_kb ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-400">{r.triggered_by}</td>
                 </tr>
               ))}
