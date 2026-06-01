@@ -1435,11 +1435,11 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
   const loadCounts = async () => {
     try {
       const [members, deps, guests] = await Promise.all([
-        api.get<Resident[]>('/residents', { params: { type: 'member', status: 'active' } }),
-        api.get<Resident[]>('/residents', { params: { type: 'dependent', status: 'active' } }),
-        api.get<Resident[]>('/residents', { params: { type: 'guest', status: 'active' } }),
+        api.get<{ total: number }>('/residents/kpis', { params: { resident_type: 'member' } }),
+        api.get<{ total: number }>('/residents/kpis', { params: { resident_type: 'dependent' } }),
+        api.get<{ total: number }>('/residents/kpis', { params: { resident_type: 'guest' } }),
       ])
-      setCounts({ associados: members.data.length, dependentes: deps.data.length, visitantes: guests.data.length })
+      setCounts({ associados: members.data.total, dependentes: deps.data.total, visitantes: guests.data.total })
     } catch { /* silent */ }
   }
 
