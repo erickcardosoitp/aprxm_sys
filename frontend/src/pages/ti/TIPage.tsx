@@ -62,11 +62,12 @@ interface Governance {
 interface DlStatus { configured: boolean; ouro_financeiro?: R2File[]; ouro_moradores?: R2File[]; ouro_encomendas?: R2File[]; ouro_operacional?: R2File[]; ouro_equipe?: R2File[]; bronze_atual?: R2File[] }
 
 const TASK_ICON: Record<string, React.ReactNode> = {
-  bronze:   <Database className="w-4 h-4" />,
-  silver:   <Activity className="w-4 h-4" />,
-  gold:     <BarChart2 className="w-4 h-4" />,
-  validate: <CheckCircle2 className="w-4 h-4" />,
-  error:    <XCircle className="w-4 h-4" />,
+  bronze:         <Database className="w-4 h-4" />,
+  silver:         <Activity className="w-4 h-4" />,
+  gold:           <BarChart2 className="w-4 h-4" />,
+  analytics_load: <Database className="w-4 h-4" />,
+  validate:       <CheckCircle2 className="w-4 h-4" />,
+  error:          <XCircle className="w-4 h-4" />,
 }
 const STATUS_COLOR: Record<string, string> = {
   success: 'text-emerald-600 bg-emerald-50 border-emerald-200',
@@ -78,29 +79,37 @@ const STATUS_COLOR: Record<string, string> = {
 const fmtDur = (s: number | null) => s == null ? '—' : s >= 60 ? `${(s/60).toFixed(1)}min` : `${s.toFixed(1)}s`
 const fmtDate = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
 
+const STEP_LABEL: Record<string, string> = {
+  bronze: 'Bronze', silver: 'Silver', gold: 'Gold',
+  analytics_load: 'Analytics', validate: 'Validate',
+}
+
 function PipelineFlow({ tasks }: { tasks: EtlTask[] }) {
-  const steps = ['bronze','silver','gold','validate']
+  const steps = ['bronze', 'silver', 'gold', 'analytics_load', 'validate']
   return (
     <div className="flex items-center gap-2 py-4 overflow-x-auto">
       {steps.map((step, i) => {
         const task = tasks.find(t => t.task_name === step)
         const status = task?.status ?? 'pending'
         const cls = STATUS_COLOR[status] ?? STATUS_COLOR.pending
+        const label = STEP_LABEL[step] ?? step
+        const unit = step === 'gold' ? 'files' : step === 'analytics_load' ? 'tabelas' : 'rows'
         return (
           <div key={step} className="flex items-center gap-2 shrink-0">
             <div className={`flex flex-col items-center gap-1 px-4 py-3 rounded-2xl border-2 min-w-[100px] ${cls}`}>
               <div className="flex items-center gap-1.5">
                 {TASK_ICON[step] ?? <Activity className="w-4 h-4" />}
-                <span className="text-xs font-bold uppercase tracking-wide">{step}</span>
+                <span className="text-xs font-bold uppercase tracking-wide">{label}</span>
               </div>
-              {task && (
+              {task ? (
                 <>
                   <span className="text-[10px] font-semibold">{status}</span>
                   <span className="text-[10px] opacity-70">{fmtDur(task.duration_s)}</span>
-                  {task.rows_out > 0 && <span className="text-[10px] opacity-70">{task.rows_out.toLocaleString('pt-BR')} {step === 'gold' ? 'files' : 'rows'}</span>}
+                  {task.rows_out > 0 && <span className="text-[10px] opacity-70">{task.rows_out.toLocaleString('pt-BR')} {unit}</span>}
                 </>
+              ) : (
+                <span className="text-[10px] opacity-50">aguardando</span>
               )}
-              {!task && <span className="text-[10px] opacity-50">aguardando</span>}
             </div>
             {i < steps.length - 1 && (
               <div className={`h-0.5 w-6 ${task?.status === 'success' ? 'bg-emerald-400' : 'bg-gray-200'}`} />
@@ -162,7 +171,7 @@ function AnalyticsPanel() {
               : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">ATENÇÃO</span>
             }
           </div>
-          <p className="text-xs text-gray-400">Bronze → Silver → Gold · Cloudflare R2 · Atualização diária 09h e 17h</p>
+          <p className="text-xs text-gray-400">Bronze → Silver → Gold → Analytics · R2 + Neon Analytics · 09h e 17h</p>
         </div>
         <div className="flex gap-2">
           <button onClick={load} disabled={loading} className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 transition">
@@ -232,12 +241,13 @@ function AnalyticsPanel() {
           {selectedRun?.id === lastRun.id
             ? <PipelineFlow tasks={selectedRun.tasks} />
             : (
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 {[
-                  { l:'Bronze', v: lastRun.bronze_rows?.toLocaleString('pt-BR') ?? '—', s:'linhas extraídas', c:'text-amber-600' },
-                  { l:'Silver', v: lastRun.silver_rows?.toLocaleString('pt-BR') ?? '—', s:'linhas enriquecidas', c:'text-blue-600' },
-                  { l:'Gold',   v: lastRun.gold_files, s:'arquivos', c:'text-emerald-600' },
-                  { l:'Neon',   v: `${lastRun.neon_kb ?? 0} KB`, s:'transferidos', c:'text-gray-500' },
+                  { l: 'Bronze',      v: lastRun.bronze_rows?.toLocaleString('pt-BR') ?? '—', s: 'linhas extraídas', c: 'text-amber-600' },
+                  { l: 'Silver',      v: lastRun.silver_rows?.toLocaleString('pt-BR') ?? '—', s: 'linhas enriquecidas', c: 'text-blue-600' },
+                  { l: 'Gold / R2',   v: lastRun.gold_files, s: 'parquet no R2', c: 'text-emerald-600' },
+                  { l: 'Analytics',   v: '18', s: 'tabelas no Neon', c: 'text-purple-600' },
+                  { l: 'Bronze (KB)', v: `${lastRun.neon_kb ?? 0}`, s: 'KB extraídos', c: 'text-gray-500' },
                 ].map(s => (
                   <div key={s.l} className="bg-gray-50 rounded-xl p-3 text-center">
                     <p className="text-[10px] text-gray-400 font-semibold uppercase">{s.l}</p>
@@ -326,6 +336,65 @@ function AnalyticsPanel() {
         </div>
       )}
 
+      {/* Analytics DB — Neon */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart2 className="w-4 h-4 text-purple-600" />
+          <p className="text-xs font-bold text-gray-700">Analytics DB — Neon <span className="font-normal text-gray-400">(aprxm-analytics · Power BI)</span></p>
+          <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">OLAP</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+          {[
+            { l: 'Tabelas Gold', v: '18', s: 'replicadas a cada ETL', c: 'text-purple-600' },
+            { l: 'Domínios', v: '5', s: 'financeiro · moradores · encomendas · operacional · equipe', c: 'text-gray-700' },
+            { l: 'Atualização', v: '2×/dia', s: '09h e 17h (Brasília)', c: 'text-blue-600' },
+            { l: 'Estratégia', v: 'REPLACE', s: 'tabela zerada + reload a cada run', c: 'text-amber-600' },
+          ].map(s => (
+            <div key={s.l} className="bg-gray-50 rounded-xl p-3">
+              <p className="text-[10px] text-gray-400 font-semibold uppercase">{s.l}</p>
+              <p className={`text-base font-bold ${s.c}`}>{s.v}</p>
+              <p className="text-[10px] text-gray-400 leading-tight mt-0.5">{s.s}</p>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {[
+            { icon: '💰', domain: 'financeiro', tables: ['daily_revenue','collection_rate','cash_breaks','sangria_reasons','delinquency_report','runway'] },
+            { icon: '👥', domain: 'moradores',  tables: ['resident_overview','member_growth_weekly','census_by_street','community_problems'] },
+            { icon: '📦', domain: 'encomendas', tables: ['sla_by_type','packages_by_street','packages_stuck','resident_package_ranking'] },
+            { icon: '⚙️', domain: 'operacional',tables: ['operator_performance','operator_revenue','operational_kpis'] },
+            { icon: '🗂️', domain: 'equipe',     tables: ['tasks_weekly','tasks_by_collaborator'] },
+          ].slice(0, 3).map(d => (
+            <div key={d.domain} className="bg-purple-50 border border-purple-100 rounded-xl p-3">
+              <p className="text-[10px] font-bold text-purple-700 mb-1">{d.icon} {d.domain} ({d.tables.length})</p>
+              <div className="flex flex-wrap gap-1">
+                {d.tables.map(t => (
+                  <span key={t} className="text-[9px] bg-white border border-purple-100 rounded px-1.5 py-0.5 text-purple-600 font-mono">{t}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2 mt-3">
+          {[
+            { icon: '⚙️', domain: 'operacional', tables: ['operator_performance','operator_revenue','operational_kpis'] },
+            { icon: '🗂️', domain: 'equipe',      tables: ['tasks_weekly','tasks_by_collaborator'] },
+          ].map(d => (
+            <div key={d.domain} className="flex-1 bg-purple-50 border border-purple-100 rounded-xl p-3">
+              <p className="text-[10px] font-bold text-purple-700 mb-1">{d.icon} {d.domain} ({d.tables.length})</p>
+              <div className="flex flex-wrap gap-1">
+                {d.tables.map(t => (
+                  <span key={t} className="text-[9px] bg-white border border-purple-100 rounded px-1.5 py-0.5 text-purple-600 font-mono">{t}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-[10px] text-gray-400 mt-3">
+          Conecte o Power BI via DirectQuery: <span className="font-mono text-gray-600">ep-floral-shadow-ap9n86vs.c-7.us-east-1.aws.neon.tech · db: neondb</span>
+        </p>
+      </div>
+
       {/* Histórico */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100">
@@ -338,7 +407,7 @@ function AnalyticsPanel() {
         ) : (
           <table className="w-full text-xs">
             <thead className="bg-gray-50 text-gray-500">
-              <tr>{['Data','Modo','Status','Duração','Bronze','Silver','Gold','KB Neon','Por'].map(h => (
+              <tr>{['Data','Modo','Status','Duração','Bronze','Silver','Gold','KB Bronze','Por'].map(h => (
                 <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
               ))}</tr>
             </thead>
