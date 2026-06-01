@@ -397,7 +397,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df = res.copy()
         df["association_name"] = df["association_id"].map(assoc_map)
         if not mens.empty:
-            today_ts = pd.Timestamp.now().normalize()
+            today_ts = pd.Timestamp.now(tz="UTC").normalize()
             overdue = mens[
                 (mens["status"] == "pending") &
                 (pd.to_datetime(mens["due_date"]) < today_ts)
@@ -440,7 +440,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df["overdue"] = (
             (df["status"] != "done") &
             df["due_date"].notna() &
-            (pd.to_datetime(df["due_date"]) < pd.Timestamp.now().normalize())
+            (pd.to_datetime(df["due_date"], utc=True) < pd.Timestamp.now(tz="UTC").normalize())
         )
         silver["daily_tasks_enriched"] = df
         stats["daily_tasks_enriched"] = _upload_df(client, df, f"prata/{today}/{SILVER_NAMES['daily_tasks_enriched']}.parquet")
@@ -495,7 +495,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     # 3. Snapshot de moradores
     if not res.empty:
         active = res[res["status"] == "active"]
-        now    = pd.Timestamp.now()
+        now    = pd.Timestamp.now(tz="UTC")
         week0  = now - pd.Timedelta(days=now.dayofweek)
         month0 = now.replace(day=1)
         df = active.groupby(["association_id","association_name"]).apply(lambda g: pd.Series({
@@ -546,7 +546,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         # Encomendas paradas
         pending = pkgs[pkgs["status"].isin(["received","notified"])].copy()
         if not pending.empty:
-            now = pd.Timestamp.now()
+            now = pd.Timestamp.now(tz="UTC")
             pending["dias_parada"] = (now - pending["received_at"]).dt.days
             up(pending.groupby("association_id").agg(
                 paradas_3d=("dias_parada", lambda x: (x>=3).sum()),
@@ -685,7 +685,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     # 17. KPIs operacionais (snapshot)
     assocs_df = frames.get("associations", pd.DataFrame())
     if not assocs_df.empty:
-        now   = pd.Timestamp.now()
+        now   = pd.Timestamp.now(tz="UTC")
         week0 = now - pd.Timedelta(days=now.dayofweek)
         rows_kpi = []
         for _, assoc in assocs_df.iterrows():
