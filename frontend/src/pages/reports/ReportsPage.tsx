@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { Download, DollarSign, Users, Package, FileText, CreditCard, Search, ChevronDown, ChevronRight, CheckSquare, Mail, BarChart2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -14,12 +14,12 @@ interface ModuleDef {
 }
 
 const MODULES: ModuleDef[] = [
-  { key: 'finance',        label: 'Financeiro',        endpoint: 'finance',        icon: DollarSign },
-  { key: 'residents',      label: 'Moradores',         endpoint: 'residents',      icon: Users },
-  { key: 'packages',       label: 'Encomendas',        endpoint: 'packages',       icon: Package },
-  { key: 'service-orders', label: 'Ordens de Serviço', endpoint: 'service-orders', icon: FileText },
-  { key: 'mensalidades',   label: 'Mensalidades',      endpoint: 'mensalidades',   icon: CreditCard },
-  { key: 'entregas',       label: 'Entregas',          endpoint: 'entregas',       icon: CheckSquare },
+  { key: 'finance',        label: 'Financeiro',                   endpoint: 'finance',        icon: DollarSign },
+  { key: 'residents',      label: 'Moradores',                    endpoint: 'residents',      icon: Users },
+  { key: 'packages',       label: 'Encomendas',                   endpoint: 'packages',       icon: Package },
+  { key: 'service-orders', label: 'Ordens de Serviço',            endpoint: 'service-orders', icon: FileText },
+  { key: 'mensalidades',   label: 'Mensalidades / Inadimplência', endpoint: 'mensalidades',   icon: CreditCard },
+  { key: 'entregas',       label: 'Produtividade da Equipe',      endpoint: 'entregas',       icon: CheckSquare },
 ]
 
 function firstDayOfMonth() {
@@ -104,6 +104,29 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
   setFilters: React.Dispatch<React.SetStateAction<FiltersState>>
   operators: { id: string; full_name: string }[]
 }) {
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  useEffect(() => { setShowAdvanced(false) }, [mod])
+
+  const advancedCount = useMemo(() => {
+    let n = 0
+    if (mod === 'finance')        { if (filters.tx_type) n++; if (filters.payment_method) n++ }
+    if (mod === 'residents')      { if (filters.q) n++ }
+    if (mod === 'packages')       { if (filters.street) n++; if (filters.cep) n++; if (filters.operator_ids.length) n++ }
+    if (mod === 'mensalidades')   { if (filters.ref_month) n++; if (filters.men_include_delinquent) n++ }
+    if (mod === 'service-orders') { if (filters.so_priority) n++; if (filters.category) n++ }
+    if (mod === 'entregas')       { if (filters.ent_types.length < ENT_TYPES.length) n++ }
+    return n
+  }, [mod, filters])
+
+  const AdvancedToggle = () => (
+    <button
+      onClick={() => setShowAdvanced(v => !v)}
+      className="flex items-center gap-1 text-xs text-[#26619c] hover:text-[#1a4f87] font-medium mt-1 select-none"
+    >
+      {showAdvanced ? '− Menos filtros' : `+ Mais filtros${advancedCount > 0 ? ` (${advancedCount} ativo${advancedCount > 1 ? 's' : ''})` : ''}`}
+    </button>
+  )
+
   const set = (k: keyof FiltersState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setFilters(f => ({ ...f, [k]: e.target.value }))
 
@@ -121,55 +144,66 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
   )
 
   if (mod === 'finance') return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {dateRangeFields}
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Tipo</label>
-        <div className="relative">
-          <select value={filters.tx_type} onChange={set('tx_type')} className={selectCls}>
-            <option value="">Todos</option>
-            <option value="income">Entradas</option>
-            <option value="expense">Saídas</option>
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-3">{dateRangeFields}</div>
+      <AdvancedToggle />
+      {showAdvanced && (
+        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Tipo</label>
+            <div className="relative">
+              <select value={filters.tx_type} onChange={set('tx_type')} className={selectCls}>
+                <option value="">Todos</option>
+                <option value="income">Entradas</option>
+                <option value="expense">Saídas</option>
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Forma de pagamento</label>
+            <input type="text" placeholder="PIX, Dinheiro…" value={filters.payment_method} onChange={set('payment_method')} className={inputCls} />
+          </div>
         </div>
-      </div>
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Forma de pagamento</label>
-        <input type="text" placeholder="PIX, Dinheiro…" value={filters.payment_method} onChange={set('payment_method')} className={inputCls} />
-      </div>
+      )}
     </div>
   )
 
   if (mod === 'residents') return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Tipo</label>
-        <div className="relative">
-          <select value={filters.res_type} onChange={set('res_type')} className={selectCls}>
-            <option value="">Todos</option>
-            <option value="member">Membro</option>
-            <option value="guest">Visitante</option>
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Tipo</label>
+          <div className="relative">
+            <select value={filters.res_type} onChange={set('res_type')} className={selectCls}>
+              <option value="">Todos</option>
+              <option value="member">Membro</option>
+              <option value="guest">Visitante</option>
+              <option value="dependent">Dependente</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Status</label>
+          <div className="relative">
+            <select value={filters.res_status} onChange={set('res_status')} className={selectCls}>
+              <option value="">Todos</option>
+              <option value="active">Ativo</option>
+              <option value="inactive">Inativo</option>
+              <option value="pending">Pendente</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
         </div>
       </div>
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Status</label>
-        <div className="relative">
-          <select value={filters.res_status} onChange={set('res_status')} className={selectCls}>
-            <option value="">Todos</option>
-            <option value="active">Ativo</option>
-            <option value="inactive">Inativo</option>
-            <option value="pending">Pendente</option>
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+      <AdvancedToggle />
+      {showAdvanced && (
+        <div className="pt-2 border-t border-gray-100">
+          <label className="block text-xs text-gray-500 mb-1">Nome / CPF</label>
+          <input type="text" placeholder="Buscar…" value={filters.q} onChange={set('q')} className={inputCls} />
         </div>
-      </div>
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Nome / CPF</label>
-        <input type="text" placeholder="Buscar…" value={filters.q} onChange={set('q')} className={inputCls} />
-      </div>
+      )}
     </div>
   )
 
@@ -191,6 +225,10 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
             <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
           </div>
         </div>
+      </div>
+      <AdvancedToggle />
+      {showAdvanced && (<div className="flex flex-col gap-3 pt-2 border-t border-gray-100">
+      <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Rua</label>
           <input type="text" placeholder="Ex.: Vaz Lobo" value={filters.street} onChange={set('street')} className={inputCls} />
@@ -204,6 +242,7 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
             }}
             className={inputCls} maxLength={9} />
         </div>
+        </div>
       </div>
       {operators.length > 0 && (
         <div>
@@ -215,17 +254,11 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
                 <label key={o.id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition select-none ${
                   checked ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#26619c]/40'
                 }`}>
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={checked}
+                  <input type="checkbox" className="sr-only" checked={checked}
                     onChange={() => setFilters(f => ({
                       ...f,
-                      operator_ids: checked
-                        ? f.operator_ids.filter(id => id !== o.id)
-                        : [...f.operator_ids, o.id],
-                    }))}
-                  />
+                      operator_ids: checked ? f.operator_ids.filter(id => id !== o.id) : [...f.operator_ids, o.id],
+                    }))} />
                   {o.full_name}
                 </label>
               )
@@ -233,48 +266,56 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
           </div>
         </div>
       )}
+      </div>)}
     </div>
   )
 
   if (mod === 'service-orders') return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {dateRangeFields}
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Status</label>
-        <div className="relative">
-          <select value={filters.so_status} onChange={set('so_status')} className={selectCls}>
-            <option value="">Todos</option>
-            <option value="open">Aberta</option>
-            <option value="in_progress">Em andamento</option>
-            <option value="resolved">Resolvida</option>
-            <option value="cancelled">Cancelada</option>
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {dateRangeFields}
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Status</label>
+          <div className="relative">
+            <select value={filters.so_status} onChange={set('so_status')} className={selectCls}>
+              <option value="">Todos</option>
+              <option value="open">Aberta</option>
+              <option value="in_progress">Em andamento</option>
+              <option value="resolved">Resolvida</option>
+              <option value="cancelled">Cancelada</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
         </div>
       </div>
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Prioridade</label>
-        <div className="relative">
-          <select value={filters.so_priority} onChange={set('so_priority')} className={selectCls}>
-            <option value="">Todas</option>
-            <option value="low">Baixa</option>
-            <option value="medium">Média</option>
-            <option value="high">Alta</option>
-            <option value="critical">Crítica</option>
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+      <AdvancedToggle />
+      {showAdvanced && (
+        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Prioridade</label>
+            <div className="relative">
+              <select value={filters.so_priority} onChange={set('so_priority')} className={selectCls}>
+                <option value="">Todas</option>
+                <option value="low">Baixa</option>
+                <option value="medium">Média</option>
+                <option value="high">Alta</option>
+                <option value="critical">Crítica</option>
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Categoria</label>
+            <input type="text" placeholder="Elétrica, Hidráulica…" value={filters.category} onChange={set('category')} className={inputCls} />
+          </div>
         </div>
-      </div>
-      <div className="sm:col-span-4">
-        <label className="block text-xs text-gray-500 mb-1">Categoria</label>
-        <input type="text" placeholder="Elétrica, Hidráulica…" value={filters.category} onChange={set('category')} className={inputCls} />
-      </div>
+      )}
     </div>
   )
 
   if (mod === 'mensalidades') return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {dateRangeFields}
         <div>
           <label className="block text-xs text-gray-500 mb-1">Status</label>
@@ -289,36 +330,34 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
             <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
           </div>
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Mês ref.</label>
-          <input type="month" value={filters.ref_month} onChange={set('ref_month')} className={inputCls} />
-        </div>
       </div>
-      <label className="flex items-center gap-2 cursor-pointer w-fit">
-        <input
-          type="checkbox"
-          checked={filters.men_include_delinquent}
-          onChange={e => setFilters(f => ({ ...f, men_include_delinquent: e.target.checked }))}
-          className="w-4 h-4 rounded border-gray-300 text-[#26619c] accent-[#26619c]"
-        />
-        <span className="text-xs text-gray-700 font-medium">Incluir Inadimplentes</span>
-        <span className="text-[10px] text-gray-400">(exibe total a quitar por morador)</span>
-      </label>
+      <AdvancedToggle />
+      {showAdvanced && (
+        <div className="flex flex-col gap-3 pt-2 border-t border-gray-100">
+          <div className="max-w-xs">
+            <label className="block text-xs text-gray-500 mb-1">Mês de referência</label>
+            <input type="month" value={filters.ref_month} onChange={set('ref_month')} className={inputCls} />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer w-fit">
+            <input type="checkbox" checked={filters.men_include_delinquent}
+              onChange={e => setFilters(f => ({ ...f, men_include_delinquent: e.target.checked }))}
+              className="w-4 h-4 rounded border-gray-300 text-[#26619c] accent-[#26619c]" />
+            <span className="text-xs text-gray-700 font-medium">Incluir Inadimplentes</span>
+            <span className="text-[10px] text-gray-400">(exibe total a quitar por morador)</span>
+          </label>
+        </div>
+      )}
     </div>
   )
 
   if (mod === 'entregas') return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {dateRangeFields}
         <div>
           <label className="block text-xs text-gray-500 mb-1">Colaborador</label>
           <div className="relative">
-            <select
-              value={filters.ent_user_id}
-              onChange={e => setFilters(f => ({ ...f, ent_user_id: e.target.value }))}
-              className={selectCls}
-            >
+            <select value={filters.ent_user_id} onChange={e => setFilters(f => ({ ...f, ent_user_id: e.target.value }))} className={selectCls}>
               <option value="">Todos</option>
               {operators.map(o => <option key={o.id} value={o.id}>{o.full_name}</option>)}
             </select>
@@ -326,35 +365,131 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
           </div>
         </div>
       </div>
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Tipos de entrega</label>
-        <div className="flex flex-wrap gap-2">
-          {ENT_TYPES.map(t => {
-            const active = filters.ent_types.includes(t)
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setFilters(f => ({
-                  ...f,
-                  ent_types: active
-                    ? f.ent_types.filter(x => x !== t)
-                    : [...f.ent_types, t],
-                }))}
-                className={`text-xs px-3 py-1.5 rounded-full border font-medium transition ${
-                  active ? 'bg-[#26619c] border-[#26619c] text-white' : 'bg-white border-gray-300 text-gray-500'
-                }`}
-              >
-                {ENT_TYPE_LABELS[t]}
-              </button>
-            )
-          })}
+      <AdvancedToggle />
+      {showAdvanced && (
+        <div className="pt-2 border-t border-gray-100">
+          <label className="block text-xs text-gray-500 mb-1">Tipos de atividade</label>
+          <div className="flex flex-wrap gap-2">
+            {ENT_TYPES.map(t => {
+              const active = filters.ent_types.includes(t)
+              return (
+                <button key={t} type="button"
+                  onClick={() => setFilters(f => ({ ...f, ent_types: active ? f.ent_types.filter(x => x !== t) : [...f.ent_types, t] }))}
+                  className={`text-xs px-3 py-1.5 rounded-full border font-medium transition ${active ? 'bg-[#26619c] border-[#26619c] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>
+                  {ENT_TYPE_LABELS[t]}
+                </button>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 
   return null
+}
+
+// ─── Quick Reports ────────────────────────────────────────────────────────────
+
+function QuickReports() {
+  const [inadDates, setInadDates] = useState({ from: firstDayOfMonth(), to: today() })
+  const [finDates,  setFinDates]  = useState({ from: firstDayOfMonth(), to: today() })
+  const [loadingInad, setLoadingInad] = useState(false)
+  const [loadingMor,  setLoadingMor]  = useState(false)
+  const [loadingFin,  setLoadingFin]  = useState(false)
+
+  const download = async (
+    url: string,
+    params: Record<string, string>,
+    filename: string,
+    setLoading: (v: boolean) => void
+  ) => {
+    setLoading(true)
+    try {
+      const res = await api.get(url, { params, responseType: 'blob' })
+      const blob = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = blob; a.download = filename; a.click()
+      URL.revokeObjectURL(blob)
+      toast.success('Download iniciado.')
+    } catch { toast.error('Erro ao gerar relatório.') }
+    finally { setLoading(false) }
+  }
+
+  const spinnerCls = 'inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin'
+  const dateCls = 'w-full border rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1'
+
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Acesso Rápido</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+        {/* Inadimplentes */}
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⚠️</span>
+            <span className="font-semibold text-red-800 text-sm">Inadimplentes</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-[10px] text-red-600 uppercase font-semibold mb-1">De</p>
+              <input type="date" value={inadDates.from} onChange={e => setInadDates(d => ({ ...d, from: e.target.value }))} className={`${dateCls} border-red-200`} />
+            </div>
+            <div>
+              <p className="text-[10px] text-red-600 uppercase font-semibold mb-1">Até</p>
+              <input type="date" value={inadDates.to} onChange={e => setInadDates(d => ({ ...d, to: e.target.value }))} className={`${dateCls} border-red-200`} />
+            </div>
+          </div>
+          <button disabled={loadingInad}
+            onClick={() => download('/reports/mensalidades', { date_from: inadDates.from, date_to: inadDates.to, men_status: 'overdue' }, 'inadimplentes.xlsx', setLoadingInad)}
+            className="flex items-center justify-center gap-2 w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50">
+            {loadingInad ? <span className={spinnerCls} /> : <Download className="w-3.5 h-3.5" />}
+            Baixar Excel
+          </button>
+        </div>
+
+        {/* Moradores Ativos */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">👥</span>
+            <span className="font-semibold text-blue-800 text-sm">Moradores Ativos</span>
+          </div>
+          <p className="text-xs text-blue-600 flex-1">Snapshot atual — todos os moradores com status ativo, independente do período.</p>
+          <button disabled={loadingMor}
+            onClick={() => download('/reports/residents', { res_status: 'active' }, 'moradores-ativos.xlsx', setLoadingMor)}
+            className="flex items-center justify-center gap-2 w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50">
+            {loadingMor ? <span className={spinnerCls} /> : <Download className="w-3.5 h-3.5" />}
+            Baixar Excel
+          </button>
+        </div>
+
+        {/* Financeiro */}
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">💰</span>
+            <span className="font-semibold text-emerald-800 text-sm">Financeiro do Período</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-[10px] text-emerald-600 uppercase font-semibold mb-1">De</p>
+              <input type="date" value={finDates.from} onChange={e => setFinDates(d => ({ ...d, from: e.target.value }))} className={`${dateCls} border-emerald-200`} />
+            </div>
+            <div>
+              <p className="text-[10px] text-emerald-600 uppercase font-semibold mb-1">Até</p>
+              <input type="date" value={finDates.to} onChange={e => setFinDates(d => ({ ...d, to: e.target.value }))} className={`${dateCls} border-emerald-200`} />
+            </div>
+          </div>
+          <button disabled={loadingFin}
+            onClick={() => download('/reports/finance', { date_from: finDates.from, date_to: finDates.to }, 'financeiro.xlsx', setLoadingFin)}
+            className="flex items-center justify-center gap-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50">
+            {loadingFin ? <span className={spinnerCls} /> : <Download className="w-3.5 h-3.5" />}
+            Baixar Excel
+          </button>
+        </div>
+
+      </div>
+    </div>
+  )
 }
 
 // ─── Entregas View ────────────────────────────────────────────────────────────
@@ -870,24 +1005,40 @@ export default function ReportsPage() {
         <h1 className="text-2xl font-bold text-gray-900">Relatórios</h1>
       </div>
 
+      {/* Quick Reports */}
+      <QuickReports />
+
+      {/* Divisor */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px bg-gray-200" />
+        <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">Relatório personalizado</span>
+        <div className="flex-1 h-px bg-gray-200" />
+      </div>
+
       {/* Module selector */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="flex overflow-x-auto scrollbar-none">
           {MODULES.map(m => {
             const Icon = m.icon
             const active = m.key === selected
+            const subtitle = m.key === 'mensalidades' ? 'inclui inadimplentes'
+              : m.key === 'entregas' ? 'tarefas, OS, demandas'
+              : null
             return (
               <button
                 key={m.key}
                 onClick={() => handleModuleChange(m.key)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition border-b-2 shrink-0 ${
+                className={`flex flex-col items-start px-4 py-2.5 text-sm font-medium whitespace-nowrap transition border-b-2 shrink-0 ${
                   active
                     ? 'border-[#26619c] text-[#26619c] bg-blue-50/60'
                     : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                {m.label}
+                <span className="flex items-center gap-2">
+                  <Icon className="w-4 h-4" />
+                  {m.label}
+                </span>
+                {subtitle && <span className="text-[10px] text-gray-400 ml-6 font-normal">{subtitle}</span>}
               </button>
             )
           })}
