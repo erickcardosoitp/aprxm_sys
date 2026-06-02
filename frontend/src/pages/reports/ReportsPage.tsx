@@ -243,7 +243,6 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
             className={inputCls} maxLength={9} />
         </div>
         </div>
-      </div>
       {operators.length > 0 && (
         <div>
           <label className="block text-xs text-gray-500 mb-2">Operadores</label>
