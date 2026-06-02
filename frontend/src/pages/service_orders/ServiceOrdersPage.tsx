@@ -1876,7 +1876,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [reportUserId, setReportUserId] = useState('')
   const [onlyMine, setOnlyMine] = useState(false)
-  const [sortBy, setSortBy] = useState<'title' | 'assigned' | 'due_date' | 'status' | ''>('')
+  const [sortBy, setSortBy] = useState<'title' | 'assigned' | 'due_date' | 'status' | 'created_at' | ''>('')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const draftKey = (taskId: string, idx: number) => `${taskId}:${idx}`
@@ -2542,17 +2542,15 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, done: 3 }
 
   const displayedTasks = useMemo(() => [...tasks]
-    .filter(t => !onlyMine || t.assigned_to === userId)
+    .filter(t => t.status !== 'done' && (!onlyMine || t.assigned_to === userId))
     .sort((a, b) => {
-      const aDone = a.status === 'done' ? 1 : 0
-      const bDone = b.status === 'done' ? 1 : 0
-      if (aDone !== bDone) return aDone - bDone
       if (!sortBy) return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
       let va = '', vb = ''
       if (sortBy === 'title') { va = a.title.toLowerCase(); vb = b.title.toLowerCase() }
       else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
       else if (sortBy === 'due_date') { va = a.due_date ?? '9999'; vb = b.due_date ?? '9999' }
       else if (sortBy === 'status') { va = String(statusOrder[a.status] ?? 9); vb = String(statusOrder[b.status] ?? 9) }
+      else if (sortBy === 'created_at') { va = a.created_at ?? ''; vb = b.created_at ?? '' }
       const cmp = va < vb ? -1 : va > vb ? 1 : 0
       return sortDir === 'asc' ? cmp : -cmp
     }), [tasks, onlyMine, userId, sortBy, sortDir])
@@ -2649,6 +2647,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
             <SortBtn col="title" label="Título" />
             <SortBtn col="assigned" label="Responsável" />
             <SortBtn col="due_date" label="Prazo" />
+            <SortBtn col="created_at" label="Abertura" />
           </div>
           <SortBtn col="status" label="Status" />
           <div className="w-4 shrink-0" />
