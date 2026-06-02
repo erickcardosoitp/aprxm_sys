@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react'
 import {
   AlertCircle, ChevronDown, FileText, MessageSquare, Pencil, Plus, Search, X,
   Clock, CheckCircle, XCircle, Archive, Loader2, User, LayoutDashboard,
@@ -1991,12 +1991,16 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   }
 
   const startEdit = (t: DailyTask) => {
-    setFTitle(t.title); setFDesc(t.description ?? ''); setFAssignedTo(t.assigned_to ?? '')
-    setFAssignedName(t.assigned_to_name ?? ''); setFDueDate(t.due_date ?? '')
-    setFReminder(t.reminder_at ? (() => { const d = new Date(t.reminder_at!); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) })() : '')
-    setFChecklist(t.checklist); setFAttachments(t.attachment_urls ?? [])
-    setFSOId(t.service_order_id ?? ''); setFSOTitle(t.service_order_title ?? '')
-    setEditingId(t.id); setShowForm(true)
+    // startTransition marca os updates como não-urgentes — o browser não bloqueia
+    // a interação do usuário enquanto React processa o re-render
+    startTransition(() => {
+      setFTitle(t.title); setFDesc(t.description ?? ''); setFAssignedTo(t.assigned_to ?? '')
+      setFAssignedName(t.assigned_to_name ?? ''); setFDueDate(t.due_date ?? '')
+      setFReminder(t.reminder_at ? (() => { const d = new Date(t.reminder_at!); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) })() : '')
+      setFChecklist(t.checklist); setFAttachments(t.attachment_urls ?? [])
+      setFSOId(t.service_order_id ?? ''); setFSOTitle(t.service_order_title ?? '')
+      setEditingId(t.id); setShowForm(true)
+    })
   }
 
   const searchSO = async (q: string) => {
@@ -2537,18 +2541,13 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
   const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, done: 3 }
 
-  const displayedTasks = [...tasks]
+  const displayedTasks = useMemo(() => [...tasks]
     .filter(t => !onlyMine || t.assigned_to === userId)
     .sort((a, b) => {
-      // done sempre vai pro final, independente de qualquer coluna
       const aDone = a.status === 'done' ? 1 : 0
       const bDone = b.status === 'done' ? 1 : 0
       if (aDone !== bDone) return aDone - bDone
-
-      if (!sortBy) {
-        // ordem padrão dentro dos não-concluídos: pending → in_progress → blocked
-        return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
-      }
+      if (!sortBy) return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
       let va = '', vb = ''
       if (sortBy === 'title') { va = a.title.toLowerCase(); vb = b.title.toLowerCase() }
       else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
@@ -2556,7 +2555,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
       else if (sortBy === 'status') { va = String(statusOrder[a.status] ?? 9); vb = String(statusOrder[b.status] ?? 9) }
       const cmp = va < vb ? -1 : va > vb ? 1 : 0
       return sortDir === 'asc' ? cmp : -cmp
-    })
+    }), [tasks, onlyMine, userId, sortBy, sortDir])
 
   const SortBtn = ({ col, label }: { col: typeof sortBy; label: string }) => (
     <button
