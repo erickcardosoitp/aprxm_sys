@@ -1844,6 +1844,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [fCheckInput, setFCheckInput] = useState('')
   const [fAttachments, setFAttachments] = useState<string[]>([])
   const [uploadingFile, setUploadingFile] = useState(false)
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null)
   const [fSOId, setFSOId] = useState('')
   const [fSOTitle, setFSOTitle] = useState('')
   const [soSearch, setSOSearch] = useState('')
@@ -1991,16 +1992,12 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   }
 
   const startEdit = (t: DailyTask) => {
-    // startTransition marca os updates como não-urgentes — o browser não bloqueia
-    // a interação do usuário enquanto React processa o re-render
-    startTransition(() => {
-      setFTitle(t.title); setFDesc(t.description ?? ''); setFAssignedTo(t.assigned_to ?? '')
-      setFAssignedName(t.assigned_to_name ?? ''); setFDueDate(t.due_date ?? '')
-      setFReminder(t.reminder_at ? (() => { const d = new Date(t.reminder_at!); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) })() : '')
-      setFChecklist(t.checklist); setFAttachments(t.attachment_urls ?? [])
-      setFSOId(t.service_order_id ?? ''); setFSOTitle(t.service_order_title ?? '')
-      setEditingId(t.id); setShowForm(true)
-    })
+    setFTitle(t.title); setFDesc(t.description ?? ''); setFAssignedTo(t.assigned_to ?? '')
+    setFAssignedName(t.assigned_to_name ?? ''); setFDueDate(t.due_date ?? '')
+    setFReminder(t.reminder_at ? (() => { const d = new Date(t.reminder_at!); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) })() : '')
+    setFChecklist(t.checklist); setFAttachments(t.attachment_urls ?? [])
+    setFSOId(t.service_order_id ?? ''); setFSOTitle(t.service_order_title ?? '')
+    setEditingId(t.id); setShowForm(true)
   }
 
   const searchSO = async (q: string) => {
@@ -2031,14 +2028,18 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
       if (!editingId) body.status = fInitialStatus
       if (editingId) {
         await api.patch(`/daily-tasks/${editingId}`, body)
-        toast.success('Tarefa atualizada.')
+        toast.success('Tarefa atualizada com sucesso.')
       } else {
         await api.post('/daily-tasks', body)
         toast.success('Tarefa criada.')
       }
       resetForm(); load()
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao salvar.')
+      const detail = e.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail
+        : Array.isArray(detail) ? detail.map((d: any) => d.msg ?? d).join('; ')
+        : 'Erro ao salvar. Verifique os campos e tente novamente.'
+      toast.error(msg, { duration: 6000 })
     } finally { setSaving(false) }
   }
 
@@ -2291,12 +2292,22 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         </label>
         {fAttachments.length > 0 && (
           <ul className="flex flex-col gap-1 mt-2">
-            {fAttachments.map((url, i) => (
-              <li key={i} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs">
-                <a href={url} target="_blank" rel="noopener noreferrer" className="flex-1 text-blue-600 hover:underline truncate">{url.split('/').pop()}</a>
-                <button onClick={() => setFAttachments(p => p.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500">✕</button>
-              </li>
-            ))}
+            {fAttachments.map((url, i) => {
+              const name = decodeURIComponent(url.split('/').pop() ?? 'arquivo')
+              const isImg = /\.(jpe?g|png|gif|webp|svg)$/i.test(url)
+              const isPdf = /\.pdf$/i.test(url)
+              return (
+                <li key={i} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs">
+                  <span className="text-gray-400 shrink-0">{isImg ? '🖼' : isPdf ? '📄' : '📎'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setViewerUrl(url)}
+                    className="flex-1 text-blue-600 hover:underline truncate text-left"
+                  >{name}</button>
+                  <button onClick={() => setFAttachments(p => p.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 shrink-0">✕</button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
@@ -2943,12 +2954,17 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                 {task.attachment_urls?.length > 0 && (
                   <div className="flex flex-col gap-1">
                     <p className="text-xs text-gray-500 font-medium">Anexos</p>
-                    {task.attachment_urls.map((url, i) => (
-                      <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                        📎 {url.split('/').pop()}
-                      </a>
-                    ))}
+                    {task.attachment_urls.map((url, i) => {
+                      const name = decodeURIComponent(url.split('/').pop() ?? 'arquivo')
+                      const isImg = /\.(jpe?g|png|gif|webp|svg)$/i.test(url)
+                      const isPdf = /\.pdf$/i.test(url)
+                      return (
+                        <button key={i} onClick={() => setViewerUrl(url)}
+                          className="text-xs text-blue-600 hover:underline flex items-center gap-1 text-left">
+                          {isImg ? '🖼' : isPdf ? '📄' : '📎'} {name}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
 
@@ -3015,6 +3031,47 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           <img src={lightboxUrl} alt="" className="max-w-full max-h-full object-contain rounded" onClick={e => e.stopPropagation()} />
         </div>
       )}
+
+      {/* Visualizador de anexo da tarefa */}
+      {viewerUrl && (() => {
+        const name = decodeURIComponent(viewerUrl.split('/').pop() ?? 'arquivo')
+        const isImg = /\.(jpe?g|png|gif|webp|svg)$/i.test(viewerUrl)
+        const isPdf = /\.pdf$/i.test(viewerUrl)
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 flex flex-col" onClick={() => setViewerUrl(null)}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-900 shrink-0" onClick={e => e.stopPropagation()}>
+              <span className="text-white text-sm font-medium truncate max-w-[60vw]">{name}</span>
+              <div className="flex items-center gap-3">
+                <a href={viewerUrl} download={name}
+                  className="text-xs text-gray-300 hover:text-white border border-gray-600 hover:border-gray-400 px-3 py-1 rounded-lg transition"
+                  onClick={e => e.stopPropagation()}>
+                  ↓ Baixar
+                </a>
+                <button onClick={() => setViewerUrl(null)} className="text-gray-300 hover:text-white text-lg leading-none">✕</button>
+              </div>
+            </div>
+            {/* Conteúdo */}
+            <div className="flex-1 overflow-hidden flex items-center justify-center p-2" onClick={e => e.stopPropagation()}>
+              {isImg ? (
+                <img src={viewerUrl} alt={name} className="max-w-full max-h-full object-contain rounded" />
+              ) : isPdf ? (
+                <iframe src={viewerUrl} title={name} className="w-full h-full rounded border-0 bg-white" />
+              ) : (
+                <div className="bg-white rounded-xl p-8 text-center flex flex-col gap-4">
+                  <span className="text-5xl">📎</span>
+                  <p className="font-medium text-gray-800">{name}</p>
+                  <p className="text-sm text-gray-500">Pré-visualização não disponível para este tipo de arquivo.</p>
+                  <a href={viewerUrl} download={name}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-[#26619c] text-white rounded-xl text-sm font-semibold hover:bg-[#1a4f87] transition">
+                    ↓ Baixar arquivo
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

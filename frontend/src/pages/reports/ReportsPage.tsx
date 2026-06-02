@@ -266,7 +266,8 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
           </div>
         </div>
       )}
-      </div>)}
+      </div>
+      )}
     </div>
   )
 
