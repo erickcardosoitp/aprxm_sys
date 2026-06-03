@@ -75,10 +75,14 @@ def _humanize(delta: timedelta) -> str:
 
 @router.post("/run", summary="ETL cron (incremental automático)")
 async def trigger_etl_cron(
+    authorization: str | None = Header(default=None),
     x_cron_secret: str | None = Header(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    if not x_cron_secret or x_cron_secret != settings.cron_secret:
+    # Vercel injeta: Authorization: Bearer <CRON_SECRET>
+    bearer = (authorization or "").removeprefix("Bearer ").strip()
+    secret = settings.cron_secret or ""
+    if secret and bearer != secret and x_cron_secret != secret:
         raise HTTPException(status_code=401, detail="Cron secret inválido.")
     if not settings.r2_account_id:
         raise HTTPException(status_code=503, detail="R2 não configurado.")
