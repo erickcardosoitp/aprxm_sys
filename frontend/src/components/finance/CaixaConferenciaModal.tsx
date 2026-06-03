@@ -406,7 +406,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
               </div>
               <SignaturePad
                 label="Assinatura do Conferente"
-                onCapture={entry => setAssinatura(entry)}
+                onSave={(url: string) => setAssinatura({ url })}
               />
               <button onClick={() => handleConfirmar(assinatura)} disabled={saving || pdfLoading || !assinatura}
                 className="w-full bg-[#26619c] hover:bg-[#1a4f87] text-white py-3 rounded-xl text-sm font-semibold transition disabled:opacity-50">
