@@ -37,3 +37,7 @@ backend/.env.production
 
 # Claude local settings — pode conter secrets/tokens
 .claude/settings.local.json
+
+# Vercel env file com credenciais
+backend/.env.vercel
+.env.vercel
