@@ -902,7 +902,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> int:
     """Escreve todos os DataFrames Gold no Neon Analytics via SQLAlchemy sync."""
     from sqlalchemy import create_engine
-    engine = create_engine(settings.analytics_database_url.strip(), pool_pre_ping=True)
+    engine = create_engine(settings.analytics_db_url, pool_pre_ping=True)
     total = 0
     try:
         with engine.begin() as conn:

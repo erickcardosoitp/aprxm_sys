@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # Neon Analytics (OLAP — Power BI)
     analytics_database_url: str = ""
 
+    @property
+    def analytics_db_url(self) -> str:
+        return self.analytics_database_url.strip()
+
     # WebAuthn
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "APRXM"
