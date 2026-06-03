@@ -659,14 +659,16 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             up(df[["full_name","association_id","association_name","sessoes","enc_recv","enc_delv"]].fillna(0),
                "operator_performance")
 
-    # 10. Receita por operador
+    # 10. Receita por operador — exclui sangrias de repasse interno (movim. entre caixas)
     if not tx.empty:
         users_df = frames.get("users", pd.DataFrame())
         op_ids = set(users_df[users_df["role"]=="operator"]["id"].tolist()) if not users_df.empty else set()
         df = tx[tx["created_by"].isin(op_ids)].copy()
+        desc_op = df["description"].fillna("").str.lower() if "description" in df.columns else pd.Series("", index=df.index)
+        is_repasse_op = desc_op.str.contains("repasse|caixinha", na=False)
         df = df.groupby(["created_by_name","association_id","association_name","week"]).apply(lambda g: pd.Series({
             "receita":     g.loc[g["type"]=="income","amount"].sum(),
-            "saidas":      g.loc[g["type"].isin(["expense","sangria"]),"amount"].sum(),
+            "saidas":      g.loc[(g["type"]=="expense") | ((g["type"]=="sangria") & ~is_repasse_op.reindex(g.index, fill_value=False)),"amount"].sum(),
             "n_transacoes":len(g),
         })).reset_index()
         up(df, "operator_revenue")
@@ -683,9 +685,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         df["pct_diferenca"] = (df["com_diferenca"]/df["total"].replace(0,pd.NA)*100).round(1)
         up(df, "cash_breaks")
 
-    # 12. Motivos de baixas
+    # 12. Motivos de baixas — exclui repassse interno para caixinha (movimento extinto)
     if not tx.empty:
         sangrias = tx[tx["type"]=="sangria"].copy()
+        if not sangrias.empty:
+            desc_s = sangrias["description"].fillna("").str.lower() if "description" in sangrias.columns else pd.Series("", index=sangrias.index)
+            sangrias = sangrias[~desc_s.str.contains("repasse|caixinha", na=False)]
         if not sangrias.empty:
             sangrias["motivo"]  = sangrias["sangria_reason"].fillna("Nao informado").str.strip().replace("","Nao informado")
             sangrias["destino"] = sangrias["sangria_destination"].fillna("Nao informado").str.strip().replace("","Nao informado")
