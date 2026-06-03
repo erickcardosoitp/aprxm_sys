@@ -148,7 +148,7 @@ interface AuditEntry {
   id: string; acao: string; entidade: string; entidade_id: string; detalhe: string; data: string; autor: string
 }
 
-type AdminTab = 'usuarios' | 'comprovante' | 'tarefas' | 'moradores' | 'isencao' | 'permissoes'
+type AdminTab = 'usuarios' | 'comprovante' | 'tarefas' | 'moradores' | 'isencao' | 'permissoes' | 'caixa'
 
 interface AssocConfig {
   assoc_logo_url?: string
@@ -859,6 +859,106 @@ function PermissoesTab() {
   )
 }
 
+function CaixaAdminTab() {
+  const [balance, setBalance]         = useState<any>(null)
+  const [loading, setLoading]         = useState(true)
+  const [zerando, setZerando]         = useState(false)
+  const [confirm, setConfirm]         = useState(false)
+
+  useEffect(() => {
+    api.get('/finance/balance-summary')
+      .then(r => setBalance(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleZerar = async () => {
+    setZerando(true)
+    try {
+      await api.post('/admin/reset-balance')
+      toast.success('Saldo zerado! Contagem recomeça a partir de hoje.')
+      setConfirm(false)
+      const r = await api.get('/finance/balance-summary')
+      setBalance(r.data)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao zerar caixa.')
+    } finally { setZerando(false) }
+  }
+
+  const fmtR = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-base">💰</span>
+          <p className="text-sm font-semibold text-gray-800">Saldo Esperado do Caixa</p>
+        </div>
+
+        {loading ? (
+          <p className="text-center text-gray-400 text-sm py-4">Carregando…</p>
+        ) : balance ? (
+          <>
+            <div className={`rounded-2xl p-5 text-center ${balance.saldo_esperado >= 0 ? 'bg-[#1a3f6f]' : 'bg-red-700'}`}>
+              <p className="text-xs text-white/70 uppercase tracking-wide font-medium mb-1">Saldo atual</p>
+              <p className="text-4xl font-bold text-white">{fmtR(balance.saldo_esperado)}</p>
+              <p className="text-xs text-white/60 mt-1.5">desde {new Date(balance.balance_start_date + 'T12:00').toLocaleDateString('pt-BR')}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="bg-green-50 border border-green-100 rounded-xl p-3">
+                <p className="text-xs text-green-600 font-medium mb-1">Total entradas</p>
+                <p className="font-bold text-green-700">{fmtR(balance.total_entradas)}</p>
+                <p className="text-[10px] text-green-500 mt-0.5">Caixa {fmtR(balance.entradas_caixa)} · Manual {fmtR(balance.entradas_manual)}</p>
+              </div>
+              <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                <p className="text-xs text-red-600 font-medium mb-1">Total saídas</p>
+                <p className="font-bold text-red-700">{fmtR(balance.total_saidas)}</p>
+                <p className="text-[10px] text-red-500 mt-0.5">Caixa {fmtR(balance.saidas_caixa)} · Manual {fmtR(balance.saidas_manual)}</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="text-center text-gray-400 text-sm">Erro ao carregar saldo.</p>
+        )}
+      </div>
+
+      {/* Zerar Caixa */}
+      <div className="bg-white rounded-xl border border-red-200 shadow-sm p-5 flex flex-col gap-3">
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-red-700">Zerar Caixa</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Define hoje como nova data de início do saldo. As transações anteriores
+              continuam no histórico mas deixam de contar para o saldo esperado.
+            </p>
+          </div>
+        </div>
+        {!confirm ? (
+          <button onClick={() => setConfirm(true)}
+            className="flex items-center justify-center gap-2 w-full border-2 border-red-400 text-red-600 hover:bg-red-50 py-2.5 rounded-xl text-sm font-semibold transition">
+            Zerar Caixa a partir de hoje
+          </button>
+        ) : (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col gap-3">
+            <p className="text-sm font-semibold text-red-800">Tem certeza?</p>
+            <p className="text-xs text-red-600">O saldo passará a ser contado a partir de hoje ({new Date().toLocaleDateString('pt-BR')}). Esta ação não pode ser desfeita automaticamente.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirm(false)}
+                className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">
+                Cancelar
+              </button>
+              <button onClick={handleZerar} disabled={zerando}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                {zerando ? 'Zerando…' : 'Confirmar Zeramento'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const currentUserId = useAuthStore((s) => s.userId)
   const [tab, setTab] = useState<AdminTab>('usuarios')
@@ -946,6 +1046,7 @@ export default function AdminPage() {
           ['tarefas', 'Tarefas'],
           ['moradores', 'Moradores'],
           ['isencao', 'Isenção Taxa'],
+          ['caixa', '💰 Caixa'],
         ] as [AdminTab, string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === t ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
@@ -1010,6 +1111,7 @@ export default function AdminPage() {
       {tab === 'tarefas' && <TarefasAgendadasTab />}
       {tab === 'moradores' && <MoradoresTab />}
       {tab === 'isencao' && <ExemptionTokenTab />}
+      {tab === 'caixa' && <CaixaAdminTab />}
 
       {showForm && (
         <UserFormModal

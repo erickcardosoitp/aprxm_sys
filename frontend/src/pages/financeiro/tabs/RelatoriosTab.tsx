@@ -931,28 +931,7 @@ export default function RelatoriosTab() {
                 <p className="text-xs text-white/70 mb-1 uppercase tracking-wide font-semibold">Saldo Esperado no Caixa</p>
                 <p className="text-3xl font-bold text-white">{fmtR(balanceSummary.saldo_esperado)}</p>
               </div>
-              {isAdmin && (
-                <>
-                  <button onClick={() => setShowZerarConfirm(true)}
-                    className="flex items-center justify-center gap-2 w-full border border-red-300 text-red-600 hover:bg-red-50 py-2 rounded-xl text-sm font-semibold transition">
-                    <AlertTriangle className="w-4 h-4" /> Zerar Caixa
-                  </button>
-                  {showZerarConfirm && (
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col gap-3">
-                      <p className="text-sm font-semibold text-red-800">Confirmar zeramento do caixa?</p>
-                      <p className="text-xs text-red-600">A contagem passa a ser feita a partir de hoje. As transações anteriores continuam no histórico mas não afetam mais o saldo.</p>
-                      <div className="flex gap-2">
-                        <button onClick={() => setShowZerarConfirm(false)}
-                          className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
-                        <button onClick={handleZerarCaixa} disabled={zerandoCaixa}
-                          className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
-                          {zerandoCaixa ? 'Zerando…' : 'Confirmar'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
+              <p className="text-xs text-center text-gray-400">Para zerar o caixa, acesse o painel de <strong>Admin</strong>.</p>
             </>
           ) : <p className="text-center text-gray-400 text-sm py-4">Erro ao carregar saldo.</p>}
         </div>
