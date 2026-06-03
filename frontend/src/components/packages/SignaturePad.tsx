@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react'
 import ReactSignatureCanvas from 'react-signature-canvas'
 import { Check, RotateCcw, PenLine } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 interface SignaturePadProps {
   label?: string
@@ -46,7 +47,12 @@ export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }
       const dataUrl = pad.getTrimmedCanvas().toDataURL('image/png')
       let finalUrl = dataUrl
       if (onUpload) {
-        finalUrl = await onUpload(dataUrl)
+        try {
+          finalUrl = await onUpload(dataUrl)
+        } catch {
+          toast.error('Falha ao enviar assinatura. Usando cópia local.')
+          // fallback: usa base64 direto
+        }
       }
       onSave(finalUrl)
       setPreviewUrl(finalUrl)
