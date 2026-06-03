@@ -61,6 +61,10 @@ class ReviewsRequest(BaseModel):
     reviewed_by_id: UUID | None = None
     closing_balance: Decimal | None = Field(default=None, ge=0)
     notes: str | None = None
+    dinheiro_contado: Decimal | None = None
+    pix_contado: Decimal | None = None
+    quebra_motivo: str | None = None
+    assinatura_url: str | None = None
 
 
 class SangriaDestinationRequest(BaseModel):
@@ -1708,7 +1712,6 @@ async def save_session_reviews(
         "aid": str(current.association_id),
     }
     if body.closing_balance is not None:
-        # Recalculate expected balance to compute difference
         cs_row = (await session.execute(t("""
             SELECT expected_balance FROM cash_sessions WHERE id=:sid AND association_id=:aid
         """), {"sid": session_id, "aid": str(current.association_id)})).fetchone()
@@ -1718,6 +1721,18 @@ async def save_session_reviews(
         params["cb"] = float(body.closing_balance)
         params["diff"] = float(diff)
         params["qc"] = float(diff)
+    if body.dinheiro_contado is not None:
+        update_fields += ", dinheiro_contado=:dc"
+        params["dc"] = float(body.dinheiro_contado)
+    if body.pix_contado is not None:
+        update_fields += ", pix_contado=:pc"
+        params["pc"] = float(body.pix_contado)
+    if body.quebra_motivo is not None:
+        update_fields += ", quebra_motivo=:qm"
+        params["qm"] = body.quebra_motivo
+    if body.assinatura_url is not None:
+        update_fields += ", assinatura_conferencia_url=:assin"
+        params["assin"] = body.assinatura_url
     await session.execute(t(f"""
         UPDATE cash_sessions SET {update_fields} WHERE id=:sid AND association_id=:aid
     """), params)
@@ -1914,3 +1929,186 @@ async def report_period_summary(
         "date_from": date_from,
         "date_to":   date_to,
     }
+
+
+# ── Conferência PDF ───────────────────────────────────────────────────────────
+
+class ConferenciaPDFRequest(BaseModel):
+    conferente_nome: str
+    dinheiro_contado: float
+    pix_contado: float
+    quebra_motivo: str | None = None
+    assinatura_url: str | None = None
+
+
+@router.post("/sessions/{session_id}/conferencia-pdf", summary="Gerar comprovante PDF da conferência")
+async def generate_conferencia_pdf(
+    session_id: UUID,
+    body: ConferenciaPDFRequest,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    from datetime import datetime
+    from io import BytesIO
+    from fpdf import FPDF
+
+    aid = str(current.association_id)
+
+    # Dados da sessão
+    cs = (await session.execute(text("""
+        SELECT cs.opened_at, cs.closed_at, cs.expected_balance, cs.total_pix,
+               cs.total_dinheiro, cs.total_bruto, cs.total_baixas, cs.total_expense,
+               u.full_name AS operador, a.name AS assoc
+        FROM cash_sessions cs
+        LEFT JOIN users u ON u.id = cs.opened_by
+        LEFT JOIN associations a ON a.id = cs.association_id
+        WHERE cs.id = :sid AND cs.association_id = :aid
+    """), {"sid": str(session_id), "aid": aid})).fetchone()
+
+    if not cs:
+        raise HTTPException(404, "Sessão não encontrada.")
+
+    # Transações
+    txs = (await session.execute(text("""
+        SELECT t.type, t.income_subtype, t.description, t.amount,
+               pm.name AS pgto, r.full_name AS morador, t.transaction_at
+        FROM transactions t
+        LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+        LEFT JOIN residents r ON r.id = t.resident_id
+        WHERE t.cash_session_id = :sid
+          AND t.is_reversal = FALSE AND t.reversed_at IS NULL
+        ORDER BY t.transaction_at
+    """), {"sid": str(session_id)})).fetchall()
+
+    esperado = float(cs[2] or 0)
+    total_contado = body.dinheiro_contado + body.pix_contado
+    diferenca = total_contado - esperado
+
+    SUBTYPE_PT = {
+        "mensalidade": "Mensalidade", "delivery_fee": "Taxa de entrega",
+        "proof_of_residence": "Comprovante", "other": "Outros",
+    }
+    TYPE_PT = {"income": "Entrada", "expense": "Saída", "sangria": "Sangria"}
+
+    HDR = (26, 63, 111)
+    CINZA = (243, 244, 246)
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(True, 14)
+    pdf.add_page()
+    pdf.set_margins(12, 14, 12)
+
+    # Cabeçalho
+    pdf.set_fill_color(*HDR)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, "Comprovante de Conferencia de Caixa", fill=True, ln=True, align="C")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 6, cs[9], ln=True, align="C")
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(3)
+
+    # Info da sessão
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(*CINZA)
+    pdf.cell(0, 6, "  Informacoes da Sessao", fill=True, ln=True)
+    pdf.set_font("Helvetica", "", 8.5)
+    opened = cs[0].strftime("%d/%m/%Y %H:%M") if cs[0] else "-"
+    closed = cs[1].strftime("%d/%m/%Y %H:%M") if cs[1] else "-"
+    for label, val in [
+        ("Operador", cs[8] or "-"),
+        ("Abertura", opened),
+        ("Fechamento", closed),
+        ("Conferente", body.conferente_nome),
+        ("Gerado em", datetime.now().strftime("%d/%m/%Y %H:%M")),
+    ]:
+        pdf.cell(45, 5.5, label + ":"); pdf.cell(0, 5.5, str(val), ln=True)
+    pdf.ln(3)
+
+    # Resumo financeiro
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(*CINZA)
+    pdf.cell(0, 6, "  Resumo Financeiro", fill=True, ln=True)
+    pdf.set_font("Helvetica", "", 8.5)
+    total_rec = float(cs[5] or 0)
+    baixas = float(cs[6] or 0)
+    expense = float(cs[7] or 0)
+    liquido = total_rec - baixas - expense
+    for label, val, bold in [
+        ("Total bruto lancado", f"R$ {total_rec:.2f}", False),
+        ("Sangrias/saidas", f"R$ {(baixas + expense):.2f}", False),
+        ("Saldo esperado", f"R$ {esperado:.2f}", True),
+        ("Dinheiro contado", f"R$ {body.dinheiro_contado:.2f}", False),
+        ("PIX contado", f"R$ {body.pix_contado:.2f}", False),
+        ("Total contado", f"R$ {total_contado:.2f}", True),
+        ("Diferenca (quebra)", f"R$ {diferenca:+.2f}", True),
+    ]:
+        pdf.set_font("Helvetica", "B" if bold else "", 8.5)
+        pdf.cell(60, 5.5, label + ":"); pdf.cell(0, 5.5, val, ln=True)
+
+    if diferenca != 0 and body.quebra_motivo:
+        pdf.set_font("Helvetica", "BI", 8.5)
+        pdf.set_text_color(220, 38, 38)
+        pdf.cell(60, 5.5, "Motivo da quebra:"); pdf.cell(0, 5.5, body.quebra_motivo, ln=True)
+        pdf.set_text_color(0, 0, 0)
+    pdf.ln(3)
+
+    # Transações
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(*CINZA)
+    pdf.cell(0, 6, f"  Movimentacoes ({len(txs)} lancamentos)", fill=True, ln=True)
+    # Header tabela
+    pdf.set_fill_color(*HDR)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 7.5)
+    for h, w in [("Tipo", 22), ("Descricao/Morador", 72), ("Pgto", 30), ("Valor", 30), ("Data", 32)]:
+        pdf.cell(w, 6, " " + h, fill=True, border=0)
+    pdf.ln()
+    pdf.set_text_color(0, 0, 0)
+    for i, tx in enumerate(txs):
+        pdf.set_fill_color(*(CINZA if i % 2 == 0 else (255, 255, 255)))
+        pdf.set_font("Helvetica", "", 7.5)
+        tipo = TYPE_PT.get(tx[0], tx[0])
+        sub = SUBTYPE_PT.get(tx[1] or "", "")
+        label = sub if sub else tipo
+        desc = (tx[3] or "")[:38] if not tx[5] else f"{tx[5][:20]} — {tx[3] or ''}"[:38]
+        amt = float(tx[4] or 0)
+        dt = tx[6].strftime("%d/%m %H:%M") if tx[6] else "-"
+        color = (15, 122, 77) if tx[0] == "income" else (220, 38, 38)
+        pdf.cell(22, 5, " " + label[:14], fill=True, border=0)
+        pdf.cell(72, 5, " " + desc, fill=True, border=0)
+        pdf.cell(30, 5, " " + (tx[4] or "-")[:14], fill=True, border=0)
+        pdf.set_text_color(*color)
+        pdf.cell(30, 5, f" R$ {amt:.2f}", fill=True, border=0)
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(32, 5, " " + dt, fill=True, border=0)
+        pdf.ln()
+    pdf.ln(4)
+
+    # Assinatura
+    if body.assinatura_url:
+        try:
+            import urllib.request
+            with urllib.request.urlopen(body.assinatura_url, timeout=5) as resp:
+                img_data = resp.read()
+            buf = BytesIO(img_data)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_fill_color(*CINZA)
+            pdf.cell(0, 6, "  Assinatura do Conferente", fill=True, ln=True)
+            pdf.image(buf, x=12, w=80)
+            pdf.ln(2)
+        except Exception:
+            pass
+
+    pdf.set_font("Helvetica", "", 7.5)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 5, f"Conferente: {body.conferente_nome}  |  Gerado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
+
+    buf_out = BytesIO()
+    pdf.output(buf_out)
+    buf_out.seek(0)
+    return Response(
+        content=buf_out.read(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="conferencia_{str(session_id)[:8]}.pdf"'},
+    )

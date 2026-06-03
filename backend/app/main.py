@@ -84,6 +84,20 @@ async def _run_migrations() -> None:
             "ALTER TABLE associations ADD COLUMN IF NOT EXISTS balance_start_date DATE DEFAULT '2026-06-01'"
         ))
 
+        # cash_sessions: campos de conferencia melhorada
+        await session.execute(text(
+            "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS quebra_motivo TEXT"
+        ))
+        await session.execute(text(
+            "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS dinheiro_contado NUMERIC(12,2)"
+        ))
+        await session.execute(text(
+            "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS pix_contado NUMERIC(12,2)"
+        ))
+        await session.execute(text(
+            "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS assinatura_conferencia_url TEXT"
+        ))
+
         # association_settings: permitir_transferencia
         await session.execute(text(
             "ALTER TABLE association_settings ADD COLUMN IF NOT EXISTS permitir_transferencia BOOLEAN DEFAULT FALSE"
