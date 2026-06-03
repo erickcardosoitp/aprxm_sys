@@ -277,68 +277,121 @@ async def get_fluxo_projetado(
 async def get_dre(
     year: int = Query(...),
     month: int | None = Query(default=None),
+    nivel: int = Query(default=2, ge=1, le=3),
+    agrupar_por: str = Query(default="tipo"),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    aid = str(current.association_id)
     if month:
-        date_filter = "EXTRACT(YEAR FROM t.transaction_at) = :yr AND EXTRACT(MONTH FROM t.transaction_at) = :mo"
-        params: dict = {"aid": str(current.association_id), "yr": year, "mo": month}
+        date_filter = "EXTRACT(YEAR FROM t.transaction_at)=:yr AND EXTRACT(MONTH FROM t.transaction_at)=:mo"
+        params: dict = {"aid": aid, "yr": year, "mo": month}
         period_label = f"{str(month).zfill(2)}/{year}"
     else:
-        date_filter = "EXTRACT(YEAR FROM t.transaction_at) = :yr"
-        params = {"aid": str(current.association_id), "yr": year}
+        date_filter = "EXTRACT(YEAR FROM t.transaction_at)=:yr"
+        params = {"aid": aid, "yr": year}
         period_label = str(year)
 
-    result = await session.execute(text(f"""
-        SELECT
-            t.type,
-            t.income_subtype,
-            c.name AS category,
-            COALESCE(SUM(t.amount), 0) AS total
-        FROM transactions t
-        LEFT JOIN transaction_categories c ON c.id = t.category_id
-        WHERE t.association_id = :aid
-          AND {date_filter}
-          AND t.is_reversal = false
-          AND t.reversed_at IS NULL
-        GROUP BY t.type, t.income_subtype, c.name
-        ORDER BY t.type, t.income_subtype, c.name
-    """), params)
-    rows = result.fetchall()
-
-    receitas: dict[str, float] = {}
-    despesas: dict[str, float] = {}
-
     SUBTYPE_MAP = {
-        "mensalidade": "Mensalidades",
-        "delivery_fee": "Taxas de Entrega",
+        "mensalidade":        "Mensalidades",
+        "delivery_fee":       "Taxas de Entrega",
         "proof_of_residence": "Comprovantes de Residência",
-        "other": "Outras Receitas",
+        "other":              "Outras Receitas",
+        None:                 "Outras Receitas",
     }
 
-    for r in rows:
-        tipo, subtipo, categoria, total = r[0], r[1], r[2], float(r[3])
-        if tipo == "income":
-            label = SUBTYPE_MAP.get(subtipo or "", "Outras Receitas")
-            receitas[label] = receitas.get(label, 0.0) + total
-        elif tipo == "expense":
-            label = categoria or "Despesas Gerais"
-            despesas[label] = despesas.get(label, 0.0) + total
-        # sangria = transferência interna (caixa → malote → cofre), não entra no DRE
+    BASE = f"""
+        FROM transactions t
+        LEFT JOIN transaction_categories c ON c.id = t.category_id
+        LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
+        LEFT JOIN users u ON u.id = cs.opened_by
+        WHERE t.association_id = :aid
+          AND {date_filter}
+          AND t.is_reversal = FALSE
+          AND t.reversed_at IS NULL
+          AND t.type IN ('income','expense')
+    """
 
-    total_receitas = sum(receitas.values())
-    total_despesas = sum(despesas.values())
-    resultado = total_receitas - total_despesas
+    # ── Nível 1: só totais ─────────────────────────────────────────────────
+    if nivel == 1:
+        r = (await session.execute(text(f"""
+            SELECT
+                COALESCE(SUM(amount) FILTER (WHERE type='income'),  0) AS rec,
+                COALESCE(SUM(amount) FILTER (WHERE type='expense'), 0) AS desp
+            {BASE}
+        """), params)).fetchone()
+        tr, td = float(r[0]), float(r[1])
+        return {
+            "period_label": period_label, "nivel": 1, "agrupar_por": agrupar_por,
+            "receitas": [{"label": "Receitas", "valor": round(tr, 2), "linhas": None}],
+            "despesas": [{"label": "Despesas", "valor": round(td, 2), "linhas": None}],
+            "total_receitas": round(tr, 2), "total_despesas": round(td, 2),
+            "resultado": round(tr - td, 2),
+        }
+
+    # ── Nível 2 e 3: agrupado ─────────────────────────────────────────────
+    def _group_label_rec(agrupar_por: str, subtipo, categoria, op_name) -> str:
+        if agrupar_por == "tipo":
+            return SUBTYPE_MAP.get(subtipo, "Outras Receitas")
+        if agrupar_por == "origem":
+            return "Receitas via Caixa" if op_name else "Receitas Manuais"
+        if agrupar_por == "operador":
+            return op_name or "Sem operador"
+        if agrupar_por == "categoria":
+            return categoria or "Sem categoria"
+        return "Outras Receitas"
+
+    def _group_label_desp(agrupar_por: str, categoria, op_name) -> str:
+        if agrupar_por == "origem":
+            return "Saídas via Caixa" if op_name else "Saídas Manuais"
+        return categoria or "Despesas Gerais"
+
+    rows_all = (await session.execute(text(f"""
+        SELECT t.type, t.income_subtype, c.name AS cat, u.full_name AS op,
+               t.amount, t.description, t.transaction_at::date AS dt,
+               CASE WHEN t.cash_session_id IS NOT NULL THEN TRUE ELSE FALSE END AS tem_sessao
+        {BASE}
+        ORDER BY t.type, t.transaction_at
+    """), params)).fetchall()
+
+    receitas: dict[str, list] = {}
+    despesas: dict[str, list] = {}
+
+    for r in rows_all:
+        tipo, subtipo, cat, op, amt, desc, dt, tem_sessao = r
+        amt = float(amt)
+        linha = {"descricao": desc or cat or subtipo or "—", "valor": round(amt, 2), "data": str(dt)}
+        if tipo == "income":
+            label = _group_label_rec(agrupar_por, subtipo, cat, op)
+            receitas.setdefault(label, []).append(linha)
+        else:
+            label = _group_label_desp(agrupar_por, cat, op)
+            despesas.setdefault(label, []).append(linha)
+
+    def _build(groups: dict, include_linhas: bool):
+        result = []
+        for label, linhas in sorted(groups.items()):
+            total = sum(l["valor"] for l in linhas)
+            result.append({
+                "label": label,
+                "valor": round(total, 2),
+                "linhas": linhas if include_linhas else None,
+            })
+        return result
+
+    include_linhas = nivel == 3
+    rec_list  = _build(receitas, include_linhas)
+    desp_list = _build(despesas, include_linhas)
+    tr = sum(x["valor"] for x in rec_list)
+    td = sum(x["valor"] for x in desp_list)
 
     return {
-        "period_label": period_label,
-        "year": year,
-        "month": month,
-        "receitas": [{"descricao": k, "valor": round(v, 2)} for k, v in sorted(receitas.items())],
-        "total_receitas": round(total_receitas, 2),
-        "despesas": [{"descricao": k, "valor": round(v, 2)} for k, v in sorted(despesas.items())],
-        "total_despesas": round(total_despesas, 2),
-        "resultado": round(resultado, 2),
+        "period_label": period_label, "nivel": nivel, "agrupar_por": agrupar_por,
+        "receitas": rec_list,
+        "despesas": desp_list,
+        "total_receitas": round(tr, 2),
+        "total_despesas": round(td, 2),
+        "resultado": round(tr - td, 2),
     }
 
 
