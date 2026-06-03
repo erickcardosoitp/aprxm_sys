@@ -2112,3 +2112,78 @@ async def generate_conferencia_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="conferencia_{str(session_id)[:8]}.pdf"'},
     )
+
+
+@router.get("/balance-breakdown", summary="Detalhamento do saldo esperado por dia/sessao/operador")
+async def balance_breakdown(
+    by: str = Query(default="day"),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    from datetime import date as _date
+    aid = str(current.association_id)
+    row = (await session.execute(text(
+        "SELECT balance_start_date FROM associations WHERE id = :aid"
+    ), {"aid": aid})).fetchone()
+    raw = row[0] if row and row[0] else None
+    if isinstance(raw, _date): start_date = raw
+    elif raw: start_date = _date.fromisoformat(str(raw))
+    else: start_date = _date(2026, 6, 1)
+
+    BASE = """
+        FROM transactions t
+        LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
+        LEFT JOIN users u ON u.id = cs.opened_by
+        WHERE t.association_id = :aid
+          AND t.is_reversal = FALSE AND t.reversed_at IS NULL
+          AND t.type IN ('income','expense','sangria')
+          AND t.transaction_at::date >= :start
+    """
+    params = {"aid": aid, "start": start_date}
+
+    if by == "day":
+        rows = (await session.execute(text(f"""
+            SELECT
+                t.transaction_at::date AS label,
+                COALESCE(SUM(t.amount) FILTER (WHERE t.type='income'), 0) AS entradas,
+                COALESCE(SUM(t.amount) FILTER (WHERE t.type IN ('expense','sangria')), 0) AS saidas
+            {BASE}
+            GROUP BY t.transaction_at::date
+            ORDER BY t.transaction_at::date DESC
+        """), params)).fetchall()
+        return [{"label": str(r[0]), "entradas": round(float(r[1]),2),
+                 "saidas": round(float(r[2]),2), "saldo": round(float(r[1])-float(r[2]),2)} for r in rows]
+
+    elif by == "session":
+        rows = (await session.execute(text(f"""
+            SELECT
+                cs.id AS sessao_id,
+                COALESCE(u.full_name, 'Manual') AS operador,
+                cs.opened_at::date AS data,
+                COALESCE(SUM(t.amount) FILTER (WHERE t.type='income'), 0) AS entradas,
+                COALESCE(SUM(t.amount) FILTER (WHERE t.type IN ('expense','sangria')), 0) AS saidas,
+                cs.status
+            {BASE}
+            GROUP BY cs.id, u.full_name, cs.opened_at, cs.status
+            ORDER BY cs.opened_at DESC NULLS LAST
+        """), params)).fetchall()
+        return [{"label": f"{r[1]} — {r[2]}", "sessao_id": str(r[0]) if r[0] else None,
+                 "operador": r[1], "data": str(r[2]), "status": r[5],
+                 "entradas": round(float(r[3]),2), "saidas": round(float(r[4]),2),
+                 "saldo": round(float(r[3])-float(r[4]),2)} for r in rows]
+
+    elif by == "operator":
+        rows = (await session.execute(text(f"""
+            SELECT
+                COALESCE(u.full_name, 'Manual / Sem caixa') AS operador,
+                COALESCE(SUM(t.amount) FILTER (WHERE t.type='income'), 0) AS entradas,
+                COALESCE(SUM(t.amount) FILTER (WHERE t.type IN ('expense','sangria')), 0) AS saidas
+            {BASE}
+            GROUP BY u.full_name
+            ORDER BY entradas DESC
+        """), params)).fetchall()
+        return [{"label": r[0], "operador": r[0],
+                 "entradas": round(float(r[1]),2), "saidas": round(float(r[2]),2),
+                 "saldo": round(float(r[1])-float(r[2]),2)} for r in rows]
+
+    return []
