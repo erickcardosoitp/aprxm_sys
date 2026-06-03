@@ -533,14 +533,18 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     # 1. Receita diaria / semanal / mensal
     if not tx.empty:
         def agg_tx(grp):
+            inc = grp[grp["type"] == "income"]
             return pd.Series({
-                "total_income":   grp.loc[grp["type"] == "income",  "amount"].sum(),
-                "total_expense":  grp.loc[grp["type"].isin(["expense","sangria"]), "amount"].sum(),
-                "mensalidade":    grp.loc[grp["income_subtype"] == "mensalidade", "amount"].sum(),
-                "delivery_fee":   grp.loc[grp["income_subtype"] == "delivery_fee", "amount"].sum(),
-                "sangria_total":  grp.loc[grp["type"] == "sangria", "amount"].sum(),
-                "income_count":   (grp["type"] == "income").sum(),
-                "expense_count":  (grp["type"] == "expense").sum(),
+                "total_income":        inc["amount"].sum(),
+                "total_expense":       grp.loc[grp["type"].isin(["expense","sangria"]), "amount"].sum(),
+                "mensalidade":         inc.loc[inc["income_subtype"] == "mensalidade", "amount"].sum(),
+                "delivery_fee":        inc.loc[inc["income_subtype"] == "delivery_fee", "amount"].sum(),
+                "proof_of_residence":  inc.loc[inc["income_subtype"] == "proof_of_residence", "amount"].sum(),
+                "other_income":        inc.loc[inc["income_subtype"] == "other", "amount"].sum(),
+                "uncategorized":       inc.loc[inc["income_subtype"].isna(), "amount"].sum(),
+                "sangria_total":       grp.loc[grp["type"] == "sangria", "amount"].sum(),
+                "income_count":        (grp["type"] == "income").sum(),
+                "expense_count":       (grp["type"] == "expense").sum(),
             })
         df = tx.groupby(["date","week","month","association_id","association_name"]).apply(agg_tx).reset_index()
         df["net"] = df["total_income"] - df["total_expense"]
