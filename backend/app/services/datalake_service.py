@@ -301,7 +301,8 @@ async def export_bronze(session: AsyncSession, today: str,
                    opening_balance::float, closing_balance::float,
                    expected_balance::float, difference::float,
                    quebra_caixa::float, notes, opened_at, closed_at, updated_at,
-                   created_at
+                   created_at,
+                   dinheiro_contado::float, pix_contado::float, quebra_motivo
             FROM cash_sessions
             WHERE TRUE {delta_filter}
         """,
