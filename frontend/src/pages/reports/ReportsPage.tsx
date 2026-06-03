@@ -82,7 +82,6 @@ function filtersToParams(mod: ModuleKey, f: FiltersState): Record<string, string
   const p: Record<string, string | string[]> = {}
   const d = (k: keyof FiltersState) => { if (f[k]) p[k] = f[k] as string }
   const date = () => { d('date_from'); d('date_to') }
-  if (mod === 'finance')        { date(); d('tx_type'); d('payment_method') }
   if (mod === 'residents')      { d('res_type'); d('res_status'); d('q') }
   if (mod === 'packages') {
     date(); d('pkg_status'); d('street'); d('cep')
@@ -109,7 +108,6 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
 
   const advancedCount = useMemo(() => {
     let n = 0
-    if (mod === 'finance')        { if (filters.tx_type) n++; if (filters.payment_method) n++ }
     if (mod === 'residents')      { if (filters.q) n++ }
     if (mod === 'packages')       { if (filters.street) n++; if (filters.cep) n++; if (filters.operator_ids.length) n++ }
     if (mod === 'mensalidades')   { if (filters.ref_month) n++; if (filters.men_include_delinquent) n++ }
@@ -143,31 +141,6 @@ function FilterPanel({ mod, filters, setFilters, operators }: {
     </>
   )
 
-  if (mod === 'finance') return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 gap-3">{dateRangeFields}</div>
-      <AdvancedToggle />
-      {showAdvanced && (
-        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Tipo</label>
-            <div className="relative">
-              <select value={filters.tx_type} onChange={set('tx_type')} className={selectCls}>
-                <option value="">Todos</option>
-                <option value="income">Entradas</option>
-                <option value="expense">Saídas</option>
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Forma de pagamento</label>
-            <input type="text" placeholder="PIX, Dinheiro…" value={filters.payment_method} onChange={set('payment_method')} className={inputCls} />
-          </div>
-        </div>
-      )}
-    </div>
-  )
 
   if (mod === 'residents') return (
     <div className="flex flex-col gap-3">
