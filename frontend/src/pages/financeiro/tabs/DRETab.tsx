@@ -16,27 +16,30 @@ const NIVEIS = [
 ]
 
 const DIMENSOES = [
+  { v: '',         label: 'Nenhum',   desc: 'Sem sub-agrupamento' },
   { v: 'tipo',     label: 'Tipo',     desc: 'Mensalidades, Taxas…' },
   { v: 'origem',   label: 'Origem',   desc: 'Caixa vs Manual' },
   { v: 'operador', label: 'Operador', desc: 'Por quem faturou' },
   { v: 'categoria',label: 'Categoria',desc: 'Categoria cadastrada' },
 ]
 
-interface DRELinha { label: string; valor: number; linhas: null | { descricao: string; valor: number; data: string }[] }
+interface SubGrupo { label: string; valor: number }
+interface DRELinha { label: string; valor: number; linhas: null | { descricao: string; valor: number; data: string }[]; sub_grupos?: SubGrupo[] }
 interface DREData {
-  period_label: string; nivel: number; agrupar_por: string
+  period_label: string; nivel: number; agrupar_por: string; sub_agrupar_por?: string
   receitas: DRELinha[]; despesas: DRELinha[]
   total_receitas: number; total_despesas: number; resultado: number
 }
 
 export default function DRETab() {
-  const [dreYear,     setDreYear]     = useState(new Date().getFullYear())
-  const [dreMonth,    setDreMonth]    = useState<number | ''>(new Date().getMonth() + 1)
-  const [nivel,       setNivel]       = useState(2)
-  const [agruparPor,  setAgruparPor]  = useState('tipo')
-  const [dre,         setDre]         = useState<DREData | null>(null)
-  const [loading,     setLoading]     = useState(false)
-  const [expanded,    setExpanded]    = useState<Set<string>>(new Set())
+  const [dreYear,      setDreYear]      = useState(new Date().getFullYear())
+  const [dreMonth,     setDreMonth]     = useState<number | ''>(new Date().getMonth() + 1)
+  const [nivel,        setNivel]        = useState(2)
+  const [agruparPor,   setAgruparPor]   = useState('tipo')
+  const [subAgruparPor, setSubAgruparPor] = useState('')
+  const [dre,          setDre]          = useState<DREData | null>(null)
+  const [loading,      setLoading]      = useState(false)
+  const [expanded,     setExpanded]     = useState<Set<string>>(new Set())
   const dreRef = useRef<HTMLDivElement>(null)
 
   const toggleExpand = (label: string) =>
@@ -47,6 +50,7 @@ export default function DRETab() {
     try {
       const params: any = { year: dreYear, nivel, agrupar_por: agruparPor }
       if (dreMonth) params.month = dreMonth
+      if (subAgruparPor && subAgruparPor !== agruparPor) params.sub_agrupar_por = subAgruparPor
       const res = await api.get<DREData>('/financeiro/dre', { params })
       setDre(res.data)
     } catch { toast.error('Erro ao gerar DRE.') } finally { setLoading(false) }
@@ -87,7 +91,9 @@ export default function DRETab() {
 
   const LinhaItem = ({ item, cor, pct }: { item: DRELinha; cor: string; pct: number }) => {
     const open = expanded.has(item.label)
-    const hasDetail = item.linhas && item.linhas.length > 0
+    const hasSubGrupos = item.sub_grupos && item.sub_grupos.length > 0
+    const hasLinhas = item.linhas && item.linhas.length > 0
+    const hasDetail = hasSubGrupos || hasLinhas
     return (
       <div className="border-b border-gray-50 last:border-0">
         <div className="flex flex-col gap-0.5 py-2">
@@ -108,7 +114,27 @@ export default function DRETab() {
               style={{ width: `${pct}%` }} />
           </div>
         </div>
-        {open && hasDetail && (
+        {open && hasSubGrupos && (
+          <div className="ml-5 mb-2 flex flex-col gap-0.5 bg-gray-50 rounded-lg p-2">
+            {item.sub_grupos!.map((sg, i) => {
+              const subPct = item.valor > 0 ? (sg.valor / item.valor) * 100 : 0
+              return (
+                <div key={i} className="flex flex-col gap-0.5 py-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-700 font-medium truncate flex-1 mr-2">{sg.label}</span>
+                    <span className={`font-semibold shrink-0 ${cor}`}>{fmt(sg.valor)}</span>
+                    <span className="text-gray-400 text-[10px] ml-2 shrink-0">{subPct.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${cor.includes('green') ? 'bg-green-300' : 'bg-red-300'}`}
+                      style={{ width: `${subPct}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        {open && hasLinhas && !hasSubGrupos && (
           <div className="ml-5 mb-2 flex flex-col gap-0.5 bg-gray-50 rounded-lg p-2">
             {item.linhas!.map((l, i) => (
               <div key={i} className="flex items-center justify-between text-xs py-0.5">
@@ -165,12 +191,12 @@ export default function DRETab() {
           </div>
         </div>
 
-        {/* Dimensão (nível 2 e 3) */}
+        {/* Dimensão principal (nível 2 e 3) */}
         {nivel >= 2 && (
           <div>
             <label className="block text-xs text-gray-500 mb-1.5">Agrupar por</label>
             <div className="grid grid-cols-2 gap-2">
-              {DIMENSOES.map(d => (
+              {DIMENSOES.filter(d => d.v !== '').map(d => (
                 <button key={d.v} onClick={() => setAgruparPor(d.v)}
                   className={`flex flex-col items-start px-3 py-2 rounded-xl border-2 text-xs font-semibold transition ${
                     agruparPor === d.v ? 'border-[#26619c] bg-blue-50 text-[#26619c]' : 'border-gray-200 text-gray-500 hover:border-gray-300'
@@ -179,6 +205,32 @@ export default function DRETab() {
                   <span className={`text-[10px] font-normal mt-0.5 ${agruparPor === d.v ? 'text-[#26619c]/70' : 'text-gray-400'}`}>{d.desc}</span>
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Sub-agrupamento opcional */}
+        {nivel >= 2 && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1.5">
+              Sub-agrupar por <span className="text-gray-400 font-normal">(opcional — detalha dentro de cada grupo)</span>
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {DIMENSOES.map(d => {
+                const isDisabled = d.v !== '' && d.v === agruparPor
+                const isActive = subAgruparPor === d.v
+                return (
+                  <button key={d.v} onClick={() => !isDisabled && setSubAgruparPor(d.v)}
+                    disabled={isDisabled}
+                    className={`flex flex-col items-start px-2 py-1.5 rounded-xl border-2 text-xs font-semibold transition ${
+                      isActive ? 'border-emerald-500 bg-emerald-50 text-emerald-700' :
+                      isDisabled ? 'border-gray-100 text-gray-300 cursor-not-allowed' :
+                      'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}>
+                    <span>{d.label}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}

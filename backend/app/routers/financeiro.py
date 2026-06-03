@@ -279,6 +279,7 @@ async def get_dre(
     month: int | None = Query(default=None),
     nivel: int = Query(default=2, ge=1, le=3),
     agrupar_por: str = Query(default="tipo"),
+    sub_agrupar_por: str | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -382,11 +383,48 @@ async def get_dre(
     include_linhas = nivel == 3
     rec_list  = _build(receitas, include_linhas)
     desp_list = _build(despesas, include_linhas)
+
+    # ── Sub-agrupamento opcional ───────────────────────────────────────────
+    if sub_agrupar_por and sub_agrupar_por != agrupar_por and nivel >= 2:
+        # Busca todas as transações com DUAS dimensões agrupadas
+        sub_rec: dict[str, dict[str, float]] = {}
+        sub_desp: dict[str, dict[str, float]] = {}
+
+        for r in rows_all:
+            tipo, subtipo, cat, op, amt, desc, dt, tem_sessao = r
+            amt_f = float(amt)
+            # label primário (já calculado)
+            if tipo == "income":
+                pri = _group_label_rec(agrupar_por, subtipo, cat, op)
+                sub = _group_label_rec(sub_agrupar_por, subtipo, cat, op)
+                sub_rec.setdefault(pri, {}).setdefault(sub, 0)
+                sub_rec[pri][sub] += amt_f
+            else:
+                pri = _group_label_desp(agrupar_por, cat, op)
+                sub = _group_label_desp(sub_agrupar_por, cat, op)
+                sub_desp.setdefault(pri, {}).setdefault(sub, 0)
+                sub_desp[pri][sub] += amt_f
+
+        # Injeta sub_grupos em cada item da lista
+        for item in rec_list:
+            subs = sub_rec.get(item["label"], {})
+            item["sub_grupos"] = [
+                {"label": k, "valor": round(v, 2)}
+                for k, v in sorted(subs.items(), key=lambda x: -x[1])
+            ]
+        for item in desp_list:
+            subs = sub_desp.get(item["label"], {})
+            item["sub_grupos"] = [
+                {"label": k, "valor": round(v, 2)}
+                for k, v in sorted(subs.items(), key=lambda x: -x[1])
+            ]
+
     tr = sum(x["valor"] for x in rec_list)
     td = sum(x["valor"] for x in desp_list)
 
     return {
-        "period_label": period_label, "nivel": nivel, "agrupar_por": agrupar_por,
+        "period_label": period_label, "nivel": nivel,
+        "agrupar_por": agrupar_por, "sub_agrupar_por": sub_agrupar_por,
         "receitas": rec_list,
         "despesas": desp_list,
         "total_receitas": round(tr, 2),
