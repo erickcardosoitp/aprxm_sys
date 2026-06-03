@@ -87,17 +87,6 @@ async def geral_dashboard(
     )
     row = result.fetchone()
 
-    cofre_rows = (await session.execute(text("""
-        SELECT a.name, cb.balance
-          FROM cash_boxes cb
-          JOIN associations a ON a.id = cb.association_id
-         WHERE cb.association_id = ANY(:ids) AND cb.is_cofre = true AND cb.is_active = true
-         ORDER BY a.name, cb.name
-    """), {"ids": ids_str})).fetchall()
-
-    cofres = [{"association": r[0], "balance": str(round(float(r[1]), 2))} for r in cofre_rows]
-    total_cofres = str(round(sum(float(r[1]) for r in cofre_rows), 2))
-
     return {
         "total_moradores": row.total_moradores,
         "total_membros": row.total_membros,
@@ -105,8 +94,6 @@ async def geral_dashboard(
         "total_pendente": str(row.total_pendente),
         "inadimplentes": row.inadimplentes,
         "encomendas_aguardando": row.encomendas_aguardando,
-        "cofres": cofres,
-        "total_cofres": total_cofres,
     }
 
 

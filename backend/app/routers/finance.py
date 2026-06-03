@@ -770,13 +770,14 @@ class TransferToCashboxRequest(BaseModel):
     close_session: bool = False
 
 
-@router.post("/sessions/{session_id}/transfer-to-cashbox", summary="Transferir valor conferido para caixinha (sangria + crédito)")
+@router.post("/sessions/{session_id}/transfer-to-cashbox", summary="Desativado — caixinhas removidas", deprecated=True)
 async def transfer_to_cashbox(
     session_id: UUID,
     body: TransferToCashboxRequest,
     current: CurrentUser = Depends(require_conferente),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    raise HTTPException(410, "Funcionalidade de caixinhas foi removida.")
     from sqlalchemy import text as sa_text
     row = (await session.execute(sa_text(
         "SELECT id, status, opened_at FROM cash_sessions WHERE id=:id AND association_id=:aid"
@@ -852,18 +853,10 @@ async def transfer_to_cashbox(
     }
 
 
-@router.post("/sessions/{session_id}/send-to-malote", summary="Operador envia dinheiro físico para o malote")
-async def send_to_malote(
-    session_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> dict:
-    svc = FinanceService(session)
-    return await svc.send_to_malote(
-        session_id=session_id,
-        association_id=current.association_id,
-        sent_by=current.user_id,
-    )
+@router.post("/sessions/{session_id}/send-to-malote", summary="Desativado — caixinhas removidas", deprecated=True)
+async def send_to_malote(session_id: UUID, current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)) -> dict:
+    raise HTTPException(410, "Funcionalidade de caixinhas foi removida.")
 
 
 @router.get("/pix/pending", summary="Transações de entrada com status de conciliação PIX")

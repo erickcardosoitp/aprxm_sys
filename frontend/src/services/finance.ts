@@ -21,7 +21,6 @@ export const financeService = {
     destination: string
     receipt_photo_url: string
     category_id?: string
-    cash_box_id?: string
   }) => api.post<Transaction>('/finance/sessions/sangria', data),
 
   registerTransaction: (data: {

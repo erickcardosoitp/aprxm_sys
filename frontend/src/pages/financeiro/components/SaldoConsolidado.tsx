@@ -15,7 +15,7 @@ export function SaldoConsolidado() {
       const params: Record<string, string> = {}
       if (from) params.from_date = from
       if (to) params.to_date = to
-      const res = await api.get('/cash-boxes/saldo-consolidado', { params })
+      const res = await api.get('/financeiro/summary', { params })
       setData(res.data)
     } catch { toast.error('Erro ao carregar saldo consolidado') }
     finally { setLoading(false) }

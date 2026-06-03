@@ -346,20 +346,6 @@ export default function GeralPage() {
                   <p className="text-xs text-red-400 mt-0.5">{dashboard.inadimplentes} inadimplentes</p>
                 </div>
               </div>
-              {dashboard.cofres && dashboard.cofres.length > 0 && (
-                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
-                  <p className="text-xs text-slate-600 font-medium mb-2">Cofres</p>
-                  <p className="text-xl font-bold text-slate-800">{fmt(dashboard.total_cofres ?? '0')}</p>
-                  <div className="mt-2 flex flex-col gap-1">
-                    {dashboard.cofres.map((c, i) => (
-                      <div key={i} className="flex justify-between text-xs text-slate-600">
-                        <span>{c.association}</span>
-                        <span className="font-medium">{fmt(c.balance)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           ) : null}
         </div>
@@ -661,14 +647,6 @@ export default function GeralPage() {
                       <p className={parseFloat(row.liquido_mes) >= 0 ? 'text-emerald-600' : 'text-orange-600'}>Líquido do mês</p>
                       <p className={`font-bold text-base mt-0.5 ${parseFloat(row.liquido_mes) >= 0 ? 'text-emerald-700' : 'text-orange-700'}`}>{fmt(row.liquido_mes)}</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-2">
-                      <p className="text-gray-500">Saldo caixinhas</p>
-                      <p className="font-bold text-gray-700 text-base mt-0.5">{fmt(row.saldo_caixinhas)}</p>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-2">
-                      <p className="text-slate-500">Saldo cofres</p>
-                      <p className="font-bold text-slate-700 text-base mt-0.5">{fmt(row.saldo_cofres)}</p>
-                    </div>
                   </div>
                 </div>
               ))}
@@ -681,10 +659,6 @@ export default function GeralPage() {
                 <div className="flex justify-between text-sm mt-1">
                   <span>Total despesas</span>
                   <span className="font-bold text-red-400">{fmt(String(inventario.reduce((s, r) => s + parseFloat(r.total_despesas), 0)))}</span>
-                </div>
-                <div className="flex justify-between text-sm mt-1">
-                  <span>Saldo total cofres</span>
-                  <span className="font-bold text-slate-300">{fmt(String(inventario.reduce((s, r) => s + parseFloat(r.saldo_cofres), 0)))}</span>
                 </div>
               </div>
             </div>

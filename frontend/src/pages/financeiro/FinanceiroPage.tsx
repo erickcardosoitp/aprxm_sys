@@ -11,7 +11,6 @@ import DashboardTab from './tabs/DashboardTab'
 import MovimentacoesTab from './tabs/MovimentacoesTab'
 import CobrancasTab from './tabs/CobrancasTab'
 import RelatoriosTab from './tabs/RelatoriosTab'
-import TransferenciasTab from './tabs/TransferenciasTab'
 import ConciliacaoInteligente from './tabs/ConciliacaoInteligente'
 import DRETab from './tabs/DRETab'
 import EsteiraTab from './tabs/EsteiraTab'
@@ -100,11 +99,6 @@ function FinanceiroInner() {
       )}
       {tab === 'relatorios' && <RelatoriosTab />}
       {tab === 'dre' && <DRETab />}
-      {tab === 'transferencias' && (
-        <TransferenciasTab
-          onRequestAdminClose={isAdmin ? setAdminCloseTarget : undefined}
-        />
-      )}
       {tab === 'conciliacao' && <ConciliacaoInteligente />}
       {tab === 'porta_a_porta' && <PortaAPortaTab users={users} />}
 

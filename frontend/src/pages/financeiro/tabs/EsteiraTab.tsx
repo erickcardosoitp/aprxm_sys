@@ -44,9 +44,8 @@ export default function EsteiraTab() {
 
         const locationRows = [
           { label: 'Em caixas abertos', sub: `${loc.em_abertos.sessoes} sessão(ões) com operador`, val: parseFloat(loc.em_abertos.total), color: 'text-blue-700', dot: 'bg-blue-400' },
-          { label: 'No malote (aguardando conferência)', sub: `${loc.no_malote.sessoes} sessão(ões) fechada(s)`, val: parseFloat(loc.no_malote.total), color: 'text-amber-700', dot: 'bg-amber-400' },
-          { label: 'Conferido, a repassar', sub: `${loc.a_repassar.sessoes} sessão(ões) — já descontado o repassado`, val: parseFloat(loc.a_repassar.total), color: 'text-orange-700', dot: 'bg-orange-400' },
-          { label: 'Nas caixinhas', sub: loc.nas_caixinhas.boxes.map((b: any) => `${b.name}: ${fmt(parseFloat(b.saldo))}`).join(' · ') || '—', val: parseFloat(loc.nas_caixinhas.total), color: 'text-green-700', dot: 'bg-green-500' },
+          { label: 'Sessões fechadas (aguardando conferência)', sub: `${loc.no_malote.sessoes} sessão(ões) fechada(s)`, val: parseFloat(loc.no_malote.total), color: 'text-amber-700', dot: 'bg-amber-400' },
+          { label: 'Conferido', sub: `${loc.a_repassar.sessoes} sessão(ões) conferida(s)`, val: parseFloat(loc.a_repassar.total), color: 'text-orange-700', dot: 'bg-orange-400' },
         ]
 
         return (
