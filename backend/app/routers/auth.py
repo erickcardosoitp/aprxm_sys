@@ -153,20 +153,32 @@ async def associations_for_email(
 ) -> list[dict]:
     """
     Returns all associations where this email has a user account.
-    Used in the login flow to populate the org selector.
+    Checks both users.association_id (legacy) and user_association_roles.
     """
-    from sqlmodel import select
-    stmt = (
-        select(Association, User)
-        .join(User, User.association_id == Association.id)
-        .where(User.email == email, User.is_active == True, Association.is_active == True)  # noqa: E712
-    )
-    result = await session.execute(stmt)
-    rows = result.all()
-    return [
-        {"id": str(assoc.id), "name": assoc.name, "slug": assoc.slug, "role": user.role.value}
-        for assoc, user in rows
-    ]
+    from sqlalchemy import text as _t
+    rows = (await session.execute(_t("""
+        SELECT DISTINCT a.id, a.name, a.slug, uar.role
+        FROM users u
+        JOIN user_association_roles uar ON uar.user_id = u.id
+        JOIN associations a ON a.id = uar.association_id
+        WHERE u.email = :email
+          AND u.is_active = TRUE
+          AND uar.is_active = TRUE
+          AND a.is_active = TRUE
+        ORDER BY a.name
+    """), {"email": email})).fetchall()
+
+    if not rows:
+        # Fallback legado: usuários sem UAR
+        from sqlmodel import select as _sel
+        legacy = (await session.execute(
+            _sel(Association, User)
+            .join(User, User.association_id == Association.id)
+            .where(User.email == email, User.is_active == True, Association.is_active == True)  # noqa: E712
+        )).all()
+        return [{"id": str(a.id), "name": a.name, "slug": a.slug, "role": u.role.value} for a, u in legacy]
+
+    return [{"id": str(r[0]), "name": r[1], "slug": r[2], "role": r[3]} for r in rows]
 
 
 class ChangePasswordRequest(BaseModel):
