@@ -339,7 +339,7 @@ async def get_dre(
         if agrupar_por == "operador":
             return op_name or "Sem operador"
         if agrupar_por == "categoria":
-            return categoria or "Sem categoria"
+            return categoria or SUBTYPE_MAP.get(subtipo or "", "Sem categoria")
         return "Outras Receitas"
 
     def _group_label_desp(agrupar_por: str, categoria, op_name) -> str:
