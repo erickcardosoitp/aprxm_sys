@@ -1796,7 +1796,14 @@ async def balance_summary(
     row = (await session.execute(text(
         "SELECT balance_start_date FROM associations WHERE id = :aid"
     ), {"aid": aid})).fetchone()
-    start_date = row[0] if row and row[0] else "2026-06-01"
+    from datetime import date as _date
+    raw = row[0] if row and row[0] else None
+    if isinstance(raw, _date):
+        start_date = raw
+    elif raw:
+        start_date = _date.fromisoformat(str(raw))
+    else:
+        start_date = _date(2026, 6, 1)
 
     r = (await session.execute(text("""
         SELECT
@@ -1808,7 +1815,7 @@ async def balance_summary(
         WHERE association_id = :aid
           AND is_reversal = FALSE AND reversed_at IS NULL
           AND transaction_at::date >= :start
-    """), {"aid": aid, "start": str(start_date)})).fetchone()
+    """), {"aid": aid, "start": start_date})).fetchone()
 
     ec  = float(r[0] or 0)
     em  = float(r[1] or 0)
