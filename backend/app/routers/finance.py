@@ -1783,3 +1783,134 @@ async def esteira(
 ) -> dict:
     svc = FinanceService(session)
     return await svc.get_esteira(current.association_id)
+
+
+# ── Saldo Unificado e Relatórios Financeiros ──────────────────────────────────
+
+@router.get("/balance-summary", summary="Saldo esperado unificado do caixa")
+async def balance_summary(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    aid = str(current.association_id)
+    row = (await session.execute(text(
+        "SELECT balance_start_date FROM associations WHERE id = :aid"
+    ), {"aid": aid})).fetchone()
+    start_date = row[0] if row and row[0] else "2026-06-01"
+
+    r = (await session.execute(text("""
+        SELECT
+            COALESCE(SUM(amount) FILTER (WHERE type='income' AND cash_session_id IS NOT NULL), 0) AS entradas_caixa,
+            COALESCE(SUM(amount) FILTER (WHERE type='income' AND cash_session_id IS NULL),     0) AS entradas_manual,
+            COALESCE(SUM(amount) FILTER (WHERE type IN ('expense','sangria') AND cash_session_id IS NOT NULL), 0) AS saidas_caixa,
+            COALESCE(SUM(amount) FILTER (WHERE type='expense' AND cash_session_id IS NULL),    0) AS saidas_manual
+        FROM transactions
+        WHERE association_id = :aid
+          AND is_reversal = FALSE AND reversed_at IS NULL
+          AND transaction_at::date >= :start
+    """), {"aid": aid, "start": str(start_date)})).fetchone()
+
+    ec  = float(r[0] or 0)
+    em  = float(r[1] or 0)
+    sc  = float(r[2] or 0)
+    sm  = float(r[3] or 0)
+    return {
+        "entradas_caixa":    round(ec, 2),
+        "entradas_manual":   round(em, 2),
+        "saidas_caixa":      round(sc, 2),
+        "saidas_manual":     round(sm, 2),
+        "total_entradas":    round(ec + em, 2),
+        "total_saidas":      round(sc + sm, 2),
+        "saldo_esperado":    round((ec + em) - (sc + sm), 2),
+        "balance_start_date": str(start_date),
+    }
+
+
+@router.get("/report/by-operator", summary="Relatorio financeiro agrupado por operador")
+async def report_by_operator(
+    date_from: str | None = None,
+    date_to:   str | None = None,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    aid = str(current.association_id)
+    conds = ["t.association_id = :aid", "t.is_reversal = FALSE", "t.reversed_at IS NULL",
+             "t.type IN ('income','expense','sangria')", "cs.opened_by IS NOT NULL"]
+    params: dict = {"aid": aid}
+    if date_from: conds.append("t.transaction_at::date >= :df"); params["df"] = date_from
+    if date_to:   conds.append("t.transaction_at::date <= :dt"); params["dt"] = date_to
+    where = " AND ".join(conds)
+
+    rows = (await session.execute(text(f"""
+        SELECT
+            u.id AS user_id,
+            u.full_name AS operador,
+            COUNT(DISTINCT cs.id)                                                AS sessoes,
+            COALESCE(SUM(t.amount) FILTER (WHERE t.type='income'), 0)           AS entradas,
+            COALESCE(SUM(t.amount) FILTER (WHERE t.type IN ('expense','sangria')), 0) AS saidas
+        FROM transactions t
+        JOIN cash_sessions cs ON cs.id = t.cash_session_id
+        JOIN users u ON u.id = cs.opened_by
+        WHERE {where}
+        GROUP BY u.id, u.full_name
+        ORDER BY entradas DESC
+    """), params)).fetchall()
+
+    result = [
+        {
+            "user_id":  str(r[0]),
+            "operador": r[1],
+            "sessoes":  r[2],
+            "entradas": round(float(r[3]), 2),
+            "saidas":   round(float(r[4]), 2),
+            "resultado":round(float(r[3]) - float(r[4]), 2),
+        }
+        for r in rows
+    ]
+    total_e = sum(x["entradas"] for x in result)
+    total_s = sum(x["saidas"]   for x in result)
+    result.append({
+        "user_id": None, "operador": "TOTAL",
+        "sessoes": sum(x["sessoes"] for x in result),
+        "entradas": round(total_e, 2),
+        "saidas":   round(total_s, 2),
+        "resultado":round(total_e - total_s, 2),
+    })
+    return result
+
+
+@router.get("/report/period-summary", summary="Apuracao do periodo: entradas, saidas, resultado")
+async def report_period_summary(
+    date_from: str | None = None,
+    date_to:   str | None = None,
+    current: CurrentUser = Depends(require_conferente),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    aid = str(current.association_id)
+    conds = ["association_id = :aid", "is_reversal = FALSE", "reversed_at IS NULL"]
+    params: dict = {"aid": aid}
+    if date_from: conds.append("transaction_at::date >= :df"); params["df"] = date_from
+    if date_to:   conds.append("transaction_at::date <= :dt"); params["dt"] = date_to
+    where = " AND ".join(conds)
+
+    r = (await session.execute(text(f"""
+        SELECT
+            COALESCE(SUM(amount) FILTER (WHERE type='income' AND cash_session_id IS NOT NULL), 0),
+            COALESCE(SUM(amount) FILTER (WHERE type='income' AND cash_session_id IS NULL),     0),
+            COALESCE(SUM(amount) FILTER (WHERE type IN ('expense','sangria') AND cash_session_id IS NOT NULL), 0),
+            COALESCE(SUM(amount) FILTER (WHERE type='expense' AND cash_session_id IS NULL), 0)
+        FROM transactions WHERE {where}
+    """), params)).fetchone()
+
+    ec, em, sc, sm = (float(x or 0) for x in r)
+    return {
+        "entradas_caixa":  round(ec, 2),
+        "entradas_manual": round(em, 2),
+        "saidas_caixa":    round(sc, 2),
+        "saidas_manual":   round(sm, 2),
+        "total_entradas":  round(ec + em, 2),
+        "total_saidas":    round(sc + sm, 2),
+        "resultado":       round((ec + em) - (sc + sm), 2),
+        "date_from": date_from,
+        "date_to":   date_to,
+    }

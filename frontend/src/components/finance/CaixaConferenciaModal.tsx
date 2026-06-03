@@ -63,7 +63,6 @@ const STEPS = [
   { label: 'Lançamentos', icon: ClipboardList },
   { label: 'Contagem', icon: Calculator },
   { label: 'Confirmar', icon: Award },
-  { label: 'Repasse', icon: ArrowRight },
 ]
 
 export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, onClose, onSaved, onEditTx }: Props) {
@@ -109,9 +108,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
 
   const isAlreadyConferido = session.status === 'conferido' || savedConferencia
 
-  useEffect(() => {
-    if (step === 4) loadBoxes()
-  }, [step])
+  useEffect(() => { /* step 4 removido */ }, [step])
 
   const loadBoxes = async () => {
     setLoadingBoxes(true)
@@ -247,7 +244,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                 <div className="bg-gray-50 rounded-xl p-3">
                   <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1">Dinheiro</p>
                   <p className="text-2xl font-bold text-gray-800">{fmt(dinheiro)}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">contar no malote</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">contar fisicamente</p>
                 </div>
                 <div className="bg-red-50 rounded-xl p-3">
                   <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wide mb-1">Saídas</p>
@@ -293,7 +290,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
                 <p className="text-xs font-semibold text-blue-800 mb-2">Roteiro:</p>
                 <ol className="flex flex-col gap-1.5 text-xs text-blue-700">
-                  {['Revisar cada lançamento da sessão', 'Contar fisicamente o dinheiro no malote', 'Informar a contagem — sistema calcula a quebra', 'Confirmar e assinar → status vira "Conferido"', 'Repassar o dinheiro para as caixinhas'].map((s, i) => (
+                  {['Revisar cada lançamento da sessão', 'Contar fisicamente o dinheiro em espécie', 'Informar a contagem — sistema calcula a quebra', 'Confirmar e assinar → status vira "Conferido"'].map((s, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <span className="bg-blue-200 text-blue-800 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">{i + 1}</span>
                       {s}
@@ -405,7 +402,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
           {step === 2 && (
             <div className="flex flex-col gap-4">
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700">
-                Abra o malote, conte cédula por cédula e informe o total encontrado.
+                Conte o dinheiro em espécie cédula por cédula e informe o total encontrado.
               </div>
               <div className="border-2 border-gray-200 rounded-xl p-5 flex flex-col items-center gap-2">
                 <p className="text-xs text-gray-500 font-medium">Total encontrado (R$)</p>
@@ -458,7 +455,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                 <div className="flex justify-between border-t border-gray-200 pt-1.5"><span className="font-medium text-gray-700">Líquido esperado</span><span className="font-bold text-gray-900">{fmt(liquido)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">PIX (conciliar separado)</span><span className="font-medium text-blue-600">{fmt(pix)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Dinheiro esperado</span><span className="font-medium">{fmt(dinheiro)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Contado no malote</span><span className="font-medium">{contagemInput !== '' ? fmt(contagem) : '—'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Contado em espécie</span><span className="font-medium">{contagemInput !== '' ? fmt(contagem) : '—'}</span></div>
                 {diferenca !== null && (
                   <div className={`flex justify-between border-t border-gray-200 pt-1.5 font-bold ${diferenca === 0 ? 'text-green-700' : diferenca > 0 ? 'text-blue-700' : 'text-red-700'}`}>
                     <span>Quebra de caixa</span>
@@ -496,12 +493,10 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
             </div>
           )}
 
-          {/* ── Step 4: Repasse ── */}
-          {step === 4 && (
+          {/* Step 4 removido — repasse para caixinhas descontinuado */}
+          {false && (
             <div className="flex flex-col gap-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800">
-                Envie o dinheiro para o <b>Malote</b>. O responsável pelo malote verificará e transferirá para o Cofre.
-              </div>
+              <div>
               <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-1.5 text-xs">
                 <div className="flex justify-between text-sm font-semibold">
                   <span className="text-gray-700">Espécie disponível para repasse</span>
@@ -639,9 +634,9 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
 
           {step === 3 ? (
             isAlreadyConferido ? (
-              <button onClick={() => setStep(4)}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold">
-                Repassar dinheiro <ChevronRight className="w-4 h-4" />
+              <button onClick={onClose}
+                className="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-6 py-2.5 rounded-xl text-sm font-semibold">
+                Concluir
               </button>
             ) : (
               <button onClick={handleSaveConferencia} disabled={saving || !conferidoPor}
@@ -650,13 +645,6 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
                 {saving ? 'Salvando…' : 'Confirmar Conferência'}
               </button>
             )
-          ) : step === 4 ? (
-            <button
-              onClick={onClose}
-              disabled={false}
-              className="bg-gray-800 hover:bg-gray-900 disabled:opacity-40 text-white px-6 py-2.5 rounded-xl text-sm font-semibold">
-              Concluir
-            </button>
           ) : (
             <button onClick={() => setStep(step + 1)} disabled={!canNext()}
               className="flex items-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-semibold">

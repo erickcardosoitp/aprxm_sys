@@ -4,7 +4,7 @@ import { Download, DollarSign, Users, Package, FileText, CreditCard, Search, Che
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
-type ModuleKey = 'finance' | 'residents' | 'packages' | 'service-orders' | 'mensalidades' | 'entregas'
+type ModuleKey = 'residents' | 'packages' | 'service-orders' | 'mensalidades' | 'entregas'
 
 interface ModuleDef {
   key: ModuleKey
@@ -14,13 +14,13 @@ interface ModuleDef {
 }
 
 const MODULES: ModuleDef[] = [
-  { key: 'finance',        label: 'Financeiro',                   endpoint: 'finance',        icon: DollarSign },
   { key: 'residents',      label: 'Moradores',                    endpoint: 'residents',      icon: Users },
   { key: 'packages',       label: 'Encomendas',                   endpoint: 'packages',       icon: Package },
   { key: 'service-orders', label: 'Ordens de Serviço',            endpoint: 'service-orders', icon: FileText },
   { key: 'mensalidades',   label: 'Mensalidades / Inadimplência', endpoint: 'mensalidades',   icon: CreditCard },
   { key: 'entregas',       label: 'Produtividade da Equipe',      endpoint: 'entregas',       icon: CheckSquare },
 ]
+// Financeiro foi movido para o módulo Financeiro (RelatoriosTab)
 
 function firstDayOfMonth() {
   const d = new Date()
@@ -870,7 +870,7 @@ function PreviewTable({ rows, hidden, onToggle }: {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
-  const [selected, setSelected] = useState<ModuleKey>('finance')
+  const [selected, setSelected] = useState<ModuleKey>('residents')
   const [filters, setFilters] = useState<FiltersState>(DEFAULT_FILTERS)
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [entregasData, setEntregasData] = useState<EntregaUser[] | null>(null)

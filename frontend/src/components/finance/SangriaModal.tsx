@@ -12,7 +12,6 @@ interface Props {
 }
 
 interface Dest { id: string; name: string }
-interface CashBox { id: string; name: string; balance: string }
 
 export function SangriaModal({ onClose, onSuccess, title = 'Registrar Saída' }: Props) {
   const [amount, setAmount] = useState('')
@@ -22,12 +21,9 @@ export function SangriaModal({ onClose, onSuccess, title = 'Registrar Saída' }:
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [destinations, setDestinations] = useState<Dest[]>([])
-  const [cashBoxes, setCashBoxes] = useState<CashBox[]>([])
-  const [selectedBoxId, setSelectedBoxId] = useState<string>('')
 
   useEffect(() => {
     api.get<Dest[]>('/finance/sangria-destinations').then(r => setDestinations(r.data)).catch(() => {})
-    api.get<CashBox[]>('/cash-boxes').then(r => setCashBoxes(r.data.filter((b: CashBox) => true))).catch(() => {})
   }, [])
 
   const destination = destinations.length > 0
@@ -45,9 +41,8 @@ export function SangriaModal({ onClose, onSuccess, title = 'Registrar Saída' }:
         reason,
         destination,
         receipt_photo_url: receiptPhotoUrl,
-        cash_box_id: selectedBoxId || undefined,
       })
-      toast.success(selectedBoxId ? 'Sangria transferida para caixinha!' : 'Sangria registrada com sucesso!')
+      toast.success('Sangria registrada com sucesso!')
       onSuccess()
       onClose()
     } catch (e: any) {
@@ -92,24 +87,9 @@ export function SangriaModal({ onClose, onSuccess, title = 'Registrar Saída' }:
               </select>
             ) : (
               <input type="text" value={destinationText} onChange={e => setDestinationText(e.target.value)}
-                className={inputCls} placeholder="Ex: Cofre, Banco Bradesco…" />
+                className={inputCls} placeholder="Ex: Banco, Escritório…" />
             )}
           </div>
-
-          {cashBoxes.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Transferir para caixinha</label>
-              <select value={selectedBoxId} onChange={e => setSelectedBoxId(e.target.value)} className={inputCls}>
-                <option value="">Não transferir</option>
-                {cashBoxes.map(b => (
-                  <option key={b.id} value={b.id}>{b.name} — saldo R$ {parseFloat(b.balance).toFixed(2)}</option>
-                ))}
-              </select>
-              {selectedBoxId && (
-                <p className="text-xs text-amber-700 mt-1">O valor da sangria será creditado automaticamente nessa caixinha.</p>
-              )}
-            </div>
-          )}
 
           <PhotoCapture label="Foto do Recibo *" onCapture={entry => setReceiptPhotoUrl(entry.url)} />
         </div>

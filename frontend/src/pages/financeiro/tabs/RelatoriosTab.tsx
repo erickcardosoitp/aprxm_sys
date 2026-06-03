@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Upload, RotateCcw, RefreshCw, FileSpreadsheet, Printer } from 'lucide-react'
+import { Upload, RotateCcw, RefreshCw, FileSpreadsheet, Printer, TrendingUp, Users, BarChart2, AlertTriangle } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import api from '../../../services/api'
 import toast from 'react-hot-toast'
@@ -13,10 +13,28 @@ import type { Session, TxReview, ManualSessionForm, Tx } from '../types/financei
 
 const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
 
+// ── Tipos novos ──────────────────────────────────────────────────────────────
+interface BalanceSummary {
+  entradas_caixa: number; entradas_manual: number
+  saidas_caixa: number;   saidas_manual: number
+  total_entradas: number; total_saidas: number
+  saldo_esperado: number; balance_start_date: string
+}
+interface OperatorRow {
+  user_id: string | null; operador: string
+  sessoes: number; entradas: number; saidas: number; resultado: number
+}
+interface PeriodSummary {
+  entradas_caixa: number; entradas_manual: number
+  saidas_caixa: number;   saidas_manual: number
+  total_entradas: number; total_saidas: number
+  resultado: number; date_from: string | null; date_to: string | null
+}
+
 export default function RelatoriosTab() {
   const { conferentes, operadores, paymentMethods } = useFinanceiro()
   const role = useAuthStore(s => s.role)
-  const isAdmin = ['admin', 'admin_master', 'superadmin'].includes(role ?? '')
+  const isAdmin = ['admin', 'admin_master', 'superadmin', 'conferente', 'diretoria'].includes(role ?? '')
 
   const [sessions, setSessions] = useState<Session[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
@@ -37,6 +55,82 @@ export default function RelatoriosTab() {
 
   const [sendingMalote, setSendingMalote] = useState<string | null>(null)
   const [reopeningSession, setReopeningSession] = useState<string | null>(null)
+
+  // ── Novos estados: saldo, por operador, apuração ──────────────────────────
+  const [balanceSummary, setBalanceSummary] = useState<BalanceSummary | null>(null)
+  const [loadingBalance, setLoadingBalance] = useState(false)
+  const [zerandoCaixa, setZerandoCaixa] = useState(false)
+  const [showZerarConfirm, setShowZerarConfirm] = useState(false)
+
+  const [opRows, setOpRows] = useState<OperatorRow[]>([])
+  const [loadingOp, setLoadingOp] = useState(false)
+  const [opFrom, setOpFrom] = useState('')
+  const [opTo, setOpTo] = useState('')
+
+  const [periodSummary, setPeriodSummary] = useState<PeriodSummary | null>(null)
+  const [loadingPeriod, setLoadingPeriod] = useState(false)
+  const [periodFrom, setPeriodFrom] = useState(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`
+  })
+  const [periodTo, setPeriodTo] = useState(() => new Date().toISOString().split('T')[0])
+
+  useEffect(() => {
+    setLoadingBalance(true)
+    api.get<BalanceSummary>('/finance/balance-summary')
+      .then(r => setBalanceSummary(r.data))
+      .catch(() => {})
+      .finally(() => setLoadingBalance(false))
+  }, [])
+
+  const loadOperators = async () => {
+    setLoadingOp(true)
+    try {
+      const params: Record<string,string> = {}
+      if (opFrom) params.date_from = opFrom
+      if (opTo)   params.date_to   = opTo
+      const r = await api.get<OperatorRow[]>('/finance/report/by-operator', { params })
+      setOpRows(r.data)
+    } catch { toast.error('Erro ao carregar relatório por operador.') }
+    finally { setLoadingOp(false) }
+  }
+
+  const loadPeriod = async () => {
+    setLoadingPeriod(true)
+    try {
+      const params: Record<string,string> = {}
+      if (periodFrom) params.date_from = periodFrom
+      if (periodTo)   params.date_to   = periodTo
+      const r = await api.get<PeriodSummary>('/finance/report/period-summary', { params })
+      setPeriodSummary(r.data)
+    } catch { toast.error('Erro ao carregar apuração.') }
+    finally { setLoadingPeriod(false) }
+  }
+
+  const handleZerarCaixa = async () => {
+    setZerandoCaixa(true)
+    try {
+      await api.post('/admin/reset-balance')
+      toast.success('Saldo zerado. A contagem começa do zero a partir de hoje.')
+      setShowZerarConfirm(false)
+      const r = await api.get<BalanceSummary>('/finance/balance-summary')
+      setBalanceSummary(r.data)
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao zerar caixa.')
+    } finally { setZerandoCaixa(false) }
+  }
+
+  const exportarOperadores = () => {
+    if (!opRows.length) return
+    const ws = XLSX.utils.json_to_sheet(opRows.map(r => ({
+      Operador: r.operador, Sessões: r.sessoes,
+      'Entradas (R$)': r.entradas, 'Saídas (R$)': r.saidas, 'Resultado (R$)': r.resultado,
+    })))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Por Operador')
+    XLSX.writeFile(wb, 'relatorio-por-operador.xlsx')
+  }
+
+  const fmtR = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
   const [apuracaoTarget, setApuracaoTarget] = useState<Session | null>(null)
   const [apuracaoResp, setApuracaoResp] = useState('')
@@ -788,6 +882,183 @@ export default function RelatoriosTab() {
           </div>
         </div>
       )}
+
+      {/* ══ PAINEL A: SALDO ATUAL ══════════════════════════════════════════ */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
+          <TrendingUp className="w-4 h-4 text-[#26619c]" />
+          <span className="text-sm font-semibold text-gray-800">Saldo do Caixa</span>
+          {balanceSummary && (
+            <span className="ml-1 text-[10px] text-gray-400">desde {new Date(balanceSummary.balance_start_date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+          )}
+          <button onClick={() => { setLoadingBalance(true); api.get<BalanceSummary>('/finance/balance-summary').then(r => setBalanceSummary(r.data)).finally(() => setLoadingBalance(false)) }}
+            className="ml-auto text-gray-400 hover:text-gray-600">
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingBalance ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        <div className="p-4 flex flex-col gap-4">
+          {loadingBalance ? (
+            <div className="flex justify-center py-6"><div className="w-5 h-5 border-2 border-[#26619c] border-t-transparent rounded-full animate-spin" /></div>
+          ) : balanceSummary ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-green-50 border border-green-100 rounded-xl p-3">
+                  <p className="text-[10px] text-green-600 font-semibold uppercase mb-2">Entradas</p>
+                  <div className="flex justify-between text-xs text-gray-600 mb-1">
+                    <span>Via caixa</span><span className="font-medium">{fmtR(balanceSummary.entradas_caixa)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-600 mb-2">
+                    <span>Manual</span><span className="font-medium">{fmtR(balanceSummary.entradas_manual)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-bold text-green-700 border-t border-green-200 pt-1.5">
+                    <span>Total</span><span>{fmtR(balanceSummary.total_entradas)}</span>
+                  </div>
+                </div>
+                <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                  <p className="text-[10px] text-red-600 font-semibold uppercase mb-2">Saídas</p>
+                  <div className="flex justify-between text-xs text-gray-600 mb-1">
+                    <span>Via caixa</span><span className="font-medium">{fmtR(balanceSummary.saidas_caixa)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-600 mb-2">
+                    <span>Manual</span><span className="font-medium">{fmtR(balanceSummary.saidas_manual)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-bold text-red-700 border-t border-red-200 pt-1.5">
+                    <span>Total</span><span>{fmtR(balanceSummary.total_saidas)}</span>
+                  </div>
+                </div>
+              </div>
+              <div className={`rounded-2xl p-4 text-center ${balanceSummary.saldo_esperado >= 0 ? 'bg-[#1a3f6f]' : 'bg-red-700'}`}>
+                <p className="text-xs text-white/70 mb-1 uppercase tracking-wide font-semibold">Saldo Esperado no Caixa</p>
+                <p className="text-3xl font-bold text-white">{fmtR(balanceSummary.saldo_esperado)}</p>
+              </div>
+              {isAdmin && (
+                <>
+                  <button onClick={() => setShowZerarConfirm(true)}
+                    className="flex items-center justify-center gap-2 w-full border border-red-300 text-red-600 hover:bg-red-50 py-2 rounded-xl text-sm font-semibold transition">
+                    <AlertTriangle className="w-4 h-4" /> Zerar Caixa
+                  </button>
+                  {showZerarConfirm && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col gap-3">
+                      <p className="text-sm font-semibold text-red-800">Confirmar zeramento do caixa?</p>
+                      <p className="text-xs text-red-600">A contagem passa a ser feita a partir de hoje. As transações anteriores continuam no histórico mas não afetam mais o saldo.</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => setShowZerarConfirm(false)}
+                          className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
+                        <button onClick={handleZerarCaixa} disabled={zerandoCaixa}
+                          className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                          {zerandoCaixa ? 'Zerando…' : 'Confirmar'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          ) : <p className="text-center text-gray-400 text-sm py-4">Erro ao carregar saldo.</p>}
+        </div>
+      </div>
+
+      {/* ══ PAINEL B: POR OPERADOR ════════════════════════════════════════ */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
+          <Users className="w-4 h-4 text-[#26619c]" />
+          <span className="text-sm font-semibold text-gray-800">Por Operador</span>
+        </div>
+        <div className="p-4 flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">De</label>
+              <input type="date" value={opFrom} onChange={e => setOpFrom(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Até</label>
+              <input type="date" value={opTo} onChange={e => setOpTo(e.target.value)} className={inputCls} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={loadOperators} disabled={loadingOp}
+              className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+              {loadingOp ? 'Carregando…' : 'Buscar'}
+            </button>
+            {opRows.length > 0 && (
+              <button onClick={exportarOperadores}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold">
+                <FileSpreadsheet className="w-4 h-4" /> Excel
+              </button>
+            )}
+          </div>
+          {opRows.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="w-full text-xs">
+                <thead className="bg-[#1a3f6f] text-white">
+                  <tr>
+                    {['Operador','Sessões','Entradas','Saídas','Resultado'].map(h => (
+                      <th key={h} className="px-3 py-2 text-left font-semibold whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {opRows.map((r, i) => (
+                    <tr key={i} className={r.user_id === null ? 'bg-gray-50 font-bold' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                      <td className="px-3 py-2 whitespace-nowrap">{r.operador}</td>
+                      <td className="px-3 py-2 tabular-nums">{r.sessoes}</td>
+                      <td className="px-3 py-2 tabular-nums text-green-700">{fmtR(r.entradas)}</td>
+                      <td className="px-3 py-2 tabular-nums text-red-600">{fmtR(r.saidas)}</td>
+                      <td className={`px-3 py-2 tabular-nums font-semibold ${r.resultado >= 0 ? 'text-blue-700' : 'text-red-600'}`}>{fmtR(r.resultado)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ══ PAINEL C: APURAÇÃO DO PERÍODO ════════════════════════════════ */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
+          <BarChart2 className="w-4 h-4 text-[#26619c]" />
+          <span className="text-sm font-semibold text-gray-800">Apuração do Período</span>
+        </div>
+        <div className="p-4 flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">De</label>
+              <input type="date" value={periodFrom} onChange={e => setPeriodFrom(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Até</label>
+              <input type="date" value={periodTo} onChange={e => setPeriodTo(e.target.value)} className={inputCls} />
+            </div>
+          </div>
+          <button onClick={loadPeriod} disabled={loadingPeriod}
+            className="bg-[#26619c] hover:bg-[#1a4f87] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+            {loadingPeriod ? 'Calculando…' : 'Calcular'}
+          </button>
+          {periodSummary && (
+            <div className="flex flex-col gap-2">
+              {[
+                { label: 'Entradas via caixa', val: periodSummary.entradas_caixa, color: 'text-green-600' },
+                { label: 'Entradas manuais',   val: periodSummary.entradas_manual, color: 'text-green-600' },
+                { label: 'Total entradas',      val: periodSummary.total_entradas,  color: 'text-green-700', bold: true },
+                { label: 'Saídas via caixa',   val: -periodSummary.saidas_caixa,  color: 'text-red-600' },
+                { label: 'Saídas manuais',      val: -periodSummary.saidas_manual, color: 'text-red-600' },
+                { label: 'Total saídas',        val: -periodSummary.total_saidas,  color: 'text-red-700', bold: true },
+              ].map(({ label, val, color, bold }) => (
+                <div key={label} className={`flex justify-between text-xs ${bold ? 'border-t border-gray-200 pt-2 font-bold text-sm' : ''}`}>
+                  <span className="text-gray-600">{label}</span>
+                  <span className={color}>{fmtR(Math.abs(val))}</span>
+                </div>
+              ))}
+              <div className={`flex justify-between text-sm font-bold border-t-2 pt-2 mt-1 ${periodSummary.resultado >= 0 ? 'text-blue-700 border-blue-200' : 'text-red-700 border-red-200'}`}>
+                <span>Resultado do período</span>
+                <span>{fmtR(periodSummary.resultado)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
     </div>
   )
 }

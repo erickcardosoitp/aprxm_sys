@@ -602,3 +602,18 @@ async def generate_delivery_exemption_token(
     """), {"aid": str(current.association_id), "token": token, "uid": str(current.user_id), "exp": expires_at})
     await session.commit()
     return {"token": token, "expires_at": expires_at.isoformat()}
+
+
+@router.post("/reset-balance", summary="Zerar saldo do caixa (atualiza balance_start_date = hoje)")
+async def reset_balance(
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from datetime import date
+    today = date.today()
+    await session.execute(
+        text("UPDATE associations SET balance_start_date = :d WHERE id = :aid"),
+        {"d": today, "aid": str(current.association_id)},
+    )
+    await session.commit()
+    return {"ok": True, "balance_start_date": str(today)}
