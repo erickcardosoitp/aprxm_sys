@@ -53,6 +53,14 @@ export default function DRETab() {
       if (subAgruparPor && subAgruparPor !== agruparPor) params.sub_agrupar_por = subAgruparPor
       const res = await api.get<DREData>('/financeiro/dre', { params })
       setDre(res.data)
+      // Auto-expande tudo quando há sub-agrupamento ou nivel 3
+      if (subAgruparPor || nivel === 3) {
+        const allLabels = new Set([
+          ...res.data.receitas.map((r: DRELinha) => r.label),
+          ...res.data.despesas.map((d: DRELinha) => d.label),
+        ])
+        setExpanded(allLabels)
+      }
     } catch { toast.error('Erro ao gerar DRE.') } finally { setLoading(false) }
   }
 
@@ -80,13 +88,28 @@ export default function DRETab() {
   }
 
   const exportPNG = async () => {
-    if (!dreRef.current) return
+    if (!dreRef.current || !dre) return
+    // Expande tudo antes de capturar
+    const prevExpanded = new Set(expanded)
+    const allLabels = new Set([
+      ...dre.receitas.map(r => r.label),
+      ...dre.despesas.map(d => d.label),
+    ])
+    setExpanded(allLabels)
+    // Aguarda re-render
+    await new Promise(r => setTimeout(r, 200))
     try {
-      const canvas = await html2canvas(dreRef.current, { scale: 2, backgroundColor: '#ffffff' })
+      const canvas = await html2canvas(dreRef.current, {
+        scale: 2, backgroundColor: '#ffffff',
+        useCORS: true, allowTaint: true,
+        windowWidth: dreRef.current.scrollWidth,
+        windowHeight: dreRef.current.scrollHeight,
+      })
       const url = canvas.toDataURL('image/png')
       const a = document.createElement('a'); a.href = url
-      a.download = `dre_${dre?.period_label?.replace('/', '-') ?? 'periodo'}.png`; a.click()
+      a.download = `dre_${dre.period_label.replace('/', '-')}.png`; a.click()
     } catch { toast.error('Erro ao exportar imagem.') }
+    finally { setExpanded(prevExpanded) }
   }
 
   const LinhaItem = ({ item, cor, pct }: { item: DRELinha; cor: string; pct: number }) => {
@@ -94,41 +117,37 @@ export default function DRETab() {
     const hasSubGrupos = item.sub_grupos && item.sub_grupos.length > 0
     const hasLinhas = item.linhas && item.linhas.length > 0
     const hasDetail = hasSubGrupos || hasLinhas
+    const isGreen = cor.includes('green')
     return (
-      <div className="border-b border-gray-50 last:border-0">
-        <div className="flex flex-col gap-0.5 py-2">
-          <div className="flex items-center justify-between gap-2">
-            {hasDetail ? (
+      <div className="border-b border-gray-100 last:border-0">
+        {/* Linha principal */}
+        <div className="flex items-center justify-between gap-3 py-2.5">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            {hasDetail && (
               <button onClick={() => toggleExpand(item.label)}
-                className="flex items-center gap-1 text-sm text-gray-700 hover:text-[#26619c] text-left">
-                {open ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" />}
-                {item.label}
+                className={`shrink-0 transition ${open ? 'text-[#26619c]' : 'text-gray-400'}`}>
+                {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
               </button>
-            ) : (
-              <p className="text-sm text-gray-700 flex-1">{item.label}</p>
             )}
-            <p className={`text-sm font-semibold shrink-0 ${cor}`}>{fmt(item.valor)}</p>
+            <span className="text-sm font-medium text-gray-800 truncate">{item.label}</span>
+            <span className="text-[10px] text-gray-400 shrink-0">{pct.toFixed(1)}%</span>
           </div>
-          <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full transition-all ${cor.includes('green') ? 'bg-green-400' : 'bg-red-400'}`}
-              style={{ width: `${pct}%` }} />
-          </div>
+          <span className={`text-sm font-bold shrink-0 ${cor}`}>{fmt(item.valor)}</span>
         </div>
+
+        {/* Sub-grupos */}
         {open && hasSubGrupos && (
-          <div className="ml-5 mb-2 flex flex-col gap-0.5 bg-gray-50 rounded-lg p-2">
+          <div className={`ml-6 mb-1 rounded-xl border ${isGreen ? 'border-green-100 bg-green-50/40' : 'border-red-100 bg-red-50/30'} overflow-hidden`}>
             {item.sub_grupos!.map((sg, i) => {
               const subPct = item.valor > 0 ? (sg.valor / item.valor) * 100 : 0
               return (
-                <div key={i} className="flex flex-col gap-0.5 py-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-700 font-medium truncate flex-1 mr-2">{sg.label}</span>
-                    <span className={`font-semibold shrink-0 ${cor}`}>{fmt(sg.valor)}</span>
-                    <span className="text-gray-400 text-[10px] ml-2 shrink-0">{subPct.toFixed(1)}%</span>
+                <div key={i} className={`flex items-center justify-between gap-3 px-3 py-2 text-sm ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isGreen ? 'bg-green-400' : 'bg-red-400'}`} />
+                    <span className="text-gray-700 truncate">{sg.label}</span>
+                    <span className="text-[10px] text-gray-400 shrink-0">{subPct.toFixed(1)}%</span>
                   </div>
-                  <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${cor.includes('green') ? 'bg-green-300' : 'bg-red-300'}`}
-                      style={{ width: `${subPct}%` }} />
-                  </div>
+                  <span className={`font-semibold shrink-0 ${cor}`}>{fmt(sg.valor)}</span>
                 </div>
               )
             })}

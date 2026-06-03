@@ -337,7 +337,7 @@ async def get_dre(
         if agrupar_por == "origem":
             return "Receitas via Caixa" if op_name else "Receitas Manuais"
         if agrupar_por == "operador":
-            return op_name or "Sem operador"
+            return op_name or "Manual / Sem caixa"
         if agrupar_por == "categoria":
             return categoria or SUBTYPE_MAP.get(subtipo or "", "Sem categoria")
         return "Outras Receitas"
