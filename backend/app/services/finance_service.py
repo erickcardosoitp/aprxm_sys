@@ -218,6 +218,7 @@ class FinanceService:
         acordo_months: int = 1,
         payer_name: str | None = None,
         payer_entity_id: UUID | None = None,
+        mensalidade_months: list[str] | None = None,
     ) -> Transaction:
         # Expense transactions require approval before affecting balance
         approval_status = "pending" if tx_type == TransactionType.expense else None
@@ -254,8 +255,11 @@ class FinanceService:
                 while mo <= 0:
                     mo += 12; y -= 1
                 return f"{y:04d}-{mo:02d}"
-            # Generate list of months to cover: for acordo with multiple months, go backwards
-            months_to_cover = [_month_offset(now, i) for i in range(acordo_months - 1, -1, -1)]
+            # Explicit month list takes precedence over acordo_months offset
+            if mensalidade_months:
+                months_to_cover = sorted(set(mensalidade_months))
+            else:
+                months_to_cover = [_month_offset(now, i) for i in range(acordo_months - 1, -1, -1)]
             for ref_month in months_to_cover:
                 existing = await self._session.execute(
                     sq_sel(Mensalidade).where(

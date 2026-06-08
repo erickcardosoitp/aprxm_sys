@@ -539,6 +539,9 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         acordo_entrada: isAcordo && acordoEntrada ? parseFloat(acordoEntrada) : undefined,
         payer_name: isPix && pixPayerName.trim() ? pixPayerName.trim() : undefined,
         payer_entity_id: isPix && pixPayerEntityId ? pixPayerEntityId : undefined,
+        mensalidade_months: isMensalidade && mensalidadeMode === 'multipla' && mensalidadeMonths.length > 0
+          ? mensalidadeMonths
+          : undefined,
       }
 
       const txPayload = {
