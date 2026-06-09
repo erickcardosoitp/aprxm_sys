@@ -1787,6 +1787,7 @@ interface DailyTask {
   service_order_title?: string
   creator_name?: string
   created_at: string
+  updated_at?: string
 }
 
 const ITEM_STATUSES = [
@@ -1877,7 +1878,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [reportUserId, setReportUserId] = useState('')
   const [onlyMine, setOnlyMine] = useState(false)
-  const [sortBy, setSortBy] = useState<'title' | 'assigned' | 'due_date' | 'status' | 'created_at' | ''>('')
+  const [sortBy, setSortBy] = useState<'title' | 'assigned' | 'due_date' | 'status' | 'created_at' | 'updated_at' | ''>('')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const draftKey = (taskId: string, idx: number) => `${taskId}:${idx}`
@@ -2562,6 +2563,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
       else if (sortBy === 'due_date') { va = a.due_date ?? '9999'; vb = b.due_date ?? '9999' }
       else if (sortBy === 'status') { va = String(statusOrder[a.status] ?? 9); vb = String(statusOrder[b.status] ?? 9) }
       else if (sortBy === 'created_at') { va = a.created_at ?? ''; vb = b.created_at ?? '' }
+      else if (sortBy === 'updated_at') { va = a.updated_at ?? ''; vb = b.updated_at ?? '' }
       const cmp = va < vb ? -1 : va > vb ? 1 : 0
       return sortDir === 'asc' ? cmp : -cmp
     }), [tasks, onlyMine, userId, sortBy, sortDir])
@@ -2658,7 +2660,11 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
             <SortBtn col="title" label="Título" />
             <SortBtn col="assigned" label="Responsável" />
             <SortBtn col="due_date" label="Prazo" />
+          </div>
+          <div className="hidden md:flex items-center gap-4 shrink-0">
             <SortBtn col="created_at" label="Abertura" />
+            <span className="text-gray-400 w-16 text-center">Dias aberto</span>
+            <SortBtn col="updated_at" label="Últ. atualiz." />
           </div>
           <SortBtn col="status" label="Status" />
           <div className="w-4 shrink-0" />
@@ -2732,6 +2738,32 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                   {isExpanded ? '▲' : '▼'}
                 </button>
               </div>
+              {/* Date metadata row — desktop only */}
+              {(() => {
+                const openedDate = task.created_at ? task.created_at.slice(0, 10) : null
+                const daysOpen = openedDate && task.status !== 'done'
+                  ? Math.floor((Date.now() - new Date(openedDate + 'T12:00:00').getTime()) / 86400000)
+                  : null
+                const updatedDate = task.updated_at ? task.updated_at.slice(0, 10) : null
+                return (
+                  <div className="hidden md:flex items-center gap-4 px-4 pb-3 text-[11px] text-gray-400 border-t border-gray-50 pt-2 mt-1">
+                    <span className="flex items-center gap-1">
+                      <span className="font-medium text-gray-500">Abertura:</span>
+                      {openedDate ? new Date(openedDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="font-medium text-gray-500">Dias aberto:</span>
+                      {daysOpen !== null
+                        ? <span className={`font-semibold ${daysOpen > 7 ? 'text-red-500' : daysOpen > 3 ? 'text-amber-500' : 'text-gray-600'}`}>{daysOpen}d</span>
+                        : '—'}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="font-medium text-gray-500">Últ. atualiz.:</span>
+                      {updatedDate ? new Date(updatedDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                    </span>
+                  </div>
+                )
+              })()}
             </div>
             {isExpanded && (
               <div className="border-t border-gray-100 p-4 flex flex-col gap-4">
