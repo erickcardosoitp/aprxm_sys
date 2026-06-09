@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react'
 import {
   AlertCircle, ChevronDown, FileText, MessageSquare, Pencil, Plus, Search, X,
-  Clock, CheckCircle, XCircle, Archive, Loader2, User, LayoutDashboard,
+  Clock, CheckCircle, XCircle, Archive, Loader2, User, LayoutDashboard, ArrowRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
@@ -1779,7 +1779,7 @@ interface DailyTask {
   assigned_to_name?: string
   due_date?: string
   reminder_at?: string
-  status: 'pending' | 'in_progress' | 'done' | 'blocked'
+  status: 'pending' | 'in_progress' | 'done' | 'blocked' | 'waiting_validation'
   blocked_reason?: string
   checklist: { text: string; done: boolean; status?: string }[]
   attachment_urls: string[]
@@ -1822,6 +1822,7 @@ interface TaskComment {
 function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const { userId, role } = useAuthStore()
   const isManager = canWrite  // admins/managers veem todas; operadores veem só as suas
+  const isAdmin = role === 'admin' || role === 'superadmin'
   const [tasks, setTasks] = useState<DailyTask[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -2077,10 +2078,16 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
   const TASK_STATUS_LABELS: Record<string, string> = {
     pending: 'Pendente', in_progress: 'Em andamento', done: 'Concluída', blocked: 'Bloqueada',
+    waiting_validation: 'Ag. Validação',
   }
 
   const setTaskStatus = async (task: DailyTask, newStatus: DailyTask['status']) => {
     if (newStatus === task.status) return
+
+    if (newStatus === 'done' && !isAdmin) {
+      toast.error('Apenas administradores podem concluir tarefas. Use "Ag. Validação" para solicitar aprovação.', { duration: 5000 })
+      return
+    }
 
     if (newStatus === 'done' && task.checklist.length > 0) {
       const blocking = ['pending', 'in_progress', 'waiting_third', 'waiting_public']
@@ -2551,7 +2558,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     else { setSortBy(col); setSortDir('asc') }
   }
 
-  const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, done: 3 }
+  const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, waiting_validation: 3, done: 4 }
 
   const displayedTasks = useMemo(() => [...tasks]
     .filter(t => t.status !== 'done' && (!onlyMine || t.assigned_to === userId))
@@ -2616,6 +2623,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           <option value="">Todos os status</option>
           <option value="pending">Pendentes</option>
           <option value="in_progress">Em andamento</option>
+          <option value="waiting_validation">Ag. Validação</option>
           <option value="done">Concluídas</option>
         </select>
         <select value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}
@@ -2679,12 +2687,13 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           <div key={task.id} className={`rounded-2xl border shadow-sm overflow-hidden ${
             task.status === 'done' ? 'border-gray-200 bg-gray-50' :
             task.status === 'in_progress' ? 'border-amber-200 bg-amber-50/40' :
+            task.status === 'waiting_validation' ? 'border-yellow-300 bg-yellow-50/50' :
             isOverdue ? 'border-red-200 bg-red-50/30' :
             'border-gray-200 bg-white'
           }`}>
             <div className="p-4">
               <div className="flex items-start gap-3">
-                {/* Status selector — visível e com rótulo */}
+                {/* Status selector */}
                 <select
                   value={task.status}
                   onChange={e => setTaskStatus(task, e.target.value as DailyTask['status'])}
@@ -2692,13 +2701,25 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                     ${task.status === 'done' ? 'bg-green-50 border-green-300 text-green-700' :
                       task.status === 'in_progress' ? 'bg-amber-50 border-amber-300 text-amber-700' :
                       task.status === 'blocked' ? 'bg-red-50 border-red-300 text-red-700' :
+                      task.status === 'waiting_validation' ? 'bg-yellow-50 border-yellow-300 text-yellow-700' :
                       'bg-gray-50 border-gray-300 text-gray-600'}`}
                 >
                   <option value="pending">⬜ Pendente</option>
                   <option value="in_progress">🔄 Em andamento</option>
-                  <option value="done">✅ Concluída</option>
                   <option value="blocked">🚫 Bloqueada</option>
+                  <option value="waiting_validation">⏳ Ag. Validação</option>
+                  {isAdmin && <option value="done">✅ Concluída</option>}
                 </select>
+                {/* Botão concluir — apenas admins, tarefa em validação */}
+                {isAdmin && task.status === 'waiting_validation' && (
+                  <button
+                    onClick={() => setTaskStatus(task, 'done')}
+                    title="Validar e concluir tarefa"
+                    className="group shrink-0 w-9 h-9 rounded-full border-2 border-gray-300 text-gray-400 flex items-center justify-center transition-all duration-200 hover:border-green-500 hover:text-white hover:bg-green-500 hover:scale-110 hover:shadow-[0_0_0_4px_rgba(34,197,94,0.2)]"
+                  >
+                    <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+                  </button>
+                )}
 
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpanded(task.id)}>
                   {/* Badges */}
