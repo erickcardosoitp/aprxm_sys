@@ -56,6 +56,12 @@ async def _run_migrations() -> None:
 
     # ── PASSO 2: demais migrações ─────────────────────────────────────────────
     async with AsyncSessionLocal() as session:
+        # Only one cold-start instance runs migrations; others skip to avoid deadlocks from
+        # concurrent DDL (ALTER TABLE) fighting with SELECT locks on the same tables.
+        got_lock = (await session.execute(text("SELECT pg_try_advisory_xact_lock(987654321)"))).scalar()
+        if not got_lock:
+            return
+
         await session.execute(text("""
             ALTER TABLE association_settings
                 ADD COLUMN IF NOT EXISTS president_name        TEXT,

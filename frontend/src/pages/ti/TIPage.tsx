@@ -25,7 +25,7 @@ const MC: Record<string, string> = {
   GET: 'bg-green-100 text-green-700', POST: 'bg-blue-100 text-blue-700',
   PATCH: 'bg-amber-100 text-amber-700', PUT: 'bg-orange-100 text-orange-700', DELETE: 'bg-red-100 text-red-700',
 }
-const fmtMs = (ms: number) => `${ms}ms`
+const fmtMs = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
 const perfColor = (ms: number) => ms > 2000 ? 'text-red-600 font-bold' : ms > 800 ? 'text-amber-600 font-semibold' : 'text-green-700'
 const AUTO_REFRESH_INTERVAL = 10 // segundos
 
@@ -582,6 +582,8 @@ export default function TIPage() {
   const [sortTable, setSortTable] = useState<'total_bytes' | 'row_estimate' | 'dead_rows' | 'name'>('total_bytes')
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // World clock: track when each active query PID was first observed
+  const queryFirstSeenRef = useRef<Record<number, number>>({})
 
   const loadHealth = useCallback(async () => {
     try {
@@ -602,6 +604,17 @@ export default function TIPage() {
       setRoutes(rRoutes.data)
       setExpandedTags(new Set(rRoutes.data.flatMap(x => x.tags.length ? x.tags : ['Sem tag'])))
       setPerf(rPerf.data)
+      // World clock: preserve first-seen timestamps for active query PIDs
+      const now = Date.now()
+      const activePids = new Set((rDb.data.active_queries ?? []).map((q: ActiveQuery) => q.pid))
+      // Prune stale PIDs
+      Object.keys(queryFirstSeenRef.current).forEach(pid => {
+        if (!activePids.has(Number(pid))) delete queryFirstSeenRef.current[Number(pid)]
+      })
+      // Register new PIDs
+      activePids.forEach(pid => {
+        if (!(pid in queryFirstSeenRef.current)) queryFirstSeenRef.current[pid] = now
+      })
       setDb(rDb.data)
       if (rActivity.data) setActivity(rActivity.data)
     } catch { /* silent */ }
@@ -787,7 +800,7 @@ export default function TIPage() {
                     <span className="text-xs font-mono text-gray-500">PID {q.pid}</span>
                     <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{q.state}</span>
                     {q.wait_event && <span className="text-[10px] text-gray-400">{q.wait_type}: {q.wait_event}</span>}
-                    <span className="ml-auto text-sm font-bold text-amber-700">{q.duration_s.toFixed(2)}s</span>
+                    <span className="ml-auto text-sm font-bold text-amber-700" title="Duração observada desde primeira detecção">≥{Math.max(q.duration_s, queryFirstSeenRef.current[q.pid] ? (Date.now() - queryFirstSeenRef.current[q.pid]) / 1000 : 0).toFixed(1)}s</span>
                   </div>
                   <code className="text-xs text-gray-700 block truncate">{q.query}</code>
                 </div>
@@ -871,7 +884,7 @@ export default function TIPage() {
                 <tr>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-16">Método</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Path</th>
-                  {([['avg_ms','Média (ms)'],['p95_ms','P95 (ms)'],['requests','Requests'],['errors','Erros']] as const).map(([col, label]) => (
+                  {([['avg_ms','Média'],['p95_ms','P95'],['requests','Requests'],['errors','Erros']] as const).map(([col, label]) => (
                     <th key={col} onClick={() => setSortPerf(col)}
                       className={`px-3 py-2 text-right text-xs font-semibold cursor-pointer select-none hover:text-[#26619c] ${sortPerf === col ? 'text-[#26619c]' : 'text-gray-500'}`}>
                       {label} {sortPerf === col ? '↓' : ''}
@@ -951,7 +964,7 @@ export default function TIPage() {
                     <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Usuário</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Operações</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Erros</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Média (ms)</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Média resp.</th>
                     <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Último acesso</th>
                   </tr>
                 </thead>
