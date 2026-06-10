@@ -404,14 +404,40 @@ async def service_orders_report(
         {"aid": str(current.association_id), "df": df, "dt": dt},
     )
     r = result.fetchone()
+    aid = str(current.association_id)
+    params = {"aid": aid, "df": df, "dt": dt}
+
     by_area = await session.execute(
         sa_text("""
             SELECT area, COUNT(*) FROM service_orders
             WHERE association_id = :aid AND created_at::date BETWEEN :df AND :dt
               AND area IS NOT NULL
             GROUP BY area ORDER BY 2 DESC LIMIT 10
-        """),
-        {"aid": str(current.association_id), "df": df, "dt": dt},
+        """), params,
+    )
+    by_category = await session.execute(
+        sa_text("""
+            SELECT COALESCE(category_name, 'Sem categoria'), COUNT(*)
+            FROM service_orders
+            WHERE association_id = :aid AND created_at::date BETWEEN :df AND :dt
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+        """), params,
+    )
+    by_org = await session.execute(
+        sa_text("""
+            SELECT COALESCE(org_responsible, 'Não informado'), COUNT(*)
+            FROM service_orders
+            WHERE association_id = :aid AND created_at::date BETWEEN :df AND :dt
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+        """), params,
+    )
+    by_priority = await session.execute(
+        sa_text("""
+            SELECT priority, COUNT(*)
+            FROM service_orders
+            WHERE association_id = :aid AND created_at::date BETWEEN :df AND :dt
+            GROUP BY priority ORDER BY 2 DESC
+        """), params,
     )
     by_day = await session.execute(
         sa_text("""
@@ -423,14 +449,16 @@ async def service_orders_report(
             FROM service_orders
             WHERE association_id = :aid AND created_at::date BETWEEN :df AND :dt
             GROUP BY dia ORDER BY dia
-        """),
-        {"aid": str(current.association_id), "df": df, "dt": dt},
+        """), params,
     )
     return {
         "period": {"from": date_from, "to": date_to},
         "total": r[0], "resolvidas": r[1], "canceladas": r[2],
         "abertas": r[3], "criticas": r[4],
-        "by_area": [{"area": a[0], "count": a[1]} for a in by_area.fetchall()],
+        "by_area": [{"label": a[0], "count": a[1]} for a in by_area.fetchall()],
+        "by_category": [{"label": c[0], "count": c[1]} for c in by_category.fetchall()],
+        "by_org": [{"label": o[0], "count": o[1]} for o in by_org.fetchall()],
+        "by_priority": [{"label": p[0], "count": p[1]} for p in by_priority.fetchall()],
         "by_day": [{"dia": str(d[0]), "total": d[1], "resolvidas": d[2], "abertas": d[3]} for d in by_day.fetchall()],
     }
 

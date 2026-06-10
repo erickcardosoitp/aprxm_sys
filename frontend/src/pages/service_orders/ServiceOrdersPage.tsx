@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, startTransition } fr
 import {
   AlertCircle, ChevronDown, FileText, MessageSquare, Pencil, Plus, Search, X,
   Clock, CheckCircle, XCircle, Archive, Loader2, User, LayoutDashboard, ArrowRight,
+  Building2, Tag, Calendar, TrendingUp, UserX, AlertTriangle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
@@ -3416,10 +3417,11 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   }, [anySOModalOpen])
 
   // KPIs
-  const total = orders.length
-  const pending = orders.filter(o => o.status === 'pending').length
-  const inProgress = orders.filter(o => o.status === 'in_progress').length
-  const critical = orders.filter(o => o.priority === 'critical').length
+  const OPEN_STATUSES: ServiceOrderStatus[] = ['pending', 'open', 'in_progress', 'waiting_third_party']
+  const abertas = orders.filter(o => OPEN_STATUSES.includes(o.status)).length
+  const criticas = orders.filter(o => o.priority === 'critical' && OPEN_STATUSES.includes(o.status)).length
+  const semResponsavel = orders.filter(o => !o.assigned_to && OPEN_STATUSES.includes(o.status)).length
+  const resolvidas = orders.filter(o => o.status === 'resolved').length
   const inconsistent = orders.filter(o => !!o.resolved_at && !['resolved', 'archived', 'cancelled'].includes(o.status)).length
 
   return (
@@ -3474,152 +3476,196 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
       {pageTab === 'tarefas' && <TarefasDiariasTab canWrite={canWrite} />}
 
       {pageTab === 'ordens' && <>
+
       {/* KPIs */}
-      <div className={`grid gap-3 ${inconsistent > 0 ? 'grid-cols-5' : 'grid-cols-4'}`}>
-        {[
-          { label: 'Total', value: total, color: 'bg-gray-50 text-gray-700' },
-          { label: 'Pendentes', value: pending, color: 'bg-yellow-50 text-yellow-700' },
-          { label: 'Em Andamento', value: inProgress, color: 'bg-blue-50 text-blue-700' },
-          { label: 'Críticas', value: critical, color: 'bg-red-50 text-red-700' },
-          ...(inconsistent > 0 ? [{ label: 'Status desatualizado', value: inconsistent, color: 'bg-amber-50 text-amber-700' }] : []),
-        ].map(k => (
-          <div key={k.label} className={`rounded-xl p-3 text-center ${k.color} border border-current/10`}>
-            <p className="text-2xl font-bold">{k.value}</p>
-            <p className="text-xs mt-0.5 opacity-80">{k.label}</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3 shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+            <TrendingUp className="w-5 h-5 text-blue-600" />
           </div>
-        ))}
+          <div>
+            <p className="text-2xl font-bold text-gray-900">{abertas}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Abertas</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3 shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-red-600">{criticas}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Críticas abertas</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3 shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+            <UserX className="w-5 h-5 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-amber-600">{semResponsavel}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Sem responsável</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3 shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center shrink-0">
+            <CheckCircle className="w-5 h-5 text-green-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-green-600">{resolvidas}</p>
+            <p className="text-xs text-gray-500 mt-0.5">Resolvidas</p>
+          </div>
+        </div>
+        {inconsistent > 0 && (
+          <div className="col-span-2 sm:col-span-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+            <p className="text-sm text-amber-800">
+              <strong>{inconsistent} OS</strong> com notas de resolução registradas mas status desatualizado. Clique nelas para corrigir.
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Filters */}
+      {/* Toolbar — filtros + busca */}
       <div className="flex flex-col gap-2">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por título, solicitante…"
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
-          />
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex gap-1.5 flex-wrap flex-1">
-            <button
-              onClick={() => setFilterStatus('')}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${filterStatus === '' ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              title="Oculta canceladas e arquivadas"
-            >
-              Ativas
-            </button>
-            {ALL_STATUSES.map(s => (
-              <button
-                key={s}
-                onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              >
-                {STATUS_LABELS[s]}
-              </button>
+        <div className="flex gap-2 items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar por título, solicitante…"
+              className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
+            />
+          </div>
+          <select
+            value={filterPriority}
+            onChange={e => setFilterPriority(e.target.value as ServiceOrderPriority | '')}
+            className="text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none bg-white text-gray-600 shrink-0"
+          >
+            <option value="">Prioridade</option>
+            {(['low', 'medium', 'high', 'critical'] as ServiceOrderPriority[]).map(p => (
+              <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
             ))}
+          </select>
+          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-xs bg-white shrink-0">
+            <button onClick={() => setSortBy('priority')} className={`px-2.5 py-2 transition ${sortBy === 'priority' ? 'bg-[#26619c] text-white' : 'text-gray-600 hover:bg-gray-50'}`}>Por prioridade</button>
+            <button onClick={() => setSortBy('date')} className={`px-2.5 py-2 transition border-l border-gray-200 ${sortBy === 'date' ? 'bg-[#26619c] text-white' : 'text-gray-600 hover:bg-gray-50'}`}>Mais recente</button>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <select
-              value={filterPriority}
-              onChange={e => setFilterPriority(e.target.value as ServiceOrderPriority | '')}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#26619c] bg-white text-gray-600"
-            >
-              <option value="">Qualquer prioridade</option>
-              {(['low', 'medium', 'high', 'critical'] as ServiceOrderPriority[]).map(p => (
-                <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
-              ))}
-            </select>
-            <div className="flex items-center gap-1 border border-gray-200 rounded-lg overflow-hidden text-xs bg-white">
-              <button
-                onClick={() => setSortBy('priority')}
-                className={`px-2.5 py-1.5 transition ${sortBy === 'priority' ? 'bg-[#26619c] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-                title="Ordenar por prioridade"
-              >
-                Prioridade
-              </button>
-              <button
-                onClick={() => setSortBy('date')}
-                className={`px-2.5 py-1.5 transition ${sortBy === 'date' ? 'bg-[#26619c] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-                title="Ordenar por data"
-              >
-                Mais recente
-              </button>
-            </div>
-          </div>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          <button onClick={() => setFilterStatus('')} className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${filterStatus === '' ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} title="Oculta canceladas e arquivadas">Ativas</button>
+          {ALL_STATUSES.map(s => (
+            <button key={s} onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${filterStatus === s ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              {STATUS_LABELS[s]}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* List */}
+      {/* Tabela */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Cabeçalho da tabela */}
+        <div className="hidden sm:grid grid-cols-[4px_56px_1fr_120px_130px_140px_110px_100px] bg-gray-50 border-b border-gray-200 px-4 py-2.5 gap-3">
+          <div />
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">#</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Título</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Prioridade</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Status</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Categoria</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Data</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Responsável</p>
+        </div>
+
         {loading ? (
-          <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>
+          <div className="p-10 text-center text-gray-400 text-sm flex flex-col items-center gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Carregando…
+          </div>
         ) : orders.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">Nenhuma ordem de serviço encontrada.</div>
+          <div className="p-10 text-center text-gray-400 text-sm">
+            <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            Nenhuma ordem de serviço encontrada.
+          </div>
         ) : (
-          <ul className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100">
             {sortedOrders.map(so => {
-                const isInconsistent = !!so.resolved_at && !['resolved', 'archived', 'cancelled'].includes(so.status)
-                return (
-                  <li
-                    key={so.id}
-                    className={`px-4 py-3.5 cursor-pointer transition border-l-4 ${
-                      isInconsistent ? 'bg-amber-50/60 hover:bg-amber-50 border-l-amber-400' :
-                      so.priority === 'critical' ? 'border-l-red-500 hover:bg-red-50/20' :
-                      so.priority === 'high'     ? 'border-l-orange-400 hover:bg-orange-50/20' :
-                      so.priority === 'medium'   ? 'border-l-blue-400 hover:bg-gray-50' :
-                      'border-l-gray-200 hover:bg-gray-50'
-                    }`}
-                    onClick={() => setSelectedOrder(so)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-xs font-mono text-gray-400">#{String(so.number).padStart(4, '0')}</span>
-                          <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[so.status]}`}>
-                            {STATUS_ICONS[so.status]}
-                            {STATUS_LABELS[so.status]}
-                          </span>
-                          <span className="flex items-center gap-1 text-xs">
-                            <span className={`w-2 h-2 rounded-full ${PRIORITY_DOT[so.priority]}`} />
-                            <span className={PRIORITY_TEXT[so.priority]}>{PRIORITY_LABELS[so.priority]}</span>
-                          </span>
-                          {so.association_name && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 text-[10px] font-semibold leading-none">
-                              {so.association_name}
-                            </span>
-                          )}
-                          {isInconsistent && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-semibold">
-                              <AlertCircle className="w-3 h-3" /> Status desatualizado
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm font-medium text-gray-800 truncate">{so.title}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
-                          {so.community_wide && <span className="text-blue-600 font-medium">Toda a comunidade</span>}
-                          {so.category_name && <span>{so.category_name}</span>}
-                          {so.org_responsible && <><span>·</span><span className="text-gray-500">{so.org_responsible}</span></>}
-                          {!so.community_wide && so.requester_name && <><span>·</span><span>{so.requester_name}</span></>}
-                          <span>·</span>
-                          <span>{new Date(so.created_at).toLocaleDateString('pt-BR')}</span>
-                          {so.created_by_name && <><span>·</span><span className="flex items-center gap-0.5"><User className="w-3 h-3" />{so.created_by_name}</span></>}
-                        </p>
-                        {so.assigned_to_name && (
-                          <p className="text-[10px] text-gray-500 mt-0.5 flex items-center gap-1">
-                            <span className="w-3.5 h-3.5 rounded-full bg-gray-300 text-gray-600 text-[8px] font-bold flex items-center justify-center shrink-0">
-                              {so.assigned_to_name[0].toUpperCase()}
-                            </span>
-                            {so.assigned_to_name}
-                          </p>
-                        )}
+              const isInconsistent = !!so.resolved_at && !['resolved', 'archived', 'cancelled'].includes(so.status)
+              const priorityBar =
+                isInconsistent       ? 'bg-amber-400' :
+                so.priority === 'critical' ? 'bg-red-500' :
+                so.priority === 'high'     ? 'bg-orange-400' :
+                so.priority === 'medium'   ? 'bg-blue-400' : 'bg-gray-200'
+
+              return (
+                <button
+                  key={so.id}
+                  className="w-full text-left group hover:bg-gray-50/80 transition"
+                  onClick={() => setSelectedOrder(so)}
+                >
+                  {/* Mobile layout */}
+                  <div className="sm:hidden flex items-start gap-3 px-4 py-3.5">
+                    <div className={`w-1 self-stretch rounded-full shrink-0 ${priorityBar}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                        <span className="text-xs font-mono text-gray-400">#{String(so.number).padStart(4, '0')}</span>
+                        <span className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[so.status]}`}>
+                          {STATUS_ICONS[so.status]}{STATUS_LABELS[so.status]}
+                        </span>
+                        {isInconsistent && <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
                       </div>
+                      <p className="text-sm font-semibold text-gray-800 truncate">{so.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {so.category_name ?? '—'} · {new Date(so.created_at).toLocaleDateString('pt-BR')}
+                      </p>
                     </div>
-                  </li>
-                )
+                    <span className={`text-[10px] font-semibold ${PRIORITY_TEXT[so.priority]} shrink-0 mt-0.5`}>{PRIORITY_LABELS[so.priority]}</span>
+                  </div>
+
+                  {/* Desktop layout — tabular */}
+                  <div className="hidden sm:grid grid-cols-[4px_56px_1fr_120px_130px_140px_110px_100px] items-center gap-3 px-4 py-3">
+                    <div className={`h-full rounded-full ${priorityBar}`} style={{minHeight: '32px'}} />
+                    <span className="text-xs font-mono text-gray-400 group-hover:text-gray-600">#{String(so.number).padStart(4, '0')}</span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-800 truncate group-hover:text-[#26619c] transition-colors">{so.title}</p>
+                      {so.requester_name && <p className="text-[11px] text-gray-400 truncate">{so.requester_name}</p>}
+                    </div>
+                    <span className={`text-xs font-semibold ${PRIORITY_TEXT[so.priority]}`}>
+                      <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${PRIORITY_DOT[so.priority]}`} />
+                      {PRIORITY_LABELS[so.priority]}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium w-fit ${STATUS_COLORS[so.status]}`}>
+                      {STATUS_ICONS[so.status]}{STATUS_LABELS[so.status]}
+                      {isInconsistent && <AlertCircle className="w-3 h-3 text-amber-500 ml-0.5" />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-700 truncate">{so.category_name ?? '—'}</p>
+                      {so.org_responsible && <p className="text-[11px] text-gray-400 truncate">{so.org_responsible}</p>}
+                    </div>
+                    <span className="text-xs text-gray-500">{new Date(so.created_at).toLocaleDateString('pt-BR')}</span>
+                    <div className="min-w-0">
+                      {so.assigned_to_name ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-6 h-6 rounded-full bg-[#26619c]/10 text-[#26619c] text-[9px] font-bold flex items-center justify-center shrink-0 border border-[#26619c]/20">
+                            {so.assigned_to_name.split(' ').slice(0,2).map(n => n[0]).join('').toUpperCase()}
+                          </span>
+                          <span className="text-xs text-gray-600 truncate">{so.assigned_to_name.split(' ')[0]}</span>
+                        </span>
+                      ) : <span className="text-xs text-gray-300">—</span>}
+                    </div>
+                  </div>
+                </button>
+              )
             })}
-          </ul>
+          </div>
+        )}
+
+        {/* Footer da tabela */}
+        {orders.length > 0 && (
+          <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
+            <p className="text-xs text-gray-400">{sortedOrders.length} ordem{sortedOrders.length !== 1 ? 's' : ''} exibida{sortedOrders.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-gray-400">{abertas} abertas · {resolvidas} resolvidas</p>
+          </div>
         )}
       </div>
 
@@ -3765,14 +3811,42 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
                       </div>
                     ))}
                   </div>
-                  {reportData.by_area?.length > 0 && (
+                  {reportData.by_category?.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-gray-600 mb-2">Por Área</p>
+                      <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1"><Tag className="w-3.5 h-3.5" /> Por Categoria</p>
                       <ul className="flex flex-col gap-1">
-                        {reportData.by_area.map((a: any) => (
-                          <li key={a.area} className="flex justify-between text-sm">
-                            <span className="text-gray-700">{a.area}</span>
-                            <span className="font-medium text-gray-800">{a.count}</span>
+                        {reportData.by_category.map((a: any) => (
+                          <li key={a.label} className="flex justify-between items-center text-xs">
+                            <span className="text-gray-700 truncate">{a.label}</span>
+                            <span className="font-semibold text-gray-800 shrink-0 ml-2">{a.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {reportData.by_org?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1"><Building2 className="w-3.5 h-3.5" /> Por Órgão Responsável</p>
+                      <ul className="flex flex-col gap-1">
+                        {reportData.by_org.map((a: any) => (
+                          <li key={a.label} className="flex justify-between items-center text-xs">
+                            <span className="text-gray-700 truncate">{a.label}</span>
+                            <span className="font-semibold text-gray-800 shrink-0 ml-2">{a.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {reportData.by_priority?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Por Prioridade</p>
+                      <ul className="flex flex-col gap-1">
+                        {reportData.by_priority.map((a: any) => (
+                          <li key={a.label} className="flex justify-between items-center text-xs">
+                            <span className={`font-medium ${a.label === 'critical' ? 'text-red-600' : a.label === 'high' ? 'text-orange-500' : a.label === 'medium' ? 'text-blue-600' : 'text-gray-500'}`}>
+                              {PRIORITY_LABELS[a.label as ServiceOrderPriority] ?? a.label}
+                            </span>
+                            <span className="font-semibold text-gray-800">{a.count}</span>
                           </li>
                         ))}
                       </ul>
