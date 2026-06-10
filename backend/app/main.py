@@ -24,9 +24,32 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# Bump this integer every time a new migration block is added below.
+# Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
+_SCHEMA_VERSION = 1
+
+
 async def _run_migrations() -> None:
     from sqlalchemy import text
     from app.database import AsyncSessionLocal
+
+    # ── VERSIONING: create tracking table + fast exit if already up-to-date ──
+    async with AsyncSessionLocal() as _sv:
+        await _sv.execute(text("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version     INTEGER     PRIMARY KEY,
+                applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                description TEXT
+            )
+        """))
+        await _sv.commit()
+
+    async with AsyncSessionLocal() as _sv:
+        _applied = (await _sv.execute(text(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+        ))).scalar()
+    if _applied >= _SCHEMA_VERSION:
+        return  # nothing to do — ~2ms cost on every cold start from here on
 
     # ── PASSO 1: user_association_roles ───────────────────────────────────────
     # Sessão própria e isolada; nunca bloqueada por outras migrações.
@@ -56,10 +79,34 @@ async def _run_migrations() -> None:
 
     # ── PASSO 2: demais migrações ─────────────────────────────────────────────
     async with AsyncSessionLocal() as session:
-        # Only one cold-start instance runs migrations; others skip to avoid deadlocks from
-        # concurrent DDL (ALTER TABLE) fighting with SELECT locks on the same tables.
+        # Serialize: only one cold-start instance runs migrations at a time.
         got_lock = (await session.execute(text("SELECT pg_try_advisory_xact_lock(987654321)"))).scalar()
         if not got_lock:
+            return
+
+        # Re-check version inside the lock — another instance may have just finished.
+        _applied = (await session.execute(text(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+        ))).scalar()
+        if _applied >= _SCHEMA_VERSION:
+            return
+
+        # ── v1 bootstrap: detect existing production DB ───────────────────────
+        # If the last-ever-added column already exists, all DDL was applied by a
+        # previous deploy. Record version 1 and skip the entire DDL block.
+        _is_existing_db = (await session.execute(text("""
+            SELECT COUNT(*) > 0
+            FROM information_schema.columns
+            WHERE table_name = 'api_request_logs' AND column_name = 'user_id'
+        """))).scalar()
+
+        if _is_existing_db:
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (1, 'bootstrap: existing production DB — DDL pre-applied') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
             return
 
         await session.execute(text("""
@@ -816,6 +863,13 @@ async def _run_migrations() -> None:
 
         await session.execute(text(
             "ALTER TABLE api_request_logs ADD COLUMN IF NOT EXISTS user_id UUID"
+        ))
+
+        # Mark v1 as applied — fresh DB path
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (1, 'v1: full DDL applied on fresh database') "
+            "ON CONFLICT DO NOTHING"
         ))
         await session.commit()
 
