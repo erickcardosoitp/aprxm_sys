@@ -2280,6 +2280,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
   const [deletedTasks, setDeletedTasks] = useState<any[]>([])
   const [showDeleted, setShowDeleted] = useState(false)
+  const [showDone, setShowDone] = useState(true)
   const [loadingDeleted, setLoadingDeleted] = useState(false)
 
   const loadDeleted = async () => {
@@ -2436,6 +2437,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
   // Moved before showReport early-return to avoid React hooks violation
   const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, waiting_validation: 3, done: 4 }
+  const doneTasks = useMemo(() => tasks.filter(t => t.status === 'done' && (!onlyMine || t.assigned_to === userId)), [tasks, onlyMine, userId])
   const displayedTasks = useMemo(() => [...tasks]
     .filter(t => t.status !== 'done' && (!onlyMine || t.assigned_to === userId))
     .sort((a, b) => {
@@ -3271,6 +3273,33 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           </div>
         )
       })}
+
+      {/* Concluídas hoje */}
+      {doneTasks.length > 0 && (
+        <div className="border border-green-200 rounded-2xl overflow-hidden">
+          <button onClick={() => setShowDone(v => !v)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-green-700 hover:bg-green-50 transition">
+            <span>✓</span>
+            Concluídas hoje
+            <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">{doneTasks.length}</span>
+            <span className="ml-auto text-gray-300">{showDone ? '▲' : '▼'}</span>
+          </button>
+          {showDone && (
+            <div className="border-t border-green-100 divide-y divide-green-50">
+              {doneTasks.map(task => (
+                <div key={task.id} className="px-4 py-3 flex items-center gap-3 bg-green-50/40">
+                  <span className="text-green-500 text-base shrink-0">✓</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-500 line-through truncate">{task.title}</p>
+                    {task.assigned_to_name && <p className="text-xs text-gray-400">{task.assigned_to_name}</p>}
+                  </div>
+                  {task.updated_at && <span className="text-xs text-gray-400 shrink-0">{task.updated_at.slice(11,16)}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Lixeira — tarefas excluídas nos últimos 30 dias */}
       {role !== 'operator' && role !== 'viewer' && (
