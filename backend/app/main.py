@@ -664,27 +664,59 @@ async def _run_migrations() -> None:
                         INSERT INTO user_association_roles (user_id, association_id, role)
                         SELECT winner, association_id, role FROM users WHERE id = loser
                         ON CONFLICT (user_id, association_id) DO NOTHING;
-                        -- redirecionar todos os FKs críticos
-                        UPDATE daily_tasks          SET created_by     = winner WHERE created_by     = loser;
-                        UPDATE daily_tasks          SET assigned_to    = winner WHERE assigned_to    = loser;
-                        UPDATE service_order_tasks  SET created_by     = winner WHERE created_by     = loser;
-                        UPDATE service_order_tasks  SET assigned_to    = winner WHERE assigned_to    = loser;
-                        UPDATE service_orders       SET assigned_to    = winner WHERE assigned_to    = loser;
-                        UPDATE demands              SET created_by     = winner WHERE created_by     = loser;
-                        UPDATE demands              SET assigned_to    = winner WHERE assigned_to    = loser;
-                        UPDATE transactions         SET created_by     = winner WHERE created_by     = loser;
-                        UPDATE notifications        SET user_id        = winner WHERE user_id        = loser;
-                        UPDATE chat_messages        SET sender_id      = winner WHERE sender_id      = loser;
-                        UPDATE webauthn_credentials SET user_id        = winner WHERE user_id        = loser;
-                        UPDATE webauthn_challenges  SET user_id        = winner WHERE user_id        = loser;
-                        UPDATE resident_update_requests    SET reviewed_by = winner WHERE reviewed_by = loser;
-                        UPDATE cash_sessions               SET reviewed_by = winner WHERE reviewed_by = loser;
-                        UPDATE session_transaction_reviews SET reviewed_by = winner WHERE reviewed_by = loser;
-                        UPDATE pix_learning_map     SET confirmed_by   = winner WHERE confirmed_by  = loser;
-                        UPDATE porta_a_porta_leads  SET operator_id    = winner WHERE operator_id   = loser;
-                        UPDATE porta_a_porta_leads  SET commissioned_to= winner WHERE commissioned_to=loser;
-                        UPDATE porta_a_porta_commission_payments SET operator_id = winner WHERE operator_id = loser;
-                        UPDATE porta_a_porta_commission_payments SET paid_by     = winner WHERE paid_by     = loser;
+                        -- redirecionar TODOS os FKs para users(id)
+                        UPDATE association_settings SET president_user_id = winner WHERE president_user_id = loser;
+                        UPDATE association_settings SET updated_by         = winner WHERE updated_by         = loser;
+                        UPDATE associations         SET presidente_user_id = winner WHERE presidente_user_id = loser;
+                        UPDATE audit_log            SET user_id            = winner WHERE user_id            = loser;
+                        UPDATE cash_box_movements   SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE cash_sessions        SET opened_by          = winner WHERE opened_by          = loser;
+                        UPDATE cash_sessions        SET closed_by          = winner WHERE closed_by          = loser;
+                        UPDATE cash_sessions        SET reviewed_by        = winner WHERE reviewed_by        = loser;
+                        UPDATE daily_task_comments  SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE daily_tasks          SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE daily_tasks          SET assigned_to        = winner WHERE assigned_to        = loser;
+                        UPDATE delivery_exemption_tokens SET created_by    = winner WHERE created_by         = loser;
+                        UPDATE delivery_exemption_tokens SET used_by       = winner WHERE used_by            = loser;
+                        UPDATE demands              SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE demands              SET assigned_to        = winner WHERE assigned_to        = loser;
+                        UPDATE inventory_records    SET signed_by          = winner WHERE signed_by          = loser;
+                        UPDATE inventory_records    SET cancelled_by       = winner WHERE cancelled_by       = loser;
+                        UPDATE mensalidades         SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE migration_payments   SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE notifications        SET user_id            = winner WHERE user_id            = loser;
+                        UPDATE package_events       SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE packages             SET received_by        = winner WHERE received_by        = loser;
+                        UPDATE packages             SET delivered_by       = winner WHERE delivered_by       = loser;
+                        UPDATE pix_learning_map     SET confirmed_by       = winner WHERE confirmed_by       = loser;
+                        UPDATE porta_a_porta_leads  SET operator_id        = winner WHERE operator_id        = loser;
+                        UPDATE porta_a_porta_leads  SET commissioned_to    = winner WHERE commissioned_to    = loser;
+                        UPDATE porta_a_porta_commission_payments SET operator_id = winner WHERE operator_id  = loser;
+                        UPDATE porta_a_porta_commission_payments SET paid_by     = winner WHERE paid_by      = loser;
+                        UPDATE resident_update_requests SET reviewed_by    = winner WHERE reviewed_by        = loser;
+                        UPDATE residents            SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE service_order_comments SET created_by       = winner WHERE created_by         = loser;
+                        UPDATE service_order_history  SET changed_by       = winner WHERE changed_by         = loser;
+                        UPDATE service_order_tasks  SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE service_order_tasks  SET assigned_to        = winner WHERE assigned_to        = loser;
+                        UPDATE service_orders       SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE service_orders       SET assigned_to        = winner WHERE assigned_to        = loser;
+                        UPDATE service_orders       SET requester_user_id  = winner WHERE requester_user_id  = loser;
+                        UPDATE session_transaction_reviews SET reviewed_by = winner WHERE reviewed_by        = loser;
+                        UPDATE so_presence          SET user_id            = winner WHERE user_id            = loser;
+                        UPDATE transactions         SET created_by         = winner WHERE created_by         = loser;
+                        UPDATE transactions         SET approved_by        = winner WHERE approved_by        = loser;
+                        UPDATE transactions         SET reversed_by        = winner WHERE reversed_by        = loser;
+                        UPDATE chat_messages        SET sender_id          = winner WHERE sender_id          = loser;
+                        UPDATE webauthn_credentials SET user_id            = winner WHERE user_id            = loser;
+                        UPDATE webauthn_challenges  SET user_id            = winner WHERE user_id            = loser;
+                        -- chat_message_reads: pode ter unique(user_id, message_id)
+                        INSERT INTO chat_message_reads (user_id, message_id, read_at)
+                        SELECT winner, message_id, read_at FROM chat_message_reads WHERE user_id = loser
+                        ON CONFLICT DO NOTHING;
+                        DELETE FROM chat_message_reads WHERE user_id = loser;
+                        -- refresh_tokens: invalidar tokens do loser
+                        DELETE FROM refresh_tokens WHERE user_id = loser;
                         -- push_subscriptions: evitar conflito de endpoint
                         INSERT INTO push_subscriptions (association_id,user_id,endpoint,p256dh,auth,created_at)
                         SELECT association_id,winner,endpoint,p256dh,auth,created_at
