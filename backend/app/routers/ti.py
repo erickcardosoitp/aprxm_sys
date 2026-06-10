@@ -89,12 +89,12 @@ async def health_check(
         },
         "migrations": {
             "current_version": int(migration_row[0]),
-            "applied_at": str(migration_row[1])[:16] if migration_row[1] else None,
+            "applied_at": migration_row[1].isoformat() if migration_row[1] else None,
             "description": migration_row[2],
         },
         "trend_24h": [
             {
-                "hour": str(r[0])[:16],
+                "hour": r[0].isoformat() if hasattr(r[0], 'isoformat') else str(r[0]),
                 "requests": int(r[1]),
                 "errors": int(r[2]),
                 "avg_ms": int(r[3] or 0),

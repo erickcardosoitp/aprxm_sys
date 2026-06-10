@@ -37,6 +37,8 @@ const fmtBRT = (iso: string | null | undefined) => {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })
 }
+const fmtHourBRT = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false })
 const perfColor = (ms: number) => ms > 2000 ? 'text-red-600 font-bold' : ms > 800 ? 'text-amber-600 font-semibold' : 'text-green-700'
 const AUTO_REFRESH_INTERVAL = 10 // segundos
 
@@ -795,7 +797,7 @@ export default function TIPage() {
                 </div>
                 <p className="text-2xl font-bold text-green-600 tabular-nums">v{health.migrations.current_version}</p>
                 <p className="text-[10px] text-gray-400 mt-0.5">
-                  {health.migrations.applied_at ? `aplicado ${health.migrations.applied_at}` : 'não registrado'}
+                  {health.migrations.applied_at ? `aplicado ${fmtBRT(health.migrations.applied_at)}` : 'não registrado'}
                 </p>
               </div>
             )}
@@ -812,16 +814,16 @@ export default function TIPage() {
                   const errPct = t.requests > 0 ? t.errors / t.requests : 0
                   return (
                     <div key={i} className="flex flex-col items-center gap-0.5 flex-1 min-w-[12px]"
-                      title={`${t.hour.slice(11,16)} — ${t.requests} req · ${t.errors} erros · avg ${t.avg_ms}ms`}>
+                      title={`${fmtHourBRT(t.hour)} — ${t.requests} req · ${t.errors} erros · avg ${t.avg_ms}ms`}>
                       <div style={{ height: h }} className={`w-full rounded-t-sm ${errPct > 0.1 ? 'bg-red-400' : errPct > 0.02 ? 'bg-amber-400' : 'bg-[#26619c]/70'}`} />
                     </div>
                   )
                 })}
               </div>
               <div className="flex justify-between text-[9px] text-gray-400 mt-1">
-                <span>{health.trend_24h[0]?.hour.slice(11,16)}</span>
+                <span>{health.trend_24h[0] ? fmtHourBRT(health.trend_24h[0].hour) : ''}</span>
                 <span className="text-[9px] text-gray-400">azul = ok · amarelo = {'>'} 2% erros · vermelho = {'>'} 10%</span>
-                <span>{health.trend_24h[health.trend_24h.length-1]?.hour.slice(11,16)}</span>
+                <span>{health.trend_24h.at(-1) ? fmtHourBRT(health.trend_24h.at(-1)!.hour) : ''}</span>
               </div>
             </div>
           )}
