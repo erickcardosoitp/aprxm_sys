@@ -932,7 +932,7 @@ export default function TIPage() {
                           <td className="px-3 py-2 text-right tabular-nums font-semibold text-[#26619c]">{u.operacoes.toLocaleString('pt-BR')}</td>
                           <td className={`px-3 py-2 text-right tabular-nums ${u.erros > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>{u.erros > 0 ? u.erros : '—'}</td>
                           <td className={`px-3 py-2 text-right tabular-nums text-xs ${perfColor(u.avg_ms)}`}>{fmtMs(u.avg_ms)}</td>
-                          <td className="px-3 py-2 text-xs text-gray-400">{u.ultimo_acesso || '—'}</td>
+                          <td className="px-3 py-2 text-xs text-gray-400">{u.ultimo_acesso ? fmtBRT(u.ultimo_acesso) : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
