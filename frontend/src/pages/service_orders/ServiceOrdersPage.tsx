@@ -2107,6 +2107,10 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [viewMode, setViewMode] = useState<'list' | 'byUser'>(() => (role === 'admin' || role === 'superadmin' || role === 'admin_master') ? 'byUser' : 'list')
   const [collapsedUsers, setCollapsedUsers] = useState<Set<string>>(new Set())
+  const [expandedByUserTask, setExpandedByUserTask] = useState<Set<string>>(new Set())
+  const toggleByUserTask = (id: string) => setExpandedByUserTask(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
 
   const draftKey = (taskId: string, idx: number) => `${taskId}:${idx}`
   const getDraft = (taskId: string, idx: number) =>
@@ -2462,19 +2466,21 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const myTasks = useMemo(() => displayedTasks.filter(t => t.assigned_to === userId), [displayedTasks, userId])
   const otherTasks = useMemo(() => displayedTasks.filter(t => t.assigned_to !== userId), [displayedTasks, userId])
 
+  const byUserSortDesc = (a: DailyTask, b: DailyTask) =>
+    (b.updated_at ?? b.created_at ?? '') > (a.updated_at ?? a.created_at ?? '') ? 1 : -1
+
   const tasksByUser = useMemo(() => {
     const map = new Map<string, { name: string; tasks: DailyTask[] }>()
-    const allForAdmin = [...tasks].filter(t => t.status !== 'done')
-    for (const t of allForAdmin) {
+    for (const t of tasks.filter(t => t.status !== 'done' && t.assigned_to !== userId)) {
       const key = t.assigned_to ?? '__unassigned__'
       const name = t.assigned_to_name ?? 'Sem responsável'
       if (!map.has(key)) map.set(key, { name, tasks: [] })
       map.get(key)!.tasks.push(t)
     }
     return Array.from(map.entries())
-      .map(([uid, v]) => ({ uid, name: v.name, tasks: v.tasks }))
+      .map(([uid, v]) => ({ uid, name: v.name, tasks: [...v.tasks].sort(byUserSortDesc) }))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [tasks])
+  }, [tasks, userId])
 
   const taskForm = (
     <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-3">
@@ -2895,7 +2901,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
           </label>
           <span className="text-xs text-gray-400 font-medium">{displayedTasks.length}</span>
           {isAdmin && (
-            <div className="flex border border-gray-200 rounded-lg overflow-hidden text-xs">
+            <div className="flex border border-gray-200 rounded-lg overflow-hidden">
               <button onClick={() => setViewMode('byUser')}
                 className={`px-2 py-1 ${viewMode === 'byUser' ? 'bg-[#26619c] text-white' : 'text-gray-500 hover:bg-gray-50'} transition`}
                 title="Visão por usuário">
@@ -2929,88 +2935,150 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         <p className="text-sm text-gray-400 text-center py-10">{tasks.length === 0 ? 'Nenhuma tarefa. Crie a primeira!' : 'Nenhuma tarefa corresponde ao filtro.'}</p>
       )}
 
-      {/* ── Visão por usuário (admin) ── */}
-      {!loading && isAdmin && viewMode === 'byUser' && tasksByUser.length > 0 && (
+      {/* ── Visão por usuário (admin): minhas tarefas em cima, outros agrupados abaixo ── */}
+      {!loading && isAdmin && viewMode === 'byUser' && (
         <div className="flex flex-col gap-3">
-          {tasksByUser.map(({ uid, name, tasks: uTasks }) => {
-            const doneCount = tasks.filter(t => t.status === 'done' && t.assigned_to === uid).length
-            const total = uTasks.length + doneCount
-            const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0
-            const isCollapsed = collapsedUsers.has(uid)
-            const toggle = () => setCollapsedUsers(prev => {
-              const next = new Set(prev)
-              next.has(uid) ? next.delete(uid) : next.add(uid)
-              return next
-            })
-            const initials = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
-            const allDone = uTasks.length === 0
-            return (
-              <div key={uid} className={`rounded-2xl border overflow-hidden ${allDone ? 'border-green-200 bg-green-50/30' : 'border-gray-200 bg-white'}`}>
-                <button onClick={toggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition text-left">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${allDone ? 'bg-green-100 text-green-700' : 'bg-[#26619c]/10 text-[#26619c]'}`}>
-                    {allDone ? '✓' : initials}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-gray-800 truncate">{name}</span>
-                      {allDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">Concluído</span>}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden max-w-[120px]">
-                        <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="text-xs text-gray-400">{doneCount}/{total} feitas</span>
-                      {uTasks.filter(t => t.status === 'in_progress').length > 0 && (
-                        <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{uTasks.filter(t => t.status === 'in_progress').length} em andamento</span>
-                      )}
-                      {uTasks.filter(t => t.due_date && t.due_date < today).length > 0 && (
-                        <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{uTasks.filter(t => t.due_date && t.due_date < today).length} atrasada{uTasks.filter(t => t.due_date && t.due_date < today).length > 1 ? 's' : ''}</span>
-                      )}
-                    </div>
-                  </div>
-                  <span className="text-gray-300 text-xs ml-2">{isCollapsed ? '▼' : '▲'}</span>
-                </button>
-                {!isCollapsed && uTasks.length > 0 && (
-                  <div className="border-t border-gray-100 divide-y divide-gray-50">
-                    {uTasks.map(t => {
-                      const itemDone = t.checklist.filter(i => ['done','cancelled','postergado'].includes(i.status ?? (i.done ? 'done' : ''))).length
-                      const overdue = t.due_date && t.due_date < today
-                      return (
-                        <div key={t.id} className={`flex items-center gap-3 px-4 py-2.5 ${overdue ? 'bg-red-50/40' : ''}`}>
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${
-                            t.status === 'in_progress' ? 'bg-amber-400' :
-                            t.status === 'blocked' ? 'bg-red-500' :
-                            t.status === 'waiting_validation' ? 'bg-yellow-400' :
-                            'bg-gray-300'
-                          }`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-gray-700 truncate">{t.title}</p>
-                          </div>
-                          {t.checklist.length > 0 && (
-                            <span className="text-xs text-gray-400 shrink-0">{itemDone}/{t.checklist.length}</span>
-                          )}
-                          {t.due_date && (
-                            <span className={`text-xs shrink-0 ${overdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>{t.due_date.slice(5)}</span>
-                          )}
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full shrink-0 ${
-                            t.status === 'in_progress' ? 'bg-amber-100 text-amber-700' :
-                            t.status === 'blocked' ? 'bg-red-100 text-red-600' :
-                            t.status === 'waiting_validation' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-gray-100 text-gray-500'
-                          }`}>
-                            {t.status === 'in_progress' ? 'Andamento' : t.status === 'blocked' ? 'Bloqueada' : t.status === 'waiting_validation' ? 'Validação' : 'Pendente'}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-                {!isCollapsed && uTasks.length === 0 && (
-                  <div className="border-t border-gray-100 px-4 py-3 text-xs text-gray-400">Todas as tarefas concluídas.</div>
-                )}
+          {/* Minhas tarefas — lista normal */}
+          {myTasks.length > 0 && (
+            <>
+              <div className="flex items-center gap-2 px-1">
+                <span className="text-xs font-semibold text-[#26619c]">Minhas tarefas</span>
+                <span className="text-xs bg-[#26619c]/10 text-[#26619c] px-1.5 py-0.5 rounded-full font-semibold">{myTasks.length}</span>
               </div>
-            )
-          })}
+              {[...myTasks].sort(byUserSortDesc).map(t => {
+                const itemDone = t.checklist.filter(i => ['done','cancelled','postergado'].includes(i.status ?? (i.done ? 'done' : ''))).length
+                const overdue = t.due_date && t.due_date < today
+                const isOpen = expandedByUserTask.has(t.id)
+                return (
+                  <div key={t.id} className={`rounded-2xl border shadow-sm overflow-hidden ${
+                    t.status === 'in_progress' ? 'border-amber-200 bg-amber-50/40' :
+                    t.status === 'waiting_validation' ? 'border-yellow-300 bg-yellow-50/50' :
+                    overdue ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-white'
+                  }`}>
+                    <button onClick={() => toggleByUserTask(t.id)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-black/[.02] transition">
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                        t.status === 'in_progress' ? 'bg-amber-400' :
+                        t.status === 'blocked' ? 'bg-red-500' :
+                        t.status === 'waiting_validation' ? 'bg-yellow-400' : 'bg-gray-300'
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{t.title}</p>
+                        {t.description && <p className="text-xs text-gray-400 truncate">{t.description}</p>}
+                      </div>
+                      {t.checklist.length > 0 && <span className="text-xs text-gray-400 shrink-0">{itemDone}/{t.checklist.length}</span>}
+                      {t.due_date && <span className={`text-xs shrink-0 ${overdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>{t.due_date.slice(5)}</span>}
+                      <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 font-medium ${
+                        t.status === 'in_progress' ? 'bg-amber-100 text-amber-700' :
+                        t.status === 'blocked' ? 'bg-red-100 text-red-600' :
+                        t.status === 'waiting_validation' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {t.status === 'in_progress' ? 'Andamento' : t.status === 'blocked' ? 'Bloqueada' : t.status === 'waiting_validation' ? 'Validação' : 'Pendente'}
+                      </span>
+                      <span className="text-gray-300 text-xs shrink-0">{isOpen ? '▲' : '▼'}</span>
+                    </button>
+                    {isOpen && t.checklist.length > 0 && (
+                      <div className="border-t border-gray-100 px-4 py-2 flex flex-col gap-1.5">
+                        {t.checklist.map((item, idx) => {
+                          const st = item.status ?? (item.done ? 'done' : 'pending')
+                          return (
+                            <div key={idx} className="flex items-center gap-2">
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${st === 'done' ? 'bg-green-400' : st === 'cancelled' ? 'bg-gray-300' : 'bg-gray-400'}`} />
+                              <p className={`text-xs ${st === 'done' ? 'line-through text-gray-400' : 'text-gray-600'}`}>{item.text}</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {isOpen && t.description && t.checklist.length === 0 && (
+                      <p className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500">{t.description}</p>
+                    )}
+                  </div>
+                )
+              })}
+            </>
+          )}
+
+          {/* Outros usuários — agrupados, colapsáveis */}
+          {tasksByUser.length > 0 && (
+            <>
+              <div className="flex items-center gap-2 px-1 mt-1">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs font-semibold text-gray-400">Equipe</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+              {tasksByUser.map(({ uid, name, tasks: uTasks }) => {
+                const doneCount = tasks.filter(t => t.status === 'done' && t.assigned_to === uid).length
+                const total = uTasks.length + doneCount
+                const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0
+                const isCollapsed = collapsedUsers.has(uid)
+                const toggle = () => setCollapsedUsers(prev => {
+                  const next = new Set(prev)
+                  next.has(uid) ? next.delete(uid) : next.add(uid)
+                  return next
+                })
+                const initials = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
+                const allDone = uTasks.length === 0
+                return (
+                  <div key={uid} className={`rounded-2xl border overflow-hidden ${allDone ? 'border-green-200 bg-green-50/30' : 'border-gray-200 bg-white'}`}>
+                    <button onClick={toggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition text-left">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${allDone ? 'bg-green-100 text-green-700' : 'bg-[#26619c]/10 text-[#26619c]'}`}>
+                        {allDone ? '✓' : initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-gray-800 truncate">{name}</span>
+                          {allDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">Concluído</span>}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-xs text-gray-400">{doneCount}/{total}</span>
+                          {uTasks.filter(t => t.status === 'in_progress').length > 0 && (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{uTasks.filter(t => t.status === 'in_progress').length} em and.</span>
+                          )}
+                          {uTasks.filter(t => t.due_date && t.due_date < today).length > 0 && (
+                            <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{uTasks.filter(t => t.due_date && t.due_date < today).length} atras.</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-gray-300 text-xs">{isCollapsed ? '▼' : '▲'}</span>
+                    </button>
+                    {!isCollapsed && uTasks.length > 0 && (
+                      <div className="border-t border-gray-100 divide-y divide-gray-50">
+                        {uTasks.map(t => {
+                          const itemDone = t.checklist.filter(i => ['done','cancelled','postergado'].includes(i.status ?? (i.done ? 'done' : ''))).length
+                          const overdue = t.due_date && t.due_date < today
+                          return (
+                            <div key={t.id} className={`flex items-center gap-3 px-4 py-2.5 ${overdue ? 'bg-red-50/40' : ''}`}>
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                t.status === 'in_progress' ? 'bg-amber-400' :
+                                t.status === 'blocked' ? 'bg-red-500' :
+                                t.status === 'waiting_validation' ? 'bg-yellow-400' : 'bg-gray-300'
+                              }`} />
+                              <p className="flex-1 text-sm text-gray-700 truncate">{t.title}</p>
+                              {t.checklist.length > 0 && <span className="text-xs text-gray-400 shrink-0">{itemDone}/{t.checklist.length}</span>}
+                              {t.due_date && <span className={`text-xs shrink-0 ${overdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>{t.due_date.slice(5)}</span>}
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full shrink-0 ${
+                                t.status === 'in_progress' ? 'bg-amber-100 text-amber-700' :
+                                t.status === 'blocked' ? 'bg-red-100 text-red-600' :
+                                t.status === 'waiting_validation' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'
+                              }`}>
+                                {t.status === 'in_progress' ? 'Andamento' : t.status === 'blocked' ? 'Bloqueada' : t.status === 'waiting_validation' ? 'Validação' : 'Pendente'}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {!isCollapsed && uTasks.length === 0 && (
+                      <p className="border-t border-gray-100 px-4 py-3 text-xs text-gray-400">Todas concluídas.</p>
+                    )}
+                  </div>
+                )
+              })}
+            </>
+          )}
         </div>
       )}
 
