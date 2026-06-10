@@ -67,6 +67,7 @@ async def list_organizations(
           LEFT JOIN users u ON u.association_id = a.id AND u.is_active = true
           LEFT JOIN residents r ON r.association_id = a.id
           LEFT JOIN packages p ON p.association_id = a.id
+         WHERE a.is_active = true
          GROUP BY a.id
          ORDER BY a.name
     """)
