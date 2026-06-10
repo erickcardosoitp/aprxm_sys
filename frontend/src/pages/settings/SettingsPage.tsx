@@ -149,6 +149,13 @@ export default function SettingsPage() {
   const [orgaos, setOrgaos] = useState<string[]>([])
   const [savingCadastros, setSavingCadastros] = useState(false)
 
+  // ── OS Phases state ──
+  type OSPhase = { id: string; name: string; color: string; active: boolean }
+  const [osPhases, setOsPhases] = useState<OSPhase[]>([])
+  const [newPhaseName, setNewPhaseName] = useState('')
+  const [newPhaseColor, setNewPhaseColor] = useState('#9333ea')
+  const [savingPhase, setSavingPhase] = useState(false)
+
   // ── Finance categories & payment methods ──
   type FinCat = { id: string; name: string; type: string; color?: string }
   type FinPM = { id: string; name: string }
@@ -196,6 +203,7 @@ export default function SettingsPage() {
     api.get<SangriaDest[]>('/finance/sangria-destinations').then(r => setSangriaDests(r.data)).catch(() => {})
     api.get('/carriers').then(r => setCarriers(r.data)).catch(() => {})
     api.get('/carriers/deliverers').then(r => setDeliverers(r.data)).catch(() => {})
+    api.get<OSPhase[]>('/service-order-phases/all').then(r => setOsPhases(r.data)).catch(() => {})
   }, [canSeeAssociation])
 
   const handleSaveCadastros = async () => {
@@ -212,6 +220,34 @@ export default function SettingsPage() {
     } finally {
       setSavingCadastros(false)
     }
+  }
+
+  const handleAddOsPhase = async () => {
+    if (!newPhaseName.trim()) return
+    setSavingPhase(true)
+    try {
+      const r = await api.post<OSPhase>('/service-order-phases', { name: newPhaseName.trim(), color: newPhaseColor })
+      setOsPhases(p => [...p, r.data])
+      setNewPhaseName('')
+      setNewPhaseColor('#9333ea')
+      toast.success('Fase criada.')
+    } catch { toast.error('Erro ao criar fase.') } finally { setSavingPhase(false) }
+  }
+
+  const handleToggleOsPhase = async (id: string, active: boolean) => {
+    try {
+      await api.patch(`/service-order-phases/${id}`, { active: !active })
+      setOsPhases(p => p.map(x => x.id === id ? { ...x, active: !active } : x))
+    } catch { toast.error('Erro.') }
+  }
+
+  const handleDeleteOsPhase = async (id: string) => {
+    if (!confirm('Remover esta fase?')) return
+    try {
+      await api.delete(`/service-order-phases/${id}`)
+      setOsPhases(p => p.filter(x => x.id !== id))
+      toast.success('Fase removida.')
+    } catch { toast.error('Erro ao remover fase.') }
   }
 
   const handleAddFinCat = async () => {
@@ -989,6 +1025,42 @@ export default function SettingsPage() {
                 onAdd={item => setOrgaos(prev => [...prev, item])}
                 onRemove={idx => setOrgaos(prev => prev.filter((_, i) => i !== idx))}
               />
+
+              {/* 5d2. Fases de OS */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Fases de OS</p>
+                <div className="flex gap-2 mb-2">
+                  <input value={newPhaseName} onChange={e => setNewPhaseName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddOsPhase() }}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
+                    placeholder="Nome da fase…" />
+                  <input type="color" value={newPhaseColor} onChange={e => setNewPhaseColor(e.target.value)}
+                    className="w-10 h-10 rounded-lg cursor-pointer border border-gray-200 shrink-0" />
+                  <button onClick={handleAddOsPhase} disabled={!newPhaseName.trim() || savingPhase}
+                    className="px-3 py-2 bg-[#26619c] text-white rounded-lg text-sm font-medium disabled:opacity-40">+</button>
+                </div>
+                {osPhases.length > 0 && (
+                  <ul className="flex flex-col gap-1">
+                    {osPhases.map(p => (
+                      <li key={p.id} className={`flex items-center gap-2 justify-between bg-gray-50 px-3 py-1.5 rounded-lg text-sm ${!p.active ? 'opacity-50' : ''}`}>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                          <span className={!p.active ? 'line-through text-gray-400' : ''}>{p.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => handleToggleOsPhase(p.id, p.active)}
+                            className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded hover:bg-gray-100">
+                            {p.active ? 'Desativar' : 'Ativar'}
+                          </button>
+                          {!p.active && (
+                            <button onClick={() => handleDeleteOsPhase(p.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
 
               {/* 5e. Categorias de Transação (Financeiro) */}
               <div>

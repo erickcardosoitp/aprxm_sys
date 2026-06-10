@@ -3353,142 +3353,6 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   )
 }
 
-// ─── PhasesConfigTab ──────────────────────────────────────────────────────────
-
-function PhasesConfigTab({ phases, onChanged }: { phases: ServiceOrderPhase[]; onChanged: () => void }) {
-  const [allPhases, setAllPhases] = useState<ServiceOrderPhase[]>([])
-  const [loading, setLoading] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newColor, setNewColor] = useState('#9333ea')
-  const [saving, setSaving] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editColor, setEditColor] = useState('')
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await api.get<ServiceOrderPhase[]>('/service-order-phases/all')
-      setAllPhases(res.data)
-    } catch { toast.error('Erro ao carregar fases.') } finally { setLoading(false) }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
-  const handleCreate = async () => {
-    if (!newName.trim()) return
-    setSaving(true)
-    try {
-      await api.post('/service-order-phases', { name: newName.trim(), color: newColor })
-      setNewName('')
-      setNewColor('#9333ea')
-      await load()
-      onChanged()
-      toast.success('Fase criada.')
-    } catch { toast.error('Erro ao criar fase.') } finally { setSaving(false) }
-  }
-
-  const handleUpdate = async (id: string) => {
-    setSaving(true)
-    try {
-      await api.patch(`/service-order-phases/${id}`, { name: editName.trim(), color: editColor })
-      setEditingId(null)
-      await load()
-      onChanged()
-      toast.success('Fase atualizada.')
-    } catch { toast.error('Erro ao atualizar fase.') } finally { setSaving(false) }
-  }
-
-  const handleToggleActive = async (id: string, active: boolean) => {
-    try {
-      await api.patch(`/service-order-phases/${id}`, { active: !active })
-      await load()
-      onChanged()
-    } catch { toast.error('Erro.') }
-  }
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Remover esta fase?')) return
-    try {
-      await api.delete(`/service-order-phases/${id}`)
-      await load()
-      onChanged()
-      toast.success('Fase removida.')
-    } catch { toast.error('Erro ao remover fase.') }
-  }
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col gap-5">
-      <div>
-        <h3 className="text-sm font-semibold text-gray-800 mb-1">Fases de Andamento</h3>
-        <p className="text-xs text-gray-500">Configure as fases disponíveis para OS em andamento.</p>
-      </div>
-
-      {/* Lista */}
-      {loading ? (
-        <div className="text-sm text-gray-400 text-center py-4">Carregando…</div>
-      ) : (
-        <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 overflow-hidden">
-          {allPhases.map(p => (
-            <div key={p.id} className={`flex items-center gap-3 px-4 py-3 ${!p.active ? 'opacity-50 bg-gray-50' : 'bg-white'}`}>
-              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-              {editingId === p.id ? (
-                <div className="flex-1 flex items-center gap-2">
-                  <input value={editName} onChange={e => setEditName(e.target.value)}
-                    className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#26619c]" />
-                  <input type="color" value={editColor} onChange={e => setEditColor(e.target.value)}
-                    className="w-8 h-8 rounded cursor-pointer border border-gray-200" />
-                  <button onClick={() => handleUpdate(p.id)} disabled={saving}
-                    className="px-2.5 py-1 bg-[#26619c] text-white rounded-lg text-xs font-medium">Salvar</button>
-                  <button onClick={() => setEditingId(null)} className="px-2.5 py-1 text-gray-500 rounded-lg text-xs">Cancelar</button>
-                </div>
-              ) : (
-                <>
-                  <span className={`flex-1 text-sm ${!p.active ? 'line-through text-gray-400' : 'text-gray-700'}`}>{p.name}</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => { setEditingId(p.id); setEditName(p.name); setEditColor(p.color) }}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => handleToggleActive(p.id, p.active)}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition text-xs font-medium">
-                      {p.active ? 'Desativar' : 'Ativar'}
-                    </button>
-                    {!p.active && (
-                      <button onClick={() => handleDelete(p.id)}
-                        className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
-          {allPhases.length === 0 && (
-            <div className="px-4 py-6 text-center text-sm text-gray-400">Nenhuma fase cadastrada.</div>
-          )}
-        </div>
-      )}
-
-      {/* Nova fase */}
-      <div className="flex items-center gap-2 pt-1">
-        <input value={newName} onChange={e => setNewName(e.target.value)}
-          placeholder="Nome da fase…"
-          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
-          onKeyDown={e => e.key === 'Enter' && handleCreate()}
-        />
-        <input type="color" value={newColor} onChange={e => setNewColor(e.target.value)}
-          className="w-10 h-10 rounded-lg cursor-pointer border border-gray-200 shrink-0" />
-        <button onClick={handleCreate} disabled={!newName.trim() || saving}
-          className="px-4 py-2 bg-[#26619c] text-white rounded-lg text-sm font-medium disabled:opacity-40 flex items-center gap-1.5 shrink-0">
-          <Plus className="w-4 h-4" />Nova fase
-        </button>
-      </div>
-    </div>
-  )
-}
-
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 interface ServiceOrdersPageProps {
@@ -3508,7 +3372,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   const canWrite = permissions?.service_orders?.can_write ?? CAN_WRITE_ROLES.includes(role ?? '')
   const canViewOS = role === 'superadmin' || role === 'admin_master' || permissions?.service_orders?.can_view !== false
 
-  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'tarefas' | 'config'>(
+  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'tarefas'>(
     tarefasMode ? 'tarefas' : (canViewOS ? 'ordens' : 'tarefas')
   )
 
@@ -3683,24 +3547,10 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
         >
           ✅ Tarefas Diárias
         </button>
-        {canWrite && (
-          <button
-            onClick={() => setPageTab('config')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'config' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
-          >
-            <Tag className="w-4 h-4" />Fases
-          </button>
-        )}
       </div>
 
       {pageTab === 'demandas' && <DemandasBoard canWrite={canWrite} />}
       {pageTab === 'tarefas' && <TarefasDiariasTab canWrite={canWrite} />}
-      {pageTab === 'config' && (
-        <PhasesConfigTab
-          phases={phases}
-          onChanged={loadPhases}
-        />
-      )}
 
       {pageTab === 'ordens' && <>
 
