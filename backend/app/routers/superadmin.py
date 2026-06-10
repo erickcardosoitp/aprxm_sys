@@ -59,16 +59,12 @@ async def list_organizations(
     rows = await _exec_ro(session, """
         SELECT a.id, a.name, a.slug, a.plan_name, a.is_active,
                a.plan_expires_at, a.created_at,
-               COUNT(DISTINCT u.id) AS user_count,
-               COUNT(DISTINCT r.id) AS resident_count,
-               COUNT(DISTINCT p.id) FILTER (WHERE p.status != 'delivered') AS open_packages,
-               MAX(u.last_login_at) AS last_login_at
+               (SELECT COUNT(*) FROM users u WHERE u.association_id = a.id AND u.is_active = true) AS user_count,
+               (SELECT COUNT(*) FROM residents r WHERE r.association_id = a.id) AS resident_count,
+               (SELECT COUNT(*) FROM packages p WHERE p.association_id = a.id AND p.status != 'delivered') AS open_packages,
+               (SELECT MAX(u2.last_login_at) FROM users u2 WHERE u2.association_id = a.id) AS last_login_at
           FROM associations a
-          LEFT JOIN users u ON u.association_id = a.id AND u.is_active = true
-          LEFT JOIN residents r ON r.association_id = a.id
-          LEFT JOIN packages p ON p.association_id = a.id
          WHERE a.is_active = true
-         GROUP BY a.id
          ORDER BY a.name
     """)
     return [
