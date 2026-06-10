@@ -927,5 +927,6 @@ app.include_router(ti.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])
+@app.get("/api/v1/health", tags=["Sistema"])
 async def health() -> dict:
     return {"status": "ok", "version": settings.app_version}
