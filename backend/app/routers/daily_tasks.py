@@ -281,6 +281,12 @@ async def update_task(
     if checklist is not None:
         sets.append("checklist = CAST(:checklist AS jsonb)")
         params["checklist"] = json.dumps(checklist)
+        # auto-fechar quando todos os itens estão concluídos/cancelados/postergados
+        if body.status is None and checklist and all(
+            item.get("status") in {"done", "cancelled", "postergado"} or item.get("done")
+            for item in checklist
+        ):
+            body = body.model_copy(update={"status": "done"})
     if body.attachment_urls is not None: sets.append("attachment_urls = CAST(:attachments AS jsonb)"); params["attachments"] = json.dumps(body.attachment_urls)
     if body.status is not None: sets.append("status = :status"); params["status"] = body.status
     if body.service_order_id is not None: sets.append("service_order_id = :so_id"); params["so_id"] = str(body.service_order_id)
