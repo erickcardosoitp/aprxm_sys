@@ -3559,8 +3559,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
           <div className="p-8 text-center text-gray-400 text-sm">Nenhuma ordem de serviço encontrada.</div>
         ) : (
           <ul className="divide-y divide-gray-100">
-            {sortedOrders.map(so => (
-              {(() => {
+            {sortedOrders.map(so => {
                 const isInconsistent = !!so.resolved_at && !['resolved', 'archived', 'cancelled'].includes(so.status)
                 return (
                   <li
@@ -3619,8 +3618,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
                     </div>
                   </li>
                 )
-              })()}
-            ))}
+            })}
           </ul>
         )}
       </div>
