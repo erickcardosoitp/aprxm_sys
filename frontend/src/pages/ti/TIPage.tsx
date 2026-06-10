@@ -8,6 +8,7 @@ interface HealthData {
   db: { ok: boolean; ping_ms: number; size: string }
   api: { requests_1h: number; avg_ms: number; errors_1h: number }
   business: { open_cash_sessions: number; active_residents: number; pending_packages: number }
+  migrations: { current_version: number; applied_at: string | null; description: string | null }
   trend_24h: TrendPoint[]
 }
 
@@ -775,6 +776,18 @@ export default function TIPage() {
               <p className="text-[10px] text-gray-400 mt-0.5">aguardando retirada</p>
             </div>
 
+            {health.migrations && (
+              <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <GitBranch className="w-4 h-4 text-[#26619c]" />
+                  <p className="text-xs font-semibold text-gray-600">Schema DB</p>
+                </div>
+                <p className="text-2xl font-bold text-green-600 tabular-nums">v{health.migrations.current_version}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {health.migrations.applied_at ? `aplicado ${health.migrations.applied_at}` : 'não registrado'}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Trend horário 24h */}

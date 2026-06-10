@@ -44,6 +44,12 @@ async def health_check(
         WHERE created_at > NOW() - INTERVAL '1 hour'
     """))).fetchone()
 
+    # Schema migrations status
+    migration_row = (await session.execute(text("""
+        SELECT COALESCE(MAX(version), 0), MAX(applied_at), MAX(description)
+        FROM schema_migrations
+    """))).fetchone()
+
     # Trend horário — últimas 24h em buckets de 1h
     trend_rows = (await session.execute(text("""
         SELECT
@@ -80,6 +86,11 @@ async def health_check(
             "open_cash_sessions": int(open_sessions),
             "active_residents": int(residents_count),
             "pending_packages": int(packages_pending),
+        },
+        "migrations": {
+            "current_version": int(migration_row[0]),
+            "applied_at": str(migration_row[1])[:16] if migration_row[1] else None,
+            "description": migration_row[2],
         },
         "trend_24h": [
             {
