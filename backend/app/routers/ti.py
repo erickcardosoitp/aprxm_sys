@@ -537,7 +537,7 @@ async def analytics(
           {assoc_filter.replace('association_id', 'u.association_id')}
         GROUP BY DATE(l.created_at AT TIME ZONE 'America/Sao_Paulo')
         ORDER BY dia ASC
-    """), assoc_params))).fetchall()
+    """), assoc_params)).fetchall()
 
     # Receita diária — 7d
     receita_7d = (await session.execute(text(f"""
