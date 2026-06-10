@@ -2426,11 +2426,11 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                 </div>
 
                 {/* Tarefas com comentários inline */}
-                {user.tasks.length > 0 && (
+                {(user.tasks?.length ?? 0) > 0 && (
                   <section className={hasOS ? 'mb-3' : ''}>
                     <h4 className="text-[9px] font-bold text-gray-500 uppercase tracking-[0.18em] mb-1.5 pb-1 border-b border-gray-100">Tarefas Diárias</h4>
                     <ul className="flex flex-col divide-y divide-gray-100">
-                      {user.tasks.map((t: any) => {
+                      {(user.tasks ?? []).map((t: any) => {
                         const overdue = t.status !== 'done' && t.status !== 'blocked' && t.due_date && t.due_date < today
                         const effStatus = overdue ? 'overdue' : t.status
                         const dotColor = effStatus === 'done' ? 'bg-green-600' : effStatus === 'overdue' ? 'bg-red-500' : effStatus === 'in_progress' ? 'bg-blue-500' : effStatus === 'blocked' ? 'bg-orange-500' : 'bg-gray-300'
@@ -2604,7 +2604,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
             setViewDate(d.toISOString().slice(0, 10)); setFilterPeriodFrom(''); setFilterPeriodTo('')
           }} className="w-9 h-9 flex items-center justify-center border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 active:bg-gray-100 shrink-0">→</button>
         </div>
-        <button onClick={() => { setShowReport(true); loadReport() }}
+        <button onClick={() => setShowReport(true)}
           className="w-9 h-9 flex items-center justify-center border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition shrink-0" title="Ver relatório">
           <FileText className="w-4 h-4" />
         </button>
@@ -2636,11 +2636,11 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         </select>
         <div className="col-span-2 flex items-center gap-1.5">
           <input type="date" value={filterPeriodFrom}
-            onChange={e => { const v = e.target.value; if (!v || (v.length === 10 && parseInt(v.slice(0, 4)) >= 2020)) { setFilterPeriodFrom(v); setViewDate(today) } }}
+            onChange={e => { setFilterPeriodFrom(e.target.value); setViewDate(today) }}
             className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm min-w-0" />
           <span className="text-xs text-gray-400 shrink-0">–</span>
           <input type="date" value={filterPeriodTo}
-            onChange={e => { const v = e.target.value; if (!v || (v.length === 10 && parseInt(v.slice(0, 4)) >= 2020)) { setFilterPeriodTo(v); setViewDate(today) } }}
+            onChange={e => { setFilterPeriodTo(e.target.value); setViewDate(today) }}
             className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm min-w-0" />
         </div>
         <div className="col-span-2 flex items-center justify-between">
