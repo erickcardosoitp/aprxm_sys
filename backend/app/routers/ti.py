@@ -170,7 +170,7 @@ async def user_activity(
             MAX(l.created_at) AS ultimo_acesso,
             a.name AS associacao,
             (SELECT MIN(l2.created_at) FROM api_request_logs l2
-             WHERE l2.user_id = u.id::text) AS primeiro_acesso
+             WHERE l2.user_id::uuid = u.id) AS primeiro_acesso
         FROM api_request_logs l
         JOIN users u ON u.id = l.user_id::uuid
         JOIN associations a ON a.id = u.association_id
