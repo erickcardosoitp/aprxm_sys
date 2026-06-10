@@ -44,8 +44,6 @@ class CreateSORequest(BaseModel):
     priority: ServiceOrderPriority = ServiceOrderPriority.medium
     status: ServiceOrderStatus = ServiceOrderStatus.pending
     area: str | None = None
-    unit: str | None = None
-    block: str | None = None
     location_detail: str | None = None
     requester_resident_id: UUID | None = None
     requester_name: str | None = None
@@ -486,7 +484,7 @@ async def get_so(
     return {
         "id": str(so.id), "number": so.number, "title": so.title,
         "description": so.description, "status": so.status, "priority": so.priority,
-        "area": so.area, "unit": so.unit, "block": so.block,
+        "area": so.area,
         "location_detail": so.location_detail,
         "service_impacted": so.service_impacted,
         "category_name": so.category_name,
@@ -710,8 +708,6 @@ async def list_sos(
             "category_name": s.category_name,
             "requester_name": s.requester_name,
             "requester_phone": s.requester_phone,
-            "unit": s.unit,
-            "block": s.block,
             "address_cep": s.address_cep,
             "address_street": s.address_street,
             "address_number": s.address_number,

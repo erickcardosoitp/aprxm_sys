@@ -32,7 +32,7 @@ export default function PublicRegisterPage() {
 
   const [form, setForm] = useState({
     full_name: '', cpf: '', phone_primary: '', phone_secondary: '',
-    email: '', date_of_birth: '', unit: '', block: '',
+    email: '', date_of_birth: '',
     address_cep: '', address_street: '', address_number: '',
     address_complement: '', address_district: '', address_city: '',
     address_state: '', notes: '', registered_by: '',
@@ -100,8 +100,6 @@ export default function PublicRegisterPage() {
         ...form,
         cpf: form.cpf ? form.cpf.replace(/\D/g, '') : null,
         date_of_birth: form.date_of_birth || null,
-        unit: form.unit || null,
-        block: form.block || null,
         address_cep: form.address_cep || null,
         address_street: form.address_street || null,
         address_number: form.address_number || null,
@@ -186,17 +184,6 @@ export default function PublicRegisterPage() {
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">E-mail</label>
             <input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={inputCls} placeholder="email@exemplo.com" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Unidade</label>
-              <input value={form.unit} onChange={e => set('unit', e.target.value)} className={inputCls} placeholder="Ex: 101" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Bloco</label>
-              <input value={form.block} onChange={e => set('block', e.target.value)} className={inputCls} placeholder="Ex: A" />
-            </div>
           </div>
 
           {/* Endereço */}

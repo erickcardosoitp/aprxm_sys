@@ -56,8 +56,6 @@ class ServiceOrder(SQLModel, table=True):
     assigned_at: datetime | None = None
 
     # location
-    unit: str | None = Field(default=None, max_length=50)
-    block: str | None = Field(default=None, max_length=50)
     location_detail: str | None = None
     area: str | None = Field(default=None, max_length=100)
 

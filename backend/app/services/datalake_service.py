@@ -271,7 +271,7 @@ async def export_bronze(session: AsyncSession, today: str,
 
     incremental_tables = {
         "residents": f"""
-            SELECT id, association_id, type, status, full_name, cpf, unit, block,
+            SELECT id, association_id, type, status, full_name, cpf,
                    address_street, address_neighborhood, address_city, address_cep,
                    phone_primary, email, monthly_payment_day, is_member_confirmed,
                    internet_access, has_sewage, has_pests, uses_public_transport,
@@ -307,7 +307,7 @@ async def export_bronze(session: AsyncSession, today: str,
             WHERE TRUE {delta_filter}
         """,
         "packages": f"""
-            SELECT id, association_id, status, unit, block,
+            SELECT id, association_id, status,
                    carrier_name, tracking_code, has_delivery_fee,
                    delivery_fee_amount::float, delivery_fee_paid,
                    received_at, delivered_at, returned_at,
@@ -325,7 +325,7 @@ async def export_bronze(session: AsyncSession, today: str,
         """,
         "service_orders": f"""
             SELECT id, association_id, number, title, status, priority,
-                   area, unit, requester_name, assigned_to, created_at, updated_at
+                   area, requester_name, assigned_to, created_at, updated_at
             FROM service_orders
             WHERE status NOT IN ('cancelled','archived') {delta_filter}
         """,
@@ -402,7 +402,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df["payment_method_name"] = df["payment_method_id"].map(pm_map)
         df["category_name"]       = df["category_id"].map(cat_map)
         if not res.empty:
-            res_slim = res.set_index("id")[["full_name", "type", "unit", "address_street"]].rename(
+            res_slim = res.set_index("id")[["full_name", "type", "address_street"]].rename(
                 columns={"full_name": "resident_name", "type": "resident_type"})
             df = df.join(res_slim, on="resident_id", how="left")
         _ta              = _to_dt(df["transaction_at"])
@@ -595,7 +595,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             (res["type"] == "member") &
             (res["status"] == "active")
         ][[
-            "full_name","unit","block","phone_primary","type",
+            "full_name","phone_primary","type",
             "address_street","association_id","association_name",
             "overdue_months","total_owed"
         ]].sort_values("total_owed", ascending=False)
@@ -624,7 +624,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 
     # 7. Ranking de moradores
     if not pkgs.empty:
-        df = pkgs.groupby(["resident_id","resident_name","unit","resident_type",
+        df = pkgs.groupby(["resident_id","resident_name","resident_type",
                            "address_street","association_id","association_name"]).agg(
             total_packages=("id","count"),
             avg_wait_hours=("wait_hours","mean"),

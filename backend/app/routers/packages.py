@@ -21,8 +21,6 @@ router = APIRouter(prefix="/packages", tags=["Encomendas"])
 
 class ReceivePackageRequest(BaseModel):
     resident_id: UUID | None = None
-    unit: str | None = None
-    block: str | None = None
     carrier_name: str | None = None
     tracking_code: str | None = None
     object_type: str | None = None
@@ -68,8 +66,6 @@ async def receive_package(
     pkg = await svc.receive_package(
         association_id=current.association_id,
         received_by=current.user_id,
-        unit=body.unit,
-        block=body.block,
         photo_urls=body.photo_urls,
         resident_id=body.resident_id,
         carrier_name=body.carrier_name,
@@ -380,7 +376,6 @@ async def list_packages(
         filters.append(
             "(unaccent(r.full_name) ILIKE unaccent(:q) "
             "OR p.tracking_code ILIKE :q "
-            "OR p.unit ILIKE :q "
             "OR unaccent(p.carrier_name) ILIKE unaccent(:q))"
         )
         params["q"] = f"%{q}%"
@@ -395,7 +390,7 @@ async def list_packages(
     where_clause = " AND ".join(filters)
     result = await session.execute(
         sa_text(f"""
-            SELECT p.id, p.status, p.unit, p.block, p.carrier_name, p.tracking_code,
+            SELECT p.id, p.status, p.carrier_name, p.tracking_code,
                    p.has_delivery_fee, p.delivery_fee_amount, p.received_at,
                    p.resident_id,
                    '[]'::jsonb AS photo_urls,
@@ -426,40 +421,38 @@ async def list_packages(
     rows = result.fetchall()
     out = []
     for row in rows:
-        rname = row[21]
-        rcpf = row[22]
-        rcep = row[24]
+        rname = row[19]
+        rcpf = row[20]
+        rcep = row[22]
         out.append({
             "id": str(row[0]),
             "status": row[1],
-            "unit": row[2],
-            "block": row[3],
-            "carrier_name": row[4],
-            "tracking_code": row[5],
-            "has_delivery_fee": row[6],
-            "delivery_fee_amount": str(row[7]) if row[7] else None,
-            "received_at": str(row[8]),
-            "resident_id": str(row[9]) if row[9] else None,
-            "photo_urls": row[10] or [],
-            "notes": row[11],
-            "object_type": row[12],
-            "sender_name": row[13],
-            "delivered_to_name": row[14],
-            "delivered_to_cpf": row[15],
-            "deliverer_name": row[16],
-            "signature_url": row[17],
-            "deliverer_signature_url": row[18],
-            "delivered_at": str(row[19]) if row[19] else None,
-            "proof_of_residence_url": row[20],
+            "carrier_name": row[2],
+            "tracking_code": row[3],
+            "has_delivery_fee": row[4],
+            "delivery_fee_amount": str(row[5]) if row[5] else None,
+            "received_at": str(row[6]),
+            "resident_id": str(row[7]) if row[7] else None,
+            "photo_urls": row[8] or [],
+            "notes": row[9],
+            "object_type": row[10],
+            "sender_name": row[11],
+            "delivered_to_name": row[12],
+            "delivered_to_cpf": row[13],
+            "deliverer_name": row[14],
+            "signature_url": row[15],
+            "deliverer_signature_url": row[16],
+            "delivered_at": str(row[17]) if row[17] else None,
+            "proof_of_residence_url": row[18],
             "resident_name": rname,
             "resident_cpf": rcpf,
-            "resident_type": row[23],
+            "resident_type": row[21],
             "resident_cep": rcep,
-            "resident_phone": row[25],
-            "resident_address_street": row[26],
-            "resident_address_number": row[27],
-            "received_by_name": row[28],
-            "delivered_by_name": row[29],
+            "resident_phone": row[23],
+            "resident_address_street": row[24],
+            "resident_address_number": row[25],
+            "received_by_name": row[26],
+            "delivered_by_name": row[27],
         })
     return out
 
@@ -563,8 +556,6 @@ async def reassign_package(
         raise HTTPException(404, "Morador não encontrado.")
 
     pkg.resident_id = body.resident_id
-    pkg.unit = resident.unit or pkg.unit
-    pkg.block = resident.block or pkg.block
     pkg.updated_at = datetime.utcnow()
     session.add(pkg)
     await session.execute(
@@ -750,7 +741,7 @@ async def count_packages(
     filters = ["association_id = :aid"]
     params: dict = {"aid": str(current.association_id)}
     if q:
-        filters.append("(tracking_code ILIKE :q OR unit ILIKE :q)")
+        filters.append("(tracking_code ILIKE :q)")
         params["q"] = f"%{q}%"
     if date_from:
         filters.append("received_at >= :df::date")
@@ -787,7 +778,6 @@ async def packages_by_address(
             COALESCE(r.address_neighborhood, '')    AS neighborhood,
             p.id::text,
             r.full_name,
-            COALESCE(p.unit, p.block, '')           AS unit,
             p.tracking_code,
             p.carrier_name,
             p.status,
@@ -802,13 +792,13 @@ async def packages_by_address(
     by_street: dict = {}
     by_cep: dict = {}
     for row in rows:
-        street, cep, neighborhood, pkg_id, name, unit, tracking, carrier, status, recv = row
+        street, cep, neighborhood, pkg_id, name, tracking, carrier, status, recv = row
         key = street
         if key not in by_street:
             by_street[key] = {"street": street, "cep": cep, "neighborhood": neighborhood, "count": 0, "packages": []}
         by_street[key]["count"] += 1
         by_street[key]["packages"].append({
-            "id": pkg_id, "resident": name, "unit": unit,
+            "id": pkg_id, "resident": name,
             "tracking_code": tracking, "carrier": carrier,
             "status": status, "received_at": recv,
         })
@@ -905,9 +895,7 @@ async def receive_history(
                 COUNT(*)::int                         AS count,
                 (COUNT(*) FILTER (WHERE p.status = 'reversed'))::int AS reversed_count,
                 json_agg(json_build_object(
-                    'resident_name', COALESCE(r.full_name, CONCAT(p.unit, CASE WHEN p.block IS NOT NULL THEN ' Bl.' || p.block ELSE '' END)),
-                    'unit', p.unit,
-                    'block', p.block,
+                    'resident_name', COALESCE(r.full_name, ''),
                     'tracking_code', p.tracking_code,
                     'carrier_name', p.carrier_name,
                     'status', p.status
@@ -928,9 +916,7 @@ async def receive_history(
                 1                                     AS count,
                 CASE WHEN p.status = 'reversed' THEN 1 ELSE 0 END AS reversed_count,
                 json_build_array(json_build_object(
-                    'resident_name', COALESCE(r.full_name, CONCAT(p.unit, CASE WHEN p.block IS NOT NULL THEN ' Bl.' || p.block ELSE '' END)),
-                    'unit', p.unit,
-                    'block', p.block,
+                    'resident_name', COALESCE(r.full_name, ''),
                     'tracking_code', p.tracking_code,
                     'carrier_name', p.carrier_name,
                     'status', p.status
@@ -1029,7 +1015,7 @@ async def get_package(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     row = (await session.execute(text("""
-        SELECT p.id, p.status, p.unit, p.block, p.carrier_name, p.tracking_code,
+        SELECT p.id, p.status, p.carrier_name, p.tracking_code,
                p.has_delivery_fee, p.delivery_fee_amount, p.received_at,
                p.resident_id, p.photo_urls, p.notes, p.object_type,
                p.sender_name, p.delivered_to_name, p.delivered_to_cpf,
@@ -1055,18 +1041,18 @@ async def get_package(
     if not row:
         raise HTTPException(404, "Encomenda não encontrada")
     return {
-        "id": str(row[0]), "status": row[1], "unit": row[2], "block": row[3],
-        "carrier_name": row[4], "tracking_code": row[5],
-        "has_delivery_fee": row[6], "delivery_fee_amount": str(row[7]) if row[7] else None,
-        "received_at": str(row[8]), "resident_id": str(row[9]) if row[9] else None,
-        "photo_urls": row[10] or [], "notes": row[11], "object_type": row[12],
-        "sender_name": row[13], "delivered_to_name": row[14], "delivered_to_cpf": row[15],
-        "deliverer_name": row[16], "signature_url": row[17], "deliverer_signature_url": row[18],
-        "delivered_at": str(row[19]) if row[19] else None, "proof_of_residence_url": row[20],
-        "resident_name": row[21], "resident_cpf": row[22], "resident_type": row[23],
-        "resident_cep": row[24], "resident_phone": row[25],
-        "resident_address_street": row[26], "resident_address_number": row[27],
-        "resident_address_complement": row[28], "resident_address_district": row[29],
-        "resident_address_city": row[30], "resident_address_state": row[31],
-        "received_by_name": row[32], "delivered_by_name": row[33],
+        "id": str(row[0]), "status": row[1],
+        "carrier_name": row[2], "tracking_code": row[3],
+        "has_delivery_fee": row[4], "delivery_fee_amount": str(row[5]) if row[5] else None,
+        "received_at": str(row[6]), "resident_id": str(row[7]) if row[7] else None,
+        "photo_urls": row[8] or [], "notes": row[9], "object_type": row[10],
+        "sender_name": row[11], "delivered_to_name": row[12], "delivered_to_cpf": row[13],
+        "deliverer_name": row[14], "signature_url": row[15], "deliverer_signature_url": row[16],
+        "delivered_at": str(row[17]) if row[17] else None, "proof_of_residence_url": row[18],
+        "resident_name": row[19], "resident_cpf": row[20], "resident_type": row[21],
+        "resident_cep": row[22], "resident_phone": row[23],
+        "resident_address_street": row[24], "resident_address_number": row[25],
+        "resident_address_complement": row[26], "resident_address_district": row[27],
+        "resident_address_city": row[28], "resident_address_state": row[29],
+        "received_by_name": row[30], "delivered_by_name": row[31],
     }

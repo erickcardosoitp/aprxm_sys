@@ -28,8 +28,6 @@ class ServiceOrderService:
         description: str,
         priority: ServiceOrderPriority = ServiceOrderPriority.medium,
         area: str | None = None,
-        unit: str | None = None,
-        block: str | None = None,
         location_detail: str | None = None,
         requester_resident_id: UUID | None = None,
         requester_name: str | None = None,
@@ -68,8 +66,6 @@ class ServiceOrderService:
             resolved_at=resolved_at,
             cancelled_at=cancelled_at,
             area=area,
-            unit=unit,
-            block=block,
             location_detail=location_detail,
             requester_resident_id=requester_resident_id,
             requester_user_id=created_by,
@@ -166,7 +162,6 @@ class ServiceOrderService:
         pdf.multi_cell(0, 8, f"Título: {so.title}")
         pdf.multi_cell(0, 8, f"Área: {so.area or '—'}")
         pdf.multi_cell(0, 8, f"Prioridade: {so.priority.value.upper()}")
-        pdf.multi_cell(0, 8, f"Unidade/Bloco: {so.unit or '—'} / {so.block or '—'}")
         pdf.ln(2)
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 8, "Descrição:", ln=True)

@@ -23,8 +23,7 @@ interface CobrancaItem {
   amount: string; status: string; paid_at: string | null
 }
 interface Morador {
-  id: string; full_name: string; cpf: string | null; unit: string | null
-  block: string | null; type: string; status: string
+  id: string; full_name: string; cpf: string | null; type: string; status: string
   association_name: string; association_slug: string; pendencias: number
 }
 interface SyncItem {
@@ -432,7 +431,6 @@ export default function GeralPage() {
                         <p className="text-sm font-medium text-gray-800 truncate">{m.full_name}</p>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           <AssocBadge slug={m.association_slug} name={m.association_name} />
-                          {m.unit && <span className="text-xs text-gray-400">Unid. {m.unit}{m.block ? ` / Bl. ${m.block}` : ''}</span>}
                           {m.cpf && <span className="text-xs text-gray-400">{m.cpf}</span>}
                         </div>
                       </div>

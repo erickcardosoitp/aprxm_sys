@@ -162,7 +162,6 @@ export default function RelatoriosTab() {
           Morador: r.resident_name,
           Telefone: r.phone_primary ?? '',
           Número: r.address_number ?? '',
-          Unidade: r.unit ?? '',
           'Mês Ref': r.reference_month,
           'Meses Atraso': r.months_overdue,
           'Valor': parseFloat(r.amount),

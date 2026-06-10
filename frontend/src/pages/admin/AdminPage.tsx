@@ -341,7 +341,7 @@ type ProofEntry = {
   id: string; amount: string; description: string; created_at: string
   reference_number: string | null; reversed_at: string | null
   payment_method: string | null; resident_name: string | null
-  unit: string | null; cpf: string | null; issued_by: string | null
+  cpf: string | null; issued_by: string | null
 }
 
 type EditProofForm = { resident_name: string; resident_cpf: string; resident_neighborhood: string; resident_cep: string; amount: string }
@@ -439,7 +439,6 @@ function ComprovanteReport() {
                   <th className="px-5 py-3 text-left whitespace-nowrap">Data</th>
                   <th className="px-5 py-3 text-left whitespace-nowrap">Morador</th>
                   <th className="px-5 py-3 text-left whitespace-nowrap">CPF</th>
-                  <th className="px-5 py-3 text-left whitespace-nowrap">Unidade</th>
                   <th className="px-5 py-3 text-right whitespace-nowrap">Valor</th>
                   <th className="px-5 py-3 text-left whitespace-nowrap">Pagamento</th>
                   <th className="px-5 py-3 text-left whitespace-nowrap">Código</th>
@@ -459,7 +458,6 @@ function ComprovanteReport() {
                       {e.resident_name ?? e.description.replace('Comprovante de Residência — ', '')}
                     </td>
                     <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.cpf ? maskCpf(e.cpf) : '—'}</td>
-                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.unit ?? '—'}</td>
                     <td className="px-5 py-3 text-right font-semibold text-green-700 whitespace-nowrap">R$ {parseFloat(e.amount).toFixed(2)}</td>
                     <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{e.payment_method ?? '—'}</td>
                     <td className="px-5 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">{e.reference_number ?? '—'}</td>

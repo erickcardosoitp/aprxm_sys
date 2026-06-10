@@ -648,14 +648,14 @@ async def all_residents(
     filters = ["1=1"]
     params: dict = {"lim": limit, "off": offset}
     if q:
-        filters.append("(r.full_name ILIKE :q OR r.cpf ILIKE :q OR r.unit ILIKE :q)")
+        filters.append("(r.full_name ILIKE :q OR r.cpf ILIKE :q)")
         params["q"] = f"%{q}%"
     if association_id:
         filters.append("r.association_id = :aid")
         params["aid"] = association_id
     where = " AND ".join(filters)
     result = await session.execute(text(f"""
-        SELECT r.id, r.full_name, r.type, r.unit, r.block, r.cpf,
+        SELECT r.id, r.full_name, r.type, r.cpf,
                r.status, r.phone_primary, r.created_at,
                a.name AS association_name
         FROM residents r

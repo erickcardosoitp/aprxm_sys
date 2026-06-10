@@ -39,10 +39,6 @@ class Package(SQLModel, table=True):
     tracking_code: str | None = Field(default=None, max_length=100, index=True)
     object_type: str | None = Field(default=None, max_length=100)
 
-    # unit routing (denormalized)
-    unit: str | None = Field(default=None, max_length=50)
-    block: str | None = Field(default=None, max_length=50)
-
     # photos: list of {url, label, taken_at}
     photo_urls: list[dict[str, Any]] = Field(default=[], sa_column=Column(_json_type))
 

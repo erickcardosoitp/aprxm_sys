@@ -16,8 +16,6 @@ export function CadastrarMorador({ onClose, onSaved }: Props) {
   const [telefone, setTelefone] = useState('')
   const [cpf, setCpf] = useState('')
   const [cep, setCep] = useState('')
-  const [numero, setNumero] = useState('')
-  const [bloco, setBloco] = useState('')
   const [cepInfo, setCepInfo] = useState<{ street: string; district: string } | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -29,7 +27,7 @@ export function CadastrarMorador({ onClose, onSaved }: Props) {
       .catch(() => setCepInfo(null))
   }, [cep])
 
-  const canSave = nome.trim() && telefone.trim() && cep.replace(/\D/g, '').length === 8 && numero.trim()
+  const canSave = nome.trim() && telefone.trim() && cep.replace(/\D/g, '').length === 8
 
   const handleSave = async () => {
     if (!canSave) return
@@ -43,8 +41,6 @@ export function CadastrarMorador({ onClose, onSaved }: Props) {
         address_cep: cep.replace(/\D/g, ''),
         address_street: cepInfo?.street || undefined,
         address_neighborhood: cepInfo?.district || undefined,
-        unit: numero.trim(),
-        block: bloco.trim() || undefined,
         status: 'active',
         is_member_confirmed: tipo === 'member',
         terms_accepted: false,
@@ -114,15 +110,6 @@ export function CadastrarMorador({ onClose, onSaved }: Props) {
             )}
           </div>
 
-          {/* Número + Bloco */}
-          <div className="grid grid-cols-2 gap-3">
-            <input value={numero} onChange={e => setNumero(e.target.value)}
-              placeholder="Casa/Apto *"
-              className={inputCls} />
-            <input value={bloco} onChange={e => setBloco(e.target.value)}
-              placeholder="Bloco (opcional)"
-              className={inputCls} />
-          </div>
         </div>
 
         {/* Footer */}

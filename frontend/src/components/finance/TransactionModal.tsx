@@ -41,11 +41,10 @@ const INCOME_SUBTYPES: { value: IncomeSubtype; label: string; icon: string }[] =
 
 const STEP_TITLES = ['Tipo', 'Dados', 'Confirmação']
 
-function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, setRegCpf, regUnit, setRegUnit, regCep, setRegCep, regProofUrl, setRegProofUrl, registerAs, setRegisterAs, registering, onRegister, onlyMember = false, onCepResolved }: {
+function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, setRegCpf, regCep, setRegCep, regProofUrl, setRegProofUrl, registerAs, setRegisterAs, registering, onRegister, onlyMember = false, onCepResolved }: {
   regName: string; setRegName: (v: string) => void
   regPhone: string; setRegPhone: (v: string) => void
   regCpf: string; setRegCpf: (v: string) => void
-  regUnit: string; setRegUnit: (v: string) => void
   regCep: string; setRegCep: (v: string) => void
   regProofUrl: string; setRegProofUrl: (v: string) => void
   registerAs: 'member' | 'guest' | null; setRegisterAs: (v: 'member' | 'guest' | null) => void
@@ -108,21 +107,16 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
               className={inputCls} />
           </div>
           {(registerAs === 'member') && (
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <input value={regCep} onChange={e => setRegCep(e.target.value)}
-                  placeholder={onlyMember ? 'CEP *' : 'CEP'} inputMode="numeric"
-                  className={`w-full ${inputCls}`} />
-                {cepLoading && <p className="text-[11px] text-gray-400 mt-1">Consultando…</p>}
-                {cepResult && (
-                  <p className="text-[11px] text-emerald-700 mt-1 truncate">
-                    {cepResult.street}, {cepResult.district}
-                  </p>
-                )}
-              </div>
-              <input value={regUnit} onChange={e => setRegUnit(e.target.value)}
-                placeholder={onlyMember ? 'Nº da casa/apto *' : 'Unidade (ex: 201)'}
+            <div>
+              <input value={regCep} onChange={e => setRegCep(e.target.value)}
+                placeholder={onlyMember ? 'CEP *' : 'CEP'} inputMode="numeric"
                 className={`w-full ${inputCls}`} />
+              {cepLoading && <p className="text-[11px] text-gray-400 mt-1">Consultando…</p>}
+              {cepResult && (
+                <p className="text-[11px] text-emerald-700 mt-1 truncate">
+                  {cepResult.street}, {cepResult.district}
+                </p>
+              )}
             </div>
           )}
           <div>
@@ -194,7 +188,6 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   const [regName, setRegName] = useState('')
   const [regPhone, setRegPhone] = useState('')
   const [regCpf, setRegCpf] = useState('')
-  const [regUnit, setRegUnit] = useState('')
   const [regCep, setRegCep] = useState('')
   const [regStreet, setRegStreet] = useState('')
   const [regDistrict, setRegDistrict] = useState('')
@@ -308,7 +301,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
     }
   }, [incomeSubtype, resident, txType])
 
-  const resetNotFound = () => { setNotFound(false); setRegisterAs(null); setRegName(''); setRegPhone(''); setRegCpf(''); setRegUnit(''); setRegCep(''); setRegStreet(''); setRegDistrict(''); setRegCity(''); setRegStateAddr(''); setRegProofUrl('') }
+  const resetNotFound = () => { setNotFound(false); setRegisterAs(null); setRegName(''); setRegPhone(''); setRegCpf(''); setRegCep(''); setRegStreet(''); setRegDistrict(''); setRegCity(''); setRegStateAddr(''); setRegProofUrl('') }
 
   const searchFeeResident = async (q: string) => {
     setFeeQuery(q)
@@ -360,7 +353,6 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
       if (!regPhone.trim()) { toast.error('Telefone é obrigatório.'); return }
       if (!regCpf.trim()) { toast.error('CPF é obrigatório.'); return }
       if (!regCep.trim()) { toast.error('CEP é obrigatório.'); return }
-      if (!regUnit.trim()) { toast.error('Número da casa/apto é obrigatório.'); return }
     }
     setRegistering(true)
     try {
@@ -369,7 +361,6 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         full_name: regName.trim(),
         phone_primary: regPhone || undefined,
         cpf: regCpf || undefined,
-        unit: regUnit || undefined,
         address_cep: regCep || undefined,
         address_street: regStreet || undefined,
         address_neighborhood: regDistrict || undefined,
@@ -985,7 +976,6 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                         regName={regName} setRegName={setRegName}
                         regPhone={regPhone} setRegPhone={setRegPhone}
                         regCpf={regCpf} setRegCpf={setRegCpf}
-                        regUnit={regUnit} setRegUnit={setRegUnit}
                         regCep={regCep} setRegCep={setRegCep}
                         regProofUrl={regProofUrl} setRegProofUrl={setRegProofUrl}
                         registerAs={registerAs} setRegisterAs={setRegisterAs}
@@ -1031,7 +1021,6 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                         <p className="font-medium">{resident.full_name}</p>
                         <p className="text-xs text-blue-600">
                           {resident.type === 'member' ? 'Associado' : resident.type === 'guest' ? 'Visitante' : 'Dependente'}
-                          {resident.unit ? ` · Casa/Apto ${resident.unit}` : ''}
                         </p>
                       </div>
                       <button type="button" onClick={() => { setResident(null); setFeeQuery(''); setPaymentHistory(null) }}
@@ -1046,7 +1035,6 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                     regName={regName} setRegName={setRegName}
                     regPhone={regPhone} setRegPhone={setRegPhone}
                     regCpf={regCpf} setRegCpf={setRegCpf}
-                    regUnit={regUnit} setRegUnit={setRegUnit}
                     regCep={regCep} setRegCep={setRegCep}
                     regProofUrl={regProofUrl} setRegProofUrl={setRegProofUrl}
                     registerAs={registerAs} setRegisterAs={setRegisterAs}

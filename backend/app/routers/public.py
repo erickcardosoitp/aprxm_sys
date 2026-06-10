@@ -22,8 +22,6 @@ class PublicRegisterRequest(BaseModel):
     phone_secondary: str | None = None
     email: str | None = None
     date_of_birth: date | None = None
-    unit: str | None = None
-    block: str | None = None
     address_cep: str | None = None
     address_street: str | None = None
     address_number: str | None = None
@@ -98,8 +96,6 @@ async def public_register_resident(
         phone_secondary=body.phone_secondary,
         email=body.email,
         date_of_birth=body.date_of_birth,
-        unit=body.unit,
-        block=body.block,
         address_cep=body.address_cep,
         address_street=body.address_street,
         address_number=body.address_number,
@@ -165,14 +161,13 @@ async def public_search_resident(
     if not assoc:
         raise HTTPException(404, "Associação não encontrada.")
     rows = (await session.execute(sa_text("""
-        SELECT id, full_name, cpf, phone_primary, unit, block
+        SELECT id, full_name, cpf, phone_primary
           FROM residents
          WHERE association_id = :aid
            AND (full_name ILIKE :q OR cpf ILIKE :q OR phone_primary ILIKE :q)
          ORDER BY full_name LIMIT 10
     """), {"aid": str(assoc.id), "q": f"%{q}%"})).fetchall()
-    return [{"id": str(r[0]), "full_name": r[1], "cpf": r[2], "phone_primary": r[3],
-             "unit": r[4], "block": r[5]} for r in rows]
+    return [{"id": str(r[0]), "full_name": r[1], "cpf": r[2], "phone_primary": r[3]} for r in rows]
 
 
 @router.post("/associations/{slug}/residents/{resident_id}/update-request",

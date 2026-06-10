@@ -394,7 +394,6 @@ export function MapaMoradores({ onClose }: Props) {
                     </div>
                     <p className="text-xs text-gray-500">
                       {r.type === 'member' ? 'Associado' : r.type === 'guest' ? 'Visitante' : 'Dependente'}
-                      {r.unit ? ` · Apto ${r.unit}` : ''}
                       {r.phone_primary ? ` · ${r.phone_primary}` : ''}
                     </p>
                     {(r.neighborhood_problems ?? []).length > 0 && (

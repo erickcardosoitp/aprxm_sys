@@ -39,8 +39,6 @@ class PackageService:
         self,
         association_id: UUID,
         received_by: UUID,
-        unit: str,
-        block: str | None,
         photo_urls: list[dict],
         resident_id: UUID | None = None,
         carrier_name: str | None = None,
@@ -57,8 +55,6 @@ class PackageService:
         package = Package(
             association_id=association_id,
             resident_id=resident_id,
-            unit=unit,
-            block=block,
             photo_urls=photo_urls,
             carrier_name=carrier_name,
             tracking_code=tracking_code,
@@ -141,14 +137,13 @@ class PackageService:
             effective_resident_id = (
                 delivered_to_resident_id or package.resident_id
             )
-            unit_label = f" (Unid. {package.unit})" if package.unit else ""
             tx = await self._finance.register_transaction(
                 association_id=association_id,
                 cash_session_id=cash_session.id,
                 tx_type=TransactionType.income,
                 income_subtype=IncomeSubtype.delivery_fee,
                 amount=DELIVERY_FEE,
-                description=f"Taxa de entrega — {delivered_to_name}{unit_label}",
+                description=f"Taxa de entrega — {delivered_to_name}",
                 created_by=delivered_by,
                 package_id=package_id,
                 resident_id=effective_resident_id,

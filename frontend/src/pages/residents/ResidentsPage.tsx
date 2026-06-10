@@ -33,7 +33,7 @@ function safeDate(s: string | null | undefined): string {
 function calcCompletion(r: Resident): number {
   const checks = [
     !!r.cpf, !!r.phone_primary, !!r.phone_secondary, !!r.email, !!r.date_of_birth,
-    !!r.race, !!r.education_level, !!r.unit, !!r.block, !!r.address_cep,
+    !!r.race, !!r.education_level, !!r.address_cep,
     !!r.address_street, !!r.address_number, (r.household_count ?? 0) > 0,
     (r.address_rooms ?? 0) > 0, !!r.internet_access, r.has_sewage != null,
     (r.neighborhood_problems?.length ?? 0) > 0, !!r.main_priority_request,
@@ -86,8 +86,6 @@ const EMPTY_FORM = {
   address_city: '',
   address_state: '',
   address_country: 'Brasil',
-  unit: '',
-  block: '',
   parking_spot: '',
   address_location: '',
   address_access: [] as string[],
@@ -387,8 +385,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
                               onClick={() => { set('responsible_id', r.id); setResponsibleName(r.full_name); setResponsibleSearch(''); setResponsibleResults([]) }}
                               className="w-full text-left px-3 py-2 hover:bg-blue-50 flex flex-col border-b last:border-0 border-gray-100 text-sm">
                               <span className="font-medium">{r.full_name}</span>
-                              {r.unit && <span className="text-xs text-gray-400">Unid. {r.unit}{r.block ? ` · Bl. ${r.block}` : ''}</span>}
-                            </button>
+                                            </button>
                           ))}
                         </div>
                       )}
@@ -446,8 +443,6 @@ function ResidentForm({ initial, onSave, onCancel }: {
                 <Input label="UF" value={form.address_state} onChange={(v) => set('address_state', v.toUpperCase().slice(0, 2))} placeholder="RJ" />
               </div>
               <div className="grid grid-cols-3 gap-2">
-                <Input label="Unidade" value={form.unit} onChange={(v) => set('unit', v)} placeholder="201" />
-                <Input label="Bloco" value={form.block} onChange={(v) => set('block', v)} placeholder="A" />
                 <Input label="Vaga" value={form.parking_spot} onChange={(v) => set('parking_spot', v)} placeholder="12" />
               </div>
               <Select label="Localização da moradia" value={form.address_location} onChange={(v) => set('address_location', v)} options={LOCATION_OPTIONS} />
@@ -629,7 +624,7 @@ function DependentForm({ onSave, onCancel }: {
                       <li key={r.id}>
                         <button className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
                           onClick={() => { setResponsible(r); set('responsible_id', r.id); setSearch(''); setResults([]) }}>
-                          {r.full_name}{r.cpf ? ` · ${maskCpf(r.cpf)}` : ''}{r.unit ? ` · Unid. ${r.unit}` : ''}
+                          {r.full_name}{r.cpf ? ` · ${maskCpf(r.cpf)}` : ''}
                         </button>
                       </li>
                     ))}
@@ -904,7 +899,6 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           <div class="title">Comprovante de Mensalidade</div>
           <div class="row"><span class="lbl">Morador</span><span class="val">${d.resident_name}</span></div>
           ${d.resident_cpf ? `<div class="row"><span class="lbl">CPF</span><span class="val">${maskCpf(d.resident_cpf)}</span></div>` : ''}
-          ${d.unit ? `<div class="row"><span class="lbl">Unidade</span><span class="val">${d.unit}${d.block ? ' / Bl. ' + d.block : ''}</span></div>` : ''}
           <div class="divider"></div>
           <div class="row"><span class="lbl">Referência</span><span class="val">${d.reference_month}</span></div>
           <div class="row"><span class="lbl">Vencimento</span><span class="val">${safeDate(d.due_date)}</span></div>
@@ -950,7 +944,6 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           <div>
             <h3 className="font-semibold text-gray-900">{currentResident.full_name}</h3>
             <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-xs text-gray-400">{currentResident.unit ? `Unid. ${currentResident.unit}` : ''}{currentResident.block ? ` / Bl. ${currentResident.block}` : ''}</p>
               {currentResident.type === 'guest'
                 ? <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-medium">Visitante</span>
                 : currentResident.type === 'dependent'
@@ -1484,7 +1477,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
     if (mapaMode) {
       setShowPickerMapa(true)
       api.get<Resident[]>('/residents', { params: { status: 'active', type: 'member' } })
-        .then(r => setMapaData(r.data.sort((a, b) => (a.unit ?? '').localeCompare(b.unit ?? '', undefined, { numeric: true }))))
+        .then(r => setMapaData(r.data.sort((a, b) => a.full_name.localeCompare(b.full_name))))
         .catch(() => {})
       return
     }
@@ -1736,7 +1729,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-gray-800">{req.resident_name}</p>
-                      <p className="text-xs text-gray-400">{req.cpf ? maskCpf(req.cpf) : ''}{req.unit ? ` · Unid. ${req.unit}` : ''}</p>
+                      <p className="text-xs text-gray-400">{req.cpf ? maskCpf(req.cpf) : ''}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{new Date(req.submitted_at).toLocaleString('pt-BR')}</p>
                     </div>
                     <div className="flex gap-2 shrink-0">
@@ -1792,8 +1785,6 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
                     </div>
                     <p className="text-xs text-gray-400">
                       {TYPE_LABELS[r.type] ?? r.type}
-                      {r.unit ? ` · Unid. ${r.unit}` : ''}
-                      {r.block ? ` / Bl. ${r.block}` : ''}
                       {r.cpf ? ` · ${maskCpf(r.cpf)}` : ''}
                     </p>
                     {(r.address_street || r.address_cep) && (
@@ -1899,7 +1890,6 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
                     <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
                     <p className="text-xs text-gray-500">
                       {r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}
-                      {r.unit ? ` · Casa/Apto ${r.unit}` : ''}
                       {r.phone_primary ? ` · ${r.phone_primary}` : ''}
                     </p>
                   </div>
@@ -1947,7 +1937,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
-                    <p className="text-xs text-gray-500">{r.unit ? `Casa/Apto ${r.unit}` : ''}{r.phone_primary ? ` · ${r.phone_primary}` : ''}</p>
+                    <p className="text-xs text-gray-500">{r.phone_primary ? r.phone_primary : ''}</p>
                   </div>
                 </button>
               ))}
@@ -1973,26 +1963,15 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
               {mapaData.length === 0 && (
                 <p className="text-sm text-gray-400 text-center py-8">Nenhum morador ativo encontrado.</p>
               )}
-              {Array.from(new Set(mapaData.map(r => r.unit ?? '(sem unidade)'))).map(unit => {
-                const group = mapaData.filter(r => (r.unit ?? '(sem unidade)') === unit)
-                return (
-                  <div key={unit} className="border-b border-gray-50 last:border-0">
-                    <div className="flex items-center gap-2 px-5 py-2 bg-gray-50 sticky top-0">
-                      <span className="text-xs font-bold text-[#26619c]">Casa/Apto {unit}</span>
-                      <span className="text-[10px] text-gray-400">{group.length} morador(es)</span>
-                    </div>
-                    {group.map(r => (
-                      <button key={r.id} onClick={() => { setShowPickerMapa(false); setProfileResident(r) }}
-                        className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-blue-50 transition text-left">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
-                          {r.phone_primary && <p className="text-xs text-gray-400">{r.phone_primary}</p>}
-                        </div>
-                      </button>
-                    ))}
+              {mapaData.map(r => (
+                <button key={r.id} onClick={() => { setShowPickerMapa(false); setProfileResident(r) }}
+                  className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-blue-50 transition text-left border-b border-gray-50 last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
+                    {r.phone_primary && <p className="text-xs text-gray-400">{r.phone_primary}</p>}
                   </div>
-                )
-              })}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -2143,8 +2122,6 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
             address_city: editTarget.address_city ?? '',
             address_state: editTarget.address_state ?? '',
             address_country: editTarget.address_country ?? 'Brasil',
-            unit: editTarget.unit ?? '',
-            block: editTarget.block ?? '',
             parking_spot: editTarget.parking_spot ?? '',
             address_location: editTarget.address_location ?? '',
             address_access: editTarget.address_access ?? [],

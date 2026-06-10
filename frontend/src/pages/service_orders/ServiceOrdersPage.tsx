@@ -20,13 +20,13 @@ type ServiceOrderPriority = 'low' | 'medium' | 'high' | 'critical'
 interface ServiceOrder {
   id: string; number: number; title: string; description: string
   status: ServiceOrderStatus; priority: ServiceOrderPriority
-  area?: string; unit?: string; block?: string
+  area?: string
   service_impacted?: string; category_name?: string; org_responsible?: string
   requester_name?: string; requester_phone?: string; requester_email?: string
   reference_point?: string; address_cep?: string; address_street?: string; address_number?: string; address_complement?: string; assigned_to?: string; assigned_to_name?: string; community_wide?: boolean
   requester_resident_id?: string; resolution_notes?: string; resolved_at?: string
   cancellation_reason?: string; request_date?: string
-  impacted_residents?: {id: string; name: string; unit?: string}[]
+  impacted_residents?: {id: string; name: string}[]
   created_at: string; updated_at?: string; created_by_name?: string
   association_name?: string
 }
@@ -65,7 +65,7 @@ const TASK_STATUS_COLORS: Record<string, string> = {
 }
 
 interface ResidentResult {
-  id: string; full_name: string; cpf?: string; phone_primary?: string; email?: string; address_cep?: string; unit?: string; type?: string
+  id: string; full_name: string; cpf?: string; phone_primary?: string; email?: string; address_cep?: string; type?: string
 }
 
 interface UserResult {
@@ -273,7 +273,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
   }
 
   // Moradores impactados
-  const [impactedResidents, setImpactedResidents] = useState<{id: string; name: string; unit?: string}[]>([])
+  const [impactedResidents, setImpactedResidents] = useState<{id: string; name: string}[]>([])
   const [impactedQuery, setImpactedQuery] = useState('')
   const [impactedResults, setImpactedResults] = useState<ResidentResult[]>([])
   const impactedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -291,7 +291,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
 
   const addImpacted = (r: ResidentResult) => {
     if (!impactedResidents.find(x => x.id === r.id)) {
-      setImpactedResidents(prev => [...prev, { id: r.id, name: r.full_name, unit: r.unit ?? undefined }])
+      setImpactedResidents(prev => [...prev, { id: r.id, name: r.full_name }])
     }
     setImpactedQuery('')
     setImpactedResults([])
@@ -717,7 +717,6 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                         <li key={r.id} onMouseDown={() => addImpacted(r)}
                           className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm">
                           <span className="font-medium">{r.full_name}</span>
-                          {r.unit && <span className="ml-2 text-xs text-gray-400">Ap. {r.unit}</span>}
                         </li>
                       ))}
                     </ul>
@@ -727,7 +726,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {impactedResidents.map(r => (
                       <span key={r.id} className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs px-2 py-1 rounded-full">
-                        {r.name}{r.unit ? ` · Ap. ${r.unit}` : ''}
+                        {r.name}
                         <button type="button" onClick={() => setImpactedResidents(prev => prev.filter(x => x.id !== r.id))} className="ml-0.5 text-blue-400 hover:text-red-500">✕</button>
                       </span>
                     ))}
@@ -1263,7 +1262,7 @@ function SOPrintModal({ so, onClose }: { so: ServiceOrder; onClose: () => void }
             <h2 className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-3">Moradores Impactados</h2>
             <ul className="flex flex-col gap-1">
               {so.impacted_residents.map(r => (
-                <li key={r.id} className="text-sm text-gray-800">• {r.name}{r.unit ? ` — Ap. ${r.unit}` : ''}</li>
+                <li key={r.id} className="text-sm text-gray-800">• {r.name}</li>
               ))}
             </ul>
           </div>
@@ -1818,7 +1817,7 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                         <div className="flex flex-wrap gap-1 mt-0.5">
                           {d.impacted_residents.map(r => (
                             <span key={r.id} className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2 py-0.5 rounded-full">
-                              {r.name}{r.unit ? ` · Ap. ${r.unit}` : ''}
+                              {r.name}
                             </span>
                           ))}
                         </div>

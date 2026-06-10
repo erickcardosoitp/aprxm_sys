@@ -438,7 +438,7 @@ async def get_comprovante(
     result = await session.execute(
         text("""
             SELECT m.reference_month, m.due_date, m.amount, m.paid_at,
-                   r.full_name, r.cpf, r.unit, r.block,
+                   r.full_name, r.cpf,
                    a.name AS assoc_name, a.address_city, a.phone AS assoc_phone,
                    t.description AS tx_desc, pm.name AS payment_method
             FROM mensalidades m
@@ -458,9 +458,8 @@ async def get_comprovante(
         "reference_month": row[0], "due_date": str(row[1]),
         "amount": str(row[2]), "paid_at": str(row[3]),
         "resident_name": row[4], "resident_cpf": row[5],
-        "unit": row[6], "block": row[7],
-        "association_name": row[8], "city": row[9], "assoc_phone": row[10],
-        "tx_desc": row[11], "payment_method": row[12] or "Dinheiro",
+        "association_name": row[6], "city": row[7], "assoc_phone": row[8],
+        "tx_desc": row[9], "payment_method": row[10] or "Dinheiro",
     }
 
 

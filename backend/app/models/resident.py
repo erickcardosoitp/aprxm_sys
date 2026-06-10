@@ -49,9 +49,6 @@ class Resident(SQLModel, table=True):
     phone_primary: str | None = Field(default=None, max_length=20)
     phone_secondary: str | None = Field(default=None, max_length=20)
 
-    # --- unit (within condominium) ---
-    unit: str | None = Field(default=None, max_length=50)
-    block: str | None = Field(default=None, max_length=50)
     parking_spot: str | None = Field(default=None, max_length=50)
 
     # --- full address ---

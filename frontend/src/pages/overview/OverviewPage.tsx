@@ -624,7 +624,7 @@ function OverviewTab() {
             <ul className="divide-y divide-gray-100">
               {activity.packages.map(pkg => (
                 <li key={pkg.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0"><p className="text-sm font-medium text-gray-800 truncate">{pkg.resident_name ?? pkg.unit ?? 'Destinatário não informado'}</p><p className="text-xs text-gray-400">{fmtDate(pkg.received_at)}{pkg.carrier_name ? ` · ${pkg.carrier_name}` : ''}</p></div>
+                  <div className="min-w-0"><p className="text-sm font-medium text-gray-800 truncate">{pkg.resident_name ?? 'Destinatário não informado'}</p><p className="text-xs text-gray-400">{fmtDate(pkg.received_at)}{pkg.carrier_name ? ` · ${pkg.carrier_name}` : ''}</p></div>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${pkg.status === 'received' || pkg.status === 'notified' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{PKG_STATUS_LABEL[pkg.status] ?? pkg.status}</span>
                 </li>
               ))}

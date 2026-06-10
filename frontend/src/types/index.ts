@@ -104,8 +104,6 @@ export interface Resident {
   email?: string
   phone_primary?: string
   phone_secondary?: string
-  unit?: string
-  block?: string
   parking_spot?: string
   photo_url?: string
   responsible_id?: string
@@ -152,8 +150,6 @@ export type PackageStatus = 'received' | 'notified' | 'delivered' | 'returned' |
 export interface Package {
   id: string
   status: PackageStatus
-  unit?: string
-  block?: string
   carrier_name?: string
   tracking_code?: string
   has_delivery_fee: boolean
@@ -217,8 +213,6 @@ export interface ServiceOrder {
   status: ServiceOrderStatus
   priority: ServiceOrderPriority
   area?: string
-  unit?: string
-  block?: string
   service_impacted?: string
   category_name?: string
   org_responsible?: string

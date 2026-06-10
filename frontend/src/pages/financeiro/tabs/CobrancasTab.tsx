@@ -67,7 +67,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
   const [savingDueDay, setSavingDueDay] = useState(false)
 
   // Payment method modal
-  const [payPmTarget, setPayPmTarget] = useState<{ id: string; meta?: { name: string; cpf?: string; unit?: string; resident_id?: string }; amount?: number } | null>(null)
+  const [payPmTarget, setPayPmTarget] = useState<{ id: string; meta?: { name: string; cpf?: string; resident_id?: string }; amount?: number } | null>(null)
   const [payPmId, setPayPmId] = useState('')
   const [splitEnabled, setSplitEnabled] = useState(false)
   const [payPmId2, setPayPmId2] = useState('')
@@ -135,17 +135,16 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
     } catch { }
   }
 
-  const printCarneFinanceiro = async (residentId: string, residentName: string, residentCpf?: string, residentUnit?: string) => {
+  const printCarneFinanceiro = async (residentId: string, residentName: string, residentCpf?: string) => {
     try {
       const res = await api.get<any[]>(`/mensalidades/residents/${residentId}`)
-      printCarneUtil({ full_name: residentName, cpf: residentCpf, unit: residentUnit }, res.data, assocName, { operatorName: carneOperator || undefined })
+      printCarneUtil({ full_name: residentName, cpf: residentCpf }, res.data, assocName, { operatorName: carneOperator || undefined })
     } catch { toast.error('Erro ao gerar carnê.') }
   }
 
   const printRecibo = (
     residentName: string,
     residentCpf: string | undefined,
-    residentUnit: string | undefined,
     allMensalidades: Mensalidade[],
     paidNow: Mensalidade,
     paymentMethodLabel: string,
@@ -181,7 +180,6 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
   <div style="padding:2mm 2mm 1.5mm;border-bottom:1px dashed #999">
     <div style="display:flex;justify-content:space-between"><span style="color:#555">Associado</span><span style="font-weight:bold;text-align:right;max-width:46mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${residentName}</span></div>
     ${residentCpf ? `<div style="display:flex;justify-content:space-between"><span style="color:#555">CPF</span><span style="font-weight:bold">${residentCpf}</span></div>` : ''}
-    ${residentUnit ? `<div style="display:flex;justify-content:space-between"><span style="color:#555">Unidade</span><span style="font-weight:bold">${residentUnit}</span></div>` : ''}
   </div>
   <div style="padding:2mm;border-bottom:1px dashed #999">
     <div style="font-size:6pt;font-weight:bold;letter-spacing:.3px;color:#555;margin-bottom:1mm">PAGAMENTO EFETUADO</div>
@@ -246,7 +244,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
 
   const handlePayMensalidade = (
     id: string,
-    residentMeta?: { name: string; cpf?: string; unit?: string; resident_id?: string },
+    residentMeta?: { name: string; cpf?: string; resident_id?: string },
     amount?: number,
   ) => {
     if (!openSession) {
@@ -312,10 +310,10 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
           const pm2Label = splitEnabled ? (paymentMethods.find(p => p.id === payPmId2)?.name ?? '') : undefined
           const amount2Val = splitEnabled ? amount2 : undefined
           printRecibo(
-            residentMeta.name, residentMeta.cpf, residentMeta.unit, allRes.data, paidNow,
+            residentMeta.name, residentMeta.cpf, allRes.data, paidNow,
             pm1Label, carneOperator, assocName, pm2Label, amount2Val,
           )
-          setTimeout(() => printCarneFinanceiro(paidNow.resident_id, residentMeta.name, residentMeta.cpf, residentMeta.unit), 1200)
+          setTimeout(() => printCarneFinanceiro(paidNow.resident_id, residentMeta.name, residentMeta.cpf), 1200)
         } catch { /* silently skip print */ }
       }
     } catch (e: any) {
@@ -571,7 +569,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
                     <button className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex flex-col"
                       onClick={() => { setSelectedResident(r); setResidentSearch(r.full_name); setResidentResults([]) }}>
                       <span className="font-medium text-gray-800">{r.full_name}</span>
-                      <span className="text-xs text-gray-400">{r.cpf ? `CPF: ${r.cpf}` : ''}{r.unit ? ` · Unid. ${r.unit}` : ''}</span>
+                      <span className="text-xs text-gray-400">{r.cpf ? `CPF: ${r.cpf}` : ''}</span>
                     </button>
                   </li>
                 ))}
@@ -659,7 +657,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
                   const name = m.resident_name ?? pendingNames[m.resident_id] ?? '…'
                   const phone = m.phone_primary?.replace(/\D/g, '')
                   const waLink = phone ? `https://wa.me/55${phone}` : null
-                  const address = [m.address_street, m.address_number, m.unit].filter(Boolean).join(', ')
+                  const address = [m.address_street, m.address_number].filter(Boolean).join(', ')
                   return (
                     <li key={m.id} className="px-4 py-3 flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
@@ -734,7 +732,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
                   const name = d.resident_name ?? delinquentNames[d.resident_id] ?? '…'
                   const phone = d.phone_primary?.replace(/\D/g, '')
                   const waLink = phone ? `https://wa.me/55${phone}` : null
-                  const address = [d.address_street, d.address_number, d.unit].filter(Boolean).join(', ')
+                  const address = [d.address_street, d.address_number].filter(Boolean).join(', ')
                   return (
                     <li key={d.id} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-2">
@@ -851,7 +849,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
                           loadResidentHistory(r.id, r.full_name)
                         }}>
                         <span className="font-medium text-gray-800">{r.full_name}</span>
-                        <span className="text-xs text-gray-400 ml-2">{r.unit ? `Unid. ${r.unit}` : ''}{r.cpf ? ` · ${r.cpf}` : ''}</span>
+                        <span className="text-xs text-gray-400 ml-2">{r.cpf ? r.cpf : ''}</span>
                       </button>
                     </li>
                   ))}

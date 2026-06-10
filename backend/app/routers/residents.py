@@ -27,8 +27,6 @@ class CreateResidentRequest(BaseModel):
     phone_primary: str | None = None
     phone_secondary: str | None = None
 
-    unit: str | None = None
-    block: str | None = None
     parking_spot: str | None = None
 
     address_cep: str | None = None
@@ -80,8 +78,6 @@ class UpdateResidentRequest(BaseModel):
     phone_primary: str | None = None
     phone_secondary: str | None = None
 
-    unit: str | None = None
-    block: str | None = None
     parking_spot: str | None = None
 
     address_cep: str | None = None
@@ -129,8 +125,6 @@ def _serialize_list(r: Resident) -> dict:
         "cpf": r.cpf,
         "phone_primary": r.phone_primary,
         "phone_secondary": r.phone_secondary,
-        "unit": r.unit,
-        "block": r.block,
         "address_cep": r.address_cep,
         "address_street": r.address_street,
         "address_neighborhood": getattr(r, "address_neighborhood", None),
@@ -160,8 +154,6 @@ def _serialize(r: Resident) -> dict:
         "email": r.email,
         "phone_primary": r.phone_primary,
         "phone_secondary": r.phone_secondary,
-        "unit": r.unit,
-        "block": r.block,
         "parking_spot": r.parking_spot,
         "address_cep": r.address_cep,
         "address_street": r.address_street,
@@ -249,7 +241,7 @@ async def search_residents_global(
     result = await session.execute(
         sa_text(f"""
             SELECT r.id, r.full_name, r.cpf, r.phone_primary, r.phone_secondary,
-                   r.address_street, r.address_number, r.address_city, r.unit, r.block, r.type, r.status,
+                   r.address_street, r.address_number, r.address_city, r.type, r.status,
                    r.address_cep, r.responsible_id, resp.full_name AS responsible_name
             FROM residents r
             LEFT JOIN residents resp ON resp.id = r.responsible_id
@@ -264,7 +256,6 @@ async def search_residents_global(
                 OR unaccent(r.address_street) ILIKE unaccent(:q)
                 OR r.address_city ILIKE :q
                 OR r.address_cep ILIKE :q
-                OR (r.unit || ' ' || COALESCE(r.block,'')) ILIKE :q
                 {f"OR (REGEXP_REPLACE(r.phone_primary, '\\D', '', 'g') ILIKE :qdigits OR REGEXP_REPLACE(r.phone_secondary, '\\D', '', 'g') ILIKE :qdigits)" if q_digits else ""}
               )
             ORDER BY r.full_name
@@ -285,10 +276,10 @@ async def search_residents_global(
             "id": str(r[0]), "full_name": r[1], "cpf": r[2],
             "phone_primary": r[3], "phone_secondary": r[4],
             "address_street": r[5], "address_number": r[6], "address_city": r[7],
-            "unit": r[8], "block": r[9], "type": r[10], "status": r[11],
-            "address_cep": r[12],
-            "responsible_id": str(r[13]) if r[13] else None,
-            "responsible_name": r[14],
+            "type": r[8], "status": r[9],
+            "address_cep": r[10],
+            "responsible_id": str(r[11]) if r[11] else None,
+            "responsible_name": r[12],
         }
         for r in rows
     ]
@@ -627,7 +618,7 @@ async def merge_residents(
     all_ids = [str(body.primary_id)] + [str(s) for s in body.secondary_ids]
 
     rows = (await session.execute(sa_text(
-        "SELECT id, full_name, cpf, phone_primary, phone_secondary, email, unit, block, "
+        "SELECT id, full_name, cpf, phone_primary, phone_secondary, email, "
         "address_street, address_number, address_cep, date_of_birth, type, status "
         "FROM residents WHERE id = ANY(:ids) AND association_id = :aid"
     ), {"ids": all_ids, "aid": aid})).fetchall()
@@ -639,10 +630,10 @@ async def merge_residents(
     secondaries = [r for r in rows if str(r[0]) != str(body.primary_id)]
 
     # Build update dict: fill NULL fields on primary from secondaries
-    fields = ["cpf", "phone_primary", "phone_secondary", "email", "unit", "block",
+    fields = ["cpf", "phone_primary", "phone_secondary", "email",
               "address_street", "address_number", "address_cep", "date_of_birth"]
     col_idx = {f: i + 1 for i, f in enumerate(["full_name", "cpf", "phone_primary", "phone_secondary",
-                                                 "email", "unit", "block", "address_street",
+                                                 "email", "address_street",
                                                  "address_number", "address_cep", "date_of_birth"])}
     updates: dict = {}
     for field in fields:
@@ -685,7 +676,7 @@ async def merge_residents(
         ), {"pid": str(body.primary_id), "sids": sec_id_list, "aid": aid})
 
     # If primary is a member, fix packages that came from guest secondaries
-    primary_type = primary[12]  # type column index
+    primary_type = primary[10]  # type column index
     if str(primary_type) == "member":
         await session.execute(sa_text("""
             UPDATE packages SET has_delivery_fee = FALSE, resident_type = 'member'
@@ -724,7 +715,7 @@ async def list_update_requests(
 ) -> list[dict]:
     from sqlalchemy import text as sa_text
     rows = (await session.execute(sa_text("""
-        SELECT r.id, r.full_name, r.cpf, r.unit, r.block,
+        SELECT r.id, r.full_name, r.cpf,
                req.id AS req_id, req.changes, req.notes, req.submitted_at, req.status
           FROM resident_update_requests req
           JOIN residents r ON r.id = req.resident_id
@@ -733,10 +724,10 @@ async def list_update_requests(
     """), {"aid": str(current.association_id), "status": status})).fetchall()
     import json as _json
     return [{
-        "id": str(r[5]), "resident_id": str(r[0]), "resident_name": r[1],
-        "cpf": r[2], "unit": r[3], "block": r[4],
-        "changes": r[6] if isinstance(r[6], dict) else _json.loads(r[6]),
-        "notes": r[7], "submitted_at": str(r[8]), "status": r[9],
+        "id": str(r[3]), "resident_id": str(r[0]), "resident_name": r[1],
+        "cpf": r[2],
+        "changes": r[4] if isinstance(r[4], dict) else _json.loads(r[4]),
+        "notes": r[5], "submitted_at": str(r[6]), "status": r[7],
     } for r in rows]
 
 
@@ -755,7 +746,7 @@ async def approve_update_request(
         raise HTTPException(404, "Solicitação não encontrada.")
     changes = row[1] if isinstance(row[1], dict) else _json.loads(row[1])
     allowed = {"full_name", "phone_primary", "phone_secondary", "email", "date_of_birth",
-                "unit", "block", "address_cep", "address_street", "address_number",
+                "address_cep", "address_street", "address_number",
                 "address_complement", "address_district", "address_city", "address_state", "cpf"}
     safe = {k: v for k, v in changes.items() if k in allowed and v is not None and v != ""}
     if safe:

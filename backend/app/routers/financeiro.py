@@ -256,7 +256,7 @@ async def get_fluxo_projetado(
 ) -> list[dict]:
     result = await session.execute(
         text("""
-            SELECT r.full_name, r.unit, r.block, m.reference_month, m.due_date, m.amount
+            SELECT r.full_name, m.reference_month, m.due_date, m.amount
             FROM mensalidades m
             JOIN residents r ON r.id = m.resident_id
             WHERE m.association_id = :aid
@@ -267,8 +267,7 @@ async def get_fluxo_projetado(
         {"aid": str(current.association_id)},
     )
     return [
-        {"resident_name": r[0], "unit": r[1], "block": r[2],
-         "reference_month": r[3], "due_date": str(r[4]), "amount": str(r[5])}
+        {"resident_name": r[0], "reference_month": r[1], "due_date": str(r[2]), "amount": str(r[3])}
         for r in result.fetchall()
     ]
 

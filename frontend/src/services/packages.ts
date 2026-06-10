@@ -3,8 +3,6 @@ import type { Package } from '../types'
 
 export type ReceiveHistoryItem = {
   resident_name: string
-  unit: string | null
-  block: string | null
   tracking_code: string | null
   carrier_name: string | null
   status: string
@@ -23,8 +21,6 @@ export type ReceiveHistoryEntry = {
 export const packageService = {
   receive: (data: {
     resident_id?: string
-    unit?: string
-    block?: string
     sender_name?: string
     carrier_name?: string
     tracking_code?: string

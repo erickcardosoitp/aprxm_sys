@@ -200,14 +200,6 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
                 </div>
               )}
             </div>
-            {pkg.unit && (
-              <div>
-                <p className="text-xs text-gray-500">Unidade</p>
-                <p className="font-medium text-gray-800">
-                  {pkg.unit}{pkg.block ? ` / Bl. ${pkg.block}` : ''}
-                </p>
-              </div>
-            )}
             {pkg.object_type && (
               <div>
                 <p className="text-xs text-gray-500">Tipo de objeto</p>
@@ -775,7 +767,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   // Reassign resident for "received" packages
   const [cardReassignPkgId, setCardReassignPkgId] = useState<string | null>(null)
   const [cardReassignSearch, setCardReassignSearch] = useState('')
-  const [cardReassignResults, setCardReassignResults] = useState<{ id: string; full_name: string; type: string; unit?: string; responsible_name?: string }[]>([])
+  const [cardReassignResults, setCardReassignResults] = useState<{ id: string; full_name: string; type: string; responsible_name?: string }[]>([])
   const [cardReassignRect, setCardReassignRect] = useState<{ top: number; left: number; width: number } | null>(null)
   const cardReassignInputRef = useRef<HTMLInputElement>(null)
   const searchCardReassign = async (q: string) => {
@@ -939,7 +931,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const [upgradeLoading, setUpgradeLoading] = useState(false)
   // Reassign package to existing resident
   const [reassignSearch, setReassignSearch] = useState('')
-  const [reassignResults, setReassignResults] = useState<{ id: string; full_name: string; type: string; unit?: string; responsible_id?: string; responsible_name?: string }[]>([])
+  const [reassignResults, setReassignResults] = useState<{ id: string; full_name: string; type: string; responsible_id?: string; responsible_name?: string }[]>([])
   const [reassignLoading, setReassignLoading] = useState(false)
 
   const searchReassign = async (q: string) => {
@@ -1088,7 +1080,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
         return (p.resident_name ?? '').toLowerCase().includes(q)
           || (p.tracking_code ?? '').toLowerCase().includes(q)
           || (p.carrier_name ?? '').toLowerCase().includes(q)
-          || (p.unit ?? '').toLowerCase().includes(q)
       })
     : pendingPackages
 
@@ -1145,7 +1136,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   // Bulk receive flow
   const [showBulkReceive, setShowBulkReceive] = useState(false)
   const [bulkRxStep, setBulkRxStep] = useState<'add' | 'sign'>('sign')
-  type BulkRxItem = { id: string; tracking_code: string; carrier_name: string; resident_id?: string; resident_name: string; resident_type?: string; unit?: string; block?: string; photo_urls: { url: string; label: string; taken_at: string }[] }
+  type BulkRxItem = { id: string; tracking_code: string; carrier_name: string; resident_id?: string; resident_name: string; resident_type?: string; photo_urls: { url: string; label: string; taken_at: string }[] }
   type BrxPending = { resident: Resident; tracking: string }
   const brxStorageKey = `brx_queue_${associationId}`
   const brxBatchStorageKey = `brx_batch_${associationId}`
@@ -1186,8 +1177,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
       resident_id: resident.id,
       resident_name: resident.full_name,
       resident_type: resident.type,
-      unit: (resident as any).unit,
-      block: (resident as any).block,
       photo_urls: photoUrls,
     }
     setBulkRxQueue(q => [...q, entry])
@@ -1233,7 +1222,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
       try {
         await packageService.receive({
           resident_id: item.resident_id,
-          unit: item.unit, block: item.block,
           carrier_name: item.carrier_name || undefined,
           tracking_code: item.tracking_code || undefined,
           photo_urls: item.photo_urls,
@@ -1570,8 +1558,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
     try {
       await packageService.receive({
         resident_id: selectedRecipient?.id,
-        unit: (selectedRecipient as any)?.unit ?? undefined,
-        block: (selectedRecipient as any)?.block ?? undefined,
         carrier_name: carrier || undefined,
         tracking_code: tracking || undefined,
         photo_urls: photos,
@@ -1704,7 +1690,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
           {/* Row 1: name + badges */}
           <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
             <span className="text-sm font-semibold text-gray-800 truncate">{pkg.resident_name ?? '—'}</span>
-            {pkg.unit && <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-medium shrink-0">Unid. {pkg.unit}{pkg.block ? `/Bl.${pkg.block}` : ''}</span>}
             {pkg.resident_type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">VISITANTE</span>}
             {pkg.resident_type === 'member' && delinquentIds.has(pkg.resident_id ?? '') && (pkg.status === 'received' || pkg.status === 'notified') && (
               <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">INADIMPLENTE</span>
@@ -2168,7 +2153,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                         onClick={() => setDetailPkg(pkg)}
                       >
                         <p className="text-sm font-medium text-gray-800 truncate">{pkg.resident_name ?? '—'}</p>
-                        {pkg.unit && <p className="text-xs text-gray-400">Unid. {pkg.unit}{pkg.block ? ` / Bl. ${pkg.block}` : ''}</p>}
                         {pkg.carrier_name && <p className="text-xs text-gray-400">{pkg.carrier_name}</p>}
                         <p className="text-xs text-gray-400 mt-1">
                           {new Date(pkg.received_at).toLocaleDateString('pt-BR')}
@@ -2205,7 +2189,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-gray-800 truncate">
                       {pkg.resident_name ?? '—'}
-                      {pkg.unit ? ` · Unid. ${pkg.unit}${pkg.block ? `/Bl.${pkg.block}` : ''}` : ''}
                     </p>
                     <p className="text-xs text-gray-400">
                       {pkg.carrier_name ?? 'Sem transportadora'}{pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
@@ -2330,8 +2313,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-700 truncate">{item.resident_name}</p>
                       <p className="text-xs text-gray-400">
-                        {item.unit ? `Unid. ${item.unit}${item.block ? `/Bl.${item.block}` : ''}` : ''}
-                        {item.tracking_code ? ` · ${item.tracking_code}` : ''}
+                        {item.tracking_code ? item.tracking_code : ''}
                         {item.carrier_name ? ` · ${item.carrier_name}` : ''}
                       </p>
                     </div>
@@ -2387,8 +2369,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-medium text-gray-700 truncate">{item.resident_name || '—'}</p>
                               <p className="text-xs text-gray-400">
-                                {item.unit ? `Unid. ${item.unit}${item.block ? `/Bl.${item.block}` : ''}` : ''}
-                                {item.tracking_code ? ` · ${item.tracking_code}` : ''}
+                                {item.tracking_code ? item.tracking_code : ''}
                                 {item.carrier_name ? ` · ${item.carrier_name}` : ''}
                               </p>
                             </div>
@@ -2548,7 +2529,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                               <p className="text-xs text-gray-400 truncate">
                                 {r.cpf ? `CPF: ${maskCpf(r.cpf)}` : ''}
                                 {r.address_cep ? ` · CEP: ${r.address_cep}` : ''}
-                                {(r as any).unit ? ` · Unid. ${(r as any).unit}` : ''}
                                 {r.phone_primary ? ` · ${r.phone_primary}` : ''}
                               </p>
                             </div>
@@ -2617,7 +2597,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                                 className="w-full text-left px-2 py-1.5 rounded-md hover:bg-amber-100 flex items-center gap-2 transition">
                                 <User className="w-3 h-3 text-amber-600 shrink-0" />
                                 <span className="text-xs font-medium text-amber-900">{r.full_name}</span>
-                                <span className="text-[10px] text-amber-600 ml-auto">{r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}{(r as any).unit ? ` · Unid. ${(r as any).unit}` : ''}</span>
+                                <span className="text-[10px] text-amber-600 ml-auto">{r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}</span>
                               </button>
                             </li>
                           ))}
@@ -2669,7 +2649,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                                   className="w-full text-left px-2 py-1.5 rounded-md hover:bg-amber-100 flex items-center gap-2 transition">
                                   <User className="w-3 h-3 text-amber-600 shrink-0" />
                                   <span className="text-xs font-medium text-amber-900">{r.full_name}</span>
-                                  <span className="text-[10px] text-amber-600 ml-auto">{r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}{r.unit ? ` · Unid. ${r.unit}` : ''}</span>
+                                  <span className="text-[10px] text-amber-600 ml-auto">{r.type === 'member' ? 'Associado' : r.type === 'dependent' ? 'Dependente' : 'Visitante'}</span>
                                 </button>
                               </li>
                             ))}
@@ -2973,7 +2953,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
               <div>
                 <h3 className="font-semibold text-gray-900">Registrar Entrega</h3>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {deliveryTarget.resident_name ?? `Unid. ${deliveryTarget.unit}`}
+                  {deliveryTarget.resident_name ?? '—'}
                   {deliveryTarget.tracking_code ? ` · ${deliveryTarget.tracking_code}` : ''}
                 </p>
               </div>
@@ -3198,7 +3178,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                               <span className="text-xs font-semibold text-gray-800">{r.full_name}</span>
                               <span className="text-[10px] text-gray-500">
                                 {r.responsible_name ? `Dependente de ${r.responsible_name}` : r.type === 'guest' ? 'Visitante' : 'Associado'}
-                                {r.unit ? ` · Unid. ${r.unit}` : ''}
                               </span>
                             </button>
                           ))}
@@ -3432,7 +3411,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-800 truncate">
                               {pkg.resident_name ?? '—'}
-                              {pkg.unit ? ` · Unid. ${pkg.unit}${pkg.block ? `/Bl.${pkg.block}` : ''}` : ''}
                             </p>
                             <p className="text-xs text-gray-400">
                               {pkg.carrier_name ?? '—'}{pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
@@ -3615,7 +3593,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{pkg.resident_name ?? '—'}</p>
                     <p className="text-xs text-gray-500 truncate">
-                      {pkg.unit ? `Casa/Apto ${pkg.unit}` : ''}
                       {pkg.carrier_name ? ` · ${pkg.carrier_name}` : ''}
                       {pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
                     </p>
@@ -3686,7 +3663,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{pkg.resident_name ?? '—'}</p>
                     <p className="text-xs text-gray-500 truncate">
-                      {pkg.unit ? `Casa/Apto ${pkg.unit}` : ''}
                       {pkg.carrier_name ? ` · ${pkg.carrier_name}` : ''}
                       {pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
                     </p>
@@ -3757,7 +3733,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{pkg.resident_name ?? '—'}</p>
                     <p className="text-xs text-gray-500 truncate">
-                      {pkg.unit ? `Casa/Apto ${pkg.unit}` : ''}
                       {pkg.carrier_name ? ` · ${pkg.carrier_name}` : ''}
                       {pkg.tracking_code ? ` · ${pkg.tracking_code}` : ''}
                     </p>
@@ -3809,7 +3784,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                         </span>
                       </div>
                       {entry.items.map((item, i) => (
-                        <p key={i} className="text-sm text-gray-700 truncate">{item.resident_name} {item.unit ? `· Apto ${item.unit}` : ''}</p>
+                        <p key={i} className="text-sm text-gray-700 truncate">{item.resident_name}</p>
                       ))}
                     </div>
                   ))
@@ -3822,7 +3797,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                       <PackageIcon className="w-4 h-4 mt-0.5 text-[#26619c] shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate">{pkg.resident_name ?? '—'}</p>
-                        <p className="text-xs text-gray-500">{pkg.unit ? `Casa/Apto ${pkg.unit}` : ''}{pkg.delivered_at ? ` · ${new Date(pkg.delivered_at).toLocaleDateString('pt-BR')}` : ''}</p>
+                        <p className="text-xs text-gray-500">{pkg.delivered_at ? new Date(pkg.delivered_at).toLocaleDateString('pt-BR') : ''}</p>
                       </div>
                     </div>
                   ))
@@ -4007,7 +3982,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                             <User className={`w-4 h-4 shrink-0 ${r.type === 'guest' ? 'text-orange-500' : 'text-[#26619c]'}`} />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-800 truncate">{r.full_name}</p>
-                              {(r as any).unit && <p className="text-xs text-gray-400">Unidade {(r as any).unit}{(r as any).block ? ` · Bl. ${(r as any).block}` : ''}</p>}
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
                               {r.type === 'guest' && (
@@ -4420,7 +4394,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                                   <div className="min-w-0">
                                     <p className="text-sm font-medium text-gray-800 truncate">{p.resident ?? '—'}</p>
                                     <p className="text-xs text-gray-400">
-                                      {p.unit && `Unid. ${p.unit} · `}{p.carrier ?? ''}
+                                      {p.carrier ?? ''}
                                       {p.tracking_code && ` · ${p.tracking_code}`}
                                     </p>
                                   </div>
@@ -4476,7 +4450,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
             <button key={r.id} type="button" onClick={() => doCardReassign(cardReassignPkgId, r.id, r.full_name)}
               className="w-full text-left px-2 py-2.5 hover:bg-blue-50 flex flex-col border-b last:border-0 border-gray-100">
               <span className="text-xs font-semibold">{r.full_name}</span>
-              <span className="text-[10px] text-gray-400">{(r as any).responsible_name ? `Dep. de ${(r as any).responsible_name}` : r.type === 'guest' ? 'Visitante' : 'Associado'}{r.unit ? ` · Unid. ${r.unit}` : ''}</span>
+              <span className="text-[10px] text-gray-400">{(r as any).responsible_name ? `Dep. de ${(r as any).responsible_name}` : r.type === 'guest' ? 'Visitante' : 'Associado'}</span>
             </button>
           ))}
         </div>

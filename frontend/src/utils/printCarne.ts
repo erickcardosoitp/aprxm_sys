@@ -10,8 +10,6 @@ export interface CarneEntry {
 export interface CarneResident {
   full_name: string
   cpf?: string | null
-  unit?: string | null
-  block?: string | null
 }
 
 const MONTH_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -86,7 +84,6 @@ export function printCarne(
       </div>
       <div style="display:flex;flex-direction:column;gap:0.8mm;margin-bottom:2mm">
         <div class="row"><span class="lbl">Associado</span><span class="val">${resident.full_name}</span></div>
-        ${resident.unit ? `<div class="row"><span class="lbl">Unidade</span><span class="val">${resident.unit}${resident.block ? `/Bl.${resident.block}` : ''}</span></div>` : ''}
         ${resident.cpf ? `<div class="row"><span class="lbl">CPF</span><span class="val">${resident.cpf}</span></div>` : ''}
         <div class="row"><span class="lbl">Vencimento</span><span class="val">${m.due}</span></div>
         <div class="row" style="margin-top:1mm"><span class="lbl">Valor</span><span style="font-size:9pt;font-weight:bold;color:${isAcordo ? '#7c3aed' : '#111'}">R$ ${m.amount}</span></div>

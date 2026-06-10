@@ -177,7 +177,7 @@ async def list_proof_of_residence(
         sa_text("""
             SELECT t.id, t.amount, t.description, t.created_at, t.reference_number,
                    t.reversed_at, pm.name as payment_method,
-                   r.full_name as resident_name, r.unit, r.cpf,
+                   r.full_name as resident_name, r.cpf,
                    u.full_name as issued_by
             FROM transactions t
             LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
@@ -195,7 +195,7 @@ async def list_proof_of_residence(
     def _parse_proof(r) -> dict:
         desc = r[2] or ""
         r_name = r[7]  # from residents JOIN (NULL if resident_id is NULL)
-        r_cpf = r[9]
+        r_cpf = r[8]
         display_desc = desc
         try:
             meta = _json.loads(desc)
@@ -214,7 +214,7 @@ async def list_proof_of_residence(
             "created_at": str(r[3]), "reference_number": r[4],
             "reversed_at": str(r[5]) if r[5] else None,
             "payment_method": r[6], "resident_name": r_name,
-            "unit": r[8], "cpf": r_cpf, "issued_by": r[10],
+            "cpf": r_cpf, "issued_by": r[9],
         }
 
     rows = result.fetchall()

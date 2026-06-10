@@ -8,7 +8,7 @@ import { formatCpf, formatPhone, formatCep } from '../../utils'
 const API = '/api/v1'
 
 interface AssocInfo { id: string; name: string; slug: string; logo_url?: string }
-interface FoundResident { id: string; full_name: string; cpf?: string; phone_primary?: string; unit?: string; block?: string }
+interface FoundResident { id: string; full_name: string; cpf?: string; phone_primary?: string }
 
 const inputCls = 'w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]'
 const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
@@ -29,7 +29,7 @@ export default function PublicUpdatePage() {
   // Step 2: update form
   const [form, setForm] = useState({
     full_name: '', phone_primary: '', phone_secondary: '', email: '',
-    date_of_birth: '', cpf: '', unit: '', block: '',
+    date_of_birth: '', cpf: '',
     address_cep: '', address_street: '', address_number: '',
     address_complement: '', address_district: '', address_city: '', address_state: '',
   })
@@ -64,8 +64,6 @@ export default function PublicUpdatePage() {
       full_name: r.full_name,
       phone_primary: r.phone_primary ? formatPhone(r.phone_primary) : '',
       cpf: r.cpf ? formatCpf(r.cpf) : '',
-      unit: r.unit ?? '',
-      block: r.block ?? '',
     }))
   }
 
@@ -166,7 +164,7 @@ export default function PublicUpdatePage() {
                   <button key={r.id} type="button" onClick={() => selectResident(r)}
                     className="text-left p-3 rounded-xl border border-gray-200 hover:border-[#26619c] hover:bg-blue-50 transition">
                     <p className="text-sm font-medium text-gray-800">{r.full_name}</p>
-                    <p className="text-xs text-gray-400">{r.cpf ? formatCpf(r.cpf) : ''}{r.unit ? ` · Unid. ${r.unit}` : ''}{r.block ? ` / Bl. ${r.block}` : ''}</p>
+                    <p className="text-xs text-gray-400">{r.cpf ? formatCpf(r.cpf) : ''}</p>
                   </button>
                 ))}
               </ul>
@@ -179,7 +177,7 @@ export default function PublicUpdatePage() {
                 <p className="text-xs text-gray-500">Atualizando cadastro de</p>
                 <p className="text-sm font-semibold text-gray-800">{selected.full_name}</p>
               </div>
-              <button onClick={() => { setSelected(null); setSearchQuery(''); setForm({ full_name: '', phone_primary: '', phone_secondary: '', email: '', date_of_birth: '', cpf: '', unit: '', block: '', address_cep: '', address_street: '', address_number: '', address_complement: '', address_district: '', address_city: '', address_state: '' }) }}
+              <button onClick={() => { setSelected(null); setSearchQuery(''); setForm({ full_name: '', phone_primary: '', phone_secondary: '', email: '', date_of_birth: '', cpf: '', address_cep: '', address_street: '', address_number: '', address_complement: '', address_district: '', address_city: '', address_state: '' }) }}
                 className="text-xs text-gray-400 hover:text-gray-600 underline">Trocar</button>
             </div>
 
@@ -211,14 +209,6 @@ export default function PublicUpdatePage() {
               <div className="col-span-2">
                 <label className={labelCls}>E-mail</label>
                 <input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Unidade</label>
-                <input value={form.unit} onChange={e => set('unit', e.target.value)} className={inputCls} placeholder="Ex: 201" />
-              </div>
-              <div>
-                <label className={labelCls}>Bloco</label>
-                <input value={form.block} onChange={e => set('block', e.target.value)} className={inputCls} />
               </div>
               <div>
                 <label className={labelCls}>CEP</label>

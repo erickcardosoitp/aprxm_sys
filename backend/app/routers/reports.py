@@ -120,10 +120,10 @@ async def _query_residents(session, aid: str, res_type=None, res_status=None, q=
     rows = (await session.execute(text(f"""
         SELECT full_name, cpf, phone_primary, email, address_street,
                address_number, address_neighborhood, address_cep,
-               type, status, unit, block, created_at::date
+               type, status, created_at::date
         FROM residents WHERE {w} ORDER BY full_name
     """), p)).fetchall()
-    cols = ["Nome","CPF","Telefone","E-mail","Rua","Número","Bairro","CEP","Tipo","Status","Unidade","Bloco","Cadastrado em"]
+    cols = ["Nome","CPF","Telefone","E-mail","Rua","Número","Bairro","CEP","Tipo","Status","Cadastrado em"]
     return [dict(zip(cols, [_s(v) for v in r])) for r in rows]
 
 
@@ -176,7 +176,6 @@ async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_s
     w = " AND ".join(conds)
     rows = (await session.execute(text(f"""
         SELECT p.tracking_code, r.full_name, r.address_street, r.address_cep,
-               p.unit, p.block,
                p.status, p.carrier_name, p.received_at::date, p.delivered_at::date,
                p.delivery_fee_amount, u.full_name
         FROM packages p
@@ -184,7 +183,7 @@ async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_s
         LEFT JOIN users u ON u.id = p.received_by
         WHERE {w} ORDER BY p.received_at DESC
     """), p)).fetchall()
-    cols = ["Código Rastreio","Destinatário","Rua","CEP","Unidade","Bloco","Status","Transportadora",
+    cols = ["Código Rastreio","Destinatário","Rua","CEP","Status","Transportadora",
             "Recebido em","Entregue em","Taxa (R$)","Recebido por"]
     return [dict(zip(cols, [_s(v) for v in r])) for r in rows]
 

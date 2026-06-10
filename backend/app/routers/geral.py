@@ -171,7 +171,7 @@ async def geral_moradores(
     result = await session.execute(
         text(f"""
             SELECT
-                r.id, r.full_name, r.cpf, r.unit, r.block, r.type, r.status,
+                r.id, r.full_name, r.cpf, r.type, r.status,
                 a.name AS association_name, a.slug AS association_slug,
                 (SELECT COUNT(*) FROM mensalidades m WHERE m.resident_id = r.id AND m.status != 'paid') AS pendencias
             FROM residents r
@@ -188,8 +188,6 @@ async def geral_moradores(
             "id": str(r.id),
             "full_name": r.full_name,
             "cpf": r.cpf,
-            "unit": r.unit,
-            "block": r.block,
             "type": r.type,
             "status": r.status,
             "association_name": r.association_name,

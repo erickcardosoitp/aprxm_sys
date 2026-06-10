@@ -180,7 +180,7 @@ interface ExtratoEntry {
 }
 
 interface EvolucaoEntry { mes: string; entradas: number; saidas: number }
-interface FluxoEntry { resident_name: string; unit?: string; block?: string; reference_month: string; due_date: string; amount: string }
+interface FluxoEntry { resident_name: string; reference_month: string; due_date: string; amount: string }
 
 // ── Session detail modal ──────────────────────────────────────────────────────
 
@@ -1696,8 +1696,6 @@ export default function FinancePage() {
                           <p className="text-sm font-medium text-gray-800">{f.resident_name}</p>
                           <p className="text-xs text-gray-400">
                             Venc: {new Date(f.due_date).toLocaleDateString('pt-BR')}
-                            {f.unit ? ` · Unid. ${f.unit}` : ''}
-                            {f.block ? ` / Bl. ${f.block}` : ''}
                           </p>
                         </div>
                         <span className="text-sm font-semibold text-[#26619c] shrink-0">R$ {parseFloat(f.amount).toFixed(2)}</span>

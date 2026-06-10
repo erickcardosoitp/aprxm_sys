@@ -109,13 +109,13 @@ async def _delinquent(aid: str, session: AsyncSession) -> list[dict]:
 
 async def _search_residents(aid: str, q: str, session: AsyncSession) -> list[dict]:
     r = await session.execute(text("""
-        SELECT full_name, cpf, phone_primary, unit, block, status
+        SELECT full_name, cpf, phone_primary, status
         FROM residents
         WHERE association_id = :aid AND (
             full_name ILIKE :q OR cpf ILIKE :q OR phone_primary ILIKE :q
         ) LIMIT 10
     """), {"aid": aid, "q": f"%{q}%"})
-    return [{"name": x[0], "cpf": x[1], "phone": x[2], "unit": x[3], "block": x[4], "status": x[5]} for x in r.fetchall()]
+    return [{"name": x[0], "cpf": x[1], "phone": x[2], "status": x[3]} for x in r.fetchall()]
 
 
 async def _pending_mensalidades(aid: str, name: str, session: AsyncSession) -> list[dict]:
@@ -142,12 +142,12 @@ async def _service_orders(aid: str, session: AsyncSession) -> list[dict]:
 
 async def _packages(aid: str, session: AsyncSession) -> list[dict]:
     r = await session.execute(text("""
-        SELECT resident_name, unit, carrier_name, status, received_at
+        SELECT resident_name, carrier_name, status, received_at
         FROM packages
         WHERE association_id = :aid AND status IN ('received','notified')
         ORDER BY received_at DESC LIMIT 10
     """), {"aid": aid})
-    return [{"name": x[0], "unit": x[1], "carrier": x[2], "status": x[3]} for x in r.fetchall()]
+    return [{"name": x[0], "carrier": x[1], "status": x[2]} for x in r.fetchall()]
 
 
 async def _resident_count(aid: str, session: AsyncSession) -> dict:

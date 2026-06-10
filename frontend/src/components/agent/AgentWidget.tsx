@@ -106,7 +106,7 @@ export default function AgentWidget() {
                             <td className="px-3 py-1.5 text-gray-400 text-right whitespace-nowrap">
                               {item.amount != null
                                 ? `R$ ${Number(item.amount).toFixed(2)}`
-                                : item.month ?? item.status ?? item.unit ?? ''}
+                                : item.month ?? item.status ?? ''}
                             </td>
                           </tr>
                         ))}

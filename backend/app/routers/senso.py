@@ -61,8 +61,6 @@ async def analytics(
     + CASE WHEN date_of_birth IS NOT NULL THEN 1 ELSE 0 END
     + CASE WHEN race IS NOT NULL AND race != '' THEN 1 ELSE 0 END
     + CASE WHEN education_level IS NOT NULL AND education_level != '' THEN 1 ELSE 0 END
-    + CASE WHEN unit IS NOT NULL AND unit != '' THEN 1 ELSE 0 END
-    + CASE WHEN block IS NOT NULL AND block != '' THEN 1 ELSE 0 END
     + CASE WHEN address_cep IS NOT NULL AND address_cep != '' THEN 1 ELSE 0 END
     + CASE WHEN address_street IS NOT NULL AND address_street != '' THEN 1 ELSE 0 END
     + CASE WHEN address_number IS NOT NULL AND address_number != '' THEN 1 ELSE 0 END

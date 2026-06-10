@@ -213,7 +213,7 @@ function ConsultarPagamentosSheet({ open, onClose }: { open: boolean; onClose: (
                 className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left transition">
                 <div>
                   <p className="text-sm font-semibold text-gray-800">{r.full_name}</p>
-                  <p className="text-xs text-gray-400">{r.unit ? `Casa/Apto ${r.unit}` : ''}{r.cpf ? ` · ${r.cpf}` : ''}</p>
+                  <p className="text-xs text-gray-400">{r.cpf ?? ''}</p>
                 </div>
               </button>
             ))}
