@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition, Fragment } from 'react'
 import {
   AlertCircle, ChevronDown, FileText, MessageSquare, Pencil, Plus, Search, X,
   Clock, CheckCircle, XCircle, Archive, Loader2, User, LayoutDashboard, ArrowRight,
@@ -2438,24 +2438,27 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   // Moved before showReport early-return to avoid React hooks violation
   const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, waiting_validation: 3, done: 4 }
   const doneTasks = useMemo(() => tasks.filter(t => t.status === 'done' && (!onlyMine || t.assigned_to === userId)), [tasks, onlyMine, userId])
+  const sortFn = (a: DailyTask, b: DailyTask) => {
+    if (!sortBy) {
+      const sd = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
+      if (sd !== 0) return sd
+      return (b.created_at ?? '') < (a.created_at ?? '') ? -1 : 1
+    }
+    let va = '', vb = ''
+    if (sortBy === 'title') { va = a.title.toLowerCase(); vb = b.title.toLowerCase() }
+    else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
+    else if (sortBy === 'due_date') { va = a.due_date ?? '9999'; vb = b.due_date ?? '9999' }
+    else if (sortBy === 'status') { va = String(statusOrder[a.status] ?? 9); vb = String(statusOrder[b.status] ?? 9) }
+    else if (sortBy === 'created_at') { va = a.created_at ?? ''; vb = b.created_at ?? '' }
+    else if (sortBy === 'updated_at') { va = a.updated_at ?? ''; vb = b.updated_at ?? '' }
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0
+    return sortDir === 'asc' ? cmp : -cmp
+  }
   const displayedTasks = useMemo(() => [...tasks]
     .filter(t => t.status !== 'done' && (!onlyMine || t.assigned_to === userId))
-    .sort((a, b) => {
-      if (!sortBy) {
-        const sd = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
-        if (sd !== 0) return sd
-        return (b.created_at ?? '') < (a.created_at ?? '') ? -1 : 1
-      }
-      let va = '', vb = ''
-      if (sortBy === 'title') { va = a.title.toLowerCase(); vb = b.title.toLowerCase() }
-      else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
-      else if (sortBy === 'due_date') { va = a.due_date ?? '9999'; vb = b.due_date ?? '9999' }
-      else if (sortBy === 'status') { va = String(statusOrder[a.status] ?? 9); vb = String(statusOrder[b.status] ?? 9) }
-      else if (sortBy === 'created_at') { va = a.created_at ?? ''; vb = b.created_at ?? '' }
-      else if (sortBy === 'updated_at') { va = a.updated_at ?? ''; vb = b.updated_at ?? '' }
-      const cmp = va < vb ? -1 : va > vb ? 1 : 0
-      return sortDir === 'asc' ? cmp : -cmp
-    }), [tasks, onlyMine, userId, sortBy, sortDir])
+    .sort(sortFn), [tasks, onlyMine, userId, sortBy, sortDir])
+  const myTasks = useMemo(() => displayedTasks.filter(t => t.assigned_to === userId), [displayedTasks, userId])
+  const otherTasks = useMemo(() => displayedTasks.filter(t => t.assigned_to !== userId), [displayedTasks, userId])
 
   const taskForm = (
     <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-3">
@@ -2914,12 +2917,28 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         </div>
       )}
 
-      {displayedTasks.map(task => {
+      {myTasks.length > 0 && (
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-xs font-semibold text-[#26619c]">Minhas tarefas</span>
+          <span className="text-xs bg-[#26619c]/10 text-[#26619c] px-1.5 py-0.5 rounded-full font-semibold">{myTasks.length}</span>
+        </div>
+      )}
+
+      {[...myTasks, ...otherTasks].map((task, idx) => {
         const isExpanded = expandedId === task.id
         const doneCount = task.checklist.filter(i => ['done', 'cancelled', 'postergado'].includes(getItemStatus(i))).length
         const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
         return (
-          <div key={task.id} className={`rounded-2xl border shadow-sm overflow-hidden ${
+          <Fragment key={task.id}>
+          {idx === myTasks.length && otherTasks.length > 0 && (
+            <div className="flex items-center gap-2 px-1 mt-2">
+              <div className="flex-1 h-px bg-gray-200" />
+              <span className="text-xs font-semibold text-gray-400">Demais tarefas</span>
+              <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full font-semibold">{otherTasks.length}</span>
+              <div className="flex-1 h-px bg-gray-200" />
+            </div>
+          )}
+          <div className={`rounded-2xl border shadow-sm overflow-hidden ${
             task.status === 'done' ? 'border-gray-200 bg-gray-50' :
             task.status === 'in_progress' ? 'border-amber-200 bg-amber-50/40' :
             task.status === 'waiting_validation' ? 'border-yellow-300 bg-yellow-50/50' :
@@ -3271,10 +3290,10 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
               </div>
             )}
           </div>
+          </Fragment>
         )
       })}
 
-      {/* Concluídas hoje */}
       {doneTasks.length > 0 && (
         <div className="border border-green-200 rounded-2xl overflow-hidden">
           <button onClick={() => setShowDone(v => !v)}
