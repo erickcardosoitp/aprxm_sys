@@ -3101,14 +3101,14 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         </div>
       )}
 
-      {myTasks.length > 0 && (
+      {(!isAdmin || viewMode === 'list') && myTasks.length > 0 && (
         <div className="flex items-center gap-2 px-1">
           <span className="text-xs font-semibold text-[#26619c]">Minhas tarefas</span>
           <span className="text-xs bg-[#26619c]/10 text-[#26619c] px-1.5 py-0.5 rounded-full font-semibold">{myTasks.length}</span>
         </div>
       )}
 
-      {[...myTasks, ...otherTasks].map((task, idx) => {
+      {(!isAdmin || viewMode === 'list') && [...myTasks, ...otherTasks].map((task, idx) => {
         const isExpanded = expandedId === task.id
         const doneCount = task.checklist.filter(i => ['done', 'cancelled', 'postergado'].includes(getItemStatus(i))).length
         const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
@@ -3478,7 +3478,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         )
       })}
 
-      {doneTasks.length > 0 && (
+      {(!isAdmin || viewMode === 'list') && doneTasks.length > 0 && (
         <div className="border border-green-200 rounded-2xl overflow-hidden">
           <button onClick={() => setShowDone(v => !v)}
             className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-green-700 hover:bg-green-50 transition">
