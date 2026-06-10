@@ -765,45 +765,142 @@ function StatusUpdateModal({ current, onConfirm, onClose }: StatusUpdateModalPro
   const [resolutionNotes, setResolutionNotes] = useState('')
   const [cancellationReason, setCancellationReason] = useState('')
 
+  const changed = newStatus !== current
+  const needsResolution = newStatus === 'resolved' && !resolutionNotes.trim()
+  const needsCancellation = newStatus === 'cancelled' && !cancellationReason.trim()
+  const canConfirm = changed && !needsResolution && !needsCancellation
+
+  const STATUS_ORDER: ServiceOrderStatus[] = ['pending', 'open', 'in_progress', 'waiting_third_party', 'resolved']
+
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-900">Atualizar Status</h3>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-gray-900">Atualizar Status</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Atual: <span className="font-medium text-gray-700">{STATUS_LABELS[current]}</span>
+            </p>
+          </div>
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
         </div>
-        <div className="flex flex-col gap-3">
+
+        <div className="p-5 flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
+          {/* Pipeline visual */}
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Novo status</label>
-            <select value={newStatus} onChange={e => setNewStatus(e.target.value as ServiceOrderStatus)} className={inputCls}>
-              {ALL_STATUSES.map(s => (
-                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+            <p className="text-xs font-medium text-gray-500 mb-2">Fluxo principal</p>
+            <div className="flex flex-col gap-1.5">
+              {STATUS_ORDER.map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setNewStatus(s)}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition text-left ${
+                    newStatus === s
+                      ? `${STATUS_COLORS[s]} border-current/60 ring-2 ring-current/20`
+                      : s === current
+                      ? 'bg-gray-50 border-gray-300 text-gray-500 opacity-60 cursor-default'
+                      : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                  disabled={s === current}
+                >
+                  <span className="shrink-0">{STATUS_ICONS[s]}</span>
+                  <span>{STATUS_LABELS[s]}</span>
+                  {s === current && <span className="ml-auto text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full">atual</span>}
+                  {s === 'resolved' && <span className="ml-auto text-[10px] text-amber-600">requer notas</span>}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
+
+          {/* Ações laterais */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 mb-2">Encerrar</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(['archived', 'cancelled'] as ServiceOrderStatus[]).map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setNewStatus(s)}
+                  disabled={s === current}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition ${
+                    newStatus === s
+                      ? `${STATUS_COLORS[s]} border-current/60`
+                      : s === current
+                      ? 'bg-gray-50 border-gray-200 text-gray-400 opacity-60 cursor-default'
+                      : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="shrink-0">{STATUS_ICONS[s]}</span>
+                  {STATUS_LABELS[s]}
+                  {s === 'cancelled' && <span className="ml-auto text-[10px] text-red-400">requer motivo</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Observações */}
           <div>
             <label className="block text-xs text-gray-600 mb-1">Observações</label>
-            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} className={`${inputCls} resize-none`} placeholder="Observações sobre a mudança de status…" />
+            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}
+              className={`${inputCls} resize-none`} placeholder="Contexto sobre a mudança…" />
           </div>
+
+          {/* Notas de resolução — obrigatório */}
           {newStatus === 'resolved' && (
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Notas de resolução</label>
-              <textarea rows={2} value={resolutionNotes} onChange={e => setResolutionNotes(e.target.value)} className={`${inputCls} resize-none`} placeholder="Como foi resolvido?" />
+              <label className="block text-xs font-semibold text-amber-700 mb-1">
+                Notas de resolução <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={resolutionNotes}
+                onChange={e => setResolutionNotes(e.target.value)}
+                className={`${inputCls} resize-none ${needsResolution ? 'border-amber-400 focus:ring-amber-400/30 focus:border-amber-500' : ''}`}
+                placeholder="Como foi resolvido? Descreva a solução em detalhes."
+                autoFocus
+              />
+              {needsResolution && (
+                <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Obrigatório para marcar como Concluída.
+                </p>
+              )}
             </div>
           )}
+
+          {/* Motivo do cancelamento — obrigatório */}
           {newStatus === 'cancelled' && (
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Motivo do cancelamento</label>
-              <textarea rows={2} value={cancellationReason} onChange={e => setCancellationReason(e.target.value)} className={`${inputCls} resize-none`} placeholder="Por que está sendo cancelado?" />
+              <label className="block text-xs font-semibold text-red-700 mb-1">
+                Motivo do cancelamento <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                rows={2}
+                value={cancellationReason}
+                onChange={e => setCancellationReason(e.target.value)}
+                className={`${inputCls} resize-none ${needsCancellation ? 'border-red-400 focus:ring-red-400/30' : ''}`}
+                placeholder="Por que está sendo cancelado?"
+                autoFocus
+              />
+              {needsCancellation && (
+                <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Obrigatório para cancelar.
+                </p>
+              )}
             </div>
           )}
-          <div className="flex gap-2 mt-1">
-            <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm hover:bg-gray-50">Cancelar</button>
+
+          <div className="flex gap-2">
+            <button onClick={onClose}
+              className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm hover:bg-gray-50">
+              Cancelar
+            </button>
             <button
-              onClick={() => onConfirm(newStatus, notes || undefined, resolutionNotes || undefined, cancellationReason || undefined)}
-              className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2 rounded-xl text-sm font-medium"
+              onClick={() => canConfirm && onConfirm(newStatus, notes || undefined, resolutionNotes || undefined, cancellationReason || undefined)}
+              disabled={!canConfirm}
+              className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Confirmar
+              {!changed ? 'Selecione um status' : 'Confirmar'}
             </button>
           </div>
         </div>
@@ -1416,6 +1513,56 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
         <div className="flex-1 overflow-y-auto p-5">
           {activeTab === 'details' && (
             <div className="flex flex-col gap-4">
+              {/* Status pipeline */}
+              {(() => {
+                const PIPE: ServiceOrderStatus[] = ['pending', 'open', 'in_progress', 'waiting_third_party', 'resolved']
+                const curIdx = PIPE.indexOf(d.status)
+                const isSideStatus = d.status === 'cancelled' || d.status === 'archived' || d.status === 'draft'
+                return (
+                  <div className="flex items-center gap-0 overflow-x-auto pb-1 -mx-1 px-1">
+                    {PIPE.map((s, i) => {
+                      const isDone = !isSideStatus && i < curIdx
+                      const isCurrent = s === d.status
+                      return (
+                        <div key={s} className="flex items-center shrink-0">
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap transition ${
+                            isCurrent ? `${STATUS_COLORS[s]}` :
+                            isDone ? 'bg-green-50 text-green-600' :
+                            'bg-gray-100 text-gray-400'
+                          }`}>
+                            {isCurrent ? STATUS_ICONS[s] : isDone ? <CheckCircle className="w-3 h-3" /> : null}
+                            {STATUS_LABELS[s]}
+                          </div>
+                          {i < PIPE.length - 1 && (
+                            <div className={`w-4 h-px mx-0.5 shrink-0 ${!isSideStatus && i < curIdx ? 'bg-green-400' : 'bg-gray-200'}`} />
+                          )}
+                        </div>
+                      )
+                    })}
+                    {isSideStatus && (
+                      <div className={`ml-2 flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold ${STATUS_COLORS[d.status]}`}>
+                        {STATUS_ICONS[d.status]}{STATUS_LABELS[d.status]}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {/* Alerta de inconsistência: resolved_at preenchido mas status não é resolved/archived/cancelled */}
+              {!!d.resolved_at && !['resolved', 'archived', 'cancelled'].includes(d.status) && (
+                <div className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-300 rounded-xl">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-800">Status desatualizado</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      Notas de resolução foram registradas em <strong>{new Date(d.resolved_at).toLocaleDateString('pt-BR')}</strong>,
+                      mas o status ainda é <strong>{STATUS_LABELS[d.status]}</strong>.
+                      {canWrite && ' Use "Atualizar Status" para marcar como Concluída.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {canWrite && (
                 <div className="flex gap-2">
                   {!editing && (
@@ -1629,6 +1776,23 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                 </div>
               ) : (
                 <>
+                  {/* Resolução destacada — aparece mesmo com status inconsistente */}
+                  {d.resolution_notes && (
+                    <div className="rounded-xl p-3 bg-green-50 border border-green-200">
+                      <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1">Resolução</p>
+                      <p className="text-sm text-green-900 whitespace-pre-wrap">{d.resolution_notes}</p>
+                      {d.resolved_at && (
+                        <p className="text-[10px] text-green-600 mt-1.5">Registrado em {new Date(d.resolved_at).toLocaleDateString('pt-BR')}</p>
+                      )}
+                    </div>
+                  )}
+                  {d.cancellation_reason && (
+                    <div className="rounded-xl p-3 bg-red-50 border border-red-200">
+                      <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-1">Motivo do Cancelamento</p>
+                      <p className="text-sm text-red-900">{d.cancellation_reason}</p>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <FieldCell label="Prioridade">
                       <span className={`font-medium ${PRIORITY_TEXT[d.priority]}`}>
@@ -1671,16 +1835,15 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                     <FieldCell label="Data solicitação">{fmt(d.request_date ?? d.created_at)}</FieldCell>
                     <FieldCell label="CEP">{d.address_cep ?? '—'}</FieldCell>
                     <FieldCell label="Ponto de referência">{d.reference_point ?? '—'}</FieldCell>
-                    {d.assigned_to && <FieldCell label="Atribuído a">{d.assigned_to_name ?? d.assigned_to}</FieldCell>}
-                    {d.resolution_notes && (
-                      <div className="col-span-2">
-                        <FieldCell label="Notas de resolução">{d.resolution_notes}</FieldCell>
-                      </div>
-                    )}
-                    {d.cancellation_reason && (
-                      <div className="col-span-2">
-                        <FieldCell label="Motivo cancelamento">{d.cancellation_reason}</FieldCell>
-                      </div>
+                    {d.assigned_to_name && (
+                      <FieldCell label="Atribuído a">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-[#26619c] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                            {d.assigned_to_name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()}
+                          </span>
+                          {d.assigned_to_name}
+                        </span>
+                      </FieldCell>
                     )}
                   </div>
 
@@ -3236,6 +3399,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   const pending = orders.filter(o => o.status === 'pending').length
   const inProgress = orders.filter(o => o.status === 'in_progress').length
   const critical = orders.filter(o => o.priority === 'critical').length
+  const inconsistent = orders.filter(o => !!o.resolved_at && !['resolved', 'archived', 'cancelled'].includes(o.status)).length
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-6 max-w-screen-xl mx-auto w-full">
@@ -3290,12 +3454,13 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
 
       {pageTab === 'ordens' && <>
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className={`grid gap-3 ${inconsistent > 0 ? 'grid-cols-5' : 'grid-cols-4'}`}>
         {[
           { label: 'Total', value: total, color: 'bg-gray-50 text-gray-700' },
           { label: 'Pendentes', value: pending, color: 'bg-yellow-50 text-yellow-700' },
           { label: 'Em Andamento', value: inProgress, color: 'bg-blue-50 text-blue-700' },
           { label: 'Críticas', value: critical, color: 'bg-red-50 text-red-700' },
+          ...(inconsistent > 0 ? [{ label: 'Status desatualizado', value: inconsistent, color: 'bg-amber-50 text-amber-700' }] : []),
         ].map(k => (
           <div key={k.label} className={`rounded-xl p-3 text-center ${k.color} border border-current/10`}>
             <p className="text-2xl font-bold">{k.value}</p>
@@ -3356,41 +3521,60 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
         ) : (
           <ul className="divide-y divide-gray-100">
             {orders.map(so => (
-              <li
-                key={so.id}
-                className="px-4 py-3.5 hover:bg-gray-50 cursor-pointer transition"
-                onClick={() => setSelectedOrder(so)}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="text-xs font-mono text-gray-400">#{String(so.number).padStart(4, '0')}</span>
-                      <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[so.status]}`}>
-                        {STATUS_ICONS[so.status]}
-                        {STATUS_LABELS[so.status]}
-                      </span>
-                      <span className="flex items-center gap-1 text-xs">
-                        <span className={`w-2 h-2 rounded-full ${PRIORITY_DOT[so.priority]}`} />
-                        <span className={PRIORITY_TEXT[so.priority]}>{PRIORITY_LABELS[so.priority]}</span>
-                      </span>
-                      {so.association_name && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 text-[10px] font-semibold leading-none">
-                          {so.association_name}
-                        </span>
-                      )}
+              {(() => {
+                const isInconsistent = !!so.resolved_at && !['resolved', 'archived', 'cancelled'].includes(so.status)
+                return (
+                  <li
+                    key={so.id}
+                    className={`px-4 py-3.5 cursor-pointer transition ${isInconsistent ? 'bg-amber-50/60 hover:bg-amber-50 border-l-4 border-l-amber-400' : 'hover:bg-gray-50'}`}
+                    onClick={() => setSelectedOrder(so)}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-xs font-mono text-gray-400">#{String(so.number).padStart(4, '0')}</span>
+                          <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[so.status]}`}>
+                            {STATUS_ICONS[so.status]}
+                            {STATUS_LABELS[so.status]}
+                          </span>
+                          <span className="flex items-center gap-1 text-xs">
+                            <span className={`w-2 h-2 rounded-full ${PRIORITY_DOT[so.priority]}`} />
+                            <span className={PRIORITY_TEXT[so.priority]}>{PRIORITY_LABELS[so.priority]}</span>
+                          </span>
+                          {so.association_name && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 text-[10px] font-semibold leading-none">
+                              {so.association_name}
+                            </span>
+                          )}
+                          {isInconsistent && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-semibold">
+                              <AlertCircle className="w-3 h-3" /> Status desatualizado
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-medium text-gray-800 truncate">{so.title}</p>
+                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                          {so.community_wide && <span className="text-blue-600 font-medium">Toda a comunidade</span>}
+                          {so.category_name && <span>{so.category_name}</span>}
+                          {so.org_responsible && <><span>·</span><span className="text-gray-500">{so.org_responsible}</span></>}
+                          {!so.community_wide && so.requester_name && <><span>·</span><span>{so.requester_name}</span></>}
+                          <span>·</span>
+                          <span>{new Date(so.created_at).toLocaleDateString('pt-BR')}</span>
+                          {so.created_by_name && <><span>·</span><span className="flex items-center gap-0.5"><User className="w-3 h-3" />{so.created_by_name}</span></>}
+                        </p>
+                        {so.assigned_to_name && (
+                          <p className="text-[10px] text-gray-500 mt-0.5 flex items-center gap-1">
+                            <span className="w-3.5 h-3.5 rounded-full bg-gray-300 text-gray-600 text-[8px] font-bold flex items-center justify-center shrink-0">
+                              {so.assigned_to_name[0].toUpperCase()}
+                            </span>
+                            {so.assigned_to_name}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-sm font-medium text-gray-800 truncate">{so.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
-                      {so.community_wide && <span className="text-blue-600 font-medium">Toda a comunidade</span>}
-                      {so.category_name && <span>{so.category_name}</span>}
-                      {!so.community_wide && so.requester_name && <><span>·</span><span>{so.requester_name}</span></>}
-                      <span>·</span>
-                      <span>{new Date(so.created_at).toLocaleDateString('pt-BR')}</span>
-                      {so.created_by_name && <><span>·</span><span className="flex items-center gap-0.5"><User className="w-3 h-3" />{so.created_by_name}</span></>}
-                    </p>
-                  </div>
-                </div>
-              </li>
+                  </li>
+                )
+              })()}
             ))}
           </ul>
         )}
