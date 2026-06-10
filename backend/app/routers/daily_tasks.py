@@ -117,7 +117,7 @@ async def list_tasks(
         filters.append("t.status = :status")
         params["status"] = status
     if view == "default":
-        filters.append("(t.status != 'done' OR t.updated_at::date = CURRENT_DATE)")
+        filters.append("(t.status != 'done' OR (t.updated_at AT TIME ZONE 'America/Sao_Paulo')::date = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)")
     else:
         if date_from:
             try:
@@ -332,12 +332,12 @@ async def report_by_user(
     uid_filter_task = ""
     uid_filter_user = ""
     if date_from:
-        date_filter_task += " AND t.created_at >= CAST(:df AS timestamptz)"
+        date_filter_task += " AND (t.created_at >= CAST(:df AS timestamptz) OR (t.status = 'done' AND t.updated_at >= CAST(:df AS timestamptz)))"
         date_filter_os_hist += " AND h.changed_at >= CAST(:df AS timestamptz)"
         date_filter_os_comment += " AND c.created_at >= CAST(:df AS timestamptz)"
         params["df"] = date.fromisoformat(date_from)
     if date_to:
-        date_filter_task += " AND t.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
+        date_filter_task += " AND (t.created_at < CAST(:dt AS timestamptz) + interval '1 day' OR t.status = 'done')"
         date_filter_os_hist += " AND h.changed_at < CAST(:dt AS timestamptz) + interval '1 day'"
         date_filter_os_comment += " AND c.created_at < CAST(:dt AS timestamptz) + interval '1 day'"
         params["dt"] = date.fromisoformat(date_to)
