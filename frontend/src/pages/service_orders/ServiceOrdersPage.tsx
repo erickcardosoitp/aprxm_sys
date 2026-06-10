@@ -3356,11 +3356,18 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<ServiceOrderStatus | ''>('')
   const [filterPriority, setFilterPriority] = useState<ServiceOrderPriority | ''>('')
-  const [sortBy, setSortBy] = useState<'date' | 'priority' | ''>('priority')
+  const [sortBy, setSortBy] = useState<'number' | 'title' | 'priority' | 'status' | 'category' | 'date' | 'requester' | ''>('priority')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const HIDDEN_BY_DEFAULT: ServiceOrderStatus[] = ['cancelled', 'archived']
 
   const PRIORITY_WEIGHT: Record<ServiceOrderPriority, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+  const STATUS_WEIGHT: Record<ServiceOrderStatus, number> = { pending: 0, open: 1, in_progress: 2, waiting_third_party: 3, draft: 4, resolved: 5, archived: 6, cancelled: 7 }
+
+  const toggleOsSort = (col: typeof sortBy) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(col); setSortDir('asc') }
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -3382,13 +3389,21 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   }, [filterStatus, filterPriority, search])
 
   const sortedOrders = useMemo(() => {
-    if (!sortBy) return orders
     return [...orders].sort((a, b) => {
-      if (sortBy === 'priority') return (PRIORITY_WEIGHT[a.priority] ?? 9) - (PRIORITY_WEIGHT[b.priority] ?? 9)
-      if (sortBy === 'date') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      return 0
+      let va: string | number = 0
+      let vb: string | number = 0
+      if (sortBy === 'number')   { va = a.number;                              vb = b.number }
+      else if (sortBy === 'title')    { va = a.title.toLowerCase();            vb = b.title.toLowerCase() }
+      else if (sortBy === 'priority') { va = PRIORITY_WEIGHT[a.priority] ?? 9; vb = PRIORITY_WEIGHT[b.priority] ?? 9 }
+      else if (sortBy === 'status')   { va = STATUS_WEIGHT[a.status] ?? 9;     vb = STATUS_WEIGHT[b.status] ?? 9 }
+      else if (sortBy === 'category') { va = (a.category_name ?? '').toLowerCase(); vb = (b.category_name ?? '').toLowerCase() }
+      else if (sortBy === 'date')     { va = a.created_at;                     vb = b.created_at }
+      else if (sortBy === 'requester'){ va = (a.community_wide ? 'zzz' : (a.requester_name ?? '').toLowerCase()); vb = (b.community_wide ? 'zzz' : (b.requester_name ?? '').toLowerCase()) }
+      else /* default: priority */    { va = PRIORITY_WEIGHT[a.priority] ?? 9; vb = PRIORITY_WEIGHT[b.priority] ?? 9 }
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [orders, sortBy])
+  }, [orders, sortBy, sortDir])
 
   const isSimplificaMode = criarMode || consultarMode || tarefasMode || minhasMode
   useEffect(() => { if (!isSimplificaMode) load() }, [load])
@@ -3546,10 +3561,6 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
               <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
             ))}
           </select>
-          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden text-xs bg-white shrink-0">
-            <button onClick={() => setSortBy('priority')} className={`px-2.5 py-2 transition ${sortBy === 'priority' ? 'bg-[#26619c] text-white' : 'text-gray-600 hover:bg-gray-50'}`}>Por prioridade</button>
-            <button onClick={() => setSortBy('date')} className={`px-2.5 py-2 transition border-l border-gray-200 ${sortBy === 'date' ? 'bg-[#26619c] text-white' : 'text-gray-600 hover:bg-gray-50'}`}>Mais recente</button>
-          </div>
         </div>
         <div className="flex gap-1.5 flex-wrap">
           <button onClick={() => setFilterStatus('')} className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${filterStatus === '' ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} title="Oculta canceladas e arquivadas">Ativas</button>
@@ -3565,16 +3576,27 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
       {/* Tabela */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {/* Cabeçalho da tabela */}
-        <div className="hidden sm:grid grid-cols-[4px_56px_1fr_120px_130px_140px_110px_100px] bg-gray-50 border-b border-gray-200 px-4 py-2.5 gap-3">
-          <div />
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">#</p>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Título</p>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Prioridade</p>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Status</p>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Categoria</p>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Data</p>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Responsável</p>
-        </div>
+        {(() => {
+          const Th = ({ col, label, className = '' }: { col: typeof sortBy; label: string; className?: string }) => (
+            <button onClick={() => toggleOsSort(col)}
+              className={`flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wide transition select-none ${sortBy === col ? 'text-[#26619c]' : 'text-gray-400 hover:text-gray-600'} ${className}`}>
+              {label}
+              <span className="ml-0.5 text-[9px]">{sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
+            </button>
+          )
+          return (
+            <div className="hidden sm:grid grid-cols-[4px_56px_1fr_120px_130px_140px_110px_100px] bg-gray-50 border-b border-gray-200 px-4 py-2.5 gap-3 items-center">
+              <div />
+              <Th col="number" label="#" />
+              <Th col="title" label="Título" />
+              <Th col="priority" label="Prioridade" />
+              <Th col="status" label="Status" />
+              <Th col="category" label="Categoria" />
+              <Th col="date" label="Data" />
+              <Th col="requester" label="Solicitante" />
+            </div>
+          )
+        })()}
 
         {loading ? (
           <div className="p-10 text-center text-gray-400 text-sm flex flex-col items-center gap-2">
@@ -3643,13 +3665,12 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
                     </div>
                     <span className="text-xs text-gray-500">{new Date(so.created_at).toLocaleDateString('pt-BR')}</span>
                     <div className="min-w-0">
-                      {so.assigned_to_name ? (
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-6 h-6 rounded-full bg-[#26619c]/10 text-[#26619c] text-[9px] font-bold flex items-center justify-center shrink-0 border border-[#26619c]/20">
-                            {so.assigned_to_name.split(' ').slice(0,2).map(n => n[0]).join('').toUpperCase()}
-                          </span>
-                          <span className="text-xs text-gray-600 truncate">{so.assigned_to_name.split(' ')[0]}</span>
+                      {so.community_wide ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-medium">
+                          <User className="w-3 h-3" />Toda Comunidade
                         </span>
+                      ) : so.requester_name ? (
+                        <span className="text-xs text-gray-700 truncate block">{so.requester_name.split(' ').slice(0,2).join(' ')}</span>
                       ) : <span className="text-xs text-gray-300">—</span>}
                     </div>
                   </div>
