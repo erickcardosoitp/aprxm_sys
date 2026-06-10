@@ -823,7 +823,7 @@ export default function TIPage() {
               <div className="flex justify-between text-[9px] text-gray-400 mt-1">
                 <span>{health.trend_24h[0] ? fmtHourBRT(health.trend_24h[0].hour) : ''}</span>
                 <span className="text-[9px] text-gray-400">azul = ok · amarelo = {'>'} 2% erros · vermelho = {'>'} 10%</span>
-                <span>{health.trend_24h.at(-1) ? fmtHourBRT(health.trend_24h.at(-1)!.hour) : ''}</span>
+                <span>{health.trend_24h.length > 0 ? fmtHourBRT(health.trend_24h[health.trend_24h.length - 1].hour) : ''}</span>
               </div>
             </div>
           )}
