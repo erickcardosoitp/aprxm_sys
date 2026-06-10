@@ -131,7 +131,7 @@ async def perf_stats(
         {
             "method": r[0], "path": r[1], "requests": r[2],
             "avg_ms": r[3], "p95_ms": r[4], "p99_ms": r[5], "max_ms": r[6],
-            "errors": r[7], "error_pct": float(r[8] or 0), "last_seen": str(r[9])[:16] if r[9] else None,
+            "errors": r[7], "error_pct": float(r[8] or 0), "last_seen": r[9].isoformat() if r[9] else None,
         }
         for r in rows
     ]
@@ -424,6 +424,7 @@ async def recent_errors(
           AND l.created_at > NOW() - INTERVAL '24 hours'
         ORDER BY l.created_at DESC
         LIMIT 100
+        -- timestamps retornados em UTC; frontend ou AT TIME ZONE converte
     """))).fetchall()
 
     # Agrupamento por status code
@@ -452,7 +453,7 @@ async def recent_errors(
             {
                 "path": r[0], "method": r[1], "status": r[2],
                 "duration_ms": r[3], "user": r[4],
-                "at": str(r[5])[:16],
+                "at": r[5].isoformat() if r[5] else None,
             }
             for r in rows
         ],

@@ -33,6 +33,10 @@ const MC: Record<string, string> = {
   PATCH: 'bg-amber-100 text-amber-700', PUT: 'bg-orange-100 text-orange-700', DELETE: 'bg-red-100 text-red-700',
 }
 const fmtMs = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+const fmtBRT = (iso: string | null | undefined) => {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })
+}
 const perfColor = (ms: number) => ms > 2000 ? 'text-red-600 font-bold' : ms > 800 ? 'text-amber-600 font-semibold' : 'text-green-700'
 const AUTO_REFRESH_INTERVAL = 10 // segundos
 
@@ -865,7 +869,7 @@ export default function TIPage() {
                   <tbody className="divide-y divide-gray-50">
                     {errors.recent.slice(0, 50).map((e, i) => (
                       <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-3 py-1.5 text-gray-400 tabular-nums whitespace-nowrap">{e.at}</td>
+                        <td className="px-3 py-1.5 text-gray-400 tabular-nums whitespace-nowrap">{fmtBRT(e.at)}</td>
                         <td className="px-3 py-1.5">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${e.status >= 500 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{e.status}</span>
                         </td>
@@ -1046,7 +1050,7 @@ export default function TIPage() {
                     <td className={`px-3 py-2 text-right text-xs tabular-nums ${perfColor(r.p99_ms)}`}>{fmtMs(r.p99_ms)}</td>
                     <td className="px-3 py-2 text-right text-xs text-gray-600 tabular-nums">{r.requests.toLocaleString('pt-BR')}</td>
                     <td className={`px-3 py-2 text-right text-xs tabular-nums ${r.errors > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>{r.errors > 0 ? `${r.errors} (${r.error_pct}%)` : '—'}</td>
-                    <td className="px-3 py-2 text-xs text-gray-400 hidden sm:table-cell">{r.last_seen || '—'}</td>
+                    <td className="px-3 py-2 text-xs text-gray-400 hidden sm:table-cell">{fmtBRT(r.last_seen)}</td>
                   </tr>
                 ))}
               </tbody>
