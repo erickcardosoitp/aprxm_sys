@@ -344,11 +344,11 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
       await api.post('/service-orders', {
         title: title.trim(),
         description: description.trim(),
-        priority, status,
+        priority, status: 'pending',
         community_wide: communityWide,
         service_impacted: serviceImpacted || undefined,
         category_name: category || undefined,
-        org_responsible: orgResponsible || undefined,
+        org_responsible: (orgResponsible && orgResponsible !== '\x00') ? orgResponsible : undefined,
         address_cep: cep || undefined,
         address_street: addressStreet || undefined,
         address_number: addressNumber || undefined,
@@ -411,6 +411,26 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
         )}
 
         <div className="px-6 py-5 flex flex-col gap-5">
+          {/* TITLE + DESCRIÇÃO — primeiros, são os mais importantes */}
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Título <span className="text-red-500">*</span></label>
+              <input value={title} onChange={e => setTitle(e.target.value)} className={inputCls} placeholder="Resumo da solicitação" autoFocus />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Descrição detalhada <span className="text-red-500">*</span></label>
+              <textarea
+                rows={3}
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                className={`${inputCls} resize-none`}
+                placeholder="Descreva o problema em detalhes…"
+              />
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100" />
+
           {/* Comunidade inteira */}
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -503,38 +523,31 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
           <div>
             <p className="text-xs font-semibold text-[#26619c] uppercase tracking-wide mb-3">Seção 2 — Ordem de Serviço</p>
             <div className="flex flex-col gap-3">
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">Título <span className="text-red-500">*</span></label>
-                <input value={title} onChange={e => setTitle(e.target.value)} className={inputCls} placeholder="Resumo da solicitação" />
-              </div>
-
               {/* Priority */}
               <div>
                 <label className="block text-xs text-gray-600 mb-1.5">Prioridade</label>
                 <div className="flex gap-2 flex-wrap">
-                  {(['low', 'medium', 'high', 'critical'] as ServiceOrderPriority[]).map(p => (
+                  {([
+                    { key: 'low',      label: PRIORITY_LABELS.low,      sel: 'bg-gray-600 text-white border-gray-600',    unsel: 'border-gray-300 text-gray-600' },
+                    { key: 'medium',   label: PRIORITY_LABELS.medium,   sel: 'bg-blue-600 text-white border-blue-600',    unsel: 'border-blue-300 text-blue-700' },
+                    { key: 'high',     label: PRIORITY_LABELS.high,     sel: 'bg-orange-500 text-white border-orange-500', unsel: 'border-orange-300 text-orange-600' },
+                    { key: 'critical', label: PRIORITY_LABELS.critical, sel: 'bg-red-600 text-white border-red-600',      unsel: 'border-red-300 text-red-600' },
+                  ] as const).map(p => (
                     <button
-                      key={p}
+                      key={p.key}
                       type="button"
-                      onClick={() => setPriority(p)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-                        priority === p ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600 hover:border-[#26619c]'
+                      onClick={() => setPriority(p.key as ServiceOrderPriority)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border-2 transition ${
+                        priority === p.key ? p.sel : `${p.unsel} hover:opacity-80 bg-white`
                       }`}
                     >
-                      {PRIORITY_LABELS[p]}
+                      {p.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">Status inicial</label>
-                <select value={status} onChange={e => setStatus(e.target.value as ServiceOrderStatus)} className={inputCls}>
-                  {ALL_STATUSES.map(s => (
-                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                  ))}
-                </select>
-              </div>
+
 
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Serviço afetado</label>
@@ -556,7 +569,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                   <label className="block text-xs text-gray-600 mb-1">Org. responsável</label>
                   <select
                     value={orgOptions.includes(orgResponsible) ? orgResponsible : (orgResponsible ? '__outro__' : '')}
-                    onChange={e => setOrgResponsible(e.target.value === '__outro__' ? '' : e.target.value)}
+                    onChange={e => setOrgResponsible(e.target.value === '__outro__' ? '\x00' : e.target.value)}
                     className={inputCls}
                     disabled={!category}
                   >
@@ -564,12 +577,13 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                     {orgOptions.map(o => <option key={o} value={o}>{o}</option>)}
                     <option value="__outro__">Outro…</option>
                   </select>
-                  {(!orgOptions.includes(orgResponsible) || orgResponsible === '') && (
+                  {(orgResponsible === '\x00' || (orgResponsible && !orgOptions.includes(orgResponsible))) && (
                     <input
-                      value={orgOptions.includes(orgResponsible) ? '' : orgResponsible}
-                      onChange={e => setOrgResponsible(e.target.value)}
+                      value={orgResponsible === '\x00' ? '' : orgResponsible}
+                      onChange={e => setOrgResponsible(e.target.value || '\x00')}
                       className={`${inputCls} mt-1.5`}
                       placeholder="Digite o órgão responsável"
+                      autoFocus
                     />
                   )}
                 </div>
@@ -720,16 +734,6 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
                 )}
               </div>
 
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">Descrição detalhada <span className="text-red-500">*</span></label>
-                <textarea
-                  rows={4}
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  className={`${inputCls} resize-none`}
-                  placeholder="Descreva o problema em detalhes…"
-                />
-              </div>
             </div>
           </div>
         </div>
@@ -1642,14 +1646,19 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Prioridade</label>
                     <div className="flex gap-2 flex-wrap">
-                      {(['low', 'medium', 'high', 'critical'] as ServiceOrderPriority[]).map(p => (
+                      {([
+                        { key: 'low',      sel: 'bg-gray-600 text-white border-gray-600' },
+                        { key: 'medium',   sel: 'bg-blue-600 text-white border-blue-600' },
+                        { key: 'high',     sel: 'bg-orange-500 text-white border-orange-500' },
+                        { key: 'critical', sel: 'bg-red-600 text-white border-red-600' },
+                      ] as const).map(({ key, sel }) => (
                         <button
-                          key={p}
+                          key={key}
                           type="button"
-                          onClick={() => setEditForm(f => ({ ...f, priority: p }))}
-                          className={`px-3 py-1 rounded-full text-xs font-medium border transition ${editForm.priority === p ? 'border-[#26619c] bg-[#26619c] text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+                          onClick={() => setEditForm(f => ({ ...f, priority: key as ServiceOrderPriority }))}
+                          className={`px-3 py-1 rounded-full text-xs font-medium border-2 transition ${editForm.priority === key ? sel : 'border-gray-300 text-gray-600 hover:bg-gray-50 bg-white'}`}
                         >
-                          {PRIORITY_LABELS[p]}
+                          {PRIORITY_LABELS[key as ServiceOrderPriority]}
                         </button>
                       ))}
                     </div>
@@ -3347,8 +3356,11 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<ServiceOrderStatus | ''>('')
   const [filterPriority, setFilterPriority] = useState<ServiceOrderPriority | ''>('')
+  const [sortBy, setSortBy] = useState<'date' | 'priority' | ''>('priority')
 
   const HIDDEN_BY_DEFAULT: ServiceOrderStatus[] = ['cancelled', 'archived']
+
+  const PRIORITY_WEIGHT: Record<ServiceOrderPriority, number> = { critical: 0, high: 1, medium: 2, low: 3 }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -3368,6 +3380,15 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
       setLoading(false)
     }
   }, [filterStatus, filterPriority, search])
+
+  const sortedOrders = useMemo(() => {
+    if (!sortBy) return orders
+    return [...orders].sort((a, b) => {
+      if (sortBy === 'priority') return (PRIORITY_WEIGHT[a.priority] ?? 9) - (PRIORITY_WEIGHT[b.priority] ?? 9)
+      if (sortBy === 'date') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      return 0
+    })
+  }, [orders, sortBy])
 
   const isSimplificaMode = criarMode || consultarMode || tarefasMode || minhasMode
   useEffect(() => { if (!isSimplificaMode) load() }, [load])
@@ -3499,16 +3520,34 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
               </button>
             ))}
           </div>
-          <select
-            value={filterPriority}
-            onChange={e => setFilterPriority(e.target.value as ServiceOrderPriority | '')}
-            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#26619c] bg-white text-gray-600"
-          >
-            <option value="">Qualquer prioridade</option>
-            {(['low', 'medium', 'high', 'critical'] as ServiceOrderPriority[]).map(p => (
-              <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2 shrink-0">
+            <select
+              value={filterPriority}
+              onChange={e => setFilterPriority(e.target.value as ServiceOrderPriority | '')}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#26619c] bg-white text-gray-600"
+            >
+              <option value="">Qualquer prioridade</option>
+              {(['low', 'medium', 'high', 'critical'] as ServiceOrderPriority[]).map(p => (
+                <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
+              ))}
+            </select>
+            <div className="flex items-center gap-1 border border-gray-200 rounded-lg overflow-hidden text-xs bg-white">
+              <button
+                onClick={() => setSortBy('priority')}
+                className={`px-2.5 py-1.5 transition ${sortBy === 'priority' ? 'bg-[#26619c] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                title="Ordenar por prioridade"
+              >
+                Prioridade
+              </button>
+              <button
+                onClick={() => setSortBy('date')}
+                className={`px-2.5 py-1.5 transition ${sortBy === 'date' ? 'bg-[#26619c] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                title="Ordenar por data"
+              >
+                Mais recente
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3520,13 +3559,19 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
           <div className="p-8 text-center text-gray-400 text-sm">Nenhuma ordem de serviço encontrada.</div>
         ) : (
           <ul className="divide-y divide-gray-100">
-            {orders.map(so => (
+            {sortedOrders.map(so => (
               {(() => {
                 const isInconsistent = !!so.resolved_at && !['resolved', 'archived', 'cancelled'].includes(so.status)
                 return (
                   <li
                     key={so.id}
-                    className={`px-4 py-3.5 cursor-pointer transition ${isInconsistent ? 'bg-amber-50/60 hover:bg-amber-50 border-l-4 border-l-amber-400' : 'hover:bg-gray-50'}`}
+                    className={`px-4 py-3.5 cursor-pointer transition border-l-4 ${
+                      isInconsistent ? 'bg-amber-50/60 hover:bg-amber-50 border-l-amber-400' :
+                      so.priority === 'critical' ? 'border-l-red-500 hover:bg-red-50/20' :
+                      so.priority === 'high'     ? 'border-l-orange-400 hover:bg-orange-50/20' :
+                      so.priority === 'medium'   ? 'border-l-blue-400 hover:bg-gray-50' :
+                      'border-l-gray-200 hover:bg-gray-50'
+                    }`}
                     onClick={() => setSelectedOrder(so)}
                   >
                     <div className="flex items-start gap-3">
