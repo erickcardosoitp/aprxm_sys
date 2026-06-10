@@ -504,8 +504,8 @@ export function AppShell() {
               <div className="absolute right-0 top-full mt-1.5 w-64 max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
                 {/* User info */}
                 <div className="px-4 py-3 border-b border-gray-100">
-                  <p className="text-sm font-semibold text-gray-800 truncate">{fullName}</p>
-                  <p className="text-xs text-gray-400 truncate">{associationName}</p>
+                  <p className="text-sm font-semibold text-gray-800 break-words">{fullName}</p>
+                  <p className="text-xs text-gray-400 break-words">{associationName}</p>
                 </div>
 
                 {/* Environment switcher */}

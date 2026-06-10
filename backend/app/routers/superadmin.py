@@ -56,6 +56,7 @@ async def list_organizations(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     _require_superadmin(current)
+    ids = [str(current.association_id)] + [str(i) for i in current.linked_association_ids]
     rows = await _exec_ro(session, """
         SELECT a.id, a.name, a.slug, a.plan_name, a.is_active,
                a.plan_expires_at, a.created_at,
@@ -64,9 +65,9 @@ async def list_organizations(
                (SELECT COUNT(*) FROM packages p WHERE p.association_id = a.id AND p.status != 'delivered') AS open_packages,
                (SELECT MAX(u2.last_login_at) FROM users u2 WHERE u2.association_id = a.id) AS last_login_at
           FROM associations a
-         WHERE a.is_active = true
+         WHERE a.is_active = true AND a.id = ANY(:ids)
          ORDER BY a.name
-    """)
+    """, {"ids": ids})
     return [
         {
             "id": str(r[0]), "name": r[1], "slug": r[2],
@@ -120,7 +121,7 @@ async def org_overview(
             (SELECT COUNT(*) FROM residents r WHERE r.association_id = a.id AND r.status = 'active' AND r.type = 'member' AND r.responsible_id IS NULL) AS associados,
             (SELECT COUNT(*) FROM residents r WHERE r.association_id = a.id AND r.status = 'active' AND r.type = 'guest') AS visitantes,
             (SELECT COUNT(*) FROM packages p WHERE p.association_id = a.id AND p.status IN ('received','notified')) AS enc_pendentes,
-            (SELECT COUNT(*) FROM service_orders so WHERE so.association_id = a.id AND so.status IN ('open','in_progress')) AS os_abertas,
+            (SELECT COUNT(*) FROM service_orders so WHERE so.association_id = a.id AND so.status IN ('pending','in_progress')) AS os_abertas,
             (SELECT COUNT(*) FROM mensalidades m WHERE m.association_id = a.id AND m.status = 'pending') AS mens_pendentes,
             (SELECT COALESCE(SUM(m.amount),0) FROM mensalidades m WHERE m.association_id = a.id AND m.status = 'pending') AS mens_valor,
             (SELECT COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END),0)
