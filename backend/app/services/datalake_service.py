@@ -1007,7 +1007,8 @@ async def _send_alert(error_msg: str, mode: str) -> None:
 
 async def run_full_etl(session: AsyncSession, force_full: bool = False,
                        triggered_by: str = "cron") -> dict:
-    today      = date.today().isoformat()
+    today_date = date.today()
+    today      = today_date.isoformat()
     started_at = datetime.now(timezone.utc)
     client     = _r2_client()
 
@@ -1027,7 +1028,7 @@ async def run_full_etl(session: AsyncSession, force_full: bool = False,
             INSERT INTO etl_runs (run_date, mode, status, started_at, triggered_by)
             VALUES (:d, :m, 'running', :s, :t)
             RETURNING id
-        """), {"d": today, "m": mode, "s": started_at, "t": triggered_by})).fetchone()
+        """), {"d": today_date, "m": mode, "s": started_at, "t": triggered_by})).fetchone()
         await session.commit()
         run_id = str(row[0]) if row else None
     except Exception as e:
