@@ -11,6 +11,11 @@ interface HealthData {
 
 interface Route { path: string; methods: string[]; name: string; tags: string[]; summary: string | null }
 interface PerfRow { method: string; path: string; requests: number; avg_ms: number; p95_ms: number; max_ms: number; errors: number; last_seen: string | null }
+interface UserOps24h { nome: string; operacoes: number; erros: number; avg_ms: number; ultimo_acesso: string | null }
+interface UserOps7d { nome: string; dia: string; operacoes: number; erros: number }
+interface SearchStat { path: string; requests: number; avg_ms: number; p95_ms: number; max_ms: number }
+interface LoginStat { total: number; sucesso: number; falhas: number; avg_ms: number; p95_ms: number; max_ms: number }
+interface ActivityData { ops_24h: UserOps24h[]; ops_by_user_7d: UserOps7d[]; search_stats: SearchStat[]; login_stats: LoginStat | null }
 interface TableStat { name: string; total_size: string; data_size: string; index_size: string; total_bytes: number; row_estimate: number; dead_rows: number; last_vacuum: string | null; last_analyze: string | null }
 interface IndexStat { name: string; table: string; size: string; scans: number; tuples_read: number }
 interface ActiveQuery { pid: number; state: string; wait_type: string | null; wait_event: string | null; query: string; duration_s: number }
@@ -20,7 +25,7 @@ const MC: Record<string, string> = {
   GET: 'bg-green-100 text-green-700', POST: 'bg-blue-100 text-blue-700',
   PATCH: 'bg-amber-100 text-amber-700', PUT: 'bg-orange-100 text-orange-700', DELETE: 'bg-red-100 text-red-700',
 }
-const fmtMs = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms}ms`
+const fmtMs = (ms: number) => `${ms}ms`
 const perfColor = (ms: number) => ms > 2000 ? 'text-red-600 font-bold' : ms > 800 ? 'text-amber-600 font-semibold' : 'text-green-700'
 const AUTO_REFRESH_INTERVAL = 10 // segundos
 
@@ -567,10 +572,12 @@ export default function TIPage() {
   const [health, setHealth] = useState<HealthData | null>(null)
   const [loading, setLoading] = useState(false)
   const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL)
+  const [activity, setActivity] = useState<ActivityData | null>(null)
   const [activeTab, setActiveTab] = useState<'health' | 'perf' | 'db' | 'routes' | 'arch' | 'analytics'>('health')
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set())
   const [searchRoute, setSearchRoute] = useState('')
   const [searchPerf, setSearchPerf] = useState('')
+  const [perfChip, setPerfChip] = useState<'all' | 'login' | 'search' | 'slow'>('all')
   const [sortPerf, setSortPerf] = useState<'avg_ms' | 'p95_ms' | 'requests' | 'errors'>('avg_ms')
   const [sortTable, setSortTable] = useState<'total_bytes' | 'row_estimate' | 'dead_rows' | 'name'>('total_bytes')
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -586,15 +593,17 @@ export default function TIPage() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [rRoutes, rPerf, rDb] = await Promise.all([
+      const [rRoutes, rPerf, rDb, rActivity] = await Promise.all([
         api.get<Route[]>('/ti/routes'),
         api.get<PerfRow[]>('/ti/perf'),
         api.get<DbData>('/ti/db'),
+        api.get<ActivityData>('/ti/activity').catch(() => ({ data: null })),
       ])
       setRoutes(rRoutes.data)
       setExpandedTags(new Set(rRoutes.data.flatMap(x => x.tags.length ? x.tags : ['Sem tag'])))
       setPerf(rPerf.data)
       setDb(rDb.data)
+      if (rActivity.data) setActivity(rActivity.data)
     } catch { /* silent */ }
     finally { setLoading(false) }
   }, [])
@@ -638,7 +647,13 @@ export default function TIPage() {
   }) : []
 
   const filteredPerf = [...perf]
-    .filter(r => !searchPerf || r.path.includes(searchPerf))
+    .filter(r => {
+      if (searchPerf && !r.path.includes(searchPerf)) return false
+      if (perfChip === 'login') return r.path.includes('/auth/')
+      if (perfChip === 'search') return r.path.includes('search') || r.path.includes('buscar')
+      if (perfChip === 'slow') return r.avg_ms > 800
+      return true
+    })
     .sort((a, b) => b[sortPerf] - a[sortPerf])
 
   const slowEndpoints = perf.filter(r => r.avg_ms > 800).length
@@ -830,12 +845,22 @@ export default function TIPage() {
       {/* ── TAB: PERFORMANCE ── */}
       {activeTab === 'perf' && (<>
       {/* PERFORMANCE */}
-      <Section title="Performance — tempo médio por endpoint (24h)" icon={Zap} count={perf.length}>
-        <div className="p-3 flex items-center gap-2 border-b border-gray-100 bg-gray-50">
-          <input value={searchPerf} onChange={e => setSearchPerf(e.target.value)}
-            placeholder="Filtrar por path…"
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#26619c] bg-white" />
-          <span className="text-[10px] text-gray-400 shrink-0 hidden sm:block">Verde &lt;0.80s · Amarelo &lt;2.00s · Vermelho ≥2.00s</span>
+      <Section title="Performance — tempo médio por endpoint (24h)" icon={Zap} count={filteredPerf.length}>
+        <div className="p-3 flex flex-col gap-2 border-b border-gray-100 bg-gray-50">
+          <div className="flex items-center gap-2">
+            <input value={searchPerf} onChange={e => setSearchPerf(e.target.value)}
+              placeholder="Filtrar por path…"
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#26619c] bg-white" />
+            <span className="text-[10px] text-gray-400 shrink-0 hidden sm:block">Verde &lt;800ms · Amarelo &lt;2000ms · Vermelho ≥2000ms</span>
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            {([['all','Todos'], ['login','Login/Auth'], ['search','Pesquisa'], ['slow','Lentos (>800ms)']] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setPerfChip(v)}
+                className={`h-6 px-2.5 rounded-full text-[11px] font-medium border transition ${perfChip === v ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         {filteredPerf.length === 0 ? (
           <p className="text-center text-sm text-gray-400 py-8">Nenhum dado ainda — dados aparecem após os primeiros requests.</p>
@@ -846,7 +871,7 @@ export default function TIPage() {
                 <tr>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-16">Método</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Path</th>
-                  {([['avg_ms','Média (s)'],['p95_ms','P95 (s)'],['requests','Requests'],['errors','Erros']] as const).map(([col, label]) => (
+                  {([['avg_ms','Média (ms)'],['p95_ms','P95 (ms)'],['requests','Requests'],['errors','Erros']] as const).map(([col, label]) => (
                     <th key={col} onClick={() => setSortPerf(col)}
                       className={`px-3 py-2 text-right text-xs font-semibold cursor-pointer select-none hover:text-[#26619c] ${sortPerf === col ? 'text-[#26619c]' : 'text-gray-500'}`}>
                       {label} {sortPerf === col ? '↓' : ''}
@@ -874,6 +899,78 @@ export default function TIPage() {
           </div>
         )}
       </Section>
+
+      {/* ── Destaques: Login + Busca ── */}
+      {activity && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Login */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-600 mb-3">Acesso ao sistema — Login (24h)</p>
+            {activity.login_stats ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-4">
+                  <div><p className="text-2xl font-bold text-gray-800 tabular-nums">{activity.login_stats.total}</p><p className="text-[10px] text-gray-400">total</p></div>
+                  <div><p className="text-2xl font-bold text-green-600 tabular-nums">{activity.login_stats.sucesso}</p><p className="text-[10px] text-gray-400">sucesso</p></div>
+                  <div><p className={`text-2xl font-bold tabular-nums ${activity.login_stats.falhas > 0 ? 'text-red-600' : 'text-gray-400'}`}>{activity.login_stats.falhas}</p><p className="text-[10px] text-gray-400">falhas</p></div>
+                </div>
+                <div className="flex gap-3 text-xs text-gray-500">
+                  <span>Média: <span className={`font-semibold ${perfColor(activity.login_stats.avg_ms)}`}>{fmtMs(activity.login_stats.avg_ms)}</span></span>
+                  <span>P95: <span className={`font-semibold ${perfColor(activity.login_stats.p95_ms)}`}>{fmtMs(activity.login_stats.p95_ms)}</span></span>
+                  <span>Máx: <span className={`font-semibold ${perfColor(activity.login_stats.max_ms)}`}>{fmtMs(activity.login_stats.max_ms)}</span></span>
+                </div>
+              </div>
+            ) : <p className="text-xs text-gray-400">Nenhum login nas últimas 24h.</p>}
+          </div>
+          {/* Busca */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-600 mb-3">Endpoints de busca (24h)</p>
+            {activity.search_stats.length > 0 ? (
+              <table className="w-full text-xs">
+                <thead><tr className="text-gray-400"><th className="text-left pb-1">Path</th><th className="text-right pb-1">Req</th><th className="text-right pb-1">Média</th><th className="text-right pb-1">P95</th></tr></thead>
+                <tbody className="divide-y divide-gray-50">
+                  {activity.search_stats.map((s, i) => (
+                    <tr key={i}><td className="py-1 font-mono text-[10px] text-gray-600 truncate max-w-[160px]">{s.path}</td><td className="py-1 text-right text-gray-500">{s.requests}</td><td className={`py-1 text-right font-semibold ${perfColor(s.avg_ms)}`}>{fmtMs(s.avg_ms)}</td><td className={`py-1 text-right ${perfColor(s.p95_ms)}`}>{fmtMs(s.p95_ms)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <p className="text-xs text-gray-400">Nenhuma busca nas últimas 24h.</p>}
+          </div>
+        </div>
+      )}
+
+      {/* ── Atividade de usuários ── */}
+      {activity && (
+        <Section title="Atividade de usuários (24h)" icon={Users} count={activity.ops_24h.length} defaultOpen={true}>
+          {activity.ops_24h.length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-6">Sem dados — user_id começa a ser registrado a partir de agora.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-gray-100 bg-gray-50/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Usuário</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Operações</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Erros</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Média (ms)</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Último acesso</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {activity.ops_24h.map((u, i) => (
+                    <tr key={i} className="hover:bg-gray-50 transition">
+                      <td className="px-3 py-2 text-sm font-medium text-gray-700">{u.nome}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-[#26619c]">{u.operacoes.toLocaleString('pt-BR')}</td>
+                      <td className={`px-3 py-2 text-right tabular-nums ${u.erros > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>{u.erros > 0 ? u.erros : '—'}</td>
+                      <td className={`px-3 py-2 text-right tabular-nums text-xs ${perfColor(u.avg_ms)}`}>{fmtMs(u.avg_ms)}</td>
+                      <td className="px-3 py-2 text-xs text-gray-400">{u.ultimo_acesso || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+      )}
 
       </>)}
       {/* ── TAB: BANCO ── */}

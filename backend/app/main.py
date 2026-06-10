@@ -776,6 +776,16 @@ async def _run_migrations() -> None:
 
         await session.commit()
 
+        # api_request_logs — adiciona user_id se ainda não existe
+        try:
+            async with AsyncSessionLocal() as s:
+                await s.execute(text(
+                    "ALTER TABLE api_request_logs ADD COLUMN IF NOT EXISTS user_id UUID"
+                ))
+                await s.commit()
+        except Exception:
+            pass
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -812,6 +822,18 @@ async def security_headers_middleware(request: Request, call_next):
 
 _SKIP_LOG = {"/health", "/api/v1/health", "/api/v1/notifications/unread-count", "/api/v1/chat/unread-count"}
 
+def _extract_user_id_from_request(request: Request) -> str | None:
+    try:
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return None
+        from app.core.security import decode_access_token
+        payload = decode_access_token(auth_header[7:])
+        return payload.get("sub")
+    except Exception:
+        return None
+
+
 @app.middleware("http")
 async def request_timing_middleware(request: Request, call_next):
     start = time.monotonic()
@@ -820,17 +842,18 @@ async def request_timing_middleware(request: Request, call_next):
     path = request.url.path
     if path not in _SKIP_LOG and not path.startswith("/api/v1/ti/"):
         try:
+            user_id = _extract_user_id_from_request(request)
             from app.database import AsyncSessionLocal
             from sqlalchemy import text as _t
             async with AsyncSessionLocal() as s:
                 await s.execute(_t(
-                    "INSERT INTO api_request_logs (path, method, status_code, duration_ms) VALUES (:p, :m, :s, :d)"
-                ), {"p": path, "m": request.method, "s": response.status_code, "d": duration_ms})
+                    "INSERT INTO api_request_logs (path, method, status_code, duration_ms, user_id)"
+                    " VALUES (:p, :m, :s, :d, :u)"
+                ), {"p": path, "m": request.method, "s": response.status_code, "d": duration_ms, "u": user_id})
                 await s.commit()
-                # Limpa logs com mais de 48h automaticamente (a cada ~500 requests)
                 import random
                 if random.random() < 0.002:
-                    await s.execute(_t("DELETE FROM api_request_logs WHERE created_at < NOW() - INTERVAL '48 hours'"))
+                    await s.execute(_t("DELETE FROM api_request_logs WHERE created_at < NOW() - INTERVAL '7 days'"))
                     await s.commit()
         except Exception:
             pass

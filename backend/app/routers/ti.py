@@ -90,7 +90,7 @@ async def perf_stats(
         WHERE created_at > NOW() - INTERVAL '24 hours'
         GROUP BY method, path
         ORDER BY avg_ms DESC
-        LIMIT 100
+        LIMIT 500
     """))).fetchall()
     return [
         {
@@ -100,6 +100,101 @@ async def perf_stats(
         }
         for r in rows
     ]
+
+
+@router.get("/activity", summary="Atividade de usuários — operações por dia e destaques de busca/login")
+async def user_activity(
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    # Operações por usuário por dia (últimos 7 dias) — requer user_id populado
+    ops_by_user = (await session.execute(text("""
+        SELECT
+            u.full_name,
+            DATE(l.created_at) AS dia,
+            COUNT(*)           AS operacoes,
+            COUNT(*) FILTER (WHERE l.status_code >= 400) AS erros
+        FROM api_request_logs l
+        JOIN users u ON u.id = l.user_id::uuid
+        WHERE l.created_at > NOW() - INTERVAL '7 days'
+          AND l.user_id IS NOT NULL
+        GROUP BY u.full_name, DATE(l.created_at)
+        ORDER BY dia DESC, operacoes DESC
+        LIMIT 200
+    """))).fetchall()
+
+    # Total por usuário (últimas 24h)
+    ops_24h = (await session.execute(text("""
+        SELECT
+            u.full_name,
+            COUNT(*)  AS operacoes,
+            COUNT(*) FILTER (WHERE l.status_code >= 400) AS erros,
+            ROUND(AVG(l.duration_ms))::int AS avg_ms,
+            MAX(l.created_at) AS ultimo_acesso
+        FROM api_request_logs l
+        JOIN users u ON u.id = l.user_id::uuid
+        WHERE l.created_at > NOW() - INTERVAL '24 hours'
+          AND l.user_id IS NOT NULL
+        GROUP BY u.full_name
+        ORDER BY operacoes DESC
+        LIMIT 50
+    """))).fetchall()
+
+    # Destaque: endpoints de busca (últimas 24h)
+    search_stats = (await session.execute(text("""
+        SELECT
+            path,
+            COUNT(*)                            AS requests,
+            ROUND(AVG(duration_ms))::int        AS avg_ms,
+            ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms))::int AS p95_ms,
+            MAX(duration_ms)                    AS max_ms
+        FROM api_request_logs
+        WHERE created_at > NOW() - INTERVAL '24 hours'
+          AND (path ILIKE '%search%' OR path ILIKE '%buscar%' OR path ILIKE '%/residents%' AND method = 'GET')
+        GROUP BY path
+        ORDER BY avg_ms DESC
+        LIMIT 20
+    """))).fetchall()
+
+    # Destaque: login/acesso ao sistema (últimas 24h)
+    login_stats = (await session.execute(text("""
+        SELECT
+            COUNT(*)                            AS total_logins,
+            COUNT(*) FILTER (WHERE status_code = 200) AS sucesso,
+            COUNT(*) FILTER (WHERE status_code >= 400) AS falhas,
+            ROUND(AVG(duration_ms))::int        AS avg_ms,
+            ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms))::int AS p95_ms,
+            MAX(duration_ms)                    AS max_ms
+        FROM api_request_logs
+        WHERE created_at > NOW() - INTERVAL '24 hours'
+          AND path ILIKE '%/auth/login%'
+    """))).fetchone()
+
+    return {
+        "ops_by_user_7d": [
+            {"nome": r[0], "dia": str(r[1]), "operacoes": r[2], "erros": r[3]}
+            for r in ops_by_user
+        ],
+        "ops_24h": [
+            {
+                "nome": r[0], "operacoes": r[1], "erros": r[2],
+                "avg_ms": r[3], "ultimo_acesso": str(r[4])[:16] if r[4] else None,
+            }
+            for r in ops_24h
+        ],
+        "search_stats": [
+            {"path": r[0], "requests": r[1], "avg_ms": r[2], "p95_ms": r[3], "max_ms": r[4]}
+            for r in search_stats
+        ],
+        "login_stats": {
+            "total": login_stats[0] or 0,
+            "sucesso": login_stats[1] or 0,
+            "falhas": login_stats[2] or 0,
+            "avg_ms": login_stats[3] or 0,
+            "p95_ms": login_stats[4] or 0,
+            "max_ms": login_stats[5] or 0,
+        } if login_stats else None,
+    }
 
 
 @router.get("/routes", summary="Listar todos os endpoints registrados")
@@ -228,4 +323,55 @@ async def db_stats(
         "row_counts": [
             {"table": r[0], "estimate": r[1]} for r in row_counts
         ],
+    }
+
+
+VACUUM_TABLES = [
+    "associations",
+    "users",
+    "association_settings",
+    "cash_boxes",
+    "transaction_categories",
+    "payment_methods",
+    "service_order_phases",
+    "residents",
+    "packages",
+    "service_orders",
+    "mensalidades",
+    "demands",
+    "daily_tasks",
+    "finance_transactions",
+    "bank_statements",
+]
+
+
+@router.post("/vacuum", summary="VACUUM ANALYZE nas tabelas principais (cron semanal)")
+async def run_vacuum(request: Request) -> dict:
+    import os
+    from app.database import engine
+
+    secret = os.environ.get("CRON_SECRET", "")
+    if secret:
+        auth = request.headers.get("x-cron-secret", "")
+        if auth != secret:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Não autorizado.")
+
+    results = []
+    # VACUUM must run outside a transaction — use AUTOCOMMIT isolation
+    async with engine.connect() as conn:
+        await conn.execution_options(isolation_level="AUTOCOMMIT")
+        for table in VACUUM_TABLES:
+            try:
+                await conn.execute(text(f"VACUUM ANALYZE {table}"))
+                results.append({"table": table, "ok": True})
+            except Exception as exc:
+                results.append({"table": table, "ok": False, "error": str(exc)})
+
+    ok_count = sum(1 for r in results if r["ok"])
+    return {
+        "vacuumed": ok_count,
+        "total": len(VACUUM_TABLES),
+        "results": results,
+        "ts": datetime.now(timezone.utc).isoformat(),
     }
