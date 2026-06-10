@@ -150,6 +150,7 @@ function AnalyticsPanel() {
   const [selectedRun, setSelectedRun] = useState<(EtlRun & { tasks: EtlTask[] }) | null>(null)
   const [loading, setLoading] = useState(true)
   const [triggering, setTriggering] = useState(false)
+  const [triggerError, setTriggerError] = useState<string | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -166,10 +167,14 @@ function AnalyticsPanel() {
 
   const triggerManual = async (forceFull = false) => {
     setTriggering(true)
+    setTriggerError(null)
     try {
       await api.post(`/datalake/run/manual?force_full=${forceFull}`)
       setTimeout(load, 3000)
-    } catch { /* silent */ } finally { setTriggering(false) }
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail ?? e?.message ?? 'Erro desconhecido'
+      setTriggerError(msg)
+    } finally { setTriggering(false) }
   }
 
   useEffect(() => { load() }, [])
@@ -211,6 +216,9 @@ function AnalyticsPanel() {
           </button>
         </div>
       </div>
+      {triggerError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-xs text-red-700 font-mono">{triggerError}</div>
+      )}
 
       {/* Alertas */}
       {alertas.length > 0 && (
