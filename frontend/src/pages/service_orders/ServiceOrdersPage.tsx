@@ -2442,7 +2442,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   }
 
   // Moved before showReport early-return to avoid React hooks violation
-  const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, waiting_validation: 3, done: 4 }
+  const statusOrder: Record<string, number> = { in_progress: 0, waiting_validation: 1, blocked: 2, pending: 3, done: 4 }
   const doneTasks = useMemo(() => tasks.filter(t => t.status === 'done' && (!onlyMine || t.assigned_to === userId)), [tasks, onlyMine, userId])
   const sortFn = (a: DailyTask, b: DailyTask) => {
     if (!sortBy) {
