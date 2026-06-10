@@ -907,7 +907,11 @@ async def security_headers_middleware(request: Request, call_next):
         response.headers[key] = value
     return response
 
-_SKIP_LOG = {"/health", "/api/v1/health", "/api/v1/notifications/unread-count", "/api/v1/chat/unread-count"}
+_SKIP_LOG = {
+    "/health", "/api/v1/health",
+    "/api/v1/notifications/unread-count", "/api/v1/chat/unread-count",
+    "/", "/favicon.ico", "/favicon.png", "/robots.txt",
+}
 
 def _extract_user_id_from_request(request: Request) -> str | None:
     try:
@@ -990,3 +994,14 @@ app.include_router(ti.router, prefix=PREFIX)
 @app.get("/api/v1/health", tags=["Sistema"])
 async def health() -> dict:
     return {"status": "ok", "version": settings.app_version}
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return {"status": "ok"}
+
+@app.get("/favicon.ico", include_in_schema=False)
+@app.get("/favicon.png", include_in_schema=False)
+@app.get("/robots.txt", include_in_schema=False)
+async def static_stubs():
+    from fastapi.responses import Response
+    return Response(status_code=204)

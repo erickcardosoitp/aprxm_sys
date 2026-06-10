@@ -462,7 +462,7 @@ async def current_session(
             current.association_id, preferred_by=current.user_id
         )
     except CashSessionError:
-        raise HTTPException(status_code=404, detail="Nenhuma sessão de caixa aberta.")
+        return {"session": None}
     from app.models.user import User
     opener = await session.get(User, cash.opened_by)
     is_mine = cash.opened_by == current.user_id
