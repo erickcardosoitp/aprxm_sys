@@ -22,7 +22,11 @@ interface ActivityData { ops_24h: UserOps24h[]; ops_by_user_7d: UserOps7d[]; sea
 interface TableStat { name: string; total_size: string; data_size: string; index_size: string; total_bytes: number; row_estimate: number; dead_rows: number; last_vacuum: string | null; last_analyze: string | null }
 interface IndexStat { name: string; table: string; size: string; scans: number; tuples_read: number }
 interface ActiveQuery { pid: number; state: string; wait_type: string | null; wait_event: string | null; query: string; duration_s: number }
-interface DbData { tables: TableStat[]; indexes: IndexStat[]; active_queries: ActiveQuery[]; cache: { hit: number; read: number; hit_pct: number }; row_counts: { table: string; estimate: number }[] }
+interface SeqScanRow { table: string; seq_scan: number; idx_scan: number; live_rows: number; seq_pct: number }
+interface Connections { total: number; active: number; idle: number; idle_in_tx: number; max_conn: number; saturation_pct: number }
+interface DbData { tables: TableStat[]; indexes: IndexStat[]; active_queries: ActiveQuery[]; cache: { hit: number; read: number; hit_pct: number }; row_counts: { table: string; estimate: number }[]; seq_scan_candidates: SeqScanRow[]; connections: Connections }
+interface ErrorEntry { path: string; method: string; status: number; duration_ms: number; user: string | null; at: string }
+interface ErrorData { recent: ErrorEntry[]; by_status: { status: number; count: number }[]; top_paths: { path: string; method: string; status: number; count: number }[] }
 
 const MC: Record<string, string> = {
   GET: 'bg-green-100 text-green-700', POST: 'bg-blue-100 text-blue-700',
@@ -576,6 +580,7 @@ export default function TIPage() {
   const [loading, setLoading] = useState(false)
   const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL)
   const [activity, setActivity] = useState<ActivityData | null>(null)
+  const [errors, setErrors] = useState<ErrorData | null>(null)
   const [activeTab, setActiveTab] = useState<'health' | 'perf' | 'db' | 'routes' | 'arch' | 'analytics'>('health')
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set())
   const [searchRoute, setSearchRoute] = useState('')
@@ -598,11 +603,12 @@ export default function TIPage() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [rRoutes, rPerf, rDb, rActivity] = await Promise.all([
+      const [rRoutes, rPerf, rDb, rActivity, rErrors] = await Promise.all([
         api.get<Route[]>('/ti/routes'),
         api.get<PerfRow[]>('/ti/perf'),
         api.get<DbData>('/ti/db'),
         api.get<ActivityData>('/ti/activity').catch(() => ({ data: null })),
+        api.get<ErrorData>('/ti/errors').catch(() => ({ data: null })),
       ])
       setRoutes(rRoutes.data)
       setExpandedTags(new Set(rRoutes.data.flatMap(x => x.tags.length ? x.tags : ['Sem tag'])))
@@ -620,6 +626,7 @@ export default function TIPage() {
       })
       setDb(rDb.data)
       if (rActivity.data) setActivity(rActivity.data)
+      if (rErrors.data) setErrors(rErrors.data)
     } catch { /* silent */ }
     finally { setLoading(false) }
   }, [])
@@ -815,6 +822,67 @@ export default function TIPage() {
             </div>
           )}
 
+          {/* Log de erros recentes */}
+          {errors && errors.recent.length > 0 && (
+            <Section title="Erros recentes (24h)" icon={AlertTriangle} count={errors.recent.length} defaultOpen={false}>
+              {/* Resumo por status */}
+              <div className="flex gap-2 flex-wrap px-4 pt-3 pb-1">
+                {errors.by_status.map(s => (
+                  <span key={s.status} className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${s.status >= 500 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                    {s.status} — {s.count}×
+                  </span>
+                ))}
+              </div>
+              {/* Top paths problemáticos */}
+              {errors.top_paths.length > 0 && (
+                <div className="px-4 pb-3">
+                  <p className="text-[10px] text-gray-400 mb-1 uppercase tracking-wide">Endpoints com mais erros</p>
+                  <div className="flex flex-col gap-1">
+                    {errors.top_paths.slice(0, 8).map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${MC[p.method] || 'bg-gray-100 text-gray-600'}`}>{p.method}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${p.status >= 500 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{p.status}</span>
+                        <code className="text-gray-600 flex-1 truncate">{p.path}</code>
+                        <span className="text-gray-400 shrink-0">{p.count}×</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Timeline de erros individuais */}
+              <div className="overflow-x-auto border-t border-gray-100">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50/50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400">Quando</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400">Status</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400">Método</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400">Path</th>
+                      <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-400">Duração</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400">Usuário</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {errors.recent.slice(0, 50).map((e, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-3 py-1.5 text-gray-400 tabular-nums whitespace-nowrap">{e.at}</td>
+                        <td className="px-3 py-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${e.status >= 500 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{e.status}</span>
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${MC[e.method] || 'bg-gray-100 text-gray-600'}`}>{e.method}</span>
+                        </td>
+                        <td className="px-3 py-1.5 font-mono text-gray-600 max-w-[240px] truncate">{e.path}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{fmtMs(e.duration_ms)}</td>
+                        <td className="px-3 py-1.5 text-gray-400 truncate max-w-[100px]">{e.user || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+          )}
+
           {/* Queries ativas — alerta no topo do health */}
           {db && db.active_queries.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col gap-2">
@@ -898,17 +966,28 @@ export default function TIPage() {
 
       {/* ── TAB: BANCO — summary cards ── */}
       {activeTab === 'db' && db && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
             <p className="text-xs text-gray-500 mb-1">Cache Hit (DB)</p>
             <p className={`text-2xl font-bold ${db.cache.hit_pct >= 95 ? 'text-green-600' : db.cache.hit_pct >= 80 ? 'text-amber-600' : 'text-red-600'}`}>{db.cache.hit_pct}%</p>
             <p className="text-[10px] text-gray-400 mt-0.5">ideal ≥ 95% · shared_buffers</p>
           </div>
           <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-            <p className="text-xs text-gray-500 mb-1">Queries ativas agora</p>
+            <p className="text-xs text-gray-500 mb-1">Queries ativas</p>
             <p className={`text-2xl font-bold ${db.active_queries.length > 0 ? 'text-amber-600' : 'text-green-600'}`}>{db.active_queries.length}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">pg_stat_activity non-idle</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">non-idle agora</p>
           </div>
+          {db.connections && (
+            <div className={`bg-white border rounded-2xl p-4 shadow-sm ${db.connections.saturation_pct > 80 ? 'border-red-300 bg-red-50/30' : db.connections.saturation_pct > 50 ? 'border-amber-300' : 'border-gray-200'}`}>
+              <p className="text-xs text-gray-500 mb-1">Conexões DB</p>
+              <p className={`text-2xl font-bold ${db.connections.saturation_pct > 80 ? 'text-red-600' : db.connections.saturation_pct > 50 ? 'text-amber-600' : 'text-green-600'}`}>
+                {db.connections.total}/{db.connections.max_conn}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                {db.connections.saturation_pct}% saturação · {db.connections.idle_in_tx > 0 ? <span className="text-amber-600 font-semibold">{db.connections.idle_in_tx} idle-in-tx</span> : 'ok'}
+              </p>
+            </div>
+          )}
           <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
             <p className="text-xs text-gray-500 mb-1">Tabelas / Índices</p>
             <p className="text-2xl font-bold text-gray-800">{db.tables.length} / {db.indexes.length}</p>
@@ -1043,6 +1122,40 @@ export default function TIPage() {
                     </td>
                     <td className="px-3 py-2 text-[10px] text-gray-400">{t.data_size} / {t.index_size}</td>
                     <td className="px-3 py-2 text-[10px] text-gray-400">{t.last_vacuum || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+
+      {/* ── Seq Scan Candidates ── */}
+      {activeTab === 'db' && db && db.seq_scan_candidates?.length > 0 && (
+        <Section title="Candidatos a índice — Seq Scans altos" icon={AlertTriangle} count={db.seq_scan_candidates.length} defaultOpen={true}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-gray-100 bg-gray-50/50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Tabela</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Seq Scans</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Idx Scans</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">% Seq</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Linhas</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Diagnóstico</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {db.seq_scan_candidates.map(r => (
+                  <tr key={r.table} className={`hover:bg-gray-50 ${r.seq_pct > 80 ? 'bg-red-50/30' : r.seq_pct > 50 ? 'bg-amber-50/20' : ''}`}>
+                    <td className="px-3 py-2 font-mono text-xs font-medium text-gray-700">{r.table}</td>
+                    <td className="px-3 py-2 text-right text-xs tabular-nums text-red-600 font-semibold">{r.seq_scan.toLocaleString('pt-BR')}</td>
+                    <td className="px-3 py-2 text-right text-xs tabular-nums text-green-600">{r.idx_scan.toLocaleString('pt-BR')}</td>
+                    <td className={`px-3 py-2 text-right text-xs font-bold tabular-nums ${r.seq_pct > 80 ? 'text-red-600' : r.seq_pct > 50 ? 'text-amber-600' : 'text-gray-500'}`}>{r.seq_pct}%</td>
+                    <td className="px-3 py-2 text-right text-xs tabular-nums text-gray-500">{r.live_rows.toLocaleString('pt-BR')}</td>
+                    <td className="px-3 py-2 text-xs text-gray-400">
+                      {r.seq_pct > 80 ? '🔴 índice provavelmente ausente' : r.seq_pct > 50 ? '🟡 revisar queries + índices' : '🟢 aceitável'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

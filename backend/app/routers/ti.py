@@ -323,6 +323,35 @@ async def db_stats(
         LIMIT 20
     """))).fetchall()
 
+    # Seq scan candidates — tabelas com muitos seq scans e > 1k rows (índice provavelmente faltando)
+    seq_scans = (await session.execute(text("""
+        SELECT
+            relname                                                          AS table_name,
+            seq_scan,
+            COALESCE(idx_scan, 0)                                           AS idx_scan,
+            n_live_tup                                                       AS live_rows,
+            CASE WHEN seq_scan + COALESCE(idx_scan, 0) = 0 THEN 0
+                 ELSE ROUND(100.0 * seq_scan / (seq_scan + COALESCE(idx_scan, 0)), 1)
+            END                                                             AS seq_pct
+        FROM pg_stat_user_tables
+        WHERE n_live_tup > 500
+          AND seq_scan > 50
+        ORDER BY seq_scan DESC
+        LIMIT 15
+    """))).fetchall()
+
+    # Saturação de conexões
+    conn_stats = (await session.execute(text("""
+        SELECT
+            COUNT(*)                                        AS total,
+            COUNT(*) FILTER (WHERE state = 'active')       AS active,
+            COUNT(*) FILTER (WHERE state = 'idle')         AS idle,
+            COUNT(*) FILTER (WHERE state = 'idle in transaction') AS idle_in_tx,
+            (SELECT setting::int FROM pg_settings WHERE name = 'max_connections') AS max_conn
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+    """))).fetchone()
+
     return {
         "tables": [
             {
@@ -357,6 +386,80 @@ async def db_stats(
         },
         "row_counts": [
             {"table": r[0], "estimate": r[1]} for r in row_counts
+        ],
+        "seq_scan_candidates": [
+            {
+                "table": r[0], "seq_scan": int(r[1]), "idx_scan": int(r[2]),
+                "live_rows": int(r[3]), "seq_pct": float(r[4]),
+            }
+            for r in seq_scans
+        ],
+        "connections": {
+            "total": int(conn_stats[0] or 0),
+            "active": int(conn_stats[1] or 0),
+            "idle": int(conn_stats[2] or 0),
+            "idle_in_tx": int(conn_stats[3] or 0),
+            "max_conn": int(conn_stats[4] or 100),
+            "saturation_pct": round(100.0 * int(conn_stats[0] or 0) / int(conn_stats[4] or 100), 1),
+        },
+    }
+
+
+@router.get("/errors", summary="Últimos erros da API — 4xx e 5xx nas últimas 24h")
+async def recent_errors(
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    rows = (await session.execute(text("""
+        SELECT
+            l.path,
+            l.method,
+            l.status_code,
+            l.duration_ms,
+            u.full_name   AS user_name,
+            l.created_at
+        FROM api_request_logs l
+        LEFT JOIN users u ON u.id = l.user_id::uuid
+        WHERE l.status_code >= 400
+          AND l.created_at > NOW() - INTERVAL '24 hours'
+        ORDER BY l.created_at DESC
+        LIMIT 100
+    """))).fetchall()
+
+    # Agrupamento por status code
+    by_status = (await session.execute(text("""
+        SELECT status_code, COUNT(*) AS n
+        FROM api_request_logs
+        WHERE status_code >= 400
+          AND created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY status_code
+        ORDER BY n DESC
+    """))).fetchall()
+
+    # Top paths com erro
+    top_paths = (await session.execute(text("""
+        SELECT path, method, status_code, COUNT(*) AS n
+        FROM api_request_logs
+        WHERE status_code >= 400
+          AND created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY path, method, status_code
+        ORDER BY n DESC
+        LIMIT 15
+    """))).fetchall()
+
+    return {
+        "recent": [
+            {
+                "path": r[0], "method": r[1], "status": r[2],
+                "duration_ms": r[3], "user": r[4],
+                "at": str(r[5])[:16],
+            }
+            for r in rows
+        ],
+        "by_status": [{"status": r[0], "count": int(r[1])} for r in by_status],
+        "top_paths": [
+            {"path": r[0], "method": r[1], "status": r[2], "count": int(r[3])}
+            for r in top_paths
         ],
     }
 
