@@ -551,7 +551,7 @@ async def analytics(
           {assoc_filter}
         GROUP BY DATE(transaction_at AT TIME ZONE 'America/Sao_Paulo')
         ORDER BY dia ASC
-    """), assoc_params))).fetchall()
+    """), assoc_params)).fetchall()
 
     # APDEX por dia — 7d
     apdex_7d = (await session.execute(text("""
