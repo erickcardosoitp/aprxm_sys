@@ -1100,6 +1100,10 @@ async def run_full_etl(session: AsyncSession, force_full: bool = False,
 
         if run_id:
             try:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
                 await session.execute(text("""
                     UPDATE etl_runs SET
                         status       = :s,
