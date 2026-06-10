@@ -3007,17 +3007,16 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
               {tasksByUser.map(({ uid, name, tasks: uTasks }) => {
-                const doneCount = tasks.filter(t => t.status === 'done' && t.assigned_to === uid).length
-                const total = uTasks.length + doneCount
-                const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0
+                const inProgressCount = uTasks.filter(t => t.status === 'in_progress').length
+                const pendingCount = uTasks.filter(t => t.status === 'pending').length
+                const overdueCount = uTasks.filter(t => t.due_date && t.due_date < today).length
+                const allDone = uTasks.length === 0
                 const isCollapsed = collapsedUsers.has(uid)
                 const toggle = () => setCollapsedUsers(prev => {
-                  const next = new Set(prev)
-                  next.has(uid) ? next.delete(uid) : next.add(uid)
-                  return next
+                  const next = new Set(prev); next.has(uid) ? next.delete(uid) : next.add(uid); return next
                 })
                 const initials = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
-                const allDone = uTasks.length === 0
+                const sorted = [...uTasks].sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9))
                 return (
                   <div key={uid} className={`rounded-2xl border overflow-hidden ${allDone ? 'border-green-200 bg-green-50/30' : 'border-gray-200 bg-white'}`}>
                     <button onClick={toggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition text-left">
@@ -3027,26 +3026,20 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold text-gray-800 truncate">{name}</span>
-                          {allDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">Concluído</span>}
+                          {allDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">Tudo concluído</span>}
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                          </div>
-                          <span className="text-xs text-gray-400">{doneCount}/{total}</span>
-                          {uTasks.filter(t => t.status === 'in_progress').length > 0 && (
-                            <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{uTasks.filter(t => t.status === 'in_progress').length} em and.</span>
-                          )}
-                          {uTasks.filter(t => t.due_date && t.due_date < today).length > 0 && (
-                            <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{uTasks.filter(t => t.due_date && t.due_date < today).length} atras.</span>
-                          )}
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          {inProgressCount > 0 && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{inProgressCount} em andamento</span>}
+                          {pendingCount > 0 && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{pendingCount} pendente{pendingCount > 1 ? 's' : ''}</span>}
+                          {overdueCount > 0 && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{overdueCount} atrasada{overdueCount > 1 ? 's' : ''}</span>}
+                          {!allDone && inProgressCount === 0 && pendingCount === 0 && <span className="text-xs text-gray-400">{uTasks.length} tarefa{uTasks.length > 1 ? 's' : ''}</span>}
                         </div>
                       </div>
                       <span className="text-gray-300 text-xs">{isCollapsed ? '▼' : '▲'}</span>
                     </button>
                     {!isCollapsed && uTasks.length > 0 && (
                       <div className="border-t border-gray-100 divide-y divide-gray-50">
-                        {uTasks.map(t => {
+                        {sorted.map(t => {
                           const itemDone = t.checklist.filter(i => ['done','cancelled','postergado'].includes(i.status ?? (i.done ? 'done' : ''))).length
                           const overdue = t.due_date && t.due_date < today
                           return (
