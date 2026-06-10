@@ -343,7 +343,7 @@ export function AppShell() {
     <div className="min-h-screen flex flex-col bg-gray-50">
       {simplificaLoading && (
         <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center gap-4" style={{ backgroundColor: 'var(--brand-header)' }}>
-          <span className="text-2xl font-extrabold tracking-widest text-white">APRXM</span>
+          <img src="/logo.png" alt="APRXM" className="h-10 w-auto object-contain" />
           <span className="text-sm text-white/70 animate-pulse">Carregando Simplifica...</span>
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mt-1" />
         </div>
@@ -373,7 +373,7 @@ export function AppShell() {
       <header className="text-white flex items-center justify-between px-4 py-3 shadow"
         style={{ backgroundColor: themeColor, paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
         <div className="flex flex-col leading-tight min-w-0 max-w-[55vw]">
-          <span className="font-extrabold text-base tracking-tight">APRXM</span>
+          <img src="/logo.png" alt="APRXM" className="h-6 w-auto object-contain" />
           {associationName && (
             <span className="text-[10px] opacity-70 leading-none whitespace-nowrap overflow-hidden text-ellipsis">{associationName}</span>
           )}

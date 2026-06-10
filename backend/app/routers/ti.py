@@ -213,7 +213,7 @@ async def user_activity(
         "ops_24h": [
             {
                 "nome": r[0], "operacoes": r[1], "erros": r[2],
-                "avg_ms": r[3], "ultimo_acesso": str(r[4])[:16] if r[4] else None,
+                "avg_ms": r[3], "ultimo_acesso": r[4].isoformat() if r[4] else None,
             }
             for r in ops_24h
         ],
