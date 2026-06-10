@@ -265,7 +265,7 @@ class MensalidadeService:
         result = await self._session.execute(
             sa_text("""
                 SELECT m.id, m.resident_id, m.reference_month, m.due_date, m.amount,
-                       r.full_name, r.phone_primary, r.address_street, r.address_number, r.unit
+                       r.full_name, r.phone_primary, r.address_street, r.address_number
                 FROM mensalidades m
                 JOIN residents r ON r.id = m.resident_id
                 WHERE m.association_id = :aid
@@ -298,7 +298,6 @@ class MensalidadeService:
                 "phone_primary": r[6],
                 "address_street": r[7],
                 "address_number": r[8],
-                "unit": r[9],
                 "months_overdue": months_overdue,
             })
         return delinquent

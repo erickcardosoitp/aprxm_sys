@@ -2439,7 +2439,11 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const displayedTasks = useMemo(() => [...tasks]
     .filter(t => t.status !== 'done' && (!onlyMine || t.assigned_to === userId))
     .sort((a, b) => {
-      if (!sortBy) return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
+      if (!sortBy) {
+        const sd = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
+        if (sd !== 0) return sd
+        return (b.created_at ?? '') < (a.created_at ?? '') ? -1 : 1
+      }
       let va = '', vb = ''
       if (sortBy === 'title') { va = a.title.toLowerCase(); vb = b.title.toLowerCase() }
       else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
@@ -2813,67 +2817,72 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* ── Linha 1: navegação de data + ações ── */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 flex-1">
+      {/* ── Barra de controles ── */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Navegação de data */}
+        <div className="flex items-center gap-0.5 border border-gray-200 rounded-xl overflow-hidden bg-white shrink-0">
           <button onClick={() => {
             const d = new Date(viewDate + 'T12:00:00'); d.setDate(d.getDate() - 1)
             setViewDate(d.toISOString().slice(0, 10)); setFilterPeriodFrom(''); setFilterPeriodTo('')
-          }} className="w-9 h-9 flex items-center justify-center border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 active:bg-gray-100 shrink-0">←</button>
-          <span className="flex-1 text-sm font-semibold text-gray-800 text-center">
-            {viewDate === today ? 'Hoje' : new Date(viewDate + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+          }} className="w-8 h-8 flex items-center justify-center text-gray-500 hover:bg-gray-50 text-xs">←</button>
+          <span className="px-2 text-xs font-semibold text-gray-700 border-x border-gray-200 h-8 flex items-center min-w-[52px] justify-center">
+            {viewDate === today ? 'Hoje' : new Date(viewDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
           </span>
           <button onClick={() => {
             const d = new Date(viewDate + 'T12:00:00'); d.setDate(d.getDate() + 1)
             setViewDate(d.toISOString().slice(0, 10)); setFilterPeriodFrom(''); setFilterPeriodTo('')
-          }} className="w-9 h-9 flex items-center justify-center border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 active:bg-gray-100 shrink-0">→</button>
+          }} className="w-8 h-8 flex items-center justify-center text-gray-500 hover:bg-gray-50 text-xs">→</button>
         </div>
-        <button onClick={() => setShowReport(true)}
-          className="w-9 h-9 flex items-center justify-center border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition shrink-0" title="Ver relatório">
-          <FileText className="w-4 h-4" />
-        </button>
-        {canWrite && !showForm && (
-          <button onClick={() => setShowForm(true)}
-            className="h-9 flex items-center gap-1.5 bg-[#26619c] hover:bg-[#1a4f87] active:bg-[#163d6e] text-white px-3 rounded-xl text-sm font-semibold transition shrink-0">
-            <Plus className="w-4 h-4" /><span className="hidden sm:inline">Nova Tarefa</span><span className="sm:hidden">Nova</span>
-          </button>
-        )}
-      </div>
 
-      {/* ── Linha 2: filtros ── */}
-      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="col-span-1 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-white w-full">
-          <option value="">Todos os status</option>
-          <option value="pending">Pendentes</option>
-          <option value="in_progress">Em andamento</option>
-          <option value="waiting_validation">Ag. Validação</option>
-          <option value="done">Concluídas</option>
-        </select>
+        {/* Filtro status — chips */}
+        <div className="flex items-center gap-1 flex-wrap">
+          {[['', 'Todos'], ['pending', 'Pendente'], ['in_progress', 'Andamento'], ['waiting_validation', 'Ag. Validação'], ['done', 'Concluídas']].map(([v, label]) => (
+            <button key={v} onClick={() => setFilterStatus(v)}
+              className={`h-7 px-2.5 rounded-full text-xs font-medium border transition ${filterStatus === v ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Filtro responsável */}
         <select value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}
-          className="col-span-1 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 bg-white w-full">
-          <option value="">Todos responsáveis</option>
+          className="h-7 border border-gray-200 rounded-full px-2.5 text-xs text-gray-600 bg-white appearance-none cursor-pointer">
+          <option value="">Todos</option>
           {users.map(u => {
             const dup = users.filter(x => x.full_name === u.full_name).length > 1
             return <option key={u.id} value={u.id}>{u.full_name}{dup && u.assoc_name ? ` — ${u.assoc_name}` : ''}</option>
           })}
         </select>
-        <div className="col-span-2 flex items-center gap-1.5">
+
+        {/* Período */}
+        <div className="flex items-center gap-1">
           <input type="date" value={filterPeriodFrom}
             onChange={e => { setFilterPeriodFrom(e.target.value); setViewDate(today) }}
-            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm min-w-0" />
-          <span className="text-xs text-gray-400 shrink-0">–</span>
+            className="h-7 border border-gray-200 rounded-full px-2.5 text-xs text-gray-600 min-w-0 w-32" />
+          <span className="text-xs text-gray-400">–</span>
           <input type="date" value={filterPeriodTo}
             onChange={e => { setFilterPeriodTo(e.target.value); setViewDate(today) }}
-            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm min-w-0" />
+            className="h-7 border border-gray-200 rounded-full px-2.5 text-xs text-gray-600 min-w-0 w-32" />
         </div>
-        <div className="col-span-2 flex items-center justify-between">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+
+        {/* Só minhas + contagem + ações */}
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          <label className="flex items-center gap-1.5 cursor-pointer select-none">
             <input type="checkbox" checked={onlyMine} onChange={e => setOnlyMine(e.target.checked)}
-              className="w-4 h-4 accent-[#26619c]" />
-            <span className="text-sm text-gray-600">Ver apenas as minhas</span>
+              className="w-3.5 h-3.5 accent-[#26619c]" />
+            <span className="text-xs text-gray-500">Minhas</span>
           </label>
-          <span className="text-sm text-gray-400">{displayedTasks.length} tarefa(s)</span>
+          <span className="text-xs text-gray-400 font-medium">{displayedTasks.length}</span>
+          <button onClick={() => setShowReport(true)}
+            className="w-7 h-7 flex items-center justify-center border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 transition" title="Relatório">
+            <FileText className="w-3.5 h-3.5" />
+          </button>
+          {canWrite && !showForm && (
+            <button onClick={() => setShowForm(true)}
+              className="h-7 flex items-center gap-1 bg-[#26619c] hover:bg-[#1a4f87] text-white px-2.5 rounded-lg text-xs font-semibold transition">
+              <Plus className="w-3.5 h-3.5" />Nova
+            </button>
+          )}
         </div>
       </div>
 
@@ -2934,14 +2943,15 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
                   <option value="waiting_validation">⏳ Ag. Validação</option>
                   {isAdmin && <option value="done">✅ Concluída</option>}
                 </select>
-                {/* Botão concluir — apenas admins, tarefa em validação */}
-                {isAdmin && task.status === 'waiting_validation' && (
+                {/* Bolinha verde animada — admin conclui diretamente */}
+                {isAdmin && task.status !== 'done' && (
                   <button
                     onClick={() => setTaskStatus(task, 'done')}
-                    title="Validar e concluir tarefa"
-                    className="group shrink-0 w-9 h-9 rounded-full border-2 border-gray-300 text-gray-400 flex items-center justify-center transition-all duration-200 hover:border-green-500 hover:text-white hover:bg-green-500 hover:scale-110 hover:shadow-[0_0_0_4px_rgba(34,197,94,0.2)]"
+                    title="Concluir tarefa"
+                    className="relative shrink-0 w-7 h-7 rounded-full bg-green-500 hover:bg-green-600 active:scale-95 flex items-center justify-center transition-all duration-150 shadow-sm"
                   >
-                    <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+                    <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-60" />
+                    <CheckCircle className="w-4 h-4 text-white relative z-10" />
                   </button>
                 )}
 
