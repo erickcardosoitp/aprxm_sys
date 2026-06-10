@@ -65,7 +65,6 @@ const SettingsPage      = lazyWithReload(() => import('./pages/settings/Settings
 const FinanceiroPage    = lazyWithReload(() => import('./pages/financeiro/FinanceiroPage'))
 const GeralPage         = lazyWithReload(() => import('./pages/geral/GeralPage'))
 const ReportsPage       = lazyWithReload(() => import('./pages/reports/ReportsPage'))
-const SuperAdminPage    = lazyWithReload(() => import('./pages/superadmin/SuperAdminPage'))
 const LogsPage          = lazyWithReload(() => import('./pages/logs/LogsPage'))
 const TIPage            = lazyWithReload(() => import('./pages/ti/TIPage'))
 const ChatPage          = lazyWithReload(() => import('./pages/chat/ChatPage'))
@@ -163,7 +162,6 @@ export default function App() {
           <Route path="financeiro"     element={<RequireNotOffice><RequireModule module="settings"><Suspense fallback={<PageLoader />}><FinanceiroPage /></Suspense></RequireModule></RequireNotOffice>} />
           <Route path="reports"        element={<RequireNotOffice><Suspense fallback={<PageLoader />}><ReportsPage /></Suspense></RequireNotOffice>} />
           <Route path="geral"          element={<RequireAggregator><Suspense fallback={<PageLoader />}><GeralPage /></Suspense></RequireAggregator>} />
-          <Route path="superadmin"     element={<RequireSuperAdmin><Suspense fallback={<PageLoader />}><SuperAdminPage /></Suspense></RequireSuperAdmin>} />
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><LogsPage /></Suspense></RequireAdmin></RequireNotOffice>} />
           <Route path="ti"             element={<RequireSuperAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireSuperAdmin>} />
           <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />

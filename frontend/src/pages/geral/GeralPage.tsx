@@ -3,7 +3,6 @@ import { Building2, Users, DollarSign, AlertCircle, Package, Search, TrendingUp,
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
-import SuperAdminPage from '../superadmin/SuperAdminPage'
 
 type AssocFilter = 'all' | string
 interface LinkedAssoc { id: string; name: string; slug: string }
@@ -662,11 +661,6 @@ export default function GeralPage() {
             </div>
           )}
         </div>
-      )}
-
-      {/* TI — apenas Escritório + superadmin */}
-      {tab === 'ti' && isOffice && role === 'superadmin' && (
-        <SuperAdminPage />
       )}
 
       {/* Sincronização — apenas Escritório */}

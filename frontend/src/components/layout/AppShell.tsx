@@ -38,7 +38,6 @@ const REPORTS_NAV    = { to: '/reports',    label: 'Relatórios', icon: Download
 const ADMIN_NAV      = { to: '/admin',      label: 'Admin',  icon: ShieldCheck }
 const LOGS_NAV       = { to: '/logs',       label: 'Logs',   icon: RotateCcw }
 const SETTINGS_NAV   = { to: '/settings',   label: 'Config', icon: Settings }
-const SUPERADMIN_NAV = { to: '/superadmin', label: 'TI',     icon: Activity }
 
 interface AssocOption {
   id: string
@@ -293,7 +292,7 @@ export function AppShell() {
         items.push(REPORTS_NAV)
         if (permissions?.settings?.can_view || isSuperAdmin) items.push(SETTINGS_NAV)
         if (isAdmin) { items.push(ADMIN_NAV); items.push(LOGS_NAV) }
-        if (isSuperAdmin) { items.push({ to: '/ti', label: 'TI', icon: Activity }); items.push(SUPERADMIN_NAV) }
+        if (isSuperAdmin) { items.push({ to: '/ti', label: 'TI', icon: Activity }) }
         items.push({ to: '/help', label: 'Ajuda', icon: HelpCircle, end: false })
         return items
       })()
