@@ -2210,6 +2210,23 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     } catch { toast.error('Erro ao gerar PDF.') }
   }
 
+  // Moved before showReport early-return to avoid React hooks violation
+  const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, waiting_validation: 3, done: 4 }
+  const displayedTasks = useMemo(() => [...tasks]
+    .filter(t => t.status !== 'done' && (!onlyMine || t.assigned_to === userId))
+    .sort((a, b) => {
+      if (!sortBy) return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
+      let va = '', vb = ''
+      if (sortBy === 'title') { va = a.title.toLowerCase(); vb = b.title.toLowerCase() }
+      else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
+      else if (sortBy === 'due_date') { va = a.due_date ?? '9999'; vb = b.due_date ?? '9999' }
+      else if (sortBy === 'status') { va = String(statusOrder[a.status] ?? 9); vb = String(statusOrder[b.status] ?? 9) }
+      else if (sortBy === 'created_at') { va = a.created_at ?? ''; vb = b.created_at ?? '' }
+      else if (sortBy === 'updated_at') { va = a.updated_at ?? ''; vb = b.updated_at ?? '' }
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    }), [tasks, onlyMine, userId, sortBy, sortDir])
+
   const taskForm = (
     <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-3">
       <p className="text-xs font-semibold text-blue-800">{editingId ? 'Editar Tarefa' : 'Nova Tarefa Diária'}</p>
@@ -2557,23 +2574,6 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortBy(col); setSortDir('asc') }
   }
-
-  const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, blocked: 2, waiting_validation: 3, done: 4 }
-
-  const displayedTasks = useMemo(() => [...tasks]
-    .filter(t => t.status !== 'done' && (!onlyMine || t.assigned_to === userId))
-    .sort((a, b) => {
-      if (!sortBy) return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
-      let va = '', vb = ''
-      if (sortBy === 'title') { va = a.title.toLowerCase(); vb = b.title.toLowerCase() }
-      else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
-      else if (sortBy === 'due_date') { va = a.due_date ?? '9999'; vb = b.due_date ?? '9999' }
-      else if (sortBy === 'status') { va = String(statusOrder[a.status] ?? 9); vb = String(statusOrder[b.status] ?? 9) }
-      else if (sortBy === 'created_at') { va = a.created_at ?? ''; vb = b.created_at ?? '' }
-      else if (sortBy === 'updated_at') { va = a.updated_at ?? ''; vb = b.updated_at ?? '' }
-      const cmp = va < vb ? -1 : va > vb ? 1 : 0
-      return sortDir === 'asc' ? cmp : -cmp
-    }), [tasks, onlyMine, userId, sortBy, sortDir])
 
   const SortBtn = ({ col, label }: { col: typeof sortBy; label: string }) => (
     <button
