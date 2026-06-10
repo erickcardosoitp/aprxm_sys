@@ -20,6 +20,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await _run_migrations()
     yield
 
 
@@ -774,17 +775,10 @@ async def _run_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_etl_task_runs_run ON etl_task_runs(run_id)"
         ))
 
+        await session.execute(text(
+            "ALTER TABLE api_request_logs ADD COLUMN IF NOT EXISTS user_id UUID"
+        ))
         await session.commit()
-
-        # api_request_logs — adiciona user_id se ainda não existe
-        try:
-            async with AsyncSessionLocal() as s:
-                await s.execute(text(
-                    "ALTER TABLE api_request_logs ADD COLUMN IF NOT EXISTS user_id UUID"
-                ))
-                await s.commit()
-        except Exception:
-            pass
 
 
 app = FastAPI(

@@ -374,9 +374,9 @@ async def list_packages(
     # Filtros de busca no SQL (eliminam o filtro em Python)
     if q:
         filters.append(
-            "(unaccent(r.full_name) ILIKE unaccent(:q) "
+            "(r.full_name ILIKE :q "
             "OR p.tracking_code ILIKE :q "
-            "OR unaccent(p.carrier_name) ILIKE unaccent(:q))"
+            "OR p.carrier_name ILIKE :q)"
         )
         params["q"] = f"%{q}%"
     if cpf:
