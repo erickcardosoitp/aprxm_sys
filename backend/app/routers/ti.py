@@ -168,13 +168,15 @@ async def user_activity(
             COUNT(*) FILTER (WHERE l.status_code >= 400) AS erros,
             ROUND(AVG(l.duration_ms))::int AS avg_ms,
             MAX(l.created_at) AS ultimo_acesso,
-            a.name AS associacao
+            a.name AS associacao,
+            (SELECT MIN(l2.created_at) FROM api_request_logs l2
+             WHERE l2.user_id = u.id::text) AS primeiro_acesso
         FROM api_request_logs l
         JOIN users u ON u.id = l.user_id::uuid
         JOIN associations a ON a.id = u.association_id
         WHERE l.created_at > NOW() - INTERVAL '24 hours'
           AND l.user_id IS NOT NULL
-        GROUP BY u.full_name, a.name
+        GROUP BY u.id, u.full_name, a.name
         ORDER BY operacoes DESC
         LIMIT 50
     """))).fetchall()
@@ -219,6 +221,7 @@ async def user_activity(
                 "nome": r[0], "operacoes": r[1], "erros": r[2],
                 "avg_ms": r[3], "ultimo_acesso": r[4].isoformat() if r[4] else None,
                 "associacao": r[5],
+                "primeiro_acesso": r[6].isoformat() if r[6] else None,
             }
             for r in ops_24h
         ],

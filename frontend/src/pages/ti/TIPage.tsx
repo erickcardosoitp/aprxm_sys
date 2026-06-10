@@ -16,7 +16,7 @@ interface HealthData {
 
 interface Route { path: string; methods: string[]; name: string; tags: string[]; summary: string | null }
 interface PerfRow { method: string; path: string; requests: number; avg_ms: number; p95_ms: number; p99_ms: number; max_ms: number; errors: number; error_pct: number; last_seen: string | null }
-interface UserOps24h { nome: string; operacoes: number; erros: number; avg_ms: number; ultimo_acesso: string | null; associacao: string | null }
+interface UserOps24h { nome: string; operacoes: number; erros: number; avg_ms: number; ultimo_acesso: string | null; associacao: string | null; primeiro_acesso: string | null }
 interface UserOps7d { nome: string; dia: string; operacoes: number; erros: number }
 interface SearchStat { path: string; requests: number; avg_ms: number; p95_ms: number; max_ms: number }
 interface LoginStat { total: number; sucesso: number; falhas: number; avg_ms: number; p95_ms: number; max_ms: number }
@@ -953,6 +953,7 @@ export default function TIPage() {
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Operações</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Erros</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Média resp.</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Primeiro acesso</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Último acesso</th>
                       </tr>
                     </thead>
@@ -977,6 +978,7 @@ export default function TIPage() {
                           <td className="px-3 py-2 text-right tabular-nums font-semibold text-[#26619c]">{u.operacoes.toLocaleString('pt-BR')}</td>
                           <td className={`px-3 py-2 text-right tabular-nums ${u.erros > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>{u.erros > 0 ? u.erros : '—'}</td>
                           <td className={`px-3 py-2 text-right tabular-nums text-xs ${perfColor(u.avg_ms)}`}>{fmtMs(u.avg_ms)}</td>
+                          <td className="px-3 py-2 text-xs text-gray-400">{u.primeiro_acesso ? fmtBRT(u.primeiro_acesso) : '—'}</td>
                           <td className="px-3 py-2 text-xs text-gray-400">{u.ultimo_acesso ? fmtBRT(u.ultimo_acesso) : '—'}</td>
                         </tr>
                         )
