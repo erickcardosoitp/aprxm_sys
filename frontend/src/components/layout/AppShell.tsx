@@ -6,6 +6,7 @@ import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import type { UserRole } from '../../types'
+import LoadingScreen from '../ui/LoadingScreen'
 
 interface AppNotification {
   id: string
@@ -342,11 +343,7 @@ export function AppShell() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       {simplificaLoading && (
-        <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center gap-4" style={{ backgroundColor: 'var(--brand-header)' }}>
-          <img src="/logo.png" alt="APRXM" className="h-10 w-auto object-contain" />
-          <span className="text-sm text-white/70 animate-pulse">Carregando Simplifica...</span>
-          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mt-1" />
-        </div>
+        <LoadingScreen message="Carregando Simplifica..." color={themeColor} />
       )}
       {!pushDismissed && (pushPerm === 'default' || pushPerm === 'denied') && (
         <div className="bg-blue-600 text-white text-xs flex flex-col items-center gap-1.5 px-4 py-2.5 text-center" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))' }}>

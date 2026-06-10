@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { jwtDecode } from 'jwt-decode'
-import { Building2, ChevronRight, Clock, Fingerprint, Loader2, Lock, Mail, X } from 'lucide-react'
+import { ChevronRight, Clock, Fingerprint, Loader2, Lock, Mail, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
@@ -214,12 +214,9 @@ export default function LoginPage() {
       <div className="relative w-full max-w-sm">
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Header */}
-          <div className="bg-[#1a3f6f] px-8 py-7 text-center">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white/10 mb-3">
-              <Building2 className="w-7 h-7 text-white" />
-            </div>
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">APROXIMA</h1>
-            <p className="text-blue-200 text-xs mt-1">Associação de Moradores</p>
+          <div className="bg-[#1a1a2e] px-8 py-7 text-center">
+            <img src="/logo.png" alt="APRXM" className="h-10 w-auto mx-auto mb-2 object-contain" />
+            <p className="text-blue-200/60 text-xs">Gestão Comunitária</p>
           </div>
 
           {/* Steps indicator */}
@@ -278,8 +275,8 @@ export default function LoginPage() {
                             onClick={() => handleQuickLogin(r)}
                             className="flex-1 flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:border-[#26619c] hover:bg-blue-50 transition text-left"
                           >
-                            <div className="w-8 h-8 rounded-lg bg-[#1a3f6f] flex items-center justify-center shrink-0">
-                              <Building2 className="w-3.5 h-3.5 text-white" />
+                            <div className="w-8 h-8 rounded-lg bg-[#1a1a2e] flex items-center justify-center shrink-0">
+                              <img src="/logo.png" alt="" className="h-4 w-auto object-contain" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-semibold text-gray-800 truncate">{r.associationName}</p>
@@ -317,8 +314,8 @@ export default function LoginPage() {
                     onClick={() => handleOrgSelect(org)}
                     className="flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:border-[#26619c] hover:bg-blue-50 transition text-left group"
                   >
-                    <div className="w-9 h-9 rounded-lg bg-[#1a3f6f] flex items-center justify-center shrink-0">
-                      <Building2 className="w-4 h-4 text-white" />
+                    <div className="w-9 h-9 rounded-lg bg-[#1a1a2e] flex items-center justify-center shrink-0">
+                      <img src="/logo.png" alt="" className="h-4 w-auto object-contain" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-800 leading-tight">{org.name}</p>
