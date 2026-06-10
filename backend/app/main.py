@@ -677,8 +677,9 @@ async def _run_migrations() -> None:
                         UPDATE chat_messages        SET sender_id      = winner WHERE sender_id      = loser;
                         UPDATE webauthn_credentials SET user_id        = winner WHERE user_id        = loser;
                         UPDATE webauthn_challenges  SET user_id        = winner WHERE user_id        = loser;
-                        UPDATE resident_update_requests SET reviewed_by = winner WHERE reviewed_by  = loser;
-                        UPDATE cash_sessions        SET reviewed_by    = winner WHERE reviewed_by   = loser;
+                        UPDATE resident_update_requests    SET reviewed_by = winner WHERE reviewed_by = loser;
+                        UPDATE cash_sessions               SET reviewed_by = winner WHERE reviewed_by = loser;
+                        UPDATE session_transaction_reviews SET reviewed_by = winner WHERE reviewed_by = loser;
                         UPDATE pix_learning_map     SET confirmed_by   = winner WHERE confirmed_by  = loser;
                         UPDATE porta_a_porta_leads  SET operator_id    = winner WHERE operator_id   = loser;
                         UPDATE porta_a_porta_leads  SET commissioned_to= winner WHERE commissioned_to=loser;
