@@ -1,3 +1,4 @@
+import asyncio
 import json
 import io
 from datetime import datetime, timezone, timedelta
@@ -172,29 +173,40 @@ async def governance(
     except Exception:
         metadata = {}
 
-    # ── Inventário completo do R2 ─────────────────────────────────────────────
+    # ── Inventário completo do R2 — todas as chamadas boto3 em paralelo ─────────
     def _layer(prefix):
         files = _list_prefix(client, prefix)
         total_kb = sum(f["size_kb"] for f in files)
         return {"arquivos": files, "total_arquivos": len(files), "total_kb": round(total_kb, 1)}
 
-    bronze_atual    = _layer("bronze/atual/")
-    prata_hoje      = _layer(f"prata/{today}/")
-    ouro_financeiro = _layer("ouro/financeiro/")
-    ouro_moradores  = _layer("ouro/moradores/")
-    ouro_encomendas = _layer("ouro/encomendas/")
-    ouro_operacional= _layer("ouro/operacional/")
-    ouro_equipe     = _layer("ouro/equipe/")
+    def _hist():
+        try:
+            h = client.list_objects_v2(
+                Bucket=settings.r2_bucket_name, Prefix="bronze/historico/", Delimiter="/"
+            )
+            return sorted(
+                [p["Prefix"].replace("bronze/historico/", "").rstrip("/") for p in h.get("CommonPrefixes", [])],
+                reverse=True,
+            )[:10]
+        except Exception:
+            return []
 
-    # Historico bronze (lista datas disponíveis)
-    try:
-        hist = client.list_objects_v2(Bucket=settings.r2_bucket_name, Prefix="bronze/historico/", Delimiter="/")
-        bronze_historico_datas = sorted(
-            [p["Prefix"].replace("bronze/historico/", "").rstrip("/") for p in hist.get("CommonPrefixes", [])],
-            reverse=True
-        )[:10]
-    except Exception:
-        bronze_historico_datas = []
+    loop = asyncio.get_running_loop()
+    (
+        bronze_atual, prata_hoje,
+        ouro_financeiro, ouro_moradores, ouro_encomendas,
+        ouro_operacional, ouro_equipe,
+        bronze_historico_datas,
+    ) = await asyncio.gather(
+        loop.run_in_executor(None, _layer, "bronze/atual/"),
+        loop.run_in_executor(None, _layer, f"prata/{today}/"),
+        loop.run_in_executor(None, _layer, "ouro/financeiro/"),
+        loop.run_in_executor(None, _layer, "ouro/moradores/"),
+        loop.run_in_executor(None, _layer, "ouro/encomendas/"),
+        loop.run_in_executor(None, _layer, "ouro/operacional/"),
+        loop.run_in_executor(None, _layer, "ouro/equipe/"),
+        loop.run_in_executor(None, _hist),
+    )
 
     total_ouro_kb = sum([
         ouro_financeiro["total_kb"], ouro_moradores["total_kb"],

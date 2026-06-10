@@ -104,6 +104,34 @@ async def create_notification(
     await send_push_to_user(user_id, title, body, data)
 
 
+async def create_notifications_batch(
+    association_id: str,
+    recipients: list[tuple[str, str]],  # [(user_id, title), ...]
+    body: str,
+    notif_type: str = "chat",
+    data: dict | None = None,
+) -> None:
+    """Batch INSERT all notifications + fire push concurrently."""
+    if not recipients:
+        return
+    data_json = json.dumps(data or {})
+    rows = [
+        {"aid": association_id, "uid": uid, "title": title, "body": body,
+         "type": notif_type, "data": data_json}
+        for uid, title in recipients
+    ]
+    async with AsyncSessionLocal() as s:
+        await s.execute(text("""
+            INSERT INTO notifications (association_id, user_id, title, body, type, data)
+            VALUES (:aid, :uid, :title, :body, :type, CAST(:data AS jsonb))
+        """), rows)
+        await s.commit()
+    await asyncio.gather(*[
+        send_push_to_user(uid, title, body, data)
+        for uid, title in recipients
+    ])
+
+
 # ─── Subscription endpoints ───────────────────────────────────────────────────
 
 @router.post("/subscribe")

@@ -270,9 +270,6 @@ async def send_message(
                 raise
             await _aio.sleep(0.1 * (attempt + 1))
 
-    import asyncio
-    from app.routers.notifications import create_notification
-
     preview = (body.content or "")[:100]
 
     # notify all active users in the chat_group (or just the association if no group)
@@ -290,13 +287,13 @@ async def send_message(
                 WHERE association_id = :assoc AND is_active = true AND id != :sender
             """), {"assoc": str(current.association_id), "sender": str(current.user_id)})).fetchall()
 
+    from app.routers.notifications import create_notifications_batch
     mentioned = set(body.mention_ids)
-    for (uid,) in other_users:
-        uid_str = str(uid)
-        title = f"💬 {sender_name} mencionou você" if uid_str in mentioned else f"💬 {sender_name}"
-        await create_notification(
-            str(current.association_id), uid_str, title, preview, "chat",
-        )
+    recipients = [
+        (str(uid), f"💬 {sender_name} mencionou você" if str(uid) in mentioned else f"💬 {sender_name}")
+        for (uid,) in other_users
+    ]
+    await create_notifications_batch(str(current.association_id), recipients, preview)
 
     return {
         "id": str(row[0]),

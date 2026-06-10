@@ -1,3 +1,4 @@
+import asyncio
 import json
 import random
 import string
@@ -13,6 +14,19 @@ from sqlmodel import select
 
 from app.core.exceptions import CashSessionError, NotFoundError, UnprocessableError
 from app.models.finance import CashSession, CashSessionStatus, IncomeSubtype, Transaction, TransactionType
+
+# Cache URL→bytes para logo/assinatura — TTL implícito: reinicia no cold start
+_image_cache: dict[str, bytes] = {}
+
+async def _fetch_image(url: str) -> bytes:
+    if url in _image_cache:
+        return _image_cache[url]
+    async with httpx.AsyncClient(timeout=10) as c:
+        r = await c.get(url)
+    if r.status_code != 200:
+        raise ValueError(f"HTTP {r.status_code}")
+    _image_cache[url] = r.content
+    return r.content
 
 
 class FinanceService:
@@ -680,16 +694,17 @@ class FinanceService:
             {"aid": str(association_id)},
         )
 
-        # Download logo and signature
-        async with httpx.AsyncClient(timeout=10) as client:
-            logo_resp = await client.get(logo_url)
-            sig_resp = await client.get(sig_url)
-        if logo_resp.status_code != 200:
-            raise UnprocessableError(f"Falha ao baixar logo ({logo_resp.status_code}). Verifique a URL no Admin.")
-        if sig_resp.status_code != 200:
-            raise UnprocessableError(f"Falha ao baixar assinatura ({sig_resp.status_code}). Verifique a URL no Admin.")
-        logo_bytes = logo_resp.content
-        sig_bytes = sig_resp.content
+        # Download logo and signature in parallel (cached after first call)
+        results = await asyncio.gather(
+            _fetch_image(logo_url),
+            _fetch_image(sig_url),
+            return_exceptions=True,
+        )
+        if isinstance(results[0], Exception):
+            raise UnprocessableError(f"Falha ao baixar logo ({results[0]}). Verifique a URL no Admin.")
+        if isinstance(results[1], Exception):
+            raise UnprocessableError(f"Falha ao baixar assinatura ({results[1]}). Verifique a URL no Admin.")
+        logo_bytes, sig_bytes = results[0], results[1]
 
         # Generate barcode image
         barcode_bytes = self._build_barcode_image(barcode_code)
