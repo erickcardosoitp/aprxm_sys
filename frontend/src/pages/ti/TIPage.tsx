@@ -21,6 +21,10 @@ interface UserOps7d { nome: string; dia: string; operacoes: number; erros: numbe
 interface SearchStat { path: string; requests: number; avg_ms: number; p95_ms: number; max_ms: number }
 interface LoginStat { total: number; sucesso: number; falhas: number; avg_ms: number; p95_ms: number; max_ms: number }
 interface ActivityData { ops_24h: UserOps24h[]; ops_by_user_7d: UserOps7d[]; search_stats: SearchStat[]; login_stats: LoginStat | null }
+interface AnalyticsAssoc { id: string; name: string }
+interface AnalyticsDay { dia: string; operacoes: number; erros: number; avg_ms: number; apdex: number | null }
+interface AnalyticsReceita { dia: string; total: number }
+interface AnalyticsData { associacoes: AnalyticsAssoc[]; apdex: { score: number; rating: string; total_requests: number }; dias: AnalyticsDay[]; receita: AnalyticsReceita[] }
 interface TableStat { name: string; total_size: string; data_size: string; index_size: string; total_bytes: number; row_estimate: number; dead_rows: number; last_vacuum: string | null; last_analyze: string | null }
 interface IndexStat { name: string; table: string; size: string; scans: number; tuples_read: number }
 interface ActiveQuery { pid: number; state: string; wait_type: string | null; wait_event: string | null; query: string; duration_s: number }
@@ -589,6 +593,8 @@ export default function TIPage() {
   const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL)
   const [activity, setActivity] = useState<ActivityData | null>(null)
   const [errors, setErrors] = useState<ErrorData | null>(null)
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
+  const [analyticsAssoc, setAnalyticsAssoc] = useState<string>('')
   const [activeTab, setActiveTab] = useState<'health' | 'perf' | 'db' | 'routes' | 'arch' | 'analytics'>('health')
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set())
   const [searchRoute, setSearchRoute] = useState('')
@@ -611,12 +617,13 @@ export default function TIPage() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [rRoutes, rPerf, rDb, rActivity, rErrors] = await Promise.all([
+      const [rRoutes, rPerf, rDb, rActivity, rErrors, rAnalytics] = await Promise.all([
         api.get<Route[]>('/ti/routes'),
         api.get<PerfRow[]>('/ti/perf'),
         api.get<DbData>('/ti/db'),
         api.get<ActivityData>('/ti/activity').catch(() => ({ data: null })),
         api.get<ErrorData>('/ti/errors').catch(() => ({ data: null })),
+        api.get<AnalyticsData>('/ti/analytics').catch(() => ({ data: null })),
       ])
       setRoutes(rRoutes.data)
       setExpandedTags(new Set(rRoutes.data.flatMap(x => x.tags.length ? x.tags : ['Sem tag'])))
@@ -635,8 +642,15 @@ export default function TIPage() {
       setDb(rDb.data)
       if (rActivity.data) setActivity(rActivity.data)
       if (rErrors.data) setErrors(rErrors.data)
+      if (rAnalytics.data) setAnalytics(rAnalytics.data)
     } catch { /* silent */ }
     finally { setLoading(false) }
+  }, [])
+
+  const loadAnalytics = useCallback(async (assocId: string) => {
+    const params = assocId ? `?assoc_id=${assocId}` : ''
+    const r = await api.get<AnalyticsData>(`/ti/analytics${params}`).catch(() => ({ data: null }))
+    if (r.data) setAnalytics(r.data)
   }, [])
 
   const refresh = useCallback(() => {
@@ -1302,7 +1316,107 @@ export default function TIPage() {
 
       {/* ── TAB: ARQUITETURA ── */}
       {activeTab === 'arch' && <ArchDiagram />}
-      {activeTab === 'analytics' && <AnalyticsPanel />}
+      {activeTab === 'analytics' && (
+        <div className="flex flex-col gap-3">
+          {/* APDEX */}
+          {analytics && (
+            <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-6">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">APDEX Score (24h)</span>
+                <div className="flex items-end gap-2">
+                  <span className={`text-4xl font-black tabular-nums ${analytics.apdex.score >= 0.94 ? 'text-green-600' : analytics.apdex.score >= 0.85 ? 'text-blue-600' : analytics.apdex.score >= 0.7 ? 'text-amber-500' : 'text-red-600'}`}>
+                    {analytics.apdex.score.toFixed(2)}
+                  </span>
+                  <span className={`mb-1 text-xs font-semibold px-2 py-0.5 rounded-full ${analytics.apdex.score >= 0.94 ? 'bg-green-100 text-green-700' : analytics.apdex.score >= 0.85 ? 'bg-blue-100 text-blue-700' : analytics.apdex.score >= 0.7 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                    {analytics.apdex.rating}
+                  </span>
+                </div>
+                <span className="text-[10px] text-gray-400">{analytics.apdex.total_requests.toLocaleString('pt-BR')} requisições · T=300ms</span>
+              </div>
+              <div className="flex-1 flex gap-4 text-xs text-gray-500 border-l border-gray-100 pl-6">
+                <div><span className="font-semibold text-green-600">≥0.94</span> Excelente</div>
+                <div><span className="font-semibold text-blue-600">≥0.85</span> Bom</div>
+                <div><span className="font-semibold text-amber-500">≥0.70</span> Regular</div>
+                <div><span className="font-semibold text-red-500">&lt;0.70</span> Ruim</div>
+              </div>
+            </div>
+          )}
+
+          {/* Filtro de associação + gráfico 7d */}
+          <div className="bg-white rounded-xl border border-gray-100 p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-700">Atividade — 7 dias</span>
+              {analytics && (
+                <select
+                  value={analyticsAssoc}
+                  onChange={e => { setAnalyticsAssoc(e.target.value); loadAnalytics(e.target.value) }}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white text-gray-600 focus:outline-none"
+                >
+                  <option value="">Todas as associações</option>
+                  {analytics.associacoes.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {analytics && analytics.dias.length > 0 ? (() => {
+              const maxOps = Math.max(...analytics.dias.map(d => d.operacoes), 1)
+              const maxReceita = Math.max(...analytics.receita.map(r => r.total), 1)
+              const receitaByDay = Object.fromEntries(analytics.receita.map(r => [r.dia, r.total]))
+              const dayLabels = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
+              return (
+                <div className="flex flex-col gap-2">
+                  {analytics.dias.map((d, i) => {
+                    const receita = receitaByDay[d.dia] ?? 0
+                    const opsW = Math.round((d.operacoes / maxOps) * 100)
+                    const recW = Math.round((receita / maxReceita) * 100)
+                    const dow = dayLabels[new Date(d.dia + 'T12:00:00').getDay()]
+                    const labelDia = `${dow} ${d.dia.slice(8,10)}/${d.dia.slice(5,7)}`
+                    const apdexColor = d.apdex == null ? 'text-gray-300' : d.apdex >= 0.94 ? 'text-green-600' : d.apdex >= 0.85 ? 'text-blue-600' : d.apdex >= 0.7 ? 'text-amber-500' : 'text-red-500'
+                    return (
+                      <div key={i} className="flex items-center gap-3 text-xs">
+                        <span className="w-16 text-gray-400 shrink-0 text-right">{labelDia}</span>
+                        <div className="flex-1 flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-full bg-gray-100 rounded-full h-2">
+                              <div className="bg-[#26619c] h-2 rounded-full transition-all" style={{ width: `${opsW}%` }} />
+                            </div>
+                            <span className="w-16 text-right tabular-nums text-gray-600">{d.operacoes.toLocaleString('pt-BR')} ops</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-full bg-gray-100 rounded-full h-2">
+                              <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${recW}%` }} />
+                            </div>
+                            <span className="w-16 text-right tabular-nums text-emerald-600">R$ {receita.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                        <span className={`w-10 text-right tabular-nums font-semibold shrink-0 ${apdexColor}`}>
+                          {d.apdex != null ? d.apdex.toFixed(2) : '—'}
+                        </span>
+                        {d.erros > 0 && <span className="w-12 text-right text-red-500 tabular-nums shrink-0">{d.erros} err</span>}
+                      </div>
+                    )
+                  })}
+                  <div className="flex items-center gap-3 text-[10px] text-gray-400 mt-1 border-t border-gray-50 pt-2">
+                    <span className="w-16" />
+                    <div className="flex gap-4 flex-1">
+                      <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-[#26619c] inline-block" /> Operações</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-emerald-500 inline-block" /> Receita</span>
+                    </div>
+                    <span className="w-10 text-right">APDEX</span>
+                  </div>
+                </div>
+              )
+            })() : (
+              <p className="text-xs text-gray-400 text-center py-6">Sem dados de atividade nos últimos 7 dias.</p>
+            )}
+          </div>
+
+          {/* ETL Pipeline */}
+          <AnalyticsPanel />
+        </div>
+      )}
 
     </div>
   )

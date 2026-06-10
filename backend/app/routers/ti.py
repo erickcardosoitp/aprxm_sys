@@ -492,6 +492,105 @@ VACUUM_TABLES = [
 ]
 
 
+@router.get("/analytics", summary="APDEX + atividade 7d + receita diária por associação")
+async def analytics(
+    assoc_id: str | None = None,
+    current: CurrentUser = Depends(require_admin_master),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    # Lista de associações disponíveis
+    assocs = (await session.execute(text(
+        "SELECT id, name FROM associations ORDER BY name"
+    ))).fetchall()
+
+    # Filtro de associação
+    assoc_filter = ""
+    assoc_params: dict = {}
+    if assoc_id:
+        assoc_filter = "AND association_id = :assoc_id"
+        assoc_params["assoc_id"] = assoc_id
+
+    # APDEX global últimas 24h (T=300ms)
+    apdex_row = (await session.execute(text("""
+        SELECT
+            COUNT(*) FILTER (WHERE duration_ms <= 300)          AS satisfied,
+            COUNT(*) FILTER (WHERE duration_ms BETWEEN 301 AND 1200) AS tolerating,
+            COUNT(*) AS total
+        FROM api_request_logs
+        WHERE created_at > NOW() - INTERVAL '24 hours'
+    """))).fetchone()
+    satisfied, tolerating, total = int(apdex_row[0] or 0), int(apdex_row[1] or 0), int(apdex_row[2] or 1)
+    apdex = round((satisfied + tolerating / 2) / max(total, 1), 3)
+    apdex_rating = "Excelente" if apdex >= 0.94 else "Bom" if apdex >= 0.85 else "Regular" if apdex >= 0.7 else "Ruim"
+
+    # Atividade por dia — 7d (ops + erros)
+    ops_7d = (await session.execute(text(f"""
+        SELECT
+            DATE(l.created_at AT TIME ZONE 'America/Sao_Paulo') AS dia,
+            COUNT(*) AS operacoes,
+            COUNT(*) FILTER (WHERE l.status_code >= 400) AS erros,
+            ROUND(AVG(l.duration_ms))::int AS avg_ms
+        FROM api_request_logs l
+        JOIN users u ON u.id = l.user_id::uuid
+        WHERE l.created_at > NOW() - INTERVAL '7 days'
+          AND l.user_id IS NOT NULL
+          {assoc_filter.replace('association_id', 'u.association_id')}
+        GROUP BY DATE(l.created_at AT TIME ZONE 'America/Sao_Paulo')
+        ORDER BY dia ASC
+    """), assoc_params))).fetchall()
+
+    # Receita diária — 7d
+    receita_7d = (await session.execute(text(f"""
+        SELECT
+            DATE(transaction_at AT TIME ZONE 'America/Sao_Paulo') AS dia,
+            SUM(amount) AS total
+        FROM transactions
+        WHERE type = 'income'
+          AND is_reversal = false
+          AND transaction_at > NOW() - INTERVAL '7 days'
+          {assoc_filter}
+        GROUP BY DATE(transaction_at AT TIME ZONE 'America/Sao_Paulo')
+        ORDER BY dia ASC
+    """), assoc_params))).fetchall()
+
+    # APDEX por dia — 7d
+    apdex_7d = (await session.execute(text("""
+        SELECT
+            DATE(created_at AT TIME ZONE 'America/Sao_Paulo') AS dia,
+            COUNT(*) FILTER (WHERE duration_ms <= 300)               AS satisfied,
+            COUNT(*) FILTER (WHERE duration_ms BETWEEN 301 AND 1200) AS tolerating,
+            COUNT(*) AS total
+        FROM api_request_logs
+        WHERE created_at > NOW() - INTERVAL '7 days'
+        GROUP BY DATE(created_at AT TIME ZONE 'America/Sao_Paulo')
+        ORDER BY dia ASC
+    """))).fetchall()
+
+    apdex_by_day = {}
+    for r in apdex_7d:
+        s, t, tot = int(r[1] or 0), int(r[2] or 0), int(r[3] or 1)
+        apdex_by_day[str(r[0])] = round((s + t / 2) / max(tot, 1), 3)
+
+    return {
+        "associacoes": [{"id": str(r[0]), "name": r[1]} for r in assocs],
+        "apdex": {"score": apdex, "rating": apdex_rating, "total_requests": total},
+        "dias": [
+            {
+                "dia": str(r[0]),
+                "operacoes": int(r[1]),
+                "erros": int(r[2]),
+                "avg_ms": int(r[3] or 0),
+                "apdex": apdex_by_day.get(str(r[0]), None),
+            }
+            for r in ops_7d
+        ],
+        "receita": [
+            {"dia": str(r[0]), "total": float(r[1])}
+            for r in receita_7d
+        ],
+    }
+
+
 @router.post("/vacuum", summary="VACUUM ANALYZE nas tabelas principais (cron semanal)")
 async def run_vacuum(request: Request) -> dict:
     import os
