@@ -249,14 +249,10 @@ async def search_residents_global(
               {type_clause}
               {street_clause}
               AND (
-                unaccent(r.full_name) ILIKE unaccent(:q)
+                r.full_name ILIKE :q
                 OR r.cpf ILIKE :qraw
                 OR r.phone_primary ILIKE :q
                 OR r.phone_secondary ILIKE :q
-                OR unaccent(r.address_street) ILIKE unaccent(:q)
-                OR r.address_city ILIKE :q
-                OR r.address_cep ILIKE :q
-                {f"OR (REGEXP_REPLACE(r.phone_primary, '\\D', '', 'g') ILIKE :qdigits OR REGEXP_REPLACE(r.phone_secondary, '\\D', '', 'g') ILIKE :qdigits)" if q_digits else ""}
               )
             ORDER BY r.full_name
             LIMIT 20
@@ -265,7 +261,6 @@ async def search_residents_global(
             "aid": str(current.association_id),
             "q": f"%{q_clean}%",
             "qraw": f"%{q_clean.replace('.','').replace('-','')}%",
-            **( {"qdigits": f"%{q_digits}%"} if q_digits else {} ),
             **( {"rtype": type} if type else {} ),
             **( {"street_pat": f"%{street.strip()}%"} if street else {} ),
         },
@@ -304,23 +299,11 @@ async def list_residents(
     if responsible_id:
         stmt = stmt.where(Resident.responsible_id == responsible_id)
     if q:
-        import unicodedata
-        def _norm(s: str) -> str:
-            return unicodedata.normalize('NFD', s).encode('ascii', 'ignore').decode().lower()
-        q_norm = _norm(q)
         q_digits = ''.join(c for c in q if c.isdigit())
-        from sqlalchemy import func as sa_func
-        filters = [
-            Resident.full_name.ilike(f"%{q}%"),
-            sa_func.unaccent(Resident.full_name).ilike(f"%{q_norm}%"),
-        ]
+        filters = [Resident.full_name.ilike(f"%{q}%")]
+        filters.append(Resident.phone_primary.ilike(f"%{q}%"))
         if q_digits:
-            from sqlalchemy import func
-            filters.append(func.regexp_replace(Resident.phone_primary, r'\D', '', 'g').ilike(f"%{q_digits}%"))
-            filters.append(func.regexp_replace(Resident.phone_secondary, r'\D', '', 'g').ilike(f"%{q_digits}%"))
-        else:
-            filters.append(Resident.phone_primary.ilike(f"%{q}%"))
-            filters.append(Resident.phone_secondary.ilike(f"%{q}%"))
+            filters.append(Resident.phone_secondary.ilike(f"%{q_digits}%"))
         stmt = stmt.where(or_(*filters))
     stmt = stmt.order_by(Resident.full_name).limit(limit).offset(offset)
     result = await session.execute(stmt)
