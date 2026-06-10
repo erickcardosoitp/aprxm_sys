@@ -487,9 +487,11 @@ async def get_so(
                so.phase_id, sop.name AS phase_name, sop.color AS phase_color,
                so.attachments, so.impacted_residents,
                so.created_at, so.updated_at, so.assigned_to,
-               so.requester_resident_id, so.request_date
+               so.requester_resident_id, so.request_date,
+               au.full_name AS assigned_to_name
         FROM service_orders so
         LEFT JOIN service_order_phases sop ON sop.id = so.phase_id
+        LEFT JOIN users au ON au.id = so.assigned_to
         WHERE so.id = :so_id AND so.association_id IN ({ids_str})
     """), {"so_id": str(so_id)})).fetchone()
     if not row:
@@ -518,6 +520,7 @@ async def get_so(
         "assigned_to": str(row[31]) if row[31] else None,
         "requester_resident_id": str(row[32]) if row[32] else None,
         "request_date": str(row[33]) if row[33] else None,
+        "assigned_to_name": row[34],
     }
 
 
@@ -707,13 +710,14 @@ async def list_sos(
                so.area, so.service_impacted, so.category_name,
                so.requester_name, so.requester_phone,
                so.address_cep, so.address_street, so.address_number, so.address_complement,
-               so.community_wide, so.created_at, so.assigned_to, so.assigned_to_name,
+               so.community_wide, so.created_at, so.assigned_to, au.full_name AS assigned_to_name,
                so.created_by, so.association_id,
                so.phase_id, sop.name AS phase_name, sop.color AS phase_color,
                u.full_name AS created_by_name
         FROM service_orders so
         LEFT JOIN service_order_phases sop ON sop.id = so.phase_id
         LEFT JOIN users u ON u.id = so.created_by
+        LEFT JOIN users au ON au.id = so.assigned_to
         WHERE {where_sql}
         ORDER BY so.created_at DESC
     """), params)).fetchall()
