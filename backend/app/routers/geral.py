@@ -53,9 +53,10 @@ async def list_linked_associations(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     _require_aggregator(current)
-    ids = [str(i) for i in current.linked_association_ids]
-    if not ids:
-        return []
+    seen = dict.fromkeys(
+        [str(current.association_id)] + [str(i) for i in current.linked_association_ids]
+    )
+    ids = list(seen.keys())
     result = await session.execute(
         text("SELECT id, name, slug FROM associations WHERE id = ANY(:ids)"),
         {"ids": ids},
