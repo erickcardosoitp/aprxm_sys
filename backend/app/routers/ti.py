@@ -78,6 +78,7 @@ async def health_check(
         text("SELECT pg_size_pretty(pg_database_size(current_database()))")
     )).scalar() or "?"
 
+    from app.core.resilience import all_circuit_breakers
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "db": {"ok": db_ok, "ping_ms": db_ms, "size": db_size},
@@ -92,6 +93,7 @@ async def health_check(
             "applied_at": migration_row[1].isoformat() if migration_row[1] else None,
             "description": migration_row[2],
         },
+        "circuit_breakers": all_circuit_breakers(),
         "trend_24h": [
             {
                 "hour": r[0].isoformat() if hasattr(r[0], 'isoformat') else str(r[0]),

@@ -30,17 +30,19 @@ def _r2_client():
 
 
 def _list_prefix(client, prefix: str) -> list[dict]:
-    try:
+    from app.core.resilience import r2_cb
+    def _do():
         resp = client.list_objects_v2(Bucket=settings.r2_bucket_name, Prefix=prefix)
-        files = resp.get("Contents", [])
         return [
             {
                 "arquivo": o["Key"].replace(prefix, ""),
                 "size_kb": round(o["Size"] / 1024, 1),
                 "atualizado_em": o["LastModified"].isoformat(),
             }
-            for o in files
+            for o in resp.get("Contents", [])
         ]
+    try:
+        return r2_cb.call_sync(_do)
     except Exception:
         return []
 

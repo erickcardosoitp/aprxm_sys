@@ -5,6 +5,7 @@ from pathlib import Path
 from supabase import Client, create_client  # type: ignore
 
 from app.config import get_settings
+from app.core.resilience import supabase_cb
 
 settings = get_settings()
 
@@ -44,13 +45,15 @@ class StorageService:
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         storage_path = f"{self._assoc}/{folder}/{uuid.uuid4().hex}{ext}"
 
-        client.storage.from_(self._bucket).upload(
-            path=storage_path,
-            file=file_bytes,
-            file_options={"content-type": content_type, "upsert": "true"},
-        )
+        def _do_upload():
+            client.storage.from_(self._bucket).upload(
+                path=storage_path,
+                file=file_bytes,
+                file_options={"content-type": content_type, "upsert": "true"},
+            )
+            return client.storage.from_(self._bucket).get_public_url(storage_path)
 
-        return client.storage.from_(self._bucket).get_public_url(storage_path)
+        return supabase_cb.call_sync(_do_upload)
 
     def upload_base64(self, data_url: str, folder: str) -> str:
         """

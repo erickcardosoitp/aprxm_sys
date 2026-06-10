@@ -3,6 +3,7 @@ import { Database, Globe, RefreshCw, ChevronDown, ChevronRight, Activity, Zap, A
 import api from '../../services/api'
 
 interface TrendPoint { hour: string; requests: number; errors: number; avg_ms: number }
+interface CircuitBreaker { name: string; state: 'CLOSED' | 'OPEN' | 'HALF_OPEN'; failures: number; threshold: number; recovery_timeout_s: number }
 interface HealthData {
   timestamp: string
   db: { ok: boolean; ping_ms: number; size: string }
@@ -10,6 +11,7 @@ interface HealthData {
   business: { open_cash_sessions: number; active_residents: number; pending_packages: number }
   migrations: { current_version: number; applied_at: string | null; description: string | null }
   trend_24h: TrendPoint[]
+  circuit_breakers?: CircuitBreaker[]
 }
 
 interface Route { path: string; methods: string[]; name: string; tags: string[]; summary: string | null }
@@ -802,6 +804,32 @@ export default function TIPage() {
               </div>
             )}
           </div>
+
+          {/* Circuit Breakers */}
+          {health.circuit_breakers && health.circuit_breakers.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+              <p className="text-xs font-semibold text-gray-600 mb-3">Circuit Breakers — serviços externos</p>
+              <div className="flex flex-col gap-2">
+                {health.circuit_breakers.map(cb => (
+                  <div key={cb.name} className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-600 font-mono">{cb.name}</span>
+                    <div className="flex items-center gap-2">
+                      {cb.failures > 0 && (
+                        <span className="text-[10px] text-gray-400">{cb.failures}/{cb.threshold} falhas</span>
+                      )}
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        cb.state === 'CLOSED'    ? 'bg-green-100 text-green-700' :
+                        cb.state === 'HALF_OPEN' ? 'bg-amber-100 text-amber-700' :
+                                                   'bg-red-100 text-red-700'
+                      }`}>
+                        {cb.state === 'CLOSED' ? '✓ OK' : cb.state === 'HALF_OPEN' ? '⚡ testando' : '✕ OPEN'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Trend horário 24h */}
           {health.trend_24h && health.trend_24h.length > 0 && (

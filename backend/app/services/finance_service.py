@@ -21,12 +21,18 @@ _image_cache: dict[str, bytes] = {}
 async def _fetch_image(url: str) -> bytes:
     if url in _image_cache:
         return _image_cache[url]
-    async with httpx.AsyncClient(timeout=10) as c:
-        r = await c.get(url)
-    if r.status_code != 200:
-        raise ValueError(f"HTTP {r.status_code}")
-    _image_cache[url] = r.content
-    return r.content
+    from app.core.resilience import http_cb
+
+    async def _do():
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(url)
+        if r.status_code != 200:
+            raise ValueError(f"HTTP {r.status_code}")
+        return r.content
+
+    content = await http_cb.call_async(_do)
+    _image_cache[url] = content
+    return content
 
 
 class FinanceService:

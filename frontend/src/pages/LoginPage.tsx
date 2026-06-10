@@ -339,7 +339,7 @@ export default function LoginPage() {
                 </button>
 
                 <div className="flex items-center gap-3 bg-blue-50 rounded-xl px-4 py-3 border border-blue-100">
-                  <Building2 className="w-4 h-4 text-[#26619c] shrink-0" />
+                  <img src="/logo.png" alt="" className="h-4 w-auto object-contain shrink-0" />
                   <div className="min-w-0">
                     <p className="text-xs text-gray-500">{email}</p>
                     <p className="text-sm font-semibold text-[#1a3f6f] leading-tight">{selectedOrg.name}</p>

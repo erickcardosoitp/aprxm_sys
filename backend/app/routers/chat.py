@@ -221,54 +221,51 @@ async def send_message(
 ) -> dict:
     if not body.content and not body.media_url:
         raise HTTPException(400, "Mensagem sem conteúdo")
-    import asyncio as _aio
+    from app.core.resilience import with_db_retry
     reply_sender: str | None = None
     reply_content: str | None = None
     reply_type: str | None = None
-    for attempt in range(3):
-        try:
-            async with AsyncSessionLocal() as session:
-                name_row = await session.execute(
-                    text("SELECT full_name FROM users WHERE id = :uid"),
-                    {"uid": str(current.user_id)},
-                )
-                sender_name = name_row.scalar() or "Usuário"
-                if body.reply_to_id:
-                    ref = (await session.execute(
-                        text("SELECT sender_name, content, message_type FROM chat_messages WHERE id = :rid"),
-                        {"rid": body.reply_to_id},
-                    )).fetchone()
-                    if ref:
-                        reply_sender = ref[0]
-                        reply_content = ref[1]
-                        reply_type = ref[2]
-                result = await session.execute(text("""
-                    INSERT INTO chat_messages
-                        (association_id, sender_id, sender_name, content, message_type, media_url, mention_ids,
-                         reply_to_id, reply_to_sender_name, reply_to_content, reply_to_type)
-                    VALUES (:assoc, :sender, :name, :content, :mtype, :media, CAST(:mentions AS jsonb),
-                            :reply_id, :reply_sender, :reply_content, :reply_type)
-                    RETURNING id, created_at
-                """), {
-                    "assoc": str(current.association_id),
-                    "sender": str(current.user_id),
-                    "name": sender_name,
-                    "content": body.content,
-                    "mtype": body.message_type,
-                    "media": body.media_url,
-                    "mentions": json.dumps(body.mention_ids),
-                    "reply_id": body.reply_to_id,
-                    "reply_sender": reply_sender,
-                    "reply_content": reply_content,
-                    "reply_type": reply_type,
-                })
-                row = result.fetchone()
-                await session.commit()
-            break
-        except Exception:
-            if attempt == 2:
-                raise
-            await _aio.sleep(0.1 * (attempt + 1))
+
+    async def _insert_message():
+        nonlocal reply_sender, reply_content, reply_type
+        async with AsyncSessionLocal() as session:
+            name_row = await session.execute(
+                text("SELECT full_name FROM users WHERE id = :uid"),
+                {"uid": str(current.user_id)},
+            )
+            sender_name = name_row.scalar() or "Usuário"
+            if body.reply_to_id:
+                ref = (await session.execute(
+                    text("SELECT sender_name, content, message_type FROM chat_messages WHERE id = :rid"),
+                    {"rid": body.reply_to_id},
+                )).fetchone()
+                if ref:
+                    reply_sender, reply_content, reply_type = ref[0], ref[1], ref[2]
+            result = await session.execute(text("""
+                INSERT INTO chat_messages
+                    (association_id, sender_id, sender_name, content, message_type, media_url, mention_ids,
+                     reply_to_id, reply_to_sender_name, reply_to_content, reply_to_type)
+                VALUES (:assoc, :sender, :name, :content, :mtype, :media, CAST(:mentions AS jsonb),
+                        :reply_id, :reply_sender, :reply_content, :reply_type)
+                RETURNING id, created_at
+            """), {
+                "assoc": str(current.association_id),
+                "sender": str(current.user_id),
+                "name": sender_name,
+                "content": body.content,
+                "mtype": body.message_type,
+                "media": body.media_url,
+                "mentions": json.dumps(body.mention_ids),
+                "reply_id": body.reply_to_id,
+                "reply_sender": reply_sender,
+                "reply_content": reply_content,
+                "reply_type": reply_type,
+            })
+            row = result.fetchone()
+            await session.commit()
+            return row, sender_name
+
+    row, sender_name = await with_db_retry(_insert_message)
 
     preview = (body.content or "")[:100]
 
