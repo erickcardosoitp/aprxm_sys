@@ -18,9 +18,7 @@ except ImportError:
 class ServiceOrderStatus(str, Enum):
     draft = "draft"
     pending = "pending"
-    open = "open"
     in_progress = "in_progress"
-    waiting_third_party = "waiting_third_party"
     resolved = "resolved"
     archived = "archived"
     cancelled = "cancelled"
@@ -42,7 +40,7 @@ class ServiceOrder(SQLModel, table=True):
 
     title: str = Field(max_length=255)
     description: str
-    status: ServiceOrderStatus = Field(default=ServiceOrderStatus.open, sa_column=Column(SAEnum(ServiceOrderStatus, name='service_order_status', create_type=False), nullable=False))
+    status: ServiceOrderStatus = Field(default=ServiceOrderStatus.pending, sa_column=Column(SAEnum(ServiceOrderStatus, name='service_order_status', create_type=False), nullable=False))
     priority: ServiceOrderPriority = Field(default=ServiceOrderPriority.medium, sa_column=Column(SAEnum(ServiceOrderPriority, name='service_order_priority', create_type=False), nullable=False))
 
     # requester
@@ -84,6 +82,7 @@ class ServiceOrder(SQLModel, table=True):
     resolved_at: datetime | None = None
     cancelled_at: datetime | None = None
     cancellation_reason: str | None = None
+    phase_id: UUID | None = Field(default=None, foreign_key="service_order_phases.id")
 
     # document
     pdf_url: str | None = None

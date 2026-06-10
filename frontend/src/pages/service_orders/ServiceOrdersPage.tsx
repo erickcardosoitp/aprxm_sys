@@ -12,8 +12,7 @@ import DemandasBoard from './DemandasBoard'
 // ─── Extended types (superset of types/index.ts) ──────────────────────────────
 
 type ServiceOrderStatus =
-  | 'draft' | 'pending' | 'open' | 'in_progress' | 'waiting_third_party'
-  | 'resolved' | 'archived' | 'cancelled'
+  | 'draft' | 'pending' | 'in_progress' | 'resolved' | 'archived' | 'cancelled'
 
 type ServiceOrderPriority = 'low' | 'medium' | 'high' | 'critical'
 
@@ -29,6 +28,17 @@ interface ServiceOrder {
   impacted_residents?: {id: string; name: string}[]
   created_at: string; updated_at?: string; created_by_name?: string
   association_name?: string
+  phase_id?: string
+  phase_name?: string
+  phase_color?: string
+}
+
+interface ServiceOrderPhase {
+  id: string
+  name: string
+  color: string
+  sort_order: number
+  active: boolean
 }
 
 interface SOComment {
@@ -77,9 +87,7 @@ interface UserResult {
 const STATUS_LABELS: Record<ServiceOrderStatus, string> = {
   draft: 'Rascunho',
   pending: 'Pendente',
-  open: 'Aberta',
   in_progress: 'Em Andamento',
-  waiting_third_party: 'Ag. Terceiros',
   resolved: 'Concluída',
   archived: 'Arquivada',
   cancelled: 'Cancelada',
@@ -88,9 +96,7 @@ const STATUS_LABELS: Record<ServiceOrderStatus, string> = {
 const STATUS_COLORS: Record<ServiceOrderStatus, string> = {
   draft: 'bg-amber-50 text-amber-600 border border-amber-200',
   pending: 'bg-gray-100 text-gray-600',
-  open: 'bg-blue-100 text-blue-700',
   in_progress: 'bg-yellow-100 text-yellow-700',
-  waiting_third_party: 'bg-purple-100 text-purple-700',
   resolved: 'bg-green-100 text-green-700',
   archived: 'bg-gray-100 text-gray-500',
   cancelled: 'bg-red-100 text-red-600',
@@ -99,9 +105,7 @@ const STATUS_COLORS: Record<ServiceOrderStatus, string> = {
 const STATUS_ICONS: Record<ServiceOrderStatus, React.ReactNode> = {
   draft: <Pencil className="w-3 h-3" />,
   pending: <Clock className="w-3 h-3" />,
-  open: <AlertCircle className="w-3 h-3" />,
   in_progress: <Loader2 className="w-3 h-3" />,
-  waiting_third_party: <Clock className="w-3 h-3" />,
   resolved: <CheckCircle className="w-3 h-3" />,
   archived: <Archive className="w-3 h-3" />,
   cancelled: <XCircle className="w-3 h-3" />,
@@ -151,7 +155,7 @@ const ORG_BY_CATEGORY: Record<string, string[]> = {
 }
 
 const ALL_STATUSES: ServiceOrderStatus[] = [
-  'draft', 'pending', 'open', 'in_progress', 'waiting_third_party', 'resolved', 'archived', 'cancelled',
+  'draft', 'pending', 'in_progress', 'resolved', 'archived', 'cancelled',
 ]
 
 const CAN_WRITE_ROLES = ['admin', 'conferente', 'diretoria_adjunta', 'diretoria', 'conselho', 'superadmin']
@@ -759,22 +763,25 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
 
 interface StatusUpdateModalProps {
   current: ServiceOrderStatus
-  onConfirm: (status: ServiceOrderStatus, notes?: string, resolutionNotes?: string, cancellationReason?: string) => void
+  currentPhaseId?: string
+  phases: ServiceOrderPhase[]
+  onConfirm: (status: ServiceOrderStatus, notes?: string, resolutionNotes?: string, cancellationReason?: string, phaseId?: string) => void
   onClose: () => void
 }
 
-function StatusUpdateModal({ current, onConfirm, onClose }: StatusUpdateModalProps) {
+function StatusUpdateModal({ current, currentPhaseId, phases, onConfirm, onClose }: StatusUpdateModalProps) {
   const [newStatus, setNewStatus] = useState<ServiceOrderStatus>(current)
   const [notes, setNotes] = useState('')
   const [resolutionNotes, setResolutionNotes] = useState('')
   const [cancellationReason, setCancellationReason] = useState('')
+  const [selectedPhaseId, setSelectedPhaseId] = useState<string | undefined>(currentPhaseId)
 
   const changed = newStatus !== current
   const needsResolution = newStatus === 'resolved' && !resolutionNotes.trim()
   const needsCancellation = newStatus === 'cancelled' && !cancellationReason.trim()
   const canConfirm = changed && !needsResolution && !needsCancellation
 
-  const STATUS_ORDER: ServiceOrderStatus[] = ['pending', 'open', 'in_progress', 'waiting_third_party', 'resolved']
+  const STATUS_ORDER: ServiceOrderStatus[] = ['pending', 'in_progress', 'resolved']
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
@@ -816,6 +823,39 @@ function StatusUpdateModal({ current, onConfirm, onClose }: StatusUpdateModalPro
               ))}
             </div>
           </div>
+
+          {/* Fase — só visível em Em Andamento */}
+          {newStatus === 'in_progress' && phases.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">Fase (opcional)</p>
+              <div className="flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPhaseId(undefined)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-sm transition text-left ${
+                    !selectedPhaseId ? 'bg-gray-100 border-gray-400 text-gray-700 font-medium' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-gray-300 shrink-0" />
+                  Sem fase específica
+                </button>
+                {phases.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedPhaseId(p.id)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-sm transition text-left ${
+                      selectedPhaseId === p.id ? 'border-current/60 font-medium' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                    }`}
+                    style={selectedPhaseId === p.id ? { backgroundColor: p.color + '20', color: p.color, borderColor: p.color + '80' } : {}}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Ações laterais */}
           <div>
@@ -900,7 +940,7 @@ function StatusUpdateModal({ current, onConfirm, onClose }: StatusUpdateModalPro
               Cancelar
             </button>
             <button
-              onClick={() => canConfirm && onConfirm(newStatus, notes || undefined, resolutionNotes || undefined, cancellationReason || undefined)}
+              onClick={() => canConfirm && onConfirm(newStatus, notes || undefined, resolutionNotes || undefined, cancellationReason || undefined, newStatus === 'in_progress' ? selectedPhaseId : undefined)}
               disabled={!canConfirm}
               className="flex-1 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -1295,13 +1335,14 @@ function SOPrintModal({ so, onClose }: { so: ServiceOrder; onClose: () => void }
 interface DetailPanelProps {
   so: ServiceOrder
   canWrite: boolean
+  phases: ServiceOrderPhase[]
   onClose: () => void
   onUpdated: () => void
 }
 
 interface PresenceUser { user_id: string; full_name: string; last_seen_at: string }
 
-function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
+function DetailPanel({ so, canWrite, phases, onClose, onUpdated }: DetailPanelProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'demands'>('details')
   const [showPrint, setShowPrint] = useState(false)
   const [comments, setComments] = useState<SOComment[]>([])
@@ -1418,6 +1459,7 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
     notes?: string,
     resolutionNotes?: string,
     cancellationReason?: string,
+    phaseId?: string,
   ) => {
     try {
       await api.patch(`/service-orders/${so.id}/status`, {
@@ -1425,6 +1467,7 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
         notes,
         resolution_notes: resolutionNotes,
         cancellation_reason: cancellationReason,
+        phase_id: phaseId,
       })
       toast.success('Status atualizado.')
       setShowStatusModal(false)
@@ -1445,12 +1488,19 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
       <div className="w-full max-w-xl h-full bg-white shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-wrap">
             <span className="text-xs font-mono text-gray-400">#{String(d.number).padStart(4, '0')}</span>
             <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[d.status]}`}>
               {STATUS_ICONS[d.status]}
               {STATUS_LABELS[d.status]}
             </span>
+            {d.phase_id && d.phase_name && (
+              <span className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: (d.phase_color ?? '#9333ea') + '15', color: d.phase_color ?? '#9333ea' }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: d.phase_color ?? '#9333ea' }} />
+                {d.phase_name}
+              </span>
+            )}
           </div>
           <div className="flex items-center shrink-0 ml-3 gap-2">
             {presence.length > 0 && (
@@ -1519,7 +1569,7 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
             <div className="flex flex-col gap-4">
               {/* Status pipeline */}
               {(() => {
-                const PIPE: ServiceOrderStatus[] = ['pending', 'open', 'in_progress', 'waiting_third_party', 'resolved']
+                const PIPE: ServiceOrderStatus[] = ['pending', 'in_progress', 'resolved']
                 const curIdx = PIPE.indexOf(d.status)
                 const isSideStatus = d.status === 'cancelled' || d.status === 'archived' || d.status === 'draft'
                 return (
@@ -1922,6 +1972,8 @@ function DetailPanel({ so, canWrite, onClose, onUpdated }: DetailPanelProps) {
       {showStatusModal && (
         <StatusUpdateModal
           current={d.status}
+          currentPhaseId={detail.phase_id}
+          phases={phases}
           onConfirm={handleStatusUpdate}
           onClose={() => setShowStatusModal(false)}
         />
@@ -3301,6 +3353,142 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   )
 }
 
+// ─── PhasesConfigTab ──────────────────────────────────────────────────────────
+
+function PhasesConfigTab({ phases, onChanged }: { phases: ServiceOrderPhase[]; onChanged: () => void }) {
+  const [allPhases, setAllPhases] = useState<ServiceOrderPhase[]>([])
+  const [loading, setLoading] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newColor, setNewColor] = useState('#9333ea')
+  const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editColor, setEditColor] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<ServiceOrderPhase[]>('/service-order-phases/all')
+      setAllPhases(res.data)
+    } catch { toast.error('Erro ao carregar fases.') } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return
+    setSaving(true)
+    try {
+      await api.post('/service-order-phases', { name: newName.trim(), color: newColor })
+      setNewName('')
+      setNewColor('#9333ea')
+      await load()
+      onChanged()
+      toast.success('Fase criada.')
+    } catch { toast.error('Erro ao criar fase.') } finally { setSaving(false) }
+  }
+
+  const handleUpdate = async (id: string) => {
+    setSaving(true)
+    try {
+      await api.patch(`/service-order-phases/${id}`, { name: editName.trim(), color: editColor })
+      setEditingId(null)
+      await load()
+      onChanged()
+      toast.success('Fase atualizada.')
+    } catch { toast.error('Erro ao atualizar fase.') } finally { setSaving(false) }
+  }
+
+  const handleToggleActive = async (id: string, active: boolean) => {
+    try {
+      await api.patch(`/service-order-phases/${id}`, { active: !active })
+      await load()
+      onChanged()
+    } catch { toast.error('Erro.') }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Remover esta fase?')) return
+    try {
+      await api.delete(`/service-order-phases/${id}`)
+      await load()
+      onChanged()
+      toast.success('Fase removida.')
+    } catch { toast.error('Erro ao remover fase.') }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col gap-5">
+      <div>
+        <h3 className="text-sm font-semibold text-gray-800 mb-1">Fases de Andamento</h3>
+        <p className="text-xs text-gray-500">Configure as fases disponíveis para OS em andamento.</p>
+      </div>
+
+      {/* Lista */}
+      {loading ? (
+        <div className="text-sm text-gray-400 text-center py-4">Carregando…</div>
+      ) : (
+        <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 overflow-hidden">
+          {allPhases.map(p => (
+            <div key={p.id} className={`flex items-center gap-3 px-4 py-3 ${!p.active ? 'opacity-50 bg-gray-50' : 'bg-white'}`}>
+              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+              {editingId === p.id ? (
+                <div className="flex-1 flex items-center gap-2">
+                  <input value={editName} onChange={e => setEditName(e.target.value)}
+                    className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[#26619c]" />
+                  <input type="color" value={editColor} onChange={e => setEditColor(e.target.value)}
+                    className="w-8 h-8 rounded cursor-pointer border border-gray-200" />
+                  <button onClick={() => handleUpdate(p.id)} disabled={saving}
+                    className="px-2.5 py-1 bg-[#26619c] text-white rounded-lg text-xs font-medium">Salvar</button>
+                  <button onClick={() => setEditingId(null)} className="px-2.5 py-1 text-gray-500 rounded-lg text-xs">Cancelar</button>
+                </div>
+              ) : (
+                <>
+                  <span className={`flex-1 text-sm ${!p.active ? 'line-through text-gray-400' : 'text-gray-700'}`}>{p.name}</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => { setEditingId(p.id); setEditName(p.name); setEditColor(p.color) }}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => handleToggleActive(p.id, p.active)}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition text-xs font-medium">
+                      {p.active ? 'Desativar' : 'Ativar'}
+                    </button>
+                    {!p.active && (
+                      <button onClick={() => handleDelete(p.id)}
+                        className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+          {allPhases.length === 0 && (
+            <div className="px-4 py-6 text-center text-sm text-gray-400">Nenhuma fase cadastrada.</div>
+          )}
+        </div>
+      )}
+
+      {/* Nova fase */}
+      <div className="flex items-center gap-2 pt-1">
+        <input value={newName} onChange={e => setNewName(e.target.value)}
+          placeholder="Nome da fase…"
+          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]"
+          onKeyDown={e => e.key === 'Enter' && handleCreate()}
+        />
+        <input type="color" value={newColor} onChange={e => setNewColor(e.target.value)}
+          className="w-10 h-10 rounded-lg cursor-pointer border border-gray-200 shrink-0" />
+        <button onClick={handleCreate} disabled={!newName.trim() || saving}
+          className="px-4 py-2 bg-[#26619c] text-white rounded-lg text-sm font-medium disabled:opacity-40 flex items-center gap-1.5 shrink-0">
+          <Plus className="w-4 h-4" />Nova fase
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 interface ServiceOrdersPageProps {
@@ -3320,9 +3508,11 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   const canWrite = permissions?.service_orders?.can_write ?? CAN_WRITE_ROLES.includes(role ?? '')
   const canViewOS = role === 'superadmin' || role === 'admin_master' || permissions?.service_orders?.can_view !== false
 
-  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'tarefas'>(
+  const [pageTab, setPageTab] = useState<'ordens' | 'demandas' | 'tarefas' | 'config'>(
     tarefasMode ? 'tarefas' : (canViewOS ? 'ordens' : 'tarefas')
   )
+
+  const [phases, setPhases] = useState<ServiceOrderPhase[]>([])
 
   const [orders, setOrders] = useState<ServiceOrder[]>([])
   const [loading, setLoading] = useState(false)
@@ -3362,12 +3552,19 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   const HIDDEN_BY_DEFAULT: ServiceOrderStatus[] = ['cancelled', 'archived']
 
   const PRIORITY_WEIGHT: Record<ServiceOrderPriority, number> = { critical: 0, high: 1, medium: 2, low: 3 }
-  const STATUS_WEIGHT: Record<ServiceOrderStatus, number> = { pending: 0, open: 1, in_progress: 2, waiting_third_party: 3, draft: 4, resolved: 5, archived: 6, cancelled: 7 }
+  const STATUS_WEIGHT: Record<ServiceOrderStatus, number> = { draft: 0, pending: 1, in_progress: 2, resolved: 3, archived: 4, cancelled: 5 }
 
   const toggleOsSort = (col: typeof sortBy) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortBy(col); setSortDir('asc') }
   }
+
+  const loadPhases = useCallback(async () => {
+    try {
+      const res = await api.get<ServiceOrderPhase[]>('/service-order-phases')
+      setPhases(res.data)
+    } catch { /* silent */ }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -3407,6 +3604,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
 
   const isSimplificaMode = criarMode || consultarMode || tarefasMode || minhasMode
   useEffect(() => { if (!isSimplificaMode) load() }, [load])
+  useEffect(() => { loadPhases() }, [loadPhases])
 
   // Simplifica: auto-abertura
   const soModalWasOpenRef = useRef(false)
@@ -3431,7 +3629,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   }, [anySOModalOpen])
 
   // KPIs
-  const OPEN_STATUSES: ServiceOrderStatus[] = ['pending', 'open', 'in_progress', 'waiting_third_party']
+  const OPEN_STATUSES: ServiceOrderStatus[] = ['pending', 'in_progress']
   const abertas = orders.filter(o => OPEN_STATUSES.includes(o.status)).length
   const criticas = orders.filter(o => o.priority === 'critical' && OPEN_STATUSES.includes(o.status)).length
   const semResponsavel = orders.filter(o => !o.assigned_to && OPEN_STATUSES.includes(o.status)).length
@@ -3484,10 +3682,24 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
         >
           ✅ Tarefas Diárias
         </button>
+        {canWrite && (
+          <button
+            onClick={() => setPageTab('config')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${pageTab === 'config' ? 'text-[#26619c] border-[#26619c]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
+          >
+            <Tag className="w-4 h-4" />Fases
+          </button>
+        )}
       </div>
 
       {pageTab === 'demandas' && <DemandasBoard canWrite={canWrite} />}
       {pageTab === 'tarefas' && <TarefasDiariasTab canWrite={canWrite} />}
+      {pageTab === 'config' && (
+        <PhasesConfigTab
+          phases={phases}
+          onChanged={loadPhases}
+        />
+      )}
 
       {pageTab === 'ordens' && <>
 
@@ -3659,6 +3871,13 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
                       {STATUS_ICONS[so.status]}{STATUS_LABELS[so.status]}
                       {isInconsistent && <AlertCircle className="w-3 h-3 text-amber-500 ml-0.5" />}
                     </span>
+                    {so.phase_id && so.phase_name && (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-1"
+                        style={{ backgroundColor: (so.phase_color ?? '#9333ea') + '20', color: so.phase_color ?? '#9333ea' }}>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: so.phase_color ?? '#9333ea' }} />
+                        {so.phase_name}
+                      </span>
+                    )}
                     <div className="min-w-0">
                       <p className="text-xs text-gray-700 truncate">{so.category_name ?? '—'}</p>
                       {so.org_responsible && <p className="text-[11px] text-gray-400 truncate">{so.org_responsible}</p>}
@@ -3786,6 +4005,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
         <DetailPanel
           so={selectedOrder}
           canWrite={canWrite}
+          phases={phases}
           onClose={() => setSelectedOrder(null)}
           onUpdated={load}
         />

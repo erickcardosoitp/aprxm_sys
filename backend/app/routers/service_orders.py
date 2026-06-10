@@ -95,6 +95,7 @@ class UpdateStatusRequest(BaseModel):
     notes: str | None = None
     resolution_notes: str | None = None
     cancellation_reason: str | None = None
+    phase_id: UUID | None = None
 
 
 class AddCommentRequest(BaseModel):
@@ -167,8 +168,14 @@ async def update_so(
     return {"id": str(so.id), "number": so.number, "status": so.status}
 
 
-_STATUS_EMAIL_TRIGGER = {"in_progress", "resolved", "cancelled"}
-_STATUS_PT = {"in_progress": "Em andamento", "resolved": "Concluída", "cancelled": "Cancelada"}
+_STATUS_PT = {
+    "draft": "Rascunho",
+    "pending": "Pendente",
+    "in_progress": "Em Andamento",
+    "resolved": "Concluída",
+    "archived": "Arquivada",
+    "cancelled": "Cancelada",
+}
 _NOTIFY_EMAIL = "celiapx@institutotiapretinha.org"
 
 
@@ -205,15 +212,15 @@ async def update_status(
         notes=body.notes,
         resolution_notes=body.resolution_notes,
         cancellation_reason=body.cancellation_reason,
+        phase_id=body.phase_id,
         association_ids=assoc_ids,
     )
-    if body.status.value in _STATUS_EMAIL_TRIGGER:
-        try:
-            pdf_bytes = await svc.generate_pdf(so_id, current.association_id, assoc_ids)
-            background_tasks.add_task(_send_status_pdf_email, pdf_bytes, so.number, so.title, body.status.value)
-        except Exception:
-            pass
-    return {"id": str(so.id), "number": so.number, "status": so.status}
+    try:
+        pdf_bytes = await svc.generate_pdf(so_id, current.association_id, assoc_ids)
+        background_tasks.add_task(_send_status_pdf_email, pdf_bytes, so.number, so.title, body.status.value)
+    except Exception:
+        pass
+    return {"id": str(so.id), "number": so.number, "status": so.status, "phase_id": str(so.phase_id) if so.phase_id else None}
 
 
 @router.post("/{so_id}/comments", summary="Adicionar comentário / atualização na OS")
@@ -468,44 +475,49 @@ async def get_so(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    from app.models.service_order import ServiceOrder
-    from sqlmodel import select
     assoc_ids, _ = await _get_group_assoc_ids(str(current.association_id), session)
-    result = await session.execute(
-        select(ServiceOrder).where(
-            ServiceOrder.id == so_id,
-            ServiceOrder.association_id.in_(assoc_ids),
-        )
-    )
-    so = result.scalar_one_or_none()
-    if not so:
+    ids_str = ",".join(f"'{i}'" for i in assoc_ids)
+    row = (await session.execute(text(f"""
+        SELECT so.id, so.number, so.title, so.description, so.status, so.priority,
+               so.area, so.location_detail, so.service_impacted, so.category_name,
+               so.org_responsible, so.requester_name, so.requester_phone, so.requester_email,
+               so.reference_point, so.address_cep, so.address_street, so.address_number,
+               so.address_complement, so.community_wide, so.use_requester_address,
+               so.resolution_notes, so.resolved_at, so.cancellation_reason,
+               so.phase_id, sop.name AS phase_name, sop.color AS phase_color,
+               so.attachments, so.impacted_residents,
+               so.created_at, so.updated_at, so.assigned_to,
+               so.requester_resident_id, so.request_date
+        FROM service_orders so
+        LEFT JOIN service_order_phases sop ON sop.id = so.phase_id
+        WHERE so.id = :so_id AND so.association_id IN ({ids_str})
+    """), {"so_id": str(so_id)})).fetchone()
+    if not row:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="OS não encontrada.")
     return {
-        "id": str(so.id), "number": so.number, "title": so.title,
-        "description": so.description, "status": so.status, "priority": so.priority,
-        "area": so.area,
-        "location_detail": so.location_detail,
-        "service_impacted": so.service_impacted,
-        "category_name": so.category_name,
-        "org_responsible": so.org_responsible,
-        "requester_name": so.requester_name, "requester_phone": so.requester_phone,
-        "requester_email": so.requester_email,
-        "reference_point": so.reference_point,
-        "address_cep": so.address_cep,
-        "address_street": so.address_street,
-        "address_number": so.address_number,
-        "address_complement": so.address_complement,
-        "community_wide": so.community_wide,
-        "use_requester_address": so.use_requester_address,
-        "resolution_notes": so.resolution_notes, "resolved_at": str(so.resolved_at) if so.resolved_at else None,
-        "cancellation_reason": so.cancellation_reason,
-        "attachments": so.attachments or [],
-        "impacted_residents": so.impacted_residents or [],
-        "created_at": str(so.created_at), "updated_at": str(so.updated_at),
-        "assigned_to": str(so.assigned_to) if so.assigned_to else None,
-        "requester_resident_id": str(so.requester_resident_id) if so.requester_resident_id else None,
-        "request_date": str(so.request_date) if so.request_date else None,
+        "id": str(row[0]), "number": row[1], "title": row[2],
+        "description": row[3], "status": row[4], "priority": row[5],
+        "area": row[6], "location_detail": row[7],
+        "service_impacted": row[8], "category_name": row[9],
+        "org_responsible": row[10], "requester_name": row[11],
+        "requester_phone": row[12], "requester_email": row[13],
+        "reference_point": row[14], "address_cep": row[15],
+        "address_street": row[16], "address_number": row[17],
+        "address_complement": row[18], "community_wide": row[19],
+        "use_requester_address": row[20],
+        "resolution_notes": row[21],
+        "resolved_at": str(row[22]) if row[22] else None,
+        "cancellation_reason": row[23],
+        "phase_id": str(row[24]) if row[24] else None,
+        "phase_name": row[25],
+        "phase_color": row[26],
+        "attachments": row[27] or [],
+        "impacted_residents": row[28] or [],
+        "created_at": str(row[29]), "updated_at": str(row[30]),
+        "assigned_to": str(row[31]) if row[31] else None,
+        "requester_resident_id": str(row[32]) if row[32] else None,
+        "request_date": str(row[33]) if row[33] else None,
     }
 
 
@@ -677,49 +689,57 @@ async def list_sos(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     assoc_ids, assoc_names = await _get_group_assoc_ids(str(current.association_id), session)
-    svc = ServiceOrderService(session)
-    sos = await svc.list(current.association_id, status, association_ids=assoc_ids)
-
-    creator_ids = list({s.created_by for s in sos})
-    creator_names: dict[UUID, str] = {}
-    if creator_ids:
-        rows = await session.execute(
-            select(User.id, User.full_name).where(User.id.in_(creator_ids))
-        )
-        creator_names = {r.id: r.full_name for r in rows}
-
-    result = []
-    for s in sos:
-        if priority and s.priority != priority:
-            continue
-        if q:
-            ql = q.lower()
-            if ql not in (s.title or "").lower() and ql not in (s.requester_name or "").lower():
-                continue
-        result.append({
-            "id": str(s.id),
-            "number": s.number,
-            "title": s.title,
-            "description": s.description,
-            "status": s.status,
-            "priority": s.priority,
-            "area": s.area,
-            "service_impacted": s.service_impacted,
-            "category_name": s.category_name,
-            "requester_name": s.requester_name,
-            "requester_phone": s.requester_phone,
-            "address_cep": s.address_cep,
-            "address_street": s.address_street,
-            "address_number": s.address_number,
-            "address_complement": s.address_complement,
-            "community_wide": s.community_wide,
-            "created_at": str(s.created_at),
-            "assigned_to": str(s.assigned_to) if s.assigned_to else None,
-            "assigned_to_name": s.assigned_to_name,
-            "created_by_name": creator_names.get(s.created_by),
-            "association_name": assoc_names.get(str(s.association_id)),
-        })
-    return result
+    ids_str = ",".join(f"'{i}'" for i in assoc_ids)
+    where_clauses = [f"so.association_id IN ({ids_str})"]
+    params: dict = {}
+    if status:
+        where_clauses.append("so.status = :status")
+        params["status"] = status.value
+    if priority:
+        where_clauses.append("so.priority = :priority")
+        params["priority"] = priority.value
+    if q:
+        where_clauses.append("(so.title ILIKE :q OR so.requester_name ILIKE :q)")
+        params["q"] = f"%{q}%"
+    where_sql = " AND ".join(where_clauses)
+    rows = (await session.execute(text(f"""
+        SELECT so.id, so.number, so.title, so.description, so.status, so.priority,
+               so.area, so.service_impacted, so.category_name,
+               so.requester_name, so.requester_phone,
+               so.address_cep, so.address_street, so.address_number, so.address_complement,
+               so.community_wide, so.created_at, so.assigned_to, so.assigned_to_name,
+               so.created_by, so.association_id,
+               so.phase_id, sop.name AS phase_name, sop.color AS phase_color,
+               u.full_name AS created_by_name
+        FROM service_orders so
+        LEFT JOIN service_order_phases sop ON sop.id = so.phase_id
+        LEFT JOIN users u ON u.id = so.created_by
+        WHERE {where_sql}
+        ORDER BY so.created_at DESC
+    """), params)).fetchall()
+    # columns: 0=id,1=number,2=title,3=description,4=status,5=priority,
+    #          6=area,7=service_impacted,8=category_name,9=requester_name,
+    #          10=requester_phone,11=address_cep,12=address_street,
+    #          13=address_number,14=address_complement,15=community_wide,
+    #          16=created_at,17=assigned_to,18=assigned_to_name,
+    #          19=created_by,20=association_id,21=phase_id,
+    #          22=phase_name,23=phase_color,24=created_by_name
+    return [{
+        "id": str(r[0]), "number": r[1], "title": r[2], "description": r[3],
+        "status": r[4], "priority": r[5], "area": r[6],
+        "service_impacted": r[7], "category_name": r[8],
+        "requester_name": r[9], "requester_phone": r[10],
+        "address_cep": r[11], "address_street": r[12], "address_number": r[13],
+        "address_complement": r[14], "community_wide": r[15],
+        "created_at": str(r[16]),
+        "assigned_to": str(r[17]) if r[17] else None,
+        "assigned_to_name": r[18],
+        "created_by_name": r[24],
+        "association_name": assoc_names.get(str(r[20])),
+        "phase_id": str(r[21]) if r[21] else None,
+        "phase_name": r[22],
+        "phase_color": r[23],
+    } for r in rows]
 
 
 @router.post("/{so_id}/presence", summary="Registrar presença na OS")

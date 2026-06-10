@@ -112,6 +112,7 @@ class ServiceOrderService:
         notes: str | None = None,
         resolution_notes: str | None = None,
         cancellation_reason: str | None = None,
+        phase_id: UUID | None = None,
         association_ids: list[UUID] | None = None,
     ) -> ServiceOrder:
         so = await self._get(so_id, association_id, association_ids)
@@ -132,6 +133,11 @@ class ServiceOrderService:
             so.assigned_at = datetime.utcnow()
 
         so.status = new_status
+        # Clear phase when leaving in_progress
+        if new_status != ServiceOrderStatus.in_progress:
+            so.phase_id = None
+        elif phase_id is not None:
+            so.phase_id = phase_id
         so.updated_at = datetime.utcnow()
         self._session.add(so)
 
