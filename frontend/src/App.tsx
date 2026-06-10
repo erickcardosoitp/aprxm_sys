@@ -92,7 +92,7 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 
 function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
   const role = useAuthStore((s) => s.role)
-  if (role !== 'superadmin') return <Navigate to="/overview" replace />
+  if (role !== 'superadmin' && role !== 'admin_master') return <Navigate to="/overview" replace />
   return <>{children}</>
 }
 
@@ -165,7 +165,7 @@ export default function App() {
           <Route path="geral"          element={<RequireAggregator><Suspense fallback={<PageLoader />}><GeralPage /></Suspense></RequireAggregator>} />
           <Route path="superadmin"     element={<RequireSuperAdmin><Suspense fallback={<PageLoader />}><SuperAdminPage /></Suspense></RequireSuperAdmin>} />
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><LogsPage /></Suspense></RequireAdmin></RequireNotOffice>} />
-          <Route path="ti"             element={<RequireAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireAdmin>} />
+          <Route path="ti"             element={<RequireSuperAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireSuperAdmin>} />
           <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />
           <Route path="help"           element={<Navigate to="/help/abrir-caixa" replace />} />
           <Route path="help/:slug"     element={<Suspense fallback={<PageLoader />}><HelpPage /></Suspense>} />

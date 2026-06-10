@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import CurrentUser, get_current_user, require_admin
+from app.core.tenant import CurrentUser, get_current_user, require_admin_master
 from app.database import get_session
 
 router = APIRouter(prefix="/ti", tags=["TI"])
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/ti", tags=["TI"])
 
 @router.get("/health", summary="Saúde do sistema em tempo real")
 async def health_check(
-    current: CurrentUser = Depends(require_admin),
+    current: CurrentUser = Depends(require_admin_master),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     t0 = _time.monotonic()
@@ -108,7 +108,7 @@ async def health_check(
 
 @router.get("/perf", summary="Tempo médio por endpoint (últimas 24h)")
 async def perf_stats(
-    current: CurrentUser = Depends(require_admin),
+    current: CurrentUser = Depends(require_admin_master),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     rows = (await session.execute(text("""
@@ -141,7 +141,7 @@ async def perf_stats(
 
 @router.get("/activity", summary="Atividade de usuários — operações por dia e destaques de busca/login")
 async def user_activity(
-    current: CurrentUser = Depends(require_admin),
+    current: CurrentUser = Depends(require_admin_master),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     # Operações por usuário por dia (últimos 7 dias) — requer user_id populado
@@ -243,7 +243,7 @@ async def user_activity(
 @router.get("/routes", summary="Listar todos os endpoints registrados")
 async def list_routes(
     request: Request,
-    current: CurrentUser = Depends(require_admin),
+    current: CurrentUser = Depends(require_admin_master),
 ) -> list[dict]:
     routes = []
     for route in request.app.routes:
@@ -262,7 +262,7 @@ async def list_routes(
 
 @router.get("/db", summary="Estatísticas do banco de dados")
 async def db_stats(
-    current: CurrentUser = Depends(require_admin),
+    current: CurrentUser = Depends(require_admin_master),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     # Tamanho e contagem por tabela
@@ -415,7 +415,7 @@ async def db_stats(
 
 @router.get("/errors", summary="Últimos erros da API — 4xx e 5xx nas últimas 24h")
 async def recent_errors(
-    current: CurrentUser = Depends(require_admin),
+    current: CurrentUser = Depends(require_admin_master),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     rows = (await session.execute(text("""

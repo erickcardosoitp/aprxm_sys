@@ -83,6 +83,12 @@ async def require_admin(current: CurrentUser = Depends(get_current_user)) -> Cur
     return current
 
 
+async def require_admin_master(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    if not current.is_admin_master:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de admin master necessária.")
+    return current
+
+
 async def require_conferente(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
     if not current.is_conferente:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de conferente ou superior necessária.")
