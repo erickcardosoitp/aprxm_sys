@@ -44,6 +44,19 @@ async def health_check(
         WHERE created_at > NOW() - INTERVAL '1 hour'
     """))).fetchone()
 
+    # Trend horário — últimas 24h em buckets de 1h
+    trend_rows = (await session.execute(text("""
+        SELECT
+            DATE_TRUNC('hour', created_at)              AS hour,
+            COUNT(*)                                    AS requests,
+            COUNT(*) FILTER (WHERE status_code >= 400) AS errors,
+            ROUND(AVG(duration_ms))::int                AS avg_ms
+        FROM api_request_logs
+        WHERE created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY 1
+        ORDER BY 1 ASC
+    """))).fetchall()
+
     # Moradores ativos
     residents_count = (await session.execute(
         text("SELECT COUNT(*) FROM residents WHERE status = 'active'")
@@ -68,6 +81,15 @@ async def health_check(
             "active_residents": int(residents_count),
             "pending_packages": int(packages_pending),
         },
+        "trend_24h": [
+            {
+                "hour": str(r[0])[:16],
+                "requests": int(r[1]),
+                "errors": int(r[2]),
+                "avg_ms": int(r[3] or 0),
+            }
+            for r in trend_rows
+        ],
     }
 
 
@@ -83,8 +105,10 @@ async def perf_stats(
             COUNT(*)                                    AS requests,
             ROUND(AVG(duration_ms))::int                AS avg_ms,
             ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms))::int AS p95_ms,
+            ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms))::int AS p99_ms,
             MAX(duration_ms)                            AS max_ms,
             COUNT(*) FILTER (WHERE status_code >= 400)  AS errors,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE status_code >= 400) / COUNT(*), 1) AS error_pct,
             MAX(created_at)                             AS last_seen
         FROM api_request_logs
         WHERE created_at > NOW() - INTERVAL '24 hours'
@@ -95,8 +119,8 @@ async def perf_stats(
     return [
         {
             "method": r[0], "path": r[1], "requests": r[2],
-            "avg_ms": r[3], "p95_ms": r[4], "max_ms": r[5],
-            "errors": r[6], "last_seen": str(r[7])[:16] if r[7] else None,
+            "avg_ms": r[3], "p95_ms": r[4], "p99_ms": r[5], "max_ms": r[6],
+            "errors": r[7], "error_pct": float(r[8] or 0), "last_seen": str(r[9])[:16] if r[9] else None,
         }
         for r in rows
     ]

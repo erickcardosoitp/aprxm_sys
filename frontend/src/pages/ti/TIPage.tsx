@@ -2,15 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Database, Globe, RefreshCw, ChevronDown, ChevronRight, Activity, Zap, AlertTriangle, Heart, Package, Users, Wallet, GitBranch, Play, CheckCircle2, XCircle, Clock, BarChart2 } from 'lucide-react'
 import api from '../../services/api'
 
+interface TrendPoint { hour: string; requests: number; errors: number; avg_ms: number }
 interface HealthData {
   timestamp: string
   db: { ok: boolean; ping_ms: number; size: string }
   api: { requests_1h: number; avg_ms: number; errors_1h: number }
   business: { open_cash_sessions: number; active_residents: number; pending_packages: number }
+  trend_24h: TrendPoint[]
 }
 
 interface Route { path: string; methods: string[]; name: string; tags: string[]; summary: string | null }
-interface PerfRow { method: string; path: string; requests: number; avg_ms: number; p95_ms: number; max_ms: number; errors: number; last_seen: string | null }
+interface PerfRow { method: string; path: string; requests: number; avg_ms: number; p95_ms: number; p99_ms: number; max_ms: number; errors: number; error_pct: number; last_seen: string | null }
 interface UserOps24h { nome: string; operacoes: number; erros: number; avg_ms: number; ultimo_acesso: string | null }
 interface UserOps7d { nome: string; dia: string; operacoes: number; erros: number }
 interface SearchStat { path: string; requests: number; avg_ms: number; p95_ms: number; max_ms: number }
@@ -578,7 +580,7 @@ export default function TIPage() {
   const [searchRoute, setSearchRoute] = useState('')
   const [searchPerf, setSearchPerf] = useState('')
   const [perfChip, setPerfChip] = useState<'all' | 'login' | 'search' | 'slow'>('all')
-  const [sortPerf, setSortPerf] = useState<'avg_ms' | 'p95_ms' | 'requests' | 'errors'>('avg_ms')
+  const [sortPerf, setSortPerf] = useState<'avg_ms' | 'p95_ms' | 'p99_ms' | 'requests' | 'errors'>('avg_ms')
   const [sortTable, setSortTable] = useState<'total_bytes' | 'row_estimate' | 'dead_rows' | 'name'>('total_bytes')
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -773,21 +775,34 @@ export default function TIPage() {
               <p className="text-[10px] text-gray-400 mt-0.5">aguardando retirada</p>
             </div>
 
-            {db && (
-              <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <Heart className="w-4 h-4 text-[#26619c]" />
-                  <p className="text-xs font-semibold text-gray-600">Cache do Banco</p>
-                </div>
-                <p className={`text-2xl font-bold tabular-nums ${db.cache.hit_pct >= 95 ? 'text-green-600' : db.cache.hit_pct >= 80 ? 'text-amber-600' : 'text-red-600'}`}>
-                  {db.cache.hit_pct}%
-                </p>
-                <p className="text-[10px] text-gray-400 mt-0.5">hit ratio · ideal ≥ 95%</p>
-              </div>
-            )}
           </div>
 
-          {/* Queries ativas */}
+          {/* Trend horário 24h */}
+          {health.trend_24h && health.trend_24h.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+              <p className="text-xs font-semibold text-gray-600 mb-3">Requests e erros — últimas 24h (por hora)</p>
+              <div className="flex items-end gap-0.5 h-16 overflow-x-auto">
+                {health.trend_24h.map((t, i) => {
+                  const maxReq = Math.max(...health.trend_24h.map(x => x.requests), 1)
+                  const h = Math.max(4, Math.round((t.requests / maxReq) * 60))
+                  const errPct = t.requests > 0 ? t.errors / t.requests : 0
+                  return (
+                    <div key={i} className="flex flex-col items-center gap-0.5 flex-1 min-w-[12px]"
+                      title={`${t.hour.slice(11,16)} — ${t.requests} req · ${t.errors} erros · avg ${t.avg_ms}ms`}>
+                      <div style={{ height: h }} className={`w-full rounded-t-sm ${errPct > 0.1 ? 'bg-red-400' : errPct > 0.02 ? 'bg-amber-400' : 'bg-[#26619c]/70'}`} />
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="flex justify-between text-[9px] text-gray-400 mt-1">
+                <span>{health.trend_24h[0]?.hour.slice(11,16)}</span>
+                <span className="text-[9px] text-gray-400">azul = ok · amarelo = {'>'} 2% erros · vermelho = {'>'} 10%</span>
+                <span>{health.trend_24h[health.trend_24h.length-1]?.hour.slice(11,16)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Queries ativas — alerta no topo do health */}
           {db && db.active_queries.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col gap-2">
               <div className="flex items-center gap-2">
@@ -807,51 +822,85 @@ export default function TIPage() {
               ))}
             </div>
           )}
+
+          {/* Atividade de usuários — pertence a Saúde, não a Performance */}
+          {activity && (
+            <Section title="Atividade de usuários (24h)" icon={Users} count={activity.ops_24h.length} defaultOpen={true}>
+              {activity.ops_24h.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-6">Sem dados — user_id começa a ser registrado a partir de agora.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-gray-100 bg-gray-50/50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Usuário</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Operações</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Erros</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Média resp.</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Último acesso</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {activity.ops_24h.map((u, i) => (
+                        <tr key={i} className="hover:bg-gray-50 transition">
+                          <td className="px-3 py-2 text-sm font-medium text-gray-700">{u.nome}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-semibold text-[#26619c]">{u.operacoes.toLocaleString('pt-BR')}</td>
+                          <td className={`px-3 py-2 text-right tabular-nums ${u.erros > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>{u.erros > 0 ? u.erros : '—'}</td>
+                          <td className={`px-3 py-2 text-right tabular-nums text-xs ${perfColor(u.avg_ms)}`}>{fmtMs(u.avg_ms)}</td>
+                          <td className="px-3 py-2 text-xs text-gray-400">{u.ultimo_acesso || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+          )}
         </div>
       )}
 
-      {/* ── TAB: DB (cards de resumo legacy + tabelas) ── */}
-      {(activeTab === 'db' || activeTab === 'perf') && db && (
+      {/* ── TAB: PERFORMANCE — summary cards ── */}
+      {activeTab === 'perf' && perf.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-            <p className="text-xs text-gray-500 mb-1">Cache Hit (DB)</p>
-            <p className={`text-2xl font-bold ${db.cache.hit_pct >= 95 ? 'text-green-600' : db.cache.hit_pct >= 80 ? 'text-amber-600' : 'text-red-600'}`}>{db.cache.hit_pct}%</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">ideal ≥ 95%</p>
-          </div>
           <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
             <p className="text-xs text-gray-500 mb-1">Endpoints lentos</p>
             <p className={`text-2xl font-bold ${slowEndpoints > 0 ? 'text-red-600' : 'text-green-600'}`}>{slowEndpoints}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">média {'>'} 0.80s</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">avg {'>'} 0.8s nas 24h</p>
           </div>
           <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-            <p className="text-xs text-gray-500 mb-1">Queries ativas</p>
+            <p className="text-xs text-gray-500 mb-1">Taxa de erro global</p>
+            {(() => { const total = perf.reduce((s,r)=>s+r.requests,0); const errs = perf.reduce((s,r)=>s+r.errors,0); const pct = total>0 ? (errs/total*100).toFixed(1) : '0'; return (<><p className={`text-2xl font-bold ${Number(pct)>5?'text-red-600':Number(pct)>1?'text-amber-600':'text-green-600'}`}>{pct}%</p><p className="text-[10px] text-gray-400 mt-0.5">{errs} erros / {total.toLocaleString('pt-BR')} req</p></>) })()}
+          </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+            <p className="text-xs text-gray-500 mb-1">P99 do sistema</p>
+            {(() => { const sorted = [...perf].sort((a,b)=>b.p99_ms-a.p99_ms); const p = sorted[0]?.p99_ms ?? 0; return (<><p className={`text-2xl font-bold ${perfColor(p)}`}>{fmtMs(p)}</p><p className="text-[10px] text-gray-400 mt-0.5 truncate">{sorted[0]?.path?.split('/').slice(-2).join('/') ?? '—'}</p></>) })()}
+          </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+            <p className="text-xs text-gray-500 mb-1">Total req (24h)</p>
+            <p className="text-2xl font-bold text-gray-800">{perf.reduce((s,r)=>s+r.requests,0).toLocaleString('pt-BR')}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">{perf.length} endpoints distintos</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: BANCO — summary cards ── */}
+      {activeTab === 'db' && db && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+            <p className="text-xs text-gray-500 mb-1">Cache Hit (DB)</p>
+            <p className={`text-2xl font-bold ${db.cache.hit_pct >= 95 ? 'text-green-600' : db.cache.hit_pct >= 80 ? 'text-amber-600' : 'text-red-600'}`}>{db.cache.hit_pct}%</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">ideal ≥ 95% · shared_buffers</p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+            <p className="text-xs text-gray-500 mb-1">Queries ativas agora</p>
             <p className={`text-2xl font-bold ${db.active_queries.length > 0 ? 'text-amber-600' : 'text-green-600'}`}>{db.active_queries.length}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">pg_stat_activity non-idle</p>
           </div>
           <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
             <p className="text-xs text-gray-500 mb-1">Tabelas / Índices</p>
             <p className="text-2xl font-bold text-gray-800">{db.tables.length} / {db.indexes.length}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">schema public</p>
           </div>
-        </div>
-      )}
-
-      {/* Queries ativas */}
-      {db && db.active_queries.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-600" />
-            <p className="text-sm font-semibold text-amber-800">Queries em execução agora</p>
-          </div>
-          {db.active_queries.map(q => (
-            <div key={q.pid} className="bg-white rounded-xl border border-amber-100 p-3">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-mono text-gray-500">PID {q.pid}</span>
-                <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{q.state}</span>
-                {q.wait_event && <span className="text-[10px] text-gray-400">{q.wait_type}: {q.wait_event}</span>}
-                <span className="ml-auto text-sm font-bold text-amber-700">{q.duration_s.toFixed(2)}s</span>
-              </div>
-              <code className="text-xs text-gray-700 block truncate">{q.query}</code>
-            </div>
-          ))}
         </div>
       )}
 
@@ -884,7 +933,7 @@ export default function TIPage() {
                 <tr>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-16">Método</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Path</th>
-                  {([['avg_ms','Média'],['p95_ms','P95'],['requests','Requests'],['errors','Erros']] as const).map(([col, label]) => (
+                  {([['avg_ms','Média'],['p95_ms','P95'],['p99_ms','P99'],['requests','Req'],['errors','Erros']] as const).map(([col, label]) => (
                     <th key={col} onClick={() => setSortPerf(col)}
                       className={`px-3 py-2 text-right text-xs font-semibold cursor-pointer select-none hover:text-[#26619c] ${sortPerf === col ? 'text-[#26619c]' : 'text-gray-500'}`}>
                       {label} {sortPerf === col ? '↓' : ''}
@@ -902,8 +951,9 @@ export default function TIPage() {
                     <td className="px-3 py-2 font-mono text-xs text-gray-700 max-w-[280px] truncate">{r.path}</td>
                     <td className={`px-3 py-2 text-right text-sm tabular-nums font-semibold ${perfColor(r.avg_ms)}`}>{fmtMs(r.avg_ms)}</td>
                     <td className="px-3 py-2 text-right text-xs text-gray-500 tabular-nums">{fmtMs(r.p95_ms)}</td>
+                    <td className={`px-3 py-2 text-right text-xs tabular-nums ${perfColor(r.p99_ms)}`}>{fmtMs(r.p99_ms)}</td>
                     <td className="px-3 py-2 text-right text-xs text-gray-600 tabular-nums">{r.requests.toLocaleString('pt-BR')}</td>
-                    <td className={`px-3 py-2 text-right text-xs tabular-nums ${r.errors > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>{r.errors > 0 ? r.errors : '—'}</td>
+                    <td className={`px-3 py-2 text-right text-xs tabular-nums ${r.errors > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>{r.errors > 0 ? `${r.errors} (${r.error_pct}%)` : '—'}</td>
                     <td className="px-3 py-2 text-xs text-gray-400 hidden sm:table-cell">{r.last_seen || '—'}</td>
                   </tr>
                 ))}
@@ -951,40 +1001,6 @@ export default function TIPage() {
         </div>
       )}
 
-      {/* ── Atividade de usuários ── */}
-      {activity && (
-        <Section title="Atividade de usuários (24h)" icon={Users} count={activity.ops_24h.length} defaultOpen={true}>
-          {activity.ops_24h.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-6">Sem dados — user_id começa a ser registrado a partir de agora.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b border-gray-100 bg-gray-50/50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Usuário</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Operações</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Erros</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Média resp.</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Último acesso</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {activity.ops_24h.map((u, i) => (
-                    <tr key={i} className="hover:bg-gray-50 transition">
-                      <td className="px-3 py-2 text-sm font-medium text-gray-700">{u.nome}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-[#26619c]">{u.operacoes.toLocaleString('pt-BR')}</td>
-                      <td className={`px-3 py-2 text-right tabular-nums ${u.erros > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>{u.erros > 0 ? u.erros : '—'}</td>
-                      <td className={`px-3 py-2 text-right tabular-nums text-xs ${perfColor(u.avg_ms)}`}>{fmtMs(u.avg_ms)}</td>
-                      <td className="px-3 py-2 text-xs text-gray-400">{u.ultimo_acesso || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Section>
-      )}
-
       </>)}
       {/* ── TAB: BANCO ── */}
       {activeTab === 'db' && db && (
@@ -1022,8 +1038,29 @@ export default function TIPage() {
         </Section>
       )}
 
+      {/* ── Queries ativas no DB tab ── */}
+      {activeTab === 'db' && db && db.active_queries.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600" />
+            <p className="text-sm font-semibold text-amber-800">Queries em execução agora</p>
+          </div>
+          {db.active_queries.map(q => (
+            <div key={q.pid} className="bg-white rounded-xl border border-amber-100 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-mono text-gray-500">PID {q.pid}</span>
+                <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{q.state}</span>
+                {q.wait_event && <span className="text-[10px] text-gray-400">{q.wait_type}: {q.wait_event}</span>}
+                <span className="ml-auto text-sm font-bold text-amber-700" title="Duração observada desde primeira detecção">≥{Math.max(q.duration_s, queryFirstSeenRef.current[q.pid] ? (Date.now() - queryFirstSeenRef.current[q.pid]) / 1000 : 0).toFixed(1)}s</span>
+              </div>
+              <code className="text-xs text-gray-700 block truncate">{q.query}</code>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ── ÍNDICES ── */}
-      {db && (
+      {activeTab === 'db' && db && (
         <Section title="Índices menos utilizados (candidatos a remover)" icon={Database} count={db.indexes.length} defaultOpen={false}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
