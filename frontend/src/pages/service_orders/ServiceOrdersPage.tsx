@@ -3546,7 +3546,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<ServiceOrderStatus | ''>('')
   const [filterPriority, setFilterPriority] = useState<ServiceOrderPriority | ''>('')
-  const [sortBy, setSortBy] = useState<'number' | 'title' | 'priority' | 'status' | 'category' | 'date' | 'requester' | ''>('priority')
+  const [sortBy, setSortBy] = useState<'number' | 'title' | 'priority' | 'status' | 'category' | 'date' | 'requester' | 'assigned' | ''>('priority')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const HIDDEN_BY_DEFAULT: ServiceOrderStatus[] = ['cancelled', 'archived']
@@ -3596,6 +3596,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
       else if (sortBy === 'category') { va = (a.category_name ?? '').toLowerCase(); vb = (b.category_name ?? '').toLowerCase() }
       else if (sortBy === 'date')     { va = a.created_at;                     vb = b.created_at }
       else if (sortBy === 'requester'){ va = (a.community_wide ? 'zzz' : (a.requester_name ?? '').toLowerCase()); vb = (b.community_wide ? 'zzz' : (b.requester_name ?? '').toLowerCase()) }
+      else if (sortBy === 'assigned') { va = (a.assigned_to_name ?? '').toLowerCase(); vb = (b.assigned_to_name ?? '').toLowerCase() }
       else /* default: priority */    { va = PRIORITY_WEIGHT[a.priority] ?? 9; vb = PRIORITY_WEIGHT[b.priority] ?? 9 }
       const cmp = va < vb ? -1 : va > vb ? 1 : 0
       return sortDir === 'asc' ? cmp : -cmp
@@ -3797,7 +3798,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
             </button>
           )
           return (
-            <div className="hidden sm:grid grid-cols-[4px_56px_1fr_120px_130px_140px_110px_100px] bg-gray-50 border-b border-gray-200 px-4 py-2.5 gap-3 items-center">
+            <div className="hidden sm:grid grid-cols-[4px_56px_1fr_120px_130px_140px_110px_100px_110px] bg-gray-50 border-b border-gray-200 px-4 py-2.5 gap-3 items-center">
               <div />
               <Th col="number" label="#" />
               <Th col="title" label="Título" />
@@ -3806,6 +3807,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
               <Th col="category" label="Categoria" />
               <Th col="date" label="Data" />
               <Th col="requester" label="Solicitante" />
+              <Th col="assigned" label="Atribuído a" />
             </div>
           )
         })()}
@@ -3856,7 +3858,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
                   </div>
 
                   {/* Desktop layout — tabular */}
-                  <div className="hidden sm:grid grid-cols-[4px_56px_1fr_120px_130px_140px_110px_100px] items-center gap-3 px-4 py-3">
+                  <div className="hidden sm:grid grid-cols-[4px_56px_1fr_120px_130px_140px_110px_100px_110px] items-center gap-3 px-4 py-3">
                     <div className={`h-full rounded-full ${priorityBar}`} style={{minHeight: '32px'}} />
                     <span className="text-xs font-mono text-gray-400 group-hover:text-gray-600">#{String(so.number).padStart(4, '0')}</span>
                     <div className="min-w-0">
@@ -3890,6 +3892,16 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
                         </span>
                       ) : so.requester_name ? (
                         <span className="text-xs text-gray-700 truncate block">{so.requester_name.split(' ').slice(0,2).join(' ')}</span>
+                      ) : <span className="text-xs text-gray-300">—</span>}
+                    </div>
+                    <div className="min-w-0">
+                      {so.assigned_to_name ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-[#26619c]/10 text-[#26619c] text-[8px] font-bold flex items-center justify-center shrink-0 border border-[#26619c]/20">
+                            {so.assigned_to_name.split(' ').filter(Boolean).slice(0,2).map(n => n[0]).join('').toUpperCase()}
+                          </span>
+                          <span className="text-xs text-gray-600 truncate">{so.assigned_to_name.split(' ')[0]}</span>
+                        </span>
                       ) : <span className="text-xs text-gray-300">—</span>}
                     </div>
                   </div>
