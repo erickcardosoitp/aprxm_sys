@@ -183,7 +183,7 @@ export function AppShell() {
       api.get('/packages/counts').catch(() => {})
     }
     warm()
-    const id = setInterval(warm, 4 * 60_000)
+    const id = setInterval(warm, 9 * 60_000)
     return () => clearInterval(id)
   }, [role])
 
