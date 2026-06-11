@@ -2105,12 +2105,7 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
   const [onlyMine, setOnlyMine] = useState(false)
   const [sortBy, setSortBy] = useState<'title' | 'assigned' | 'due_date' | 'status' | 'created_at' | 'updated_at' | ''>('')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-  const [viewMode, setViewMode] = useState<'list' | 'byUser'>(() => (role === 'admin' || role === 'superadmin' || role === 'admin_master') ? 'byUser' : 'list')
   const [collapsedUsers, setCollapsedUsers] = useState<Set<string>>(new Set())
-  const [expandedByUserTask, setExpandedByUserTask] = useState<Set<string>>(new Set())
-  const toggleByUserTask = (id: string) => setExpandedByUserTask(prev => {
-    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
-  })
 
   const draftKey = (taskId: string, idx: number) => `${taskId}:${idx}`
   const getDraft = (taskId: string, idx: number) =>
@@ -2842,6 +2837,344 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
     </button>
   )
 
+  const renderCard = (task: DailyTask) => {
+    const isExpanded = expandedId === task.id
+    const doneCount = task.checklist.filter(i => ['done', 'cancelled', 'postergado'].includes(getItemStatus(i))).length
+    const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
+    return (
+      <div key={task.id} className={`rounded-2xl border shadow-sm overflow-hidden ${
+        task.status === 'done' ? 'border-gray-200 bg-gray-50' :
+        task.status === 'in_progress' ? 'border-amber-200 bg-amber-50/40' :
+        task.status === 'waiting_validation' ? 'border-yellow-300 bg-yellow-50/50' :
+        isOverdue ? 'border-red-200 bg-red-50/30' :
+        'border-gray-200 bg-white'
+      }`}>
+        <div className="p-4">
+          <div className="flex items-start gap-3">
+            <select
+              value={task.status}
+              onChange={e => setTaskStatus(task, e.target.value as DailyTask['status'])}
+              className={`shrink-0 text-xs font-semibold rounded-xl border px-2 py-1.5 cursor-pointer appearance-none text-center min-w-[100px] transition focus:outline-none focus:ring-2 focus:ring-[#26619c]
+                ${task.status === 'done' ? 'bg-green-50 border-green-300 text-green-700' :
+                  task.status === 'in_progress' ? 'bg-amber-50 border-amber-300 text-amber-700' :
+                  task.status === 'blocked' ? 'bg-red-50 border-red-300 text-red-700' :
+                  task.status === 'waiting_validation' ? 'bg-yellow-50 border-yellow-300 text-yellow-700' :
+                  'bg-gray-50 border-gray-300 text-gray-600'}`}
+            >
+              <option value="pending">⬜ Pendente</option>
+              <option value="in_progress">🔄 Em andamento</option>
+              <option value="blocked">🚫 Bloqueada</option>
+              <option value="waiting_validation">⏳ Ag. Validação</option>
+              {isAdmin && <option value="done">✅ Concluída</option>}
+            </select>
+            {isAdmin && task.status !== 'done' && (
+              <button
+                onClick={() => setTaskStatus(task, 'done')}
+                title="Concluir tarefa"
+                className="relative shrink-0 w-7 h-7 rounded-full bg-green-500 hover:bg-green-600 active:scale-95 flex items-center justify-center transition-all duration-150 shadow-sm"
+              >
+                <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-60" />
+                <CheckCircle className="w-4 h-4 text-white relative z-10" />
+              </button>
+            )}
+            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpanded(task.id)}>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {task.assigned_to_name && (
+                  <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1 leading-none">
+                    👤 {task.assigned_to_name}
+                  </span>
+                )}
+                {task.due_date && (
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium leading-none ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                    {isOverdue ? '⚠ Atrasada · ' : ''}📅 {new Date(task.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                  </span>
+                )}
+                {task.service_order_title && (
+                  <span className="text-xs px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 leading-none truncate max-w-[140px]">{task.service_order_title}</span>
+                )}
+              </div>
+              <p className={`text-base font-semibold leading-snug ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{task.title}</p>
+              {task.checklist.length > 0 && (
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="flex-1 bg-gray-200 rounded-full h-2 max-w-[100px]">
+                    <div className="bg-[#26619c] h-2 rounded-full transition-all" style={{ width: `${(doneCount / task.checklist.length) * 100}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-500 font-medium">{doneCount}/{task.checklist.length} itens</span>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => toggleExpanded(task.id)}
+              className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 transition shrink-0"
+            >
+              {isExpanded ? '▲' : '▼'}
+            </button>
+          </div>
+          {(() => {
+            const openedDate = task.created_at ? task.created_at.slice(0, 10) : null
+            const daysOpen = openedDate && task.status !== 'done'
+              ? Math.floor((Date.now() - new Date(openedDate + 'T12:00:00').getTime()) / 86400000)
+              : null
+            const updatedDate = task.updated_at ? task.updated_at.slice(0, 10) : null
+            return (
+              <div className="hidden md:flex items-center gap-4 px-4 pb-3 text-[11px] text-gray-400 border-t border-gray-50 pt-2 mt-1">
+                <span className="flex items-center gap-1">
+                  <span className="font-medium text-gray-500">Abertura:</span>
+                  {openedDate ? new Date(openedDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="font-medium text-gray-500">Dias aberto:</span>
+                  {daysOpen !== null
+                    ? <span className={`font-semibold ${daysOpen > 7 ? 'text-red-500' : daysOpen > 3 ? 'text-amber-500' : 'text-gray-600'}`}>{daysOpen}d</span>
+                    : '—'}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="font-medium text-gray-500">Últ. atualiz.:</span>
+                  {updatedDate ? new Date(updatedDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                </span>
+              </div>
+            )
+          })()}
+        </div>
+        {isExpanded && (
+          <div className="border-t border-gray-100 p-4 flex flex-col gap-4">
+            {task.description && <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{task.description}</p>}
+            {task.checklist.length > 0 && (
+              <ul className="flex flex-col gap-2">
+                {task.checklist
+                  .map((item, i) => ({ item, i }))
+                  .sort((a, b) => {
+                    const terminal = ['done', 'cancelled', 'postergado']
+                    const aT = terminal.includes(getItemStatus(a.item)) ? 1 : 0
+                    const bT = terminal.includes(getItemStatus(b.item)) ? 1 : 0
+                    return aT - bT
+                  })
+                  .map(({ item, i }) => {
+                  const itemComments = (comments[task.id] || []).filter(c => c.checklist_index === i)
+                  const scKey = `${task.id}:${i}`
+                  const currentStatus = getItemStatus(item)
+                  const statusInfo = ITEM_STATUSES.find(s => s.value === currentStatus) ?? ITEM_STATUSES[0]
+                  const scOpen = statusChangeOpen[scKey] ?? false
+                  const scDraft = statusChangeDraft[scKey] ?? { newStatus: currentStatus, comment: '' }
+                  const acompOpen = expandedAcomp[scKey] ?? false
+                  const draft = getDraft(task.id, i)
+                  return (
+                    <li key={i} className="flex flex-col rounded-2xl border border-gray-100 overflow-hidden bg-white shadow-sm">
+                      <div className="flex items-start gap-3 px-4 py-3">
+                        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                          <button
+                            onClick={() => setStatusChangeOpen(prev => ({ ...prev, [scKey]: !scOpen }))}
+                            title="Alterar status do item"
+                            className={`self-start px-3 py-1 rounded-full text-xs font-semibold border transition hover:opacity-80 whitespace-nowrap ${statusInfo.badge}`}
+                          >
+                            {statusInfo.label}
+                          </button>
+                          <span className={`text-sm leading-snug ${currentStatus === 'done' ? 'line-through text-gray-400' : currentStatus === 'cancelled' ? 'line-through text-red-400' : currentStatus === 'postergado' ? 'line-through text-orange-400' : 'text-gray-800'}`}>
+                            {item.text}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setExpandedAcomp(prev => ({ ...prev, [scKey]: !acompOpen }))
+                            if (!acompOpen) loadComments(task.id)
+                          }}
+                          className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl font-semibold transition shrink-0 min-w-[44px] min-h-[36px] ${acompOpen ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          {itemComments.length > 0 ? itemComments.length : <span className="hidden sm:inline">Acompanhar</span>}
+                        </button>
+                      </div>
+                      {scOpen && (
+                        <div className="border-t border-gray-100 bg-gray-50 px-3 py-3 flex flex-col gap-2.5">
+                          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Alterar status do item</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {ITEM_STATUSES.map(s => (
+                              <button key={s.value}
+                                onClick={() => setStatusChangeDraft(prev => ({ ...prev, [scKey]: { ...scDraft, newStatus: s.value } }))}
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-medium border transition ${scDraft.newStatus === s.value ? s.sel : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}
+                              >
+                                {s.label}
+                              </button>
+                            ))}
+                          </div>
+                          <textarea
+                            value={scDraft.comment}
+                            onChange={e => setStatusChangeDraft(prev => ({ ...prev, [scKey]: { ...scDraft, comment: e.target.value } }))}
+                            placeholder="Descreva o que aconteceu (obrigatório ao alterar status)…"
+                            rows={2}
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-[#26619c] bg-white"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => setStatusChangeOpen(prev => ({ ...prev, [scKey]: false }))}
+                              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5">Cancelar</button>
+                            <button
+                              onClick={() => changeItemStatus(task, i, scDraft.newStatus, scDraft.comment)}
+                              disabled={!scDraft.comment.trim() || scDraft.newStatus === currentStatus}
+                              className="text-xs px-3 py-1.5 bg-[#26619c] text-white rounded-lg disabled:opacity-40 hover:bg-[#1a4a7a] transition font-medium"
+                            >
+                              Salvar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {acompOpen && (
+                        <div className="border-t border-blue-100 bg-blue-50/30 px-3 py-3 flex flex-col gap-2.5">
+                          {itemComments.length === 0 && (
+                            <p className="text-[10px] text-gray-400 italic">Nenhum acompanhamento ainda. Seja o primeiro!</p>
+                          )}
+                          {itemComments.map(c => {
+                            const isEditing = editingComment[c.id] !== null && editingComment[c.id] !== undefined
+                            return (
+                            <div key={c.id} className="flex items-start gap-2">
+                              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold mt-0.5"
+                                style={{ backgroundColor: avatarColor(c.author_name) }}>
+                                {c.author_name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex-1 rounded-xl rounded-tl-sm px-3 py-2 bg-white border border-gray-100 shadow-sm flex flex-col gap-0.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-semibold text-gray-600">{c.author_name}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-gray-400" title={new Date(c.created_at).toLocaleString('pt-BR')}>{relTime(c.created_at)}</span>
+                                    <button
+                                      onClick={() => setEditingComment(prev => ({
+                                        ...prev,
+                                        [c.id]: isEditing ? null : c.comment,
+                                      }))}
+                                      className={`text-xs px-2 py-1 rounded-lg border transition min-w-[36px] min-h-[28px] flex items-center justify-center ${isEditing ? 'border-red-200 text-red-500 bg-red-50 hover:bg-red-100' : 'border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100 hover:text-[#26619c]'}`}
+                                      title={isEditing ? 'Cancelar edição' : 'Editar comentário'}
+                                    >
+                                      {isEditing ? '✕' : '✏️'}
+                                    </button>
+                                  </div>
+                                </div>
+                                {isEditing ? (
+                                  <div className="flex flex-col gap-1.5 mt-1">
+                                    <textarea
+                                      value={editingComment[c.id] ?? ''}
+                                      onChange={e => setEditingComment(prev => ({ ...prev, [c.id]: e.target.value }))}
+                                      rows={2}
+                                      className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-[#26619c]"
+                                      autoFocus
+                                    />
+                                    <div className="flex justify-end gap-1.5">
+                                      <button onClick={() => setEditingComment(prev => ({ ...prev, [c.id]: null }))}
+                                        className="text-[10px] text-gray-500 px-2 py-1">Cancelar</button>
+                                      <button
+                                        onClick={() => saveCommentEdit(task.id, c.id, editingComment[c.id] ?? '')}
+                                        disabled={savingEditComment === c.id || !(editingComment[c.id] ?? '').trim()}
+                                        className="text-[10px] px-3 py-1 bg-[#26619c] text-white rounded-lg disabled:opacity-40 hover:bg-[#1a4a7a] transition">
+                                        {savingEditComment === c.id ? '...' : 'Salvar'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{c.comment}</p>
+                                )}
+                                {c.attachment_urls?.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {c.attachment_urls.map((url, j) =>
+                                      url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                                        ? <img key={j} src={url} alt="" onClick={() => setLightboxUrl(url)}
+                                            className="h-12 w-12 object-cover rounded border border-gray-200 cursor-pointer hover:opacity-80" />
+                                        : <a key={j} href={url} target="_blank" rel="noopener noreferrer"
+                                            className="text-[10px] text-blue-600 hover:underline">📎 {url.split('/').pop()}</a>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            )
+                          })}
+                          <div className="flex flex-col gap-1.5 bg-white border border-gray-200 rounded-xl p-2.5 shadow-sm">
+                            <textarea
+                              value={draft.text}
+                              onChange={e => setDraft(task.id, i, { text: e.target.value })}
+                              placeholder="Escreva seu acompanhamento…"
+                              rows={2}
+                              className="w-full text-xs border-0 resize-none focus:outline-none placeholder-gray-400 text-gray-800"
+                            />
+                            {draft.photos.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {draft.photos.map((url, j) =>
+                                  url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                                    ? <img key={j} src={url} alt="" className="h-10 w-10 object-cover rounded border border-gray-200" />
+                                    : <span key={j} className="text-[10px] text-blue-600">📎 {url.split('/').pop()}</span>
+                                )}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 border-t border-gray-100 pt-1.5">
+                              <label className={`text-[10px] px-2.5 py-1.5 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 transition flex items-center gap-1 text-gray-600 ${draft.uploading ? 'opacity-50' : ''}`}>
+                                📷 {draft.uploading ? '...' : 'Foto'}
+                                <input type="file" accept="image/*" className="hidden"
+                                  onChange={e => handleCommentPhotoUpload(task.id, i, e)}
+                                  disabled={draft.uploading} />
+                              </label>
+                              <button
+                                onClick={() => submitComment(task.id, i)}
+                                disabled={savingComment || (!draft.text.trim() && draft.photos.length === 0)}
+                                className="ml-auto text-xs px-4 py-1.5 bg-[#26619c] text-white rounded-lg hover:bg-[#1a4a7a] disabled:opacity-40 transition font-medium">
+                                {savingComment ? 'Enviando…' : 'Enviar'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {(comments[task.id] || []).filter(c => c.checklist_index == null).length > 0 && (
+              <div className="flex flex-col gap-2 border-t border-gray-100 pt-2">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Observações gerais</p>
+                {(comments[task.id] || []).filter(c => c.checklist_index == null).map(c => (
+                  <div key={c.id} className="flex items-end gap-2">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold"
+                      style={{ backgroundColor: avatarColor(c.author_name) }}>
+                      {(c.author_name || 'U').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="max-w-[85%] rounded-2xl rounded-bl-sm px-2.5 py-1.5 bg-gray-100 flex flex-col gap-0.5">
+                      <span className="text-[10px] font-semibold text-gray-500">{c.author_name}</span>
+                      {c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap">{c.comment}</p>}
+                      <span className="text-[10px] text-gray-400 self-end">{relTime(c.created_at)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {task.attachment_urls?.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-gray-500 font-medium">Anexos</p>
+                {task.attachment_urls.map((url, i) => {
+                  const name = decodeURIComponent(url.split('/').pop() ?? 'arquivo')
+                  const isImg = /\.(jpe?g|png|gif|webp|svg)$/i.test(url)
+                  const isPdf = /\.pdf$/i.test(url)
+                  return (
+                    <button key={i} onClick={() => setViewerUrl(url)}
+                      className="text-xs text-blue-600 hover:underline flex items-center gap-1 text-left">
+                      {isImg ? '🖼' : isPdf ? '📄' : '📎'} {name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {canWrite && (
+              <div className="flex items-center gap-3 pt-1 border-t border-gray-100">
+                <button onClick={() => startEdit(task)} className="text-xs text-[#26619c] hover:underline">✏ Editar</button>
+                {role !== 'operator' && role !== 'viewer' && (
+                  <button onClick={() => handleDelete(task.id)}
+                    className="text-xs text-red-400 hover:text-red-600 ml-auto border border-red-200 px-2 py-0.5 rounded-lg hover:bg-red-50 transition">
+                    🗑 Excluir
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {/* ── Barra de controles ── */}
@@ -2900,20 +3233,6 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
             <span className="text-xs text-gray-500">Minhas</span>
           </label>
           <span className="text-xs text-gray-400 font-medium">{displayedTasks.length}</span>
-          {isAdmin && (
-            <div className="flex border border-gray-200 rounded-lg overflow-hidden">
-              <button onClick={() => setViewMode('byUser')}
-                className={`px-2 py-1 ${viewMode === 'byUser' ? 'bg-[#26619c] text-white' : 'text-gray-500 hover:bg-gray-50'} transition`}
-                title="Visão por usuário">
-                <LayoutDashboard className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => setViewMode('list')}
-                className={`px-2 py-1 border-l border-gray-200 ${viewMode === 'list' ? 'bg-[#26619c] text-white' : 'text-gray-500 hover:bg-gray-50'} transition`}
-                title="Lista">
-                <Tag className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
           <button onClick={() => setShowReport(true)}
             className="w-7 h-7 flex items-center justify-center border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 transition" title="Relatório">
             <FileText className="w-3.5 h-3.5" />
@@ -2935,148 +3254,8 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         <p className="text-sm text-gray-400 text-center py-10">{tasks.length === 0 ? 'Nenhuma tarefa. Crie a primeira!' : 'Nenhuma tarefa corresponde ao filtro.'}</p>
       )}
 
-      {/* ── Visão por usuário (admin): minhas tarefas em cima, outros agrupados abaixo ── */}
-      {!loading && isAdmin && viewMode === 'byUser' && (
-        <div className="flex flex-col gap-3">
-          {/* Minhas tarefas — lista normal */}
-          {myTasks.length > 0 && (
-            <>
-              <div className="flex items-center gap-2 px-1">
-                <span className="text-xs font-semibold text-[#26619c]">Minhas tarefas</span>
-                <span className="text-xs bg-[#26619c]/10 text-[#26619c] px-1.5 py-0.5 rounded-full font-semibold">{myTasks.length}</span>
-              </div>
-              {[...myTasks].sort(byUserSortDesc).map(t => {
-                const itemDone = t.checklist.filter(i => ['done','cancelled','postergado'].includes(i.status ?? (i.done ? 'done' : ''))).length
-                const overdue = t.due_date && t.due_date < today
-                const isOpen = expandedByUserTask.has(t.id)
-                return (
-                  <div key={t.id} className={`rounded-2xl border shadow-sm overflow-hidden ${
-                    t.status === 'in_progress' ? 'border-amber-200 bg-amber-50/40' :
-                    t.status === 'waiting_validation' ? 'border-yellow-300 bg-yellow-50/50' :
-                    overdue ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-white'
-                  }`}>
-                    <button onClick={() => toggleByUserTask(t.id)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-black/[.02] transition">
-                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                        t.status === 'in_progress' ? 'bg-amber-400' :
-                        t.status === 'blocked' ? 'bg-red-500' :
-                        t.status === 'waiting_validation' ? 'bg-yellow-400' : 'bg-gray-300'
-                      }`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{t.title}</p>
-                        {t.description && <p className="text-xs text-gray-400 truncate">{t.description}</p>}
-                      </div>
-                      {t.checklist.length > 0 && <span className="text-xs text-gray-400 shrink-0">{itemDone}/{t.checklist.length}</span>}
-                      {t.due_date && <span className={`text-xs shrink-0 ${overdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>{t.due_date.slice(5)}</span>}
-                      <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 font-medium ${
-                        t.status === 'in_progress' ? 'bg-amber-100 text-amber-700' :
-                        t.status === 'blocked' ? 'bg-red-100 text-red-600' :
-                        t.status === 'waiting_validation' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'
-                      }`}>
-                        {t.status === 'in_progress' ? 'Andamento' : t.status === 'blocked' ? 'Bloqueada' : t.status === 'waiting_validation' ? 'Validação' : 'Pendente'}
-                      </span>
-                      <span className="text-gray-300 text-xs shrink-0">{isOpen ? '▲' : '▼'}</span>
-                    </button>
-                    {isOpen && t.checklist.length > 0 && (
-                      <div className="border-t border-gray-100 px-4 py-2 flex flex-col gap-1.5">
-                        {t.checklist.map((item, idx) => {
-                          const st = item.status ?? (item.done ? 'done' : 'pending')
-                          return (
-                            <div key={idx} className="flex items-center gap-2">
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${st === 'done' ? 'bg-green-400' : st === 'cancelled' ? 'bg-gray-300' : 'bg-gray-400'}`} />
-                              <p className={`text-xs ${st === 'done' ? 'line-through text-gray-400' : 'text-gray-600'}`}>{item.text}</p>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                    {isOpen && t.description && t.checklist.length === 0 && (
-                      <p className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500">{t.description}</p>
-                    )}
-                  </div>
-                )
-              })}
-            </>
-          )}
-
-          {/* Outros usuários — agrupados, colapsáveis */}
-          {tasksByUser.length > 0 && (
-            <>
-              <div className="flex items-center gap-2 px-1 mt-1">
-                <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs font-semibold text-gray-400">Equipe</span>
-                <div className="flex-1 h-px bg-gray-200" />
-              </div>
-              {tasksByUser.map(({ uid, name, tasks: uTasks }) => {
-                const inProgressCount = uTasks.filter(t => t.status === 'in_progress').length
-                const pendingCount = uTasks.filter(t => t.status === 'pending').length
-                const overdueCount = uTasks.filter(t => t.due_date && t.due_date < today).length
-                const allDone = uTasks.length === 0
-                const isCollapsed = collapsedUsers.has(uid)
-                const toggle = () => setCollapsedUsers(prev => {
-                  const next = new Set(prev); next.has(uid) ? next.delete(uid) : next.add(uid); return next
-                })
-                const initials = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
-                const sorted = [...uTasks].sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9))
-                return (
-                  <div key={uid} className={`rounded-2xl border overflow-hidden ${allDone ? 'border-green-200 bg-green-50/30' : 'border-gray-200 bg-white'}`}>
-                    <button onClick={toggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition text-left">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${allDone ? 'bg-green-100 text-green-700' : 'bg-[#26619c]/10 text-[#26619c]'}`}>
-                        {allDone ? '✓' : initials}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-gray-800 truncate">{name}</span>
-                          {allDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">Tudo concluído</span>}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          {inProgressCount > 0 && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{inProgressCount} em andamento</span>}
-                          {pendingCount > 0 && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{pendingCount} pendente{pendingCount > 1 ? 's' : ''}</span>}
-                          {overdueCount > 0 && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{overdueCount} atrasada{overdueCount > 1 ? 's' : ''}</span>}
-                          {!allDone && inProgressCount === 0 && pendingCount === 0 && <span className="text-xs text-gray-400">{uTasks.length} tarefa{uTasks.length > 1 ? 's' : ''}</span>}
-                        </div>
-                      </div>
-                      <span className="text-gray-300 text-xs">{isCollapsed ? '▼' : '▲'}</span>
-                    </button>
-                    {!isCollapsed && uTasks.length > 0 && (
-                      <div className="border-t border-gray-100 divide-y divide-gray-50">
-                        {sorted.map(t => {
-                          const itemDone = t.checklist.filter(i => ['done','cancelled','postergado'].includes(i.status ?? (i.done ? 'done' : ''))).length
-                          const overdue = t.due_date && t.due_date < today
-                          return (
-                            <div key={t.id} className={`flex items-center gap-3 px-4 py-2.5 ${overdue ? 'bg-red-50/40' : ''}`}>
-                              <span className={`w-2 h-2 rounded-full shrink-0 ${
-                                t.status === 'in_progress' ? 'bg-amber-400' :
-                                t.status === 'blocked' ? 'bg-red-500' :
-                                t.status === 'waiting_validation' ? 'bg-yellow-400' : 'bg-gray-300'
-                              }`} />
-                              <p className="flex-1 text-sm text-gray-700 truncate">{t.title}</p>
-                              {t.checklist.length > 0 && <span className="text-xs text-gray-400 shrink-0">{itemDone}/{t.checklist.length}</span>}
-                              {t.due_date && <span className={`text-xs shrink-0 ${overdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>{t.due_date.slice(5)}</span>}
-                              <span className={`text-xs px-1.5 py-0.5 rounded-full shrink-0 ${
-                                t.status === 'in_progress' ? 'bg-amber-100 text-amber-700' :
-                                t.status === 'blocked' ? 'bg-red-100 text-red-600' :
-                                t.status === 'waiting_validation' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'
-                              }`}>
-                                {t.status === 'in_progress' ? 'Andamento' : t.status === 'blocked' ? 'Bloqueada' : t.status === 'waiting_validation' ? 'Validação' : 'Pendente'}
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                    {!isCollapsed && uTasks.length === 0 && (
-                      <p className="border-t border-gray-100 px-4 py-3 text-xs text-gray-400">Todas concluídas.</p>
-                    )}
-                  </div>
-                )
-              })}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Visão lista ── */}
-      {(!isAdmin || viewMode === 'list') && !loading && displayedTasks.length > 0 && (
+      {/* ── Lista unificada ── */}
+      {!loading && displayedTasks.length > 0 && (
         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px]">
           <div className="w-8 shrink-0" />
           <div className="flex-1 flex items-center gap-4">
@@ -3094,384 +3273,72 @@ function TarefasDiariasTab({ canWrite }: { canWrite: boolean }) {
         </div>
       )}
 
-      {(!isAdmin || viewMode === 'list') && myTasks.length > 0 && (
+      {myTasks.length > 0 && (
         <div className="flex items-center gap-2 px-1">
           <span className="text-xs font-semibold text-[#26619c]">Minhas tarefas</span>
           <span className="text-xs bg-[#26619c]/10 text-[#26619c] px-1.5 py-0.5 rounded-full font-semibold">{myTasks.length}</span>
         </div>
       )}
 
-      {(!isAdmin || viewMode === 'list') && [...myTasks, ...otherTasks].map((task, idx) => {
-        const isExpanded = expandedId === task.id
-        const doneCount = task.checklist.filter(i => ['done', 'cancelled', 'postergado'].includes(getItemStatus(i))).length
-        const isOverdue = task.due_date && task.due_date < today && task.status !== 'done'
-        return (
-          <Fragment key={task.id}>
-          {idx === myTasks.length && otherTasks.length > 0 && (
-            <div className="flex items-center gap-2 px-1 mt-2">
-              <div className="flex-1 h-px bg-gray-200" />
-              <span className="text-xs font-semibold text-gray-400">Demais tarefas</span>
-              <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full font-semibold">{otherTasks.length}</span>
-              <div className="flex-1 h-px bg-gray-200" />
-            </div>
-          )}
-          <div className={`rounded-2xl border shadow-sm overflow-hidden ${
-            task.status === 'done' ? 'border-gray-200 bg-gray-50' :
-            task.status === 'in_progress' ? 'border-amber-200 bg-amber-50/40' :
-            task.status === 'waiting_validation' ? 'border-yellow-300 bg-yellow-50/50' :
-            isOverdue ? 'border-red-200 bg-red-50/30' :
-            'border-gray-200 bg-white'
-          }`}>
-            <div className="p-4">
-              <div className="flex items-start gap-3">
-                {/* Status selector */}
-                <select
-                  value={task.status}
-                  onChange={e => setTaskStatus(task, e.target.value as DailyTask['status'])}
-                  className={`shrink-0 text-xs font-semibold rounded-xl border px-2 py-1.5 cursor-pointer appearance-none text-center min-w-[100px] transition focus:outline-none focus:ring-2 focus:ring-[#26619c]
-                    ${task.status === 'done' ? 'bg-green-50 border-green-300 text-green-700' :
-                      task.status === 'in_progress' ? 'bg-amber-50 border-amber-300 text-amber-700' :
-                      task.status === 'blocked' ? 'bg-red-50 border-red-300 text-red-700' :
-                      task.status === 'waiting_validation' ? 'bg-yellow-50 border-yellow-300 text-yellow-700' :
-                      'bg-gray-50 border-gray-300 text-gray-600'}`}
-                >
-                  <option value="pending">⬜ Pendente</option>
-                  <option value="in_progress">🔄 Em andamento</option>
-                  <option value="blocked">🚫 Bloqueada</option>
-                  <option value="waiting_validation">⏳ Ag. Validação</option>
-                  {isAdmin && <option value="done">✅ Concluída</option>}
-                </select>
-                {/* Bolinha verde animada — admin conclui diretamente */}
-                {isAdmin && task.status !== 'done' && (
-                  <button
-                    onClick={() => setTaskStatus(task, 'done')}
-                    title="Concluir tarefa"
-                    className="relative shrink-0 w-7 h-7 rounded-full bg-green-500 hover:bg-green-600 active:scale-95 flex items-center justify-center transition-all duration-150 shadow-sm"
-                  >
-                    <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-60" />
-                    <CheckCircle className="w-4 h-4 text-white relative z-10" />
-                  </button>
-                )}
+      {myTasks.map(task => renderCard(task))}
 
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpanded(task.id)}>
-                  {/* Badges */}
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {task.assigned_to_name && (
-                      <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1 leading-none">
-                        👤 {task.assigned_to_name}
-                      </span>
-                    )}
-                    {task.due_date && (
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium leading-none ${isOverdue ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
-                        {isOverdue ? '⚠ Atrasada · ' : ''}📅 {new Date(task.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                      </span>
-                    )}
-                    {task.service_order_title && (
-                      <span className="text-xs px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 leading-none truncate max-w-[140px]">{task.service_order_title}</span>
-                    )}
-                  </div>
-                  {/* Título */}
-                  <p className={`text-base font-semibold leading-snug ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{task.title}</p>
-                  {/* Progresso */}
-                  {task.checklist.length > 0 && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <div className="flex-1 bg-gray-200 rounded-full h-2 max-w-[100px]">
-                        <div className="bg-[#26619c] h-2 rounded-full transition-all" style={{ width: `${(doneCount / task.checklist.length) * 100}%` }} />
-                      </div>
-                      <span className="text-xs text-gray-500 font-medium">{doneCount}/{task.checklist.length} itens</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Chevron expand */}
-                <button
-                  onClick={() => toggleExpanded(task.id)}
-                  className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 transition shrink-0"
-                >
-                  {isExpanded ? '▲' : '▼'}
-                </button>
-              </div>
-              {/* Date metadata row — desktop only */}
-              {(() => {
-                const openedDate = task.created_at ? task.created_at.slice(0, 10) : null
-                const daysOpen = openedDate && task.status !== 'done'
-                  ? Math.floor((Date.now() - new Date(openedDate + 'T12:00:00').getTime()) / 86400000)
-                  : null
-                const updatedDate = task.updated_at ? task.updated_at.slice(0, 10) : null
-                return (
-                  <div className="hidden md:flex items-center gap-4 px-4 pb-3 text-[11px] text-gray-400 border-t border-gray-50 pt-2 mt-1">
-                    <span className="flex items-center gap-1">
-                      <span className="font-medium text-gray-500">Abertura:</span>
-                      {openedDate ? new Date(openedDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="font-medium text-gray-500">Dias aberto:</span>
-                      {daysOpen !== null
-                        ? <span className={`font-semibold ${daysOpen > 7 ? 'text-red-500' : daysOpen > 3 ? 'text-amber-500' : 'text-gray-600'}`}>{daysOpen}d</span>
-                        : '—'}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="font-medium text-gray-500">Últ. atualiz.:</span>
-                      {updatedDate ? new Date(updatedDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
-                    </span>
-                  </div>
-                )
-              })()}
-            </div>
-            {isExpanded && (
-              <div className="border-t border-gray-100 p-4 flex flex-col gap-4">
-                {task.description && <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{task.description}</p>}
-                {task.checklist.length > 0 && (
-                  <ul className="flex flex-col gap-2">
-                    {task.checklist
-                      .map((item, i) => ({ item, i }))
-                      .sort((a, b) => {
-                        const terminal = ['done', 'cancelled', 'postergado']
-                        const aT = terminal.includes(getItemStatus(a.item)) ? 1 : 0
-                        const bT = terminal.includes(getItemStatus(b.item)) ? 1 : 0
-                        return aT - bT
-                      })
-                      .map(({ item, i }) => {
-                      const itemComments = (comments[task.id] || []).filter(c => c.checklist_index === i)
-                      const scKey = `${task.id}:${i}`
-                      const currentStatus = getItemStatus(item)
-                      const statusInfo = ITEM_STATUSES.find(s => s.value === currentStatus) ?? ITEM_STATUSES[0]
-                      const scOpen = statusChangeOpen[scKey] ?? false
-                      const scDraft = statusChangeDraft[scKey] ?? { newStatus: currentStatus, comment: '' }
-                      const acompOpen = expandedAcomp[scKey] ?? false
-                      const draft = getDraft(task.id, i)
-                      return (
-                        <li key={i} className="flex flex-col rounded-2xl border border-gray-100 overflow-hidden bg-white shadow-sm">
-                          {/* Item header */}
-                          <div className="flex items-start gap-3 px-4 py-3">
-                            <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                              {/* Status pill */}
-                              <button
-                                onClick={() => setStatusChangeOpen(prev => ({ ...prev, [scKey]: !scOpen }))}
-                                title="Alterar status do item"
-                                className={`self-start px-3 py-1 rounded-full text-xs font-semibold border transition hover:opacity-80 whitespace-nowrap ${statusInfo.badge}`}
-                              >
-                                {statusInfo.label}
-                              </button>
-                              {/* Texto do item */}
-                              <span className={`text-sm leading-snug ${currentStatus === 'done' ? 'line-through text-gray-400' : currentStatus === 'cancelled' ? 'line-through text-red-400' : currentStatus === 'postergado' ? 'line-through text-orange-400' : 'text-gray-800'}`}>
-                                {item.text}
-                              </span>
-                            </div>
-                            {/* Botão acompanhar */}
-                            <button
-                              onClick={() => {
-                                setExpandedAcomp(prev => ({ ...prev, [scKey]: !acompOpen }))
-                                if (!acompOpen) loadComments(task.id)
-                              }}
-                              className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl font-semibold transition shrink-0 min-w-[44px] min-h-[36px] ${acompOpen ? 'bg-[#26619c] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                            >
-                              <MessageSquare className="w-3.5 h-3.5" />
-                              {itemComments.length > 0 ? itemComments.length : <span className="hidden sm:inline">Acompanhar</span>}
-                            </button>
-                          </div>
-
-                          {/* Status change panel */}
-                          {scOpen && (
-                            <div className="border-t border-gray-100 bg-gray-50 px-3 py-3 flex flex-col gap-2.5">
-                              <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Alterar status do item</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {ITEM_STATUSES.map(s => (
-                                  <button key={s.value}
-                                    onClick={() => setStatusChangeDraft(prev => ({ ...prev, [scKey]: { ...scDraft, newStatus: s.value } }))}
-                                    className={`px-2.5 py-1 rounded-full text-[10px] font-medium border transition ${scDraft.newStatus === s.value ? s.sel : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}
-                                  >
-                                    {s.label}
-                                  </button>
-                                ))}
-                              </div>
-                              <textarea
-                                value={scDraft.comment}
-                                onChange={e => setStatusChangeDraft(prev => ({ ...prev, [scKey]: { ...scDraft, comment: e.target.value } }))}
-                                placeholder="Descreva o que aconteceu (obrigatório ao alterar status)…"
-                                rows={2}
-                                className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-[#26619c] bg-white"
-                              />
-                              <div className="flex justify-end gap-2">
-                                <button onClick={() => setStatusChangeOpen(prev => ({ ...prev, [scKey]: false }))}
-                                  className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5">Cancelar</button>
-                                <button
-                                  onClick={() => changeItemStatus(task, i, scDraft.newStatus, scDraft.comment)}
-                                  disabled={!scDraft.comment.trim() || scDraft.newStatus === currentStatus}
-                                  className="text-xs px-3 py-1.5 bg-[#26619c] text-white rounded-lg disabled:opacity-40 hover:bg-[#1a4a7a] transition font-medium"
-                                >
-                                  Salvar
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Acompanhamento panel */}
-                          {acompOpen && (
-                            <div className="border-t border-blue-100 bg-blue-50/30 px-3 py-3 flex flex-col gap-2.5">
-                              {itemComments.length === 0 && (
-                                <p className="text-[10px] text-gray-400 italic">Nenhum acompanhamento ainda. Seja o primeiro!</p>
-                              )}
-                              {itemComments.map(c => {
-                                const isEditing = editingComment[c.id] !== null && editingComment[c.id] !== undefined
-                                const isMine = c.author_name !== 'Usuário' // complemented below
-                                return (
-                                <div key={c.id} className="flex items-start gap-2">
-                                  <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold mt-0.5"
-                                    style={{ backgroundColor: avatarColor(c.author_name) }}>
-                                    {c.author_name.charAt(0).toUpperCase()}
-                                  </div>
-                                  <div className="flex-1 rounded-xl rounded-tl-sm px-3 py-2 bg-white border border-gray-100 shadow-sm flex flex-col gap-0.5">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[10px] font-semibold text-gray-600">{c.author_name}</span>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[10px] text-gray-400" title={new Date(c.created_at).toLocaleString('pt-BR')}>{relTime(c.created_at)}</span>
-                                        <button
-                                          onClick={() => setEditingComment(prev => ({
-                                            ...prev,
-                                            [c.id]: isEditing ? null : c.comment,
-                                          }))}
-                                          className={`text-xs px-2 py-1 rounded-lg border transition min-w-[36px] min-h-[28px] flex items-center justify-center ${isEditing ? 'border-red-200 text-red-500 bg-red-50 hover:bg-red-100' : 'border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100 hover:text-[#26619c]'}`}
-                                          title={isEditing ? 'Cancelar edição' : 'Editar comentário'}
-                                        >
-                                          {isEditing ? '✕' : '✏️'}
-                                        </button>
-                                      </div>
-                                    </div>
-                                    {isEditing ? (
-                                      <div className="flex flex-col gap-1.5 mt-1">
-                                        <textarea
-                                          value={editingComment[c.id] ?? ''}
-                                          onChange={e => setEditingComment(prev => ({ ...prev, [c.id]: e.target.value }))}
-                                          rows={2}
-                                          className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-[#26619c]"
-                                          autoFocus
-                                        />
-                                        <div className="flex justify-end gap-1.5">
-                                          <button onClick={() => setEditingComment(prev => ({ ...prev, [c.id]: null }))}
-                                            className="text-[10px] text-gray-500 px-2 py-1">Cancelar</button>
-                                          <button
-                                            onClick={() => saveCommentEdit(task.id, c.id, editingComment[c.id] ?? '')}
-                                            disabled={savingEditComment === c.id || !(editingComment[c.id] ?? '').trim()}
-                                            className="text-[10px] px-3 py-1 bg-[#26619c] text-white rounded-lg disabled:opacity-40 hover:bg-[#1a4a7a] transition">
-                                            {savingEditComment === c.id ? '...' : 'Salvar'}
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{c.comment}</p>
-                                    )}
-                                    {c.attachment_urls?.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-1">
-                                        {c.attachment_urls.map((url, j) =>
-                                          url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                                            ? <img key={j} src={url} alt="" onClick={() => setLightboxUrl(url)}
-                                                className="h-12 w-12 object-cover rounded border border-gray-200 cursor-pointer hover:opacity-80" />
-                                            : <a key={j} href={url} target="_blank" rel="noopener noreferrer"
-                                                className="text-[10px] text-blue-600 hover:underline">📎 {url.split('/').pop()}</a>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                                )
-                              })}
-                              {/* Input */}
-                              <div className="flex flex-col gap-1.5 bg-white border border-gray-200 rounded-xl p-2.5 shadow-sm">
-                                <textarea
-                                  value={draft.text}
-                                  onChange={e => setDraft(task.id, i, { text: e.target.value })}
-                                  placeholder="Escreva seu acompanhamento…"
-                                  rows={2}
-                                  className="w-full text-xs border-0 resize-none focus:outline-none placeholder-gray-400 text-gray-800"
-                                />
-                                {draft.photos.length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {draft.photos.map((url, j) =>
-                                      url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                                        ? <img key={j} src={url} alt="" className="h-10 w-10 object-cover rounded border border-gray-200" />
-                                        : <span key={j} className="text-[10px] text-blue-600">📎 {url.split('/').pop()}</span>
-                                    )}
-                                  </div>
-                                )}
-                                <div className="flex items-center gap-2 border-t border-gray-100 pt-1.5">
-                                  <label className={`text-[10px] px-2.5 py-1.5 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 transition flex items-center gap-1 text-gray-600 ${draft.uploading ? 'opacity-50' : ''}`}>
-                                    📷 {draft.uploading ? '...' : 'Foto'}
-                                    <input type="file" accept="image/*" className="hidden"
-                                      onChange={e => handleCommentPhotoUpload(task.id, i, e)}
-                                      disabled={draft.uploading} />
-                                  </label>
-                                  <button
-                                    onClick={() => submitComment(task.id, i)}
-                                    disabled={savingComment || (!draft.text.trim() && draft.photos.length === 0)}
-                                    className="ml-auto text-xs px-4 py-1.5 bg-[#26619c] text-white rounded-lg hover:bg-[#1a4a7a] disabled:opacity-40 transition font-medium">
-                                    {savingComment ? 'Enviando…' : 'Enviar'}
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-                {/* Comentários gerais */}
-                {(comments[task.id] || []).filter(c => c.checklist_index == null).length > 0 && (
-                  <div className="flex flex-col gap-2 border-t border-gray-100 pt-2">
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Observações gerais</p>
-                    {(comments[task.id] || []).filter(c => c.checklist_index == null).map(c => (
-                      <div key={c.id} className="flex items-end gap-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-bold"
-                          style={{ backgroundColor: avatarColor(c.author_name) }}>
-                          {(c.author_name || 'U').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="max-w-[85%] rounded-2xl rounded-bl-sm px-2.5 py-1.5 bg-gray-100 flex flex-col gap-0.5">
-                          <span className="text-[10px] font-semibold text-gray-500">{c.author_name}</span>
-                          {c.comment && <p className="text-xs text-gray-700 whitespace-pre-wrap">{c.comment}</p>}
-                          <span className="text-[10px] text-gray-400 self-end">{relTime(c.created_at)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {task.attachment_urls?.length > 0 && (
-                  <div className="flex flex-col gap-1">
-                    <p className="text-xs text-gray-500 font-medium">Anexos</p>
-                    {task.attachment_urls.map((url, i) => {
-                      const name = decodeURIComponent(url.split('/').pop() ?? 'arquivo')
-                      const isImg = /\.(jpe?g|png|gif|webp|svg)$/i.test(url)
-                      const isPdf = /\.pdf$/i.test(url)
-                      return (
-                        <button key={i} onClick={() => setViewerUrl(url)}
-                          className="text-xs text-blue-600 hover:underline flex items-center gap-1 text-left">
-                          {isImg ? '🖼' : isPdf ? '📄' : '📎'} {name}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {canWrite && (
-                  <div className="flex items-center gap-3 pt-1 border-t border-gray-100">
-                    <button onClick={() => startEdit(task)} className="text-xs text-[#26619c] hover:underline">✏ Editar</button>
-                    {role !== 'operator' && role !== 'viewer' && (
-                      <button onClick={() => handleDelete(task.id)}
-                        className="text-xs text-red-400 hover:text-red-600 ml-auto border border-red-200 px-2 py-0.5 rounded-lg hover:bg-red-50 transition">
-                        🗑 Excluir
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+      {!isAdmin && otherTasks.length > 0 && (
+        <>
+          <div className="flex items-center gap-2 px-1 mt-1">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs font-semibold text-gray-400">Demais tarefas</span>
+            <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full font-semibold">{otherTasks.length}</span>
+            <div className="flex-1 h-px bg-gray-200" />
           </div>
-          </Fragment>
-        )
-      })}
+          {otherTasks.map(task => renderCard(task))}
+        </>
+      )}
 
-      {(!isAdmin || viewMode === 'list') && doneTasks.length > 0 && (
+      {isAdmin && tasksByUser.length > 0 && (
+        <>
+          <div className="flex items-center gap-2 px-1 mt-1">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs font-semibold text-gray-400">Equipe</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
+          {tasksByUser.map(({ uid, name, tasks: uTasks }) => {
+            const isCollapsed = collapsedUsers.has(uid)
+            const toggle = () => setCollapsedUsers(prev => {
+              const next = new Set(prev); next.has(uid) ? next.delete(uid) : next.add(uid); return next
+            })
+            const initials = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
+            const inProgressCount = uTasks.filter(t => t.status === 'in_progress').length
+            const pendingCount = uTasks.filter(t => t.status === 'pending').length
+            const overdueCount = uTasks.filter(t => t.due_date && t.due_date < today).length
+            const sorted = [...uTasks].sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9))
+            return (
+              <div key={uid} className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+                <button onClick={toggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition text-left">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-[#26619c]/10 text-[#26619c]">
+                    {initials}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-semibold text-gray-800">{name}</span>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      {inProgressCount > 0 && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{inProgressCount} em andamento</span>}
+                      {pendingCount > 0 && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{pendingCount} pendente{pendingCount > 1 ? 's' : ''}</span>}
+                      {overdueCount > 0 && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{overdueCount} atrasada{overdueCount > 1 ? 's' : ''}</span>}
+                    </div>
+                  </div>
+                  <span className="text-gray-300 text-xs shrink-0">{isCollapsed ? '▼' : '▲'}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="border-t border-gray-100 flex flex-col gap-2 p-3">
+                    {sorted.map(task => renderCard(task))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </>
+      )}
+
+      {doneTasks.length > 0 && (
         <div className="border border-green-200 rounded-2xl overflow-hidden">
           <button onClick={() => setShowDone(v => !v)}
             className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-green-700 hover:bg-green-50 transition">
