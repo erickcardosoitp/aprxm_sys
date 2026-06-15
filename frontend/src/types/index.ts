@@ -12,6 +12,7 @@ export type UserRole =
   | 'conselho'
   | 'operator'
   | 'viewer'
+  | 'agente'
 
 
 export interface AuthState {
