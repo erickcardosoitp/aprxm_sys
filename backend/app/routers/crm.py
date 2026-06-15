@@ -330,29 +330,34 @@ async def agentes_ranking(
 
     aid = str(current.association_id)
 
+    params_month = {"aid": aid, "yr": target_year, "mo": target_month}
+
     # Cobranças registradas por cada operador/agente no mês (caixa + remoto)
     cobrancas_rows = (await session.execute(
         text("""
             SELECT t.created_by AS agent_id,
                    u.full_name  AS agent_name,
-                   COUNT(*)     AS cobrancas
+                   COUNT(*)     AS cobrancas,
+                   array_agg(DISTINCT r.full_name ORDER BY r.full_name) AS residents
             FROM transactions t
             JOIN users u ON u.id = t.created_by
             JOIN mensalidades m ON m.transaction_id = t.id
+            JOIN residents r ON r.id = m.resident_id
             WHERE t.association_id = :aid
               AND t.income_subtype = 'mensalidade'
               AND EXTRACT(YEAR  FROM t.created_at) = :yr
               AND EXTRACT(MONTH FROM t.created_at) = :mo
             GROUP BY t.created_by, u.full_name
         """),
-        {"aid": aid, "yr": target_year, "mo": target_month},
+        params_month,
     )).fetchall()
 
     # Novos associados cadastrados por cada agente no mês
     novos_rows = (await session.execute(
         text("""
             SELECT r.created_by AS agent_id,
-                   COUNT(*)     AS novos
+                   COUNT(*)     AS novos,
+                   array_agg(r.full_name ORDER BY r.full_name) AS novos_residents
             FROM residents r
             WHERE r.association_id = :aid
               AND r.type = 'member'
@@ -360,24 +365,27 @@ async def agentes_ranking(
               AND EXTRACT(MONTH FROM r.created_at) = :mo
             GROUP BY r.created_by
         """),
-        {"aid": aid, "yr": target_year, "mo": target_month},
+        params_month,
     )).fetchall()
 
-    novos_map = {str(r.agent_id): r.novos for r in novos_rows}
+    novos_map = {str(r.agent_id): {"novos": r.novos, "novos_residents": list(r.novos_residents or [])} for r in novos_rows}
 
     # Build ranking — score: 60% cobranças + 40% novos (normalized to max)
     agents = {}
     for row in cobrancas_rows:
         aid_str = str(row.agent_id)
+        nd = novos_map.get(aid_str, {"novos": 0, "novos_residents": []})
         agents[aid_str] = {
             "agent_id": aid_str,
             "agent_name": row.agent_name,
             "cobrancas": row.cobrancas,
-            "novos": novos_map.get(aid_str, 0),
+            "residents": list(row.residents or []),
+            "novos": nd["novos"],
+            "novos_residents": nd["novos_residents"],
         }
-    for aid_str, novos in novos_map.items():
+    for aid_str, nd in novos_map.items():
         if aid_str not in agents:
-            agents[aid_str] = {"agent_id": aid_str, "agent_name": "?", "cobrancas": 0, "novos": novos}
+            agents[aid_str] = {"agent_id": aid_str, "agent_name": "?", "cobrancas": 0, "residents": [], "novos": nd["novos"], "novos_residents": nd["novos_residents"]}
 
     ranked = sorted(
         agents.values(),
