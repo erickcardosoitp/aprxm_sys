@@ -416,38 +416,46 @@ async def run_task_now(
             result_msg = f"{count} entrada(s) PIX sincronizadas."
 
         elif task_key == "generate_monthly_mensalidades":
-            # Call the existing cron-generate logic
-            r = await session.execute(text("""
-                SELECT r.id, r.association_id,
-                       COALESCE((SELECT s.default_mensalidade_amount FROM association_settings s WHERE s.association_id = r.association_id LIMIT 1), 20.00) as amount
-                FROM residents r
-                WHERE r.association_id = :aid AND r.status = 'active' AND r.type = 'member'
-            """), {"aid": aid})
-            residents = r.fetchall()
+            from app.services.mensalidade_service import MensalidadeService
+            from decimal import Decimal
             from datetime import date
+
             ref_month = date.today().strftime("%Y-%m")
-            due = date(date.today().year, date.today().month, 10)
-            # resolve created_by: any admin-level user in the association
+
+            # Fetch default_due_day and default_mensalidade_amount from association_settings
+            settings_row = (await session.execute(text("""
+                SELECT COALESCE(default_due_day, 10), COALESCE(default_mensalidade_amount, 0)
+                FROM association_settings WHERE association_id = :aid
+            """), {"aid": aid})).fetchone()
+            default_due_day = int(settings_row[0]) if settings_row else 10
+            configured_amount = Decimal(str(settings_row[1])) if settings_row else Decimal("0")
+
+            # Fallback: last known mensalidade amount
+            if not configured_amount or configured_amount <= 0:
+                last_row = (await session.execute(text("""
+                    SELECT amount FROM mensalidades WHERE association_id = :aid
+                    ORDER BY created_at DESC LIMIT 1
+                """), {"aid": aid})).fetchone()
+                configured_amount = Decimal(str(last_row[0])) if last_row else None
+
             cb_row = (await session.execute(text(
                 "SELECT id FROM users WHERE association_id = :aid AND role IN ('admin','superadmin','admin_master','diretoria') LIMIT 1"
             ), {"aid": aid})).fetchone()
-            created_by = str(cb_row[0]) if cb_row else None
-            created = 0
-            for res in residents:
-                try:
-                    async with session.begin_nested():
-                        ins = await session.execute(text("""
-                            INSERT INTO mensalidades (association_id, resident_id, reference_month, due_date, amount, status, created_by)
-                            SELECT :aid, :rid, :month, :due, :amount, 'pending', :cb
-                            WHERE NOT EXISTS (
-                                SELECT 1 FROM mensalidades m2 WHERE m2.association_id = :aid
-                                  AND m2.resident_id = :rid AND m2.reference_month = :month
-                            )
-                        """), {"aid": aid, "rid": str(res[0]), "month": ref_month, "due": due, "amount": str(res[2]), "cb": created_by})
-                    created += ins.rowcount
-                except Exception:
-                    pass
-            result_msg = f"{created} mensalidade(s) gerada(s) para {ref_month}."
+            created_by = cb_row[0] if cb_row else None
+
+            if configured_amount and configured_amount > 0 and created_by:
+                svc = MensalidadeService(session)
+                gen_result = await svc.generate_month(
+                    association_id=current.association_id,
+                    reference_month=ref_month,
+                    due_day=default_due_day,
+                    amount=configured_amount,
+                    created_by=created_by,
+                )
+                created = gen_result.get("created", 0)
+                result_msg = f"{created} mensalidade(s) gerada(s) para {ref_month} (venc. dia {default_due_day})."
+            else:
+                result_msg = "Nenhuma mensalidade gerada: valor não configurado."
         elif task_key == "vacuum_dead_rows":
             tables = [
                 "notifications", "transactions", "packages",
