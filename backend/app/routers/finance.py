@@ -369,20 +369,20 @@ async def reprint_proof_of_residence(
             r_number = _s(res_row[5])
 
     cfg = (await session.execute(sa_text("""
-        SELECT assoc_logo_url, president_signature_url, president_name,
-               community_name, assoc_address, assoc_cep
-          FROM association_settings WHERE association_id = :aid
+        SELECT s.assoc_logo_url, s.community_name, s.assoc_address, s.assoc_cep, a.name
+          FROM association_settings s
+          JOIN associations a ON a.id = s.association_id
+         WHERE s.association_id = :aid
     """), {"aid": tx_assoc_id})).fetchone()
 
-    if not cfg or not cfg[0] or not cfg[1]:
-        raise HTTPException(status_code=422, detail="Configurações da associação incompletas.")
+    if not cfg or not cfg[0]:
+        raise HTTPException(status_code=422, detail="Logo da associação não configurado.")
 
     import httpx
     async with httpx.AsyncClient(timeout=10) as client:
         logo_resp = await client.get(cfg[0])
-        sig_resp = await client.get(cfg[1])
-    if logo_resp.status_code != 200 or sig_resp.status_code != 200:
-        raise HTTPException(status_code=422, detail="Falha ao baixar logo/assinatura.")
+    if logo_resp.status_code != 200:
+        raise HTTPException(status_code=422, detail="Falha ao baixar logo.")
 
     svc = FinanceService(session)
     barcode_bytes = svc._build_barcode_image(barcode_code)
@@ -393,12 +393,11 @@ async def reprint_proof_of_residence(
         resident_cep=r_cep,
         resident_address_street=r_street,
         resident_address_number=r_number,
-        community_name=cfg[3] or "",
-        assoc_address=cfg[4] or "",
-        assoc_cep=cfg[5] or "",
-        president_name=cfg[2] or "PRESIDENTE",
+        community_name=cfg[1] or "",
+        assoc_name=cfg[4] or "",
+        assoc_address=cfg[2] or "",
+        assoc_cep=cfg[3] or "",
         logo_bytes=logo_resp.content,
-        sig_bytes=sig_resp.content,
         barcode_code=barcode_code,
         barcode_bytes=barcode_bytes,
     )
