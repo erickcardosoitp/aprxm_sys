@@ -328,13 +328,15 @@ async def agentes_ranking(
     target_month = month or now.month
     ref_month = f"{target_year:04d}-{target_month:02d}"
 
-    aid = str(current.association_id)
+    # Todas as associações visíveis para este usuário (VL + Congonha para admin)
+    all_aids = [str(i) for i in (current.scoped_ids() or [current.association_id])]
+    aids_tuple = tuple(all_aids)
 
-    params_month = {"aid": aid, "yr": target_year, "mo": target_month}
+    params_month = {"yr": target_year, "mo": target_month}
 
-    # Cobranças registradas por cada operador/agente no mês (caixa + remoto)
+    # Cobranças registradas por cada operador/agente no mês — todas as associações
     cobrancas_rows = (await session.execute(
-        text("""
+        text(f"""
             SELECT t.created_by AS agent_id,
                    u.full_name  AS agent_name,
                    COUNT(*)     AS cobrancas,
@@ -343,7 +345,7 @@ async def agentes_ranking(
             JOIN users u ON u.id = t.created_by
             JOIN mensalidades m ON m.transaction_id = t.id
             JOIN residents r ON r.id = m.resident_id
-            WHERE t.association_id = :aid
+            WHERE t.association_id IN ({','.join(f"'{a}'" for a in aids_tuple)})
               AND t.income_subtype = 'mensalidade'
               AND EXTRACT(YEAR  FROM t.created_at) = :yr
               AND EXTRACT(MONTH FROM t.created_at) = :mo
@@ -352,14 +354,14 @@ async def agentes_ranking(
         params_month,
     )).fetchall()
 
-    # Novos associados cadastrados por cada agente no mês
+    # Novos associados cadastrados por cada agente no mês — todas as associações
     novos_rows = (await session.execute(
-        text("""
+        text(f"""
             SELECT r.created_by AS agent_id,
                    COUNT(*)     AS novos,
                    array_agg(r.full_name ORDER BY r.full_name) AS novos_residents
             FROM residents r
-            WHERE r.association_id = :aid
+            WHERE r.association_id IN ({','.join(f"'{a}'" for a in aids_tuple)})
               AND r.type = 'member'
               AND EXTRACT(YEAR  FROM r.created_at) = :yr
               AND EXTRACT(MONTH FROM r.created_at) = :mo
@@ -370,7 +372,7 @@ async def agentes_ranking(
 
     novos_map = {str(r.agent_id): {"novos": r.novos, "novos_residents": list(r.novos_residents or [])} for r in novos_rows}
 
-    # Build ranking — score: 60% cobranças + 40% novos (normalized to max)
+    # Build ranking
     agents = {}
     for row in cobrancas_rows:
         aid_str = str(row.agent_id)
@@ -397,30 +399,38 @@ async def agentes_ranking(
         a["position"] = i + 1
         a["prize"] = prizes[i] if i < len(prizes) else 0
 
+    # Totais de membros por associação + adimplência global
+    per_assoc_rows = (await session.execute(
+        text(f"""
+            SELECT r.association_id::text AS assoc_id,
+                   a.name AS assoc_name,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE NOT EXISTS (
+                       SELECT 1 FROM mensalidades m2
+                       WHERE m2.resident_id = r.id
+                         AND m2.association_id = r.association_id
+                         AND m2.status = 'pending'
+                         AND m2.due_date < NOW() - INTERVAL '2 days'
+                   )) AS adimplentes
+            FROM residents r
+            JOIN associations a ON a.id = r.association_id
+            WHERE r.association_id IN ({','.join(f"'{a}'" for a in aids_tuple)})
+              AND r.type = 'member' AND r.status = 'active'
+            GROUP BY r.association_id, a.name
+        """),
+        {},
+    )).fetchall()
+
+    totals_by_assoc = {row.assoc_id: {"name": row.assoc_name, "total": row.total, "adimplentes": row.adimplentes} for row in per_assoc_rows}
+    grand_total = sum(v["total"] for v in totals_by_assoc.values())
+    grand_adimplentes = sum(v["adimplentes"] for v in totals_by_assoc.values())
+    adimplencia_pct = (grand_adimplentes / grand_total * 100) if grand_total else 0
+
     # Bônus de equipe
     all_novos = [a["novos"] for a in ranked]
     agentes_com_5 = sum(1 for n in all_novos if n >= 5)
-    total_agentes = 6  # equipe fixa: Danielly, Carla, Vinicius, Monique, Hosana, Paulo Victor
+    total_agentes = 6
     bonus_novos_ok = agentes_com_5 == total_agentes
-
-    adimplencia_row = (await session.execute(
-        text("""
-            SELECT
-                COUNT(*) FILTER (WHERE NOT EXISTS (
-                    SELECT 1 FROM mensalidades m2
-                    WHERE m2.resident_id = r.id
-                      AND m2.association_id = r.association_id
-                      AND m2.status = 'pending'
-                      AND m2.due_date < NOW() - INTERVAL '2 days'
-                )) AS adimplentes,
-                COUNT(*) AS total
-            FROM residents r
-            WHERE r.association_id = :aid AND r.type = 'member' AND r.status = 'active'
-        """),
-        {"aid": str(current.association_id)},
-    )).fetchone()
-
-    adimplencia_pct = (adimplencia_row.adimplentes / adimplencia_row.total * 100) if adimplencia_row.total else 0
     bonus_adimplencia_ok = adimplencia_pct >= 80
     bonus_liberado = bonus_novos_ok and bonus_adimplencia_ok
 
@@ -428,11 +438,9 @@ async def agentes_ranking(
         for a in ranked:
             a["prize"] = (a["prize"] or 0) + 30
 
-    total_members = adimplencia_row.total if adimplencia_row else 0
-
     return {
         "ref_month": ref_month,
-        "total_members": total_members,
+        "totals_by_assoc": {v["name"]: v["total"] for v in totals_by_assoc.values()},
         "ranking": ranked,
         "bonus": {
             "liberado": bonus_liberado,
