@@ -120,6 +120,7 @@ async def crm_residents(
             r.address_street,
             r.address_number,
             r.created_at,
+            r.phone_primary,
             COALESCE(m.valor_atrasado, 0)  AS valor_atrasado,
             COALESCE(m.qtd_pendentes, 0)   AS qtd_pendentes,
             p.ultima_entrega,
@@ -159,6 +160,7 @@ async def crm_residents(
                 "full_name": r.full_name,
                 "address": f"{r.address_street or ''}, {r.address_number or ''}".strip(", "),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                "phone_primary": r.phone_primary,
                 "valor_atrasado": float(r.valor_atrasado),
                 "qtd_pendentes": r.qtd_pendentes,
                 "ultima_entrega": r.ultima_entrega.isoformat() if r.ultima_entrega else None,
@@ -340,7 +342,7 @@ async def agentes_ranking(
             WHERE t.association_id = :aid
               AND t.income_subtype = 'mensalidade'
               AND m.payment_channel = 'remote'
-              AND DATE_TRUNC('month', t.created_at) = DATE_TRUNC('month', :ref::date)
+              AND DATE_TRUNC('month', t.created_at) = DATE_TRUNC('month', CAST(:ref AS date))
             GROUP BY t.created_by, u.full_name
         """),
         {"aid": aid, "ref": f"{ref_month}-01"},
@@ -354,7 +356,7 @@ async def agentes_ranking(
             FROM residents r
             WHERE r.association_id = :aid
               AND r.type = 'member'
-              AND DATE_TRUNC('month', r.created_at) = DATE_TRUNC('month', :ref::date)
+              AND DATE_TRUNC('month', r.created_at) = DATE_TRUNC('month', CAST(:ref AS date))
             GROUP BY r.created_by
         """),
         {"aid": aid, "ref": f"{ref_month}-01"},

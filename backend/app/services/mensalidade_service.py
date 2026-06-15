@@ -306,8 +306,6 @@ class MensalidadeService:
         """Mensalidades pendentes dentro do período de carência configurado."""
         from app.models.resident import Resident, ResidentType
         from sqlmodel import select as sa_select
-        today = date.today()
-        grace_cutoff = today - timedelta(days=await self._grace_days(association_id))
         stmt = (
             sa_select(
                 Mensalidade,
@@ -320,7 +318,6 @@ class MensalidadeService:
             .where(
                 Mensalidade.association_id == association_id,
                 Mensalidade.status == MensalidadeStatus.pending,
-                Mensalidade.due_date >= grace_cutoff,
                 Resident.type == ResidentType.member,
                 Resident.status == "active",
             )
