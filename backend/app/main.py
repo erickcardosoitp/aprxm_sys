@@ -106,8 +106,46 @@ async def _run_migrations() -> None:
                 "VALUES (1, 'bootstrap: existing production DB — DDL pre-applied') "
                 "ON CONFLICT DO NOTHING"
             ))
+            # v2: CRM columns — apply here before returning
+            await session.execute(text(
+                "ALTER TABLE mensalidades "
+                "ADD COLUMN IF NOT EXISTS payment_channel VARCHAR(20) NOT NULL DEFAULT 'cash', "
+                "ADD COLUMN IF NOT EXISTS payment_proof_url TEXT"
+            ))
+            await session.execute(text("""
+                DO $$ BEGIN
+                    ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'agente';
+                EXCEPTION WHEN duplicate_object THEN NULL;
+                END $$
+            """))
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_visits (
+                    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    association_id   UUID NOT NULL REFERENCES associations(id),
+                    agent_id         UUID NOT NULL REFERENCES users(id),
+                    resident_id      UUID NOT NULL REFERENCES residents(id),
+                    visited_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    result           VARCHAR(20) NOT NULL CHECK (result IN ('paid','will_pay','absent','refused')),
+                    notes            TEXT,
+                    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_agent_visits_resident ON agent_visits(resident_id, association_id)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_agent_visits_agent ON agent_visits(agent_id, visited_at)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_packages_resident_del ON packages(resident_id, delivered_at)"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (2, 'v2: CRM — payment_channel, agente role, agent_visits') "
+                "ON CONFLICT DO NOTHING"
+            ))
             await session.commit()
-            # Continua para aplicar versões incrementais pendentes (não retorna aqui)
+            return
 
         await session.execute(text("""
             ALTER TABLE association_settings
@@ -865,58 +903,50 @@ async def _run_migrations() -> None:
             "ALTER TABLE api_request_logs ADD COLUMN IF NOT EXISTS user_id UUID"
         ))
 
-        # Mark v1 as applied — fresh DB path
+        # Mark v1+v2 as applied — fresh DB path
         await session.execute(text(
             "INSERT INTO schema_migrations (version, description) "
             "VALUES (1, 'v1: full DDL applied on fresh database') "
             "ON CONFLICT DO NOTHING"
         ))
+        await session.execute(text(
+            "ALTER TABLE mensalidades "
+            "ADD COLUMN IF NOT EXISTS payment_channel VARCHAR(20) NOT NULL DEFAULT 'cash', "
+            "ADD COLUMN IF NOT EXISTS payment_proof_url TEXT"
+        ))
+        await session.execute(text("""
+            DO $$ BEGIN
+                ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'agente';
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS agent_visits (
+                id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                association_id   UUID NOT NULL REFERENCES associations(id),
+                agent_id         UUID NOT NULL REFERENCES users(id),
+                resident_id      UUID NOT NULL REFERENCES residents(id),
+                visited_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                result           VARCHAR(20) NOT NULL CHECK (result IN ('paid','will_pay','absent','refused')),
+                notes            TEXT,
+                created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_agent_visits_resident ON agent_visits(resident_id, association_id)"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_agent_visits_agent ON agent_visits(agent_id, visited_at)"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_packages_resident_del ON packages(resident_id, delivered_at)"
+        ))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (2, 'v2: CRM — payment_channel, agente role, agent_visits') "
+            "ON CONFLICT DO NOTHING"
+        ))
         await session.commit()
-
-    # ── v2: CRM — payment_channel, payment_proof_url, agente role, agent_visits ─
-    async with AsyncSessionLocal() as sv2:
-        _v2_applied = (await sv2.execute(text(
-            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
-        ))).scalar()
-        if _v2_applied < 2:
-            await sv2.execute(text(
-                "ALTER TABLE mensalidades "
-                "ADD COLUMN IF NOT EXISTS payment_channel VARCHAR(20) NOT NULL DEFAULT 'cash', "
-                "ADD COLUMN IF NOT EXISTS payment_proof_url TEXT"
-            ))
-            await sv2.execute(text("""
-                DO $$ BEGIN
-                    ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'agente';
-                EXCEPTION WHEN duplicate_object THEN NULL;
-                END $$
-            """))
-            await sv2.execute(text("""
-                CREATE TABLE IF NOT EXISTS agent_visits (
-                    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    association_id   UUID NOT NULL REFERENCES associations(id),
-                    agent_id         UUID NOT NULL REFERENCES users(id),
-                    resident_id      UUID NOT NULL REFERENCES residents(id),
-                    visited_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    result           VARCHAR(20) NOT NULL CHECK (result IN ('paid','will_pay','absent','refused')),
-                    notes            TEXT,
-                    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-            """))
-            await sv2.execute(text(
-                "CREATE INDEX IF NOT EXISTS idx_agent_visits_resident ON agent_visits(resident_id, association_id)"
-            ))
-            await sv2.execute(text(
-                "CREATE INDEX IF NOT EXISTS idx_agent_visits_agent ON agent_visits(agent_id, visited_at)"
-            ))
-            await sv2.execute(text(
-                "CREATE INDEX IF NOT EXISTS idx_packages_resident_del ON packages(resident_id, delivered_at)"
-            ))
-            await sv2.execute(text(
-                "INSERT INTO schema_migrations (version, description) "
-                "VALUES (2, 'v2: CRM — payment_channel, agente role, agent_visits') "
-                "ON CONFLICT DO NOTHING"
-            ))
-            await sv2.commit()
 
 
 app = FastAPI(
