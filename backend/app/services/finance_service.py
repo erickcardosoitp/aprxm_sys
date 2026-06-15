@@ -623,8 +623,7 @@ class FinanceService:
 
         if not logo_url:
             raise UnprocessableError("Logo da associação não cadastrado. Configure no módulo Admin.")
-        if not sig_url:
-            raise UnprocessableError("Assinatura da presidente não cadastrada. Configure no módulo Admin.")
+        # sig_url opcional — comprovante provisório sem assinatura
         if (proof_stock or 0) <= 0:
             raise UnprocessableError("Sem estoque de comprovantes disponível. Solicite reposição ao administrador.")
 
@@ -700,17 +699,14 @@ class FinanceService:
             {"aid": str(association_id)},
         )
 
-        # Download logo and signature in parallel (cached after first call)
+        # Download logo
         results = await asyncio.gather(
             _fetch_image(logo_url),
-            _fetch_image(sig_url),
             return_exceptions=True,
         )
         if isinstance(results[0], Exception):
             raise UnprocessableError(f"Falha ao baixar logo ({results[0]}). Verifique a URL no Admin.")
-        if isinstance(results[1], Exception):
-            raise UnprocessableError(f"Falha ao baixar assinatura ({results[1]}). Verifique a URL no Admin.")
-        logo_bytes, sig_bytes = results[0], results[1]
+        logo_bytes = results[0]
 
         # Generate barcode image
         barcode_bytes = self._build_barcode_image(barcode_code)
@@ -727,9 +723,7 @@ class FinanceService:
             community_name=community_name or "",
             assoc_address=assoc_address or "",
             assoc_cep=assoc_cep or "",
-            president_name=president_name or "PRESIDENTE",
             logo_bytes=logo_bytes,
-            sig_bytes=sig_bytes,
             barcode_code=barcode_code,
             barcode_bytes=barcode_bytes,
         )
@@ -760,9 +754,7 @@ class FinanceService:
         community_name: str,
         assoc_address: str,
         assoc_cep: str,
-        president_name: str,
         logo_bytes: bytes,
-        sig_bytes: bytes,
         resident_address_street: str = "",
         resident_address_number: str = "",
         resident_address_complement: str = "",
@@ -783,7 +775,6 @@ class FinanceService:
         resident_address_complement = _safe(resident_address_complement)
         community_name = _safe(community_name)
         assoc_address = _safe(assoc_address)
-        president_name = _safe(president_name)
 
         pdf = FPDF()
         pdf.add_page()
@@ -859,23 +850,12 @@ class FinanceService:
         pdf.cell(0, 8, date_str, ln=True, align="R")
         pdf.ln(10)
 
-        pdf.set_font("Helvetica", size=11)
-        pdf.cell(0, 7, "Atenciosamente,", ln=True, align="C")
-        pdf.ln(4)
-
-        # Assinatura
-        sig_io = BytesIO(sig_bytes)
-        page_w = pdf.w - pdf.l_margin - pdf.r_margin
-        sig_w = 60.0
-        sig_x = pdf.l_margin + (page_w - sig_w) / 2
-        pdf.image(sig_io, x=sig_x, w=sig_w)
-        pdf.ln(2)
-
-        # Nome da presidente
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 7, president_name.upper(), ln=True, align="C")
-        pdf.set_font("Helvetica", size=10)
-        pdf.cell(0, 6, "PRESIDENTE", ln=True, align="C")
+        pdf.set_text_color(26, 63, 111)
+        pdf.cell(0, 7, "ASSOCIAÇÃO DE MORADORES", ln=True, align="C")
+        pdf.set_font("Helvetica", size=11)
+        pdf.set_text_color(30, 30, 30)
+        pdf.cell(0, 6, community_name.upper(), ln=True, align="C")
 
         return bytes(pdf.output())
 
