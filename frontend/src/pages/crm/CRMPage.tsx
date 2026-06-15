@@ -437,60 +437,68 @@ export default function CRMPage() {
             </select>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-              <p className="text-sm font-semibold text-gray-800">Associados ({totalMembers})</p>
-              {loadingMembers && <span className="text-xs text-gray-400">Carregando…</span>}
-            </div>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
             {!loadingMembers && members.length === 0 ? (
               <div className="p-6 text-center text-gray-400 text-sm">Nenhum associado encontrado.</div>
             ) : (
-              <ul className="divide-y divide-gray-100">
-                {members.map(m => (
-                  <li key={m.id} className="px-4 py-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-medium text-gray-800">{m.full_name}</p>
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                            m.situacao === 'adimplente' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                          }`}>
-                            {m.situacao === 'adimplente' ? 'Adimplente' : 'Inadimplente'}
-                          </span>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-4 py-3 whitespace-nowrap">Nome</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Endereço</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Assoc.</th>
+                    <th className="px-4 py-3 whitespace-nowrap">Status</th>
+                    <th className="px-4 py-3 whitespace-nowrap text-right">Atrasado</th>
+                    <th className="px-4 py-3 whitespace-nowrap text-center">Meses</th>
+                    <th className="px-4 py-3 whitespace-nowrap text-center">Última Enc.</th>
+                    <th className="px-4 py-3 whitespace-nowrap text-center">Enc/Mês</th>
+                    <th className="px-4 py-3 whitespace-nowrap text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {members.map(m => (
+                    <tr key={m.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-2.5 font-medium text-gray-800 whitespace-nowrap">{m.full_name}</td>
+                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap max-w-[180px] truncate">{m.address || '—'}</td>
+                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{tenureLabel(m.created_at)}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
+                          m.situacao === 'adimplente' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                        }`}>
+                          {m.situacao === 'adimplente' ? 'Adimplente' : 'Inadimplente'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        {m.valor_atrasado > 0
+                          ? <span className="text-red-600 font-medium">{fmt(m.valor_atrasado)}</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                        {m.qtd_pendentes > 0
+                          ? <span className="text-red-500 font-medium">{m.qtd_pendentes}</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-center text-gray-500 whitespace-nowrap">{daysAgo(m.ultima_entrega)}</td>
+                      <td className="px-4 py-2.5 text-center text-gray-500 whitespace-nowrap">
+                        {m.enc_mes > 0 ? m.enc_mes.toFixed(1) : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <div className="flex items-center gap-3 justify-center">
+                          <button onClick={() => loadHistory(m.id, m.full_name)}
+                            className="text-xs text-[#26619c] hover:underline">
+                            Perfil
+                          </button>
+                          <button
+                            onClick={() => { setVisitModal({ memberId: m.id, memberName: m.full_name }); setVisitResult('absent'); setVisitNotes('') }}
+                            className="text-xs text-gray-500 hover:text-gray-700">
+                            Visita
+                          </button>
                         </div>
-                        {m.address && (
-                          <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3 shrink-0" />{m.address}
-                          </p>
-                        )}
-                        <div className="flex gap-3 mt-0.5 flex-wrap">
-                          <span className="text-xs text-gray-400">Assoc. há {tenureLabel(m.created_at)}</span>
-                          {m.qtd_pendentes > 0 && (
-                            <span className="text-xs text-red-500 font-medium">
-                              {fmt(m.valor_atrasado)} atrasado · {m.qtd_pendentes} {m.qtd_pendentes === 1 ? 'mês' : 'meses'}
-                            </span>
-                          )}
-                          <span className="text-xs text-gray-400">Última enc.: {daysAgo(m.ultima_entrega)}</span>
-                          {m.enc_mes > 0 && (
-                            <span className="text-xs text-gray-400">{m.enc_mes.toFixed(1)} enc/mês</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <button onClick={() => loadHistory(m.id, m.full_name)}
-                          className="text-xs text-[#26619c] hover:underline flex items-center gap-1">
-                          <Users className="w-3 h-3" /> Ver Perfil
-                        </button>
-                        <button
-                          onClick={() => { setVisitModal({ memberId: m.id, memberName: m.full_name }); setVisitResult('absent'); setVisitNotes('') }}
-                          className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
-                          <MapPin className="w-3 h-3" /> Visita
-                        </button>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
             {totalMembers > 100 && (
               <div className="px-4 py-2 border-t border-gray-100 flex items-center justify-between">
@@ -499,7 +507,7 @@ export default function CRMPage() {
                   className="flex items-center gap-1 text-xs text-gray-500 disabled:opacity-40">
                   <ChevronLeft className="w-3.5 h-3.5" /> Anterior
                 </button>
-                <span className="text-xs text-gray-400">Pág. {membersPage}</span>
+                <span className="text-xs text-gray-400">Pág. {membersPage} · {totalMembers} associados</span>
                 <button disabled={membersPage * 100 >= totalMembers}
                   onClick={() => { const p = membersPage + 1; setMembersPage(p); loadMembers(p) }}
                   className="flex items-center gap-1 text-xs text-gray-500 disabled:opacity-40">
