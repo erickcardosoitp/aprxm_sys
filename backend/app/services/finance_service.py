@@ -610,16 +610,19 @@ class FinanceService:
         # Load settings
         row = (await self._session.execute(
             sa_text("""
-                SELECT assoc_logo_url, president_signature_url, president_name,
-                       community_name, proof_stock, assoc_address, assoc_cep
-                FROM association_settings WHERE association_id = :aid
+                SELECT s.assoc_logo_url, s.president_signature_url, s.president_name,
+                       s.community_name, s.proof_stock, s.assoc_address, s.assoc_cep,
+                       a.name
+                FROM association_settings s
+                JOIN associations a ON a.id = s.association_id
+                WHERE s.association_id = :aid
             """),
             {"aid": str(association_id)},
         )).fetchone()
 
         if not row:
             raise UnprocessableError("Configurações da associação não encontradas. Configure no módulo Admin.")
-        logo_url, sig_url, president_name, community_name, proof_stock, assoc_address, assoc_cep = row
+        logo_url, sig_url, president_name, community_name, proof_stock, assoc_address, assoc_cep, assoc_name = row
 
         if not logo_url:
             raise UnprocessableError("Logo da associação não cadastrado. Configure no módulo Admin.")
@@ -721,6 +724,7 @@ class FinanceService:
             resident_address_number=resident_address_number,
             resident_address_complement=resident_address_complement,
             community_name=community_name or "",
+            assoc_name=assoc_name or "",
             assoc_address=assoc_address or "",
             assoc_cep=assoc_cep or "",
             logo_bytes=logo_bytes,
@@ -752,6 +756,7 @@ class FinanceService:
         resident_neighborhood: str,
         resident_cep: str,
         community_name: str,
+        assoc_name: str,
         assoc_address: str,
         assoc_cep: str,
         logo_bytes: bytes,
@@ -852,10 +857,7 @@ class FinanceService:
 
         pdf.set_font("Helvetica", "B", 11)
         pdf.set_text_color(26, 63, 111)
-        pdf.cell(0, 7, "ASSOCIAÇÃO DE MORADORES", ln=True, align="C")
-        pdf.set_font("Helvetica", size=11)
-        pdf.set_text_color(30, 30, 30)
-        pdf.cell(0, 6, community_name.upper(), ln=True, align="C")
+        pdf.cell(0, 8, _safe(assoc_name).upper(), ln=True, align="C")
 
         return bytes(pdf.output())
 
