@@ -332,7 +332,7 @@ async def agentes_ranking(
 
     aid = str(current.association_id)
 
-    # Cobranças registradas por cada agente no mês (baixa remota)
+    # Cobranças registradas por cada operador/agente no mês (caixa + remoto)
     cobrancas_rows = (await session.execute(
         text("""
             SELECT t.created_by AS agent_id,
@@ -343,7 +343,6 @@ async def agentes_ranking(
             JOIN mensalidades m ON m.transaction_id = t.id
             WHERE t.association_id = :aid
               AND t.income_subtype = 'mensalidade'
-              AND m.payment_channel = 'remote'
               AND DATE_TRUNC('month', t.created_at) = DATE_TRUNC('month', :ref)
             GROUP BY t.created_by, u.full_name
         """),
