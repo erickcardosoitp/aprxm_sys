@@ -107,7 +107,7 @@ async def _run_migrations() -> None:
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()
-            return
+            # Continua para aplicar versões incrementais pendentes (não retorna aqui)
 
         await session.execute(text("""
             ALTER TABLE association_settings
