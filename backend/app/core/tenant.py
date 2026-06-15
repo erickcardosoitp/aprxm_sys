@@ -33,10 +33,9 @@ class CurrentUser:
         return len(self.linked_association_ids) > 0
 
     def scoped_ids(self, slug_filter: str | None = None) -> list[UUID]:
-        """Returns association IDs to filter by. For aggregators, returns linked IDs."""
-        if not self.is_aggregator:
-            return [self.association_id]
-        return self.linked_association_ids
+        """Returns all association IDs accessible to this user (primary + linked)."""
+        ids = [self.association_id] + [i for i in self.linked_association_ids if i != self.association_id]
+        return ids
 
     @property
     def is_admin_master(self) -> bool:
