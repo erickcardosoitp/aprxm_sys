@@ -639,8 +639,18 @@ class FinanceService:
         else:
             cash_session = await self.get_open_session(association_id, preferred_by=issued_by, strict_owner=True)
 
+        import json as _json
         _label = "Comprovante de Residência" + (" (Isento)" if isento else "")
-        _desc = f"{_label} — {resident_name}"
+        _desc = _json.dumps({
+            "label": _label,
+            "name": resident_name,
+            "cpf": resident_cpf,
+            "neighborhood": resident_neighborhood,
+            "cep": resident_cep,
+            "street": resident_address_street,
+            "number": resident_address_number,
+            "complement": resident_address_complement,
+        }, ensure_ascii=False)
 
         if isento:
             tx = await self.register_transaction(
