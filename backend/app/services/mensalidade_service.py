@@ -315,7 +315,6 @@ class MensalidadeService:
                 Resident.phone_primary,
                 Resident.address_street,
                 Resident.address_number,
-                Resident.unit,
             )
             .join(Resident, Resident.id == Mensalidade.resident_id)
             .where(
@@ -337,14 +336,13 @@ class MensalidadeService:
                 "phone_primary": phone,
                 "address_street": street,
                 "address_number": number,
-                "unit": unit,
                 "reference_month": m.reference_month,
                 "due_date": str(m.due_date),
                 "amount": str(m.amount),
                 "status": m.status,
                 "notes": m.notes,
             }
-            for m, full_name, phone, street, number, unit in rows
+            for m, full_name, phone, street, number in rows
         ]
 
     async def generate_month(

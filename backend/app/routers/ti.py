@@ -160,7 +160,7 @@ async def user_activity(
         LIMIT 200
     """))).fetchall()
 
-    # Total por usuário (últimas 24h)
+    # Total por usuário (hoje — desde meia-noite horário de Brasília)
     ops_24h = (await session.execute(text("""
         SELECT
             u.full_name,
@@ -169,12 +169,11 @@ async def user_activity(
             ROUND(AVG(l.duration_ms))::int AS avg_ms,
             MAX(l.created_at) AS ultimo_acesso,
             a.name AS associacao,
-            (SELECT MIN(l2.created_at) FROM api_request_logs l2
-             WHERE l2.user_id::uuid = u.id) AS primeiro_acesso
+            MIN(l.created_at) AS primeiro_acesso
         FROM api_request_logs l
         JOIN users u ON u.id = l.user_id::uuid
         JOIN associations a ON a.id = u.association_id
-        WHERE l.created_at > NOW() - INTERVAL '24 hours'
+        WHERE l.created_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'
           AND l.user_id IS NOT NULL
         GROUP BY u.id, u.full_name, a.name
         ORDER BY operacoes DESC
