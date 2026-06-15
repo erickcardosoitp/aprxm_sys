@@ -73,9 +73,14 @@ Pagamento registrado sem `cash_session_id`. Aparece em movimentações e faturam
 ### Campos novos em `mensalidades`
 
 ```sql
-payment_channel  VARCHAR(20) DEFAULT 'cash'  -- 'cash' | 'remote'
-payment_proof_url TEXT                        -- URL Cloudinary do comprovante PIX
+payment_channel   VARCHAR(20) DEFAULT 'cash'  -- 'cash' | 'remote'
+payment_proof_url TEXT                         -- URL Cloudinary; NULL permitido
 ```
+
+**Compatibilidade retroativa:**
+- Registros existentes recebem `payment_channel = 'cash'` e `payment_proof_url = NULL` via DEFAULT — nenhum dado antigo quebra.
+- A API só exige `payment_proof_url` quando `payment_method = 'pix'`. Outros métodos (dinheiro, cartão) aceitam `NULL`.
+- Listagens e relatórios tratam `payment_proof_url IS NULL` como "sem comprovante" — nunca lançam erro por campo ausente.
 
 ### Fluxo do modal
 
