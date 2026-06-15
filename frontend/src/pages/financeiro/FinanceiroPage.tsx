@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { UserCheck } from 'lucide-react'
 import { TrendingUp, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
@@ -9,7 +10,7 @@ import { TABS } from './constants/financeiro'
 import type { Tab } from './types/financeiro'
 import DashboardTab from './tabs/DashboardTab'
 import MovimentacoesTab from './tabs/MovimentacoesTab'
-import CobrancasTab from './tabs/CobrancasTab'
+import { useNavigate } from 'react-router-dom'
 import RelatoriosTab from './tabs/RelatoriosTab'
 import ConciliacaoInteligente from './tabs/ConciliacaoInteligente'
 import DRETab from './tabs/DRETab'
@@ -18,6 +19,7 @@ import PortaAPortaTab from './PortaAPortaTab'
 
 function FinanceiroInner() {
   const location = useLocation()
+  const navigate = useNavigate()
   const role = useAuthStore(s => s.role)
   const isAdmin = ['admin', 'admin_master', 'superadmin'].includes(role ?? '')
   const { conferentes, operadores } = useFinanceiro()
@@ -92,10 +94,15 @@ function FinanceiroInner() {
         <MovimentacoesTab period={period} setPeriod={setPeriod} />
       )}
       {tab === 'cobrancas' && (
-        <CobrancasTab
-          initialResidentId={cobrancasInit.residentId}
-          initialResidentName={cobrancasInit.residentName}
-        />
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <UserCheck className="w-10 h-10 text-[#26619c]" />
+          <p className="text-base font-semibold text-gray-800">Cobranças foi movido para o CRM</p>
+          <p className="text-sm text-gray-500 max-w-xs">Gerencie mensalidades, inadimplentes e visitas porta a porta no módulo CRM.</p>
+          <button onClick={() => navigate('/crm')}
+            className="bg-[#26619c] hover:bg-[#1a4f87] text-white px-6 py-2.5 rounded-xl text-sm font-medium transition">
+            Ir para o CRM
+          </button>
+        </div>
       )}
       {tab === 'relatorios' && <RelatoriosTab />}
       {tab === 'dre' && <DRETab />}

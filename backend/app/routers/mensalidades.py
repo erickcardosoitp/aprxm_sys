@@ -88,11 +88,20 @@ async def cron_generate(
             from fastapi import HTTPException
             raise HTTPException(status_code=401, detail="Não autorizado.")
 
+    from calendar import monthrange as _monthrange
+
     now = datetime.utcnow()
-    ref = now.strftime("%Y-%m")
+    # Generate for current month AND previous month (recovery for missed cron runs)
+    current_ref = now.strftime("%Y-%m")
+    prev_year = now.year if now.month > 1 else now.year - 1
+    prev_month = now.month - 1 if now.month > 1 else 12
+    prev_ref = f"{prev_year}-{prev_month:02d}"
+    refs_to_generate = [prev_ref, current_ref]
+
     rows = (await session.execute(text("""
         SELECT a.id,
                COALESCE(s.default_mensalidade_amount, 0),
+               COALESCE(s.default_due_day, 10),
                (SELECT u.id FROM users u WHERE u.association_id = a.id
                 AND u.role IN ('admin','admin_master','superadmin')
                 AND u.is_active = TRUE LIMIT 1)
@@ -103,13 +112,12 @@ async def cron_generate(
 
     total_created = 0
     svc = MensalidadeService(session)
-    for assoc_id, configured_amount, admin_id in rows:
+    for assoc_id, configured_amount, default_due_day, admin_id in rows:
         if not admin_id:
             continue
 
         amount = Decimal(str(configured_amount)) if configured_amount and configured_amount > 0 else None
 
-        # Fallback: use the most recent mensalidade amount for this association
         if not amount or amount <= 0:
             row = (await session.execute(text("""
                 SELECT amount FROM mensalidades
@@ -122,19 +130,21 @@ async def cron_generate(
         if not amount or amount <= 0:
             continue
 
-        try:
-            result = await svc.generate_month(
-                association_id=assoc_id,
-                reference_month=ref,
-                due_day=10,
-                amount=amount,
-                created_by=admin_id,
-            )
-            total_created += result.get("created", 0)
-            await session.commit()
-        except Exception:
-            await session.rollback()
-    return {"reference_month": ref, "total_created": total_created}
+        for ref in refs_to_generate:
+            try:
+                result = await svc.generate_month(
+                    association_id=assoc_id,
+                    reference_month=ref,
+                    due_day=int(default_due_day) if default_due_day else 10,
+                    amount=amount,
+                    created_by=admin_id,
+                )
+                total_created += result.get("created", 0)
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+    return {"refs": refs_to_generate, "total_created": total_created}
 
 
 @router.post("/cron-check-overdue", summary="Cron diário: verifica inadimplentes por associação")
