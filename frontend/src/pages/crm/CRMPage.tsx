@@ -467,16 +467,19 @@ export default function CRMPage() {
                           <span className="text-xs text-gray-400">Assoc. há {tenureLabel(m.created_at)}</span>
                           {m.qtd_pendentes > 0 && (
                             <span className="text-xs text-red-500 font-medium">
-                              {fmt(m.valor_atrasado)} atrasado · {m.qtd_pendentes} pend.
+                              {fmt(m.valor_atrasado)} atrasado · {m.qtd_pendentes} {m.qtd_pendentes === 1 ? 'mês' : 'meses'}
                             </span>
                           )}
                           <span className="text-xs text-gray-400">Última enc.: {daysAgo(m.ultima_entrega)}</span>
+                          {m.enc_mes > 0 && (
+                            <span className="text-xs text-gray-400">{m.enc_mes.toFixed(1)} enc/mês</span>
+                          )}
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         <button onClick={() => loadHistory(m.id, m.full_name)}
                           className="text-xs text-[#26619c] hover:underline flex items-center gap-1">
-                          <Users className="w-3 h-3" /> Cobranças
+                          <Users className="w-3 h-3" /> Ver Perfil
                         </button>
                         <button
                           onClick={() => { setVisitModal({ memberId: m.id, memberName: m.full_name }); setVisitResult('absent'); setVisitNotes('') }}

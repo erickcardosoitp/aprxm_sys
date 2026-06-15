@@ -2,13 +2,14 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
+from app.services.scoring_service import run_scoring_all
 
 router = APIRouter(prefix="/crm", tags=["CRM"])
 
@@ -95,7 +96,10 @@ async def crm_residents(
                     WHERE status = 'pending'
                       AND due_date < NOW() - make_interval(days => :grace_days)
                 ), 0) AS valor_atrasado,
-                COUNT(*) FILTER (WHERE status = 'pending') AS qtd_pendentes
+                COUNT(*) FILTER (
+                    WHERE status = 'pending'
+                      AND due_date < NOW() - make_interval(days => :grace_days)
+                ) AS qtd_pendentes
             FROM mensalidades
             WHERE association_id = :aid
             GROUP BY resident_id
@@ -289,6 +293,21 @@ async def remote_pay_batch(
             errors.append({"mensalidade_id": str(p.mensalidade_id), "error": e.detail})
 
     return {"paid": results, "errors": errors}
+
+
+# ─── POST /crm/cron-scoring ──────────────────────────────────────────────────
+
+@router.post("/cron-scoring", include_in_schema=False)
+async def cron_scoring(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    auth = request.headers.get("authorization", "")
+    from app.config import settings
+    if auth != f"Bearer {settings.cron_secret}":
+        raise HTTPException(status_code=401)
+    result = await run_scoring_all(session)
+    return result
 
 
 # ─── GET /crm/agentes/ranking ────────────────────────────────────────────────

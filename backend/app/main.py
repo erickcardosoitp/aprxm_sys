@@ -144,6 +144,18 @@ async def _run_migrations() -> None:
                 "VALUES (2, 'v2: CRM — payment_channel, agente role, agent_visits') "
                 "ON CONFLICT DO NOTHING"
             ))
+            # v3: RFM scoring columns on residents
+            await session.execute(text(
+                "ALTER TABLE residents "
+                "ADD COLUMN IF NOT EXISTS risk_score SMALLINT DEFAULT NULL, "
+                "ADD COLUMN IF NOT EXISTS rfm_segment VARCHAR(30) DEFAULT NULL, "
+                "ADD COLUMN IF NOT EXISTS risk_updated_at TIMESTAMPTZ DEFAULT NULL"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (3, 'v3: RFM scoring — risk_score, rfm_segment, risk_updated_at') "
+                "ON CONFLICT DO NOTHING"
+            ))
             await session.commit()
             return
 
@@ -944,6 +956,18 @@ async def _run_migrations() -> None:
         await session.execute(text(
             "INSERT INTO schema_migrations (version, description) "
             "VALUES (2, 'v2: CRM — payment_channel, agente role, agent_visits') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        # v3: RFM scoring columns on residents
+        await session.execute(text(
+            "ALTER TABLE residents "
+            "ADD COLUMN IF NOT EXISTS risk_score SMALLINT DEFAULT NULL, "
+            "ADD COLUMN IF NOT EXISTS rfm_segment VARCHAR(30) DEFAULT NULL, "
+            "ADD COLUMN IF NOT EXISTS risk_updated_at TIMESTAMPTZ DEFAULT NULL"
+        ))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (3, 'v3: RFM scoring — risk_score, rfm_segment, risk_updated_at') "
             "ON CONFLICT DO NOTHING"
         ))
         await session.commit()
