@@ -392,7 +392,8 @@ async def agentes_ranking(
     # Bônus de equipe
     all_novos = [a["novos"] for a in ranked]
     agentes_com_5 = sum(1 for n in all_novos if n >= 5)
-    total_agentes = len(ranked)
+    total_agentes = 6  # equipe fixa: Danielly, Carla, Vinicius, Monique, Hosana, Paulo Victor
+    bonus_novos_ok = agentes_com_5 == total_agentes
 
     adimplencia_row = (await session.execute(
         text("""
@@ -412,7 +413,6 @@ async def agentes_ranking(
     )).fetchone()
 
     adimplencia_pct = (adimplencia_row.adimplentes / adimplencia_row.total * 100) if adimplencia_row.total else 0
-    bonus_novos_ok = total_agentes >= 5 and agentes_com_5 == total_agentes
     bonus_adimplencia_ok = adimplencia_pct >= 80
     bonus_liberado = bonus_novos_ok and bonus_adimplencia_ok
 

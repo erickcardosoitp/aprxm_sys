@@ -945,92 +945,159 @@ export default function CRMPage() {
       )}
 
       {/* === ABA AGENTES === */}
-      {tab === 'agentes' && (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-center gap-3">
-            <button onClick={agPrevMonth}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">‹</button>
-            <span className="font-semibold text-gray-700 capitalize">{monthLabel(agYear, agMonth)}</span>
-            <button onClick={agNextMonth}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">›</button>
-          </div>
+      {tab === 'agentes' && (() => {
+        const META_NOVOS = 5
+        const META_COB = 10
+        const FIXED_AGENTS = ['Danielly', 'Carla', 'Vinicius', 'Monique', 'Hosana', 'Paulo Victor']
 
-          {agLoading ? (
-            <div className="text-center py-12 text-gray-400 text-sm">Carregando...</div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-2">
-                {agRanking.length === 0 && (
-                  <p className="text-center text-gray-400 py-8 text-sm">Nenhuma atividade registrada neste mês.</p>
-                )}
-                {agRanking.map(agent => (
-                  <div key={agent.agent_id}
-                    className={`rounded-xl border p-4 flex items-center gap-4 ${
-                      agent.position === 1 ? 'border-amber-300 bg-amber-50' :
-                      agent.position === 2 ? 'border-gray-300 bg-gray-50' :
-                      agent.position === 3 ? 'border-orange-200 bg-orange-50' :
-                      'border-gray-100 bg-white'
-                    }`}>
-                    <div className="w-9 h-9 flex items-center justify-center rounded-full font-bold text-sm shrink-0
-                      bg-white border border-gray-200 text-gray-600">
-                      {agent.position <= 3
-                        ? <Trophy className={`w-4 h-4 ${agent.position === 1 ? 'text-amber-500' : agent.position === 2 ? 'text-gray-400' : 'text-orange-400'}`} />
-                        : `${agent.position}º`}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-800 text-sm truncate">{agent.agent_name}</p>
-                      <div className="flex gap-4 mt-0.5 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <TrendingUp className="w-3 h-3 text-[#26619c]" />
-                          {agent.cobrancas} cobranças
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Users className="w-3 h-3 text-emerald-600" />
-                          {agent.novos} novos
-                        </span>
-                      </div>
-                    </div>
-                    {agent.prize > 0 && (
-                      <div className="text-right shrink-0">
-                        <p className="font-bold text-gray-800 text-sm">{fmtCurrency(agent.prize)}</p>
-                        <p className="text-xs text-gray-400">prêmio</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+        const merged = FIXED_AGENTS.map(name => {
+          const found = agRanking.find(r =>
+            r.agent_name.toLowerCase().includes(name.toLowerCase()) ||
+            name.toLowerCase().includes(r.agent_name.split(' ')[0].toLowerCase())
+          )
+          return {
+            display_name: name,
+            agent_id: found?.agent_id ?? name,
+            cobrancas: found?.cobrancas ?? 0,
+            novos: found?.novos ?? 0,
+            position: found?.position ?? 99,
+            prize: found?.prize ?? 0,
+          }
+        }).sort((a, b) => {
+          const scoreA = a.cobrancas * 0.6 + a.novos * 0.4
+          const scoreB = b.cobrancas * 0.6 + b.novos * 0.4
+          return scoreB - scoreA
+        }).map((a, i) => ({ ...a, rank: i + 1 }))
 
-              {agBonus && !isAgente && (
-                <div className={`rounded-xl border p-4 ${agBonus.liberado ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
-                  <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2 text-sm">
-                    {agBonus.liberado
-                      ? <CheckCircle className="w-4 h-4 text-green-600" />
-                      : <XCircle className="w-4 h-4 text-gray-400" />}
-                    Bônus de Equipe (+R$ 30 por agente)
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Agentes com ≥5 novos: {agBonus.agentes_com_5_novos}/{agBonus.total_agentes}</span>
-                      {agBonus.novos_ok
-                        ? <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-                        : <XCircle className="w-3.5 h-3.5 text-red-400" />}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Adimplência: {agBonus.adimplencia_pct}%</span>
-                      {agBonus.adimplencia_ok
-                        ? <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-                        : <XCircle className="w-3.5 h-3.5 text-red-400" />}
-                    </div>
-                    <p className={`text-sm font-semibold mt-1 ${agBonus.liberado ? 'text-green-700' : 'text-gray-400'}`}>
-                      {agBonus.liberado ? 'Bonus liberado!' : 'Bonus nao liberado este mes'}
-                    </p>
-                  </div>
+        const MEDAL_COLOR = ['text-amber-500', 'text-gray-400', 'text-orange-400']
+        const CARD_STYLE = [
+          'border-amber-300 bg-amber-50',
+          'border-gray-300 bg-gray-50',
+          'border-orange-200 bg-orange-50',
+        ]
+
+        return (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-center gap-3">
+              <button onClick={agPrevMonth}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">‹</button>
+              <span className="font-semibold text-gray-700 capitalize">{monthLabel(agYear, agMonth)}</span>
+              <button onClick={agNextMonth}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">›</button>
+            </div>
+
+            {agLoading ? (
+              <div className="text-center py-12 text-gray-400 text-sm">Carregando...</div>
+            ) : (
+              <>
+                <div className="flex flex-col gap-3">
+                  {merged.map(agent => {
+                    const pctNovos = Math.min(100, (agent.novos / META_NOVOS) * 100)
+                    const pctCob   = Math.min(100, (agent.cobrancas / META_COB) * 100)
+                    const novosOk  = agent.novos >= META_NOVOS
+                    const cobOk    = agent.cobrancas >= META_COB
+                    const faltaNovos = Math.max(0, META_NOVOS - agent.novos)
+                    const faltaCob   = Math.max(0, META_COB - agent.cobrancas)
+                    return (
+                      <div key={agent.display_name}
+                        className={`rounded-xl border p-4 ${agent.rank <= 3 ? CARD_STYLE[agent.rank - 1] : 'border-gray-100 bg-white'}`}>
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 shrink-0">
+                            {agent.rank <= 3
+                              ? <Trophy className={`w-4 h-4 ${MEDAL_COLOR[agent.rank - 1]}`} />
+                              : <span className="text-xs font-bold text-gray-500">{agent.rank}º</span>}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-semibold text-gray-800 text-sm">{agent.display_name}</p>
+                          </div>
+                          {agent.prize > 0 && (
+                            <div className="text-right">
+                              <p className="font-bold text-gray-800 text-sm">{fmtCurrency(agent.prize)}</p>
+                              <p className="text-xs text-gray-400">prêmio</p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          {/* Novos associados */}
+                          <div>
+                            <div className="flex justify-between text-xs mb-1">
+                              <span className="flex items-center gap-1 text-gray-600">
+                                <Users className="w-3 h-3 text-emerald-600" />
+                                Novos associados
+                              </span>
+                              <span className={`font-semibold ${novosOk ? 'text-emerald-600' : 'text-gray-700'}`}>
+                                {agent.novos}/{META_NOVOS}
+                                {!novosOk && <span className="font-normal text-gray-400 ml-1">· faltam {faltaNovos}</span>}
+                                {novosOk && <span className="ml-1">✓</span>}
+                              </span>
+                            </div>
+                            <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${novosOk ? 'bg-emerald-500' : 'bg-emerald-400'}`}
+                                style={{ width: `${pctNovos}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Cobranças */}
+                          <div>
+                            <div className="flex justify-between text-xs mb-1">
+                              <span className="flex items-center gap-1 text-gray-600">
+                                <TrendingUp className="w-3 h-3 text-[#26619c]" />
+                                Cobranças
+                              </span>
+                              <span className={`font-semibold ${cobOk ? 'text-[#26619c]' : 'text-gray-700'}`}>
+                                {agent.cobrancas}/{META_COB}
+                                {!cobOk && <span className="font-normal text-gray-400 ml-1">· faltam {faltaCob}</span>}
+                                {cobOk && <span className="ml-1">✓</span>}
+                              </span>
+                            </div>
+                            <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${cobOk ? 'bg-[#26619c]' : 'bg-blue-400'}`}
+                                style={{ width: `${pctCob}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
+
+                {agBonus && !isAgente && (
+                  <div className={`rounded-xl border p-4 ${agBonus.liberado ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+                    <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2 text-sm">
+                      {agBonus.liberado
+                        ? <CheckCircle className="w-4 h-4 text-green-600" />
+                        : <XCircle className="w-4 h-4 text-gray-400" />}
+                      Bônus de Equipe (+R$ 30 por agente)
+                    </h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Agentes com ≥5 novos: {agBonus.agentes_com_5_novos}/6</span>
+                        {agBonus.novos_ok
+                          ? <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                          : <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Adimplência: {agBonus.adimplencia_pct}%</span>
+                        {agBonus.adimplencia_ok
+                          ? <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                          : <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                      </div>
+                      <p className={`text-sm font-semibold mt-1 ${agBonus.liberado ? 'text-green-700' : 'text-gray-400'}`}>
+                        {agBonus.liberado ? 'Bônus liberado!' : 'Bônus não liberado este mês'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       {/* === PAYMENT MODAL === */}
       {payTarget && (
