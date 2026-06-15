@@ -18,6 +18,7 @@ const ROLE_LABELS: Record<ExtendedRole, string> = {
   conselho: 'Conselho',
   operator: 'Operador',
   viewer: 'Visualizador',
+  agente: 'Agente',
 }
 
 const ROLE_COLORS: Record<ExtendedRole, string> = {
@@ -30,9 +31,10 @@ const ROLE_COLORS: Record<ExtendedRole, string> = {
   conselho: 'bg-amber-100 text-amber-700',
   operator: 'bg-green-100 text-green-700',
   viewer: 'bg-gray-100 text-gray-600',
+  agente: 'bg-emerald-100 text-emerald-700',
 }
 
-const EDITABLE_ROLES: ExtendedRole[] = ['admin', 'conferente', 'diretoria', 'diretoria_adjunta', 'conselho', 'operator', 'viewer']
+const EDITABLE_ROLES: ExtendedRole[] = ['admin', 'conferente', 'diretoria', 'diretoria_adjunta', 'conselho', 'operator', 'viewer', 'agente']
 
 interface UserFormData {
   full_name: string
