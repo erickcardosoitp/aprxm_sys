@@ -326,9 +326,7 @@ async def agentes_ranking(
     now = datetime.utcnow()
     target_year = year or now.year
     target_month = month or now.month
-    from datetime import date as date_type
     ref_month = f"{target_year:04d}-{target_month:02d}"
-    ref_date = date_type(target_year, target_month, 1)
 
     aid = str(current.association_id)
 
@@ -343,10 +341,11 @@ async def agentes_ranking(
             JOIN mensalidades m ON m.transaction_id = t.id
             WHERE t.association_id = :aid
               AND t.income_subtype = 'mensalidade'
-              AND DATE_TRUNC('month', t.created_at) = DATE_TRUNC('month', :ref)
+              AND EXTRACT(YEAR  FROM t.created_at) = :yr
+              AND EXTRACT(MONTH FROM t.created_at) = :mo
             GROUP BY t.created_by, u.full_name
         """),
-        {"aid": aid, "ref": ref_date},
+        {"aid": aid, "yr": target_year, "mo": target_month},
     )).fetchall()
 
     # Novos associados cadastrados por cada agente no mês
@@ -357,10 +356,11 @@ async def agentes_ranking(
             FROM residents r
             WHERE r.association_id = :aid
               AND r.type = 'member'
-              AND DATE_TRUNC('month', r.created_at) = DATE_TRUNC('month', :ref)
+              AND EXTRACT(YEAR  FROM r.created_at) = :yr
+              AND EXTRACT(MONTH FROM r.created_at) = :mo
             GROUP BY r.created_by
         """),
-        {"aid": aid, "ref": ref_date},
+        {"aid": aid, "yr": target_year, "mo": target_month},
     )).fetchall()
 
     novos_map = {str(r.agent_id): r.novos for r in novos_rows}
