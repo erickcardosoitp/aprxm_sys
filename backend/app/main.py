@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 async def _run_migrations() -> None:
@@ -872,6 +872,51 @@ async def _run_migrations() -> None:
             "ON CONFLICT DO NOTHING"
         ))
         await session.commit()
+
+    # ── v2: CRM — payment_channel, payment_proof_url, agente role, agent_visits ─
+    async with AsyncSessionLocal() as sv2:
+        _v2_applied = (await sv2.execute(text(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+        ))).scalar()
+        if _v2_applied < 2:
+            await sv2.execute(text(
+                "ALTER TABLE mensalidades "
+                "ADD COLUMN IF NOT EXISTS payment_channel VARCHAR(20) NOT NULL DEFAULT 'cash', "
+                "ADD COLUMN IF NOT EXISTS payment_proof_url TEXT"
+            ))
+            await sv2.execute(text("""
+                DO $$ BEGIN
+                    ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'agente';
+                EXCEPTION WHEN duplicate_object THEN NULL;
+                END $$
+            """))
+            await sv2.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_visits (
+                    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    association_id   UUID NOT NULL REFERENCES associations(id),
+                    agent_id         UUID NOT NULL REFERENCES users(id),
+                    resident_id      UUID NOT NULL REFERENCES residents(id),
+                    visited_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    result           VARCHAR(20) NOT NULL CHECK (result IN ('paid','will_pay','absent','refused')),
+                    notes            TEXT,
+                    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+            await sv2.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_agent_visits_resident ON agent_visits(resident_id, association_id)"
+            ))
+            await sv2.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_agent_visits_agent ON agent_visits(agent_id, visited_at)"
+            ))
+            await sv2.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_packages_resident_del ON packages(resident_id, delivered_at)"
+            ))
+            await sv2.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (2, 'v2: CRM — payment_channel, agente role, agent_visits') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await sv2.commit()
 
 
 app = FastAPI(
