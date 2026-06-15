@@ -69,7 +69,6 @@ const LogsPage          = lazyWithReload(() => import('./pages/logs/LogsPage'))
 const TIPage            = lazyWithReload(() => import('./pages/ti/TIPage'))
 const ChatPage          = lazyWithReload(() => import('./pages/chat/ChatPage'))
 const HelpPage          = lazyWithReload(() => import('./pages/help/HelpPage'))
-const CRMPage           = lazyWithReload(() => import('./pages/crm/CRMPage'))
 
 function PageLoader() {
   return (
@@ -103,7 +102,7 @@ function RedirectByRole() {
   const simplificaEnabled = useAuthStore((s) => s.simplificaEnabled)
   if (simplificaMode && simplificaEnabled) return <Navigate to="/simplifica" replace />
   if (isOffice) return <Navigate to="/geral" replace />
-  if (role === 'agente') return <Navigate to="/crm" replace />
+  if (role === 'agente') return <Navigate to="/financeiro" replace />
   if (role === 'operator' || role === 'viewer') return <Navigate to="/finance" replace />
   return <Navigate to="/overview" replace />
 }
@@ -167,8 +166,8 @@ export default function App() {
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><LogsPage /></Suspense></RequireAdmin></RequireNotOffice>} />
           <Route path="ti"             element={<RequireSuperAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireSuperAdmin>} />
           <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />
-          <Route path="crm"            element={<Suspense fallback={<PageLoader />}><CRMPage /></Suspense>} />
-          <Route path="agentes"        element={<Navigate to="/crm" replace />} />
+          <Route path="crm"            element={<Navigate to="/financeiro" replace />} />
+          <Route path="agentes"        element={<Navigate to="/financeiro" replace />} />
           <Route path="help"           element={<Navigate to="/help/abrir-caixa" replace />} />
           <Route path="help/:slug"     element={<Suspense fallback={<PageLoader />}><HelpPage /></Suspense>} />
         </Route>

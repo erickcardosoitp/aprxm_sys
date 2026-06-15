@@ -189,8 +189,9 @@ export default function CRMPage() {
   const [memberPendingList, setMemberPendingList] = useState<{ member: CRMMember; items: Mensalidade[] } | null>(null)
 
   // profile modal
-  const [profileModal, setProfileModal] = useState<{ id: string; name: string } | null>(null)
+  const [profileModal, setProfileModal] = useState<CRMMember | null>(null)
   const [profileHistory, setProfileHistory] = useState<Mensalidade[]>([])
+  const [profileVisits, setProfileVisits] = useState<any[]>([])
   const [profileLoading, setProfileLoading] = useState(false)
 
   const loadCobrancas = async () => {
@@ -267,7 +268,7 @@ export default function CRMPage() {
       toast.success('Mensalidade paga!')
       setPayTarget(null)
       if (profileModal) {
-        openProfile(profileModal.id, profileModal.name)
+        openProfile(profileModal)
       } else {
         loadCobrancas()
         loadMembers()
@@ -292,13 +293,19 @@ export default function CRMPage() {
   }
 
   // ── Profile modal ──────────────────────────────────────────────────────────
-  const openProfile = async (id: string, name: string) => {
-    setProfileModal({ id, name })
+  const openProfile = async (member: CRMMember) => {
+    setProfileModal(member)
+    setProfileHistory([])
+    setProfileVisits([])
     setProfileLoading(true)
     try {
-      const res = await api.get<Mensalidade[]>(`/mensalidades/residents/${id}`)
-      setProfileHistory(res.data)
-    } catch { toast.error('Erro ao carregar perfil.') }
+      const [hist, visits] = await Promise.all([
+        api.get<Mensalidade[]>(`/mensalidades/residents/${member.id}`),
+        api.get('/crm/visitas', { params: { resident_id: member.id } }),
+      ])
+      setProfileHistory(hist.data)
+      setProfileVisits(visits.data.visits ?? [])
+    } catch { toast.error('Erro ao carregar dados.') }
     finally { setProfileLoading(false) }
   }
 
@@ -308,8 +315,8 @@ export default function CRMPage() {
     try {
       const res = await api.post('/mensalidades/advance', { resident_id: profileModal.id })
       toast.success(`Mensalidade ${res.data.reference_month} criada.`)
-      await openProfile(profileModal.id, profileModal.name)
-      openPay(res.data.id, profileModal.name, parseFloat(res.data.amount))
+      await openProfile(profileModal)
+      openPay(res.data.id, profileModal.full_name, parseFloat(res.data.amount))
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
     finally { setAdvanceLoading(false) }
   }
@@ -330,7 +337,7 @@ export default function CRMPage() {
       toast.success(`Dia de vencimento alterado para dia ${day}.`)
       setShowChangeDueDay(false)
       setNewDueDay('')
-      openProfile(profileModal.id, profileModal.name)
+      openProfile(profileModal)
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
     finally { setSavingDueDay(false) }
   }
@@ -414,7 +421,7 @@ export default function CRMPage() {
       await api.patch(`/mensalidades/${mensalidadeId}/due-date`, { due_date: editDueDateVal, update_resident_day: updateResident })
       toast.success(updateResident ? 'Vencimento e dia padrão atualizados.' : 'Vencimento atualizado.')
       setEditDueDateId(null)
-      if (profileModal) openProfile(profileModal.id, profileModal.name)
+      if (profileModal) openProfile(profileModal)
       loadCobrancas()
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
     finally { setSavingDueDate(false) }
@@ -587,8 +594,8 @@ export default function CRMPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {members.map(m => (
-                    <tr key={m.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-2.5 font-medium text-gray-800 whitespace-nowrap">{m.full_name}</td>
+                    <tr key={m.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => openProfile(m)}>
+                      <td className="px-4 py-2.5 font-medium text-[#26619c] whitespace-nowrap hover:underline">{m.full_name}</td>
                       <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap max-w-[180px] truncate">{m.address || '—'}</td>
                       <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{tenureLabel(m.created_at)}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
@@ -612,7 +619,7 @@ export default function CRMPage() {
                       <td className="px-4 py-2.5 text-center text-gray-500 whitespace-nowrap">
                         {m.enc_mes > 0 ? m.enc_mes.toFixed(1) : '—'}
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
+                      <td className="px-4 py-2.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2 justify-center">
                           {m.phone_primary && (
                             <a
@@ -636,12 +643,6 @@ export default function CRMPage() {
                             className="p-1 text-gray-400 hover:text-gray-600 rounded"
                             title="Registrar visita">
                             <MapPin className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => openProfile(m.id, m.full_name)}
-                            className="p-1 text-[#26619c] hover:text-[#1a4f87] rounded"
-                            title="Perfil 360">
-                            <Users className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -885,8 +886,12 @@ export default function CRMPage() {
                           <span className="text-sm font-bold text-gray-800">{fmt(d.amount)}</span>
                           <div className="flex gap-1 items-center">
                             {waLink && <a href={waLink} target="_blank" rel="noreferrer" className="p-1.5 text-green-500 hover:text-green-700 rounded-lg"><MessageCircle className="w-4 h-4" /></a>}
-                            <button onClick={() => openProfile(d.resident_id, d.resident_name ?? '')}
-                              className="text-xs text-[#26619c] hover:underline flex items-center gap-1">
+                            <button onClick={() => {
+                              const found = members.find(m => m.id === d.resident_id)
+                              if (found) { openProfile(found) } else {
+                                openProfile({ id: d.resident_id, full_name: d.resident_name ?? '', situacao: 'inadimplente', qtd_pendentes: d.months_overdue ?? 1, valor_atrasado: parseFloat(d.amount), address: '', phone_primary: null, created_at: '', ultima_entrega: null, enc_mes: 0 } as CRMMember)
+                              }
+                            }} className="text-xs text-[#26619c] hover:underline flex items-center gap-1">
                               <Users className="w-3 h-3" /> Perfil
                             </button>
                             {!isAgente && d.id && (
@@ -1224,66 +1229,77 @@ export default function CRMPage() {
         </div>
       )}
 
-      {/* === PROFILE MODAL === */}
+      {/* === PROFILE DRAWER === */}
       {profileModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 shrink-0">
               <div>
-                <h2 className="text-base font-semibold text-gray-800">{profileModal.name}</h2>
-                <p className="text-xs text-gray-400">Perfil 360</p>
+                <h2 className="text-base font-semibold text-gray-800">{profileModal.full_name}</h2>
+                <p className="text-xs text-gray-400">
+                  {profileModal.situacao === 'adimplente'
+                    ? <span className="text-green-600">Adimplente</span>
+                    : <span className="text-red-500">Inadimplente · {profileModal.qtd_pendentes} {profileModal.qtd_pendentes === 1 ? 'mês' : 'meses'} em atraso</span>}
+                </p>
               </div>
-              <button onClick={() => { setProfileModal(null); setProfileHistory([]); setShowChangeDueDay(false); setNewDueDay('') }}>
+              <button onClick={() => { setProfileModal(null); setProfileHistory([]); setProfileVisits([]); setShowChangeDueDay(false); setNewDueDay('') }}>
                 <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-4">
+            <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-5">
               {profileLoading ? (
                 <p className="text-sm text-center text-gray-400 py-6">Carregando…</p>
               ) : (
                 <>
-                  {/* Stats */}
-                  {profileHistory.length > 0 && (() => {
-                    const paid = profileHistory.filter(m => m.status === 'paid')
-                    const pending = profileHistory.filter(m => m.status !== 'paid')
-                    return (
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
-                          <p className="text-lg font-bold text-green-600">{paid.length}</p>
-                          <p className="text-xs text-gray-400">Pagas</p>
-                        </div>
-                        <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
-                          <p className="text-lg font-bold text-red-500">{pending.length}</p>
-                          <p className="text-xs text-gray-400">Pendentes</p>
-                        </div>
-                        <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
-                          <p className="text-sm font-bold text-gray-700">{fmt(paid.reduce((s, m) => s + parseFloat(m.amount), 0))}</p>
-                          <p className="text-xs text-gray-400">de {fmt(profileHistory.reduce((s, m) => s + parseFloat(m.amount), 0))}</p>
-                        </div>
+                  {/* Dados básicos */}
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    {profileModal.address && (
+                      <div className="col-span-2">
+                        <p className="text-xs text-gray-400 mb-0.5">Endereço</p>
+                        <p className="text-gray-800">{profileModal.address}</p>
                       </div>
-                    )
-                  })()}
+                    )}
+                    {profileModal.phone_primary && (
+                      <div>
+                        <p className="text-xs text-gray-400 mb-0.5">Telefone</p>
+                        <a href={`https://wa.me/55${profileModal.phone_primary.replace(/\D/g,'')}`}
+                          target="_blank" rel="noreferrer"
+                          className="text-green-600 font-medium hover:underline flex items-center gap-1">
+                          <MessageCircle className="w-3.5 h-3.5" />{profileModal.phone_primary}
+                        </a>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs text-gray-400 mb-0.5">Associado desde</p>
+                      <p className="text-gray-800">{tenureLabel(profileModal.created_at)}</p>
+                    </div>
+                    {profileModal.valor_atrasado > 0 && (
+                      <div>
+                        <p className="text-xs text-gray-400 mb-0.5">Em atraso</p>
+                        <p className="text-red-600 font-semibold">{fmt(profileModal.valor_atrasado)}</p>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Admin actions */}
                   {isAdmin && (
                     <div className="flex gap-2">
                       <button onClick={handleAdvancePaymentProfile} disabled={advanceLoading}
-                        className="flex-1 flex items-center justify-center gap-1 border-2 border-dashed border-blue-400/50 rounded-xl py-2.5 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
-                        <CalendarPlus className="w-4 h-4" />{advanceLoading ? 'Criando…' : 'Pagar Adiantado'}
+                        className="flex-1 flex items-center justify-center gap-1 border border-dashed border-blue-300 rounded-xl py-2 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
+                        <CalendarPlus className="w-3.5 h-3.5" />{advanceLoading ? 'Criando…' : 'Pagar Adiantado'}
                       </button>
                       <button onClick={() => { setShowChangeDueDay(v => !v); setNewDueDay('') }}
-                        className="flex-1 flex items-center justify-center gap-1 border-2 border-dashed border-amber-400/50 rounded-xl py-2.5 text-sm text-amber-700 hover:bg-amber-50">
-                        <Pencil className="w-4 h-4" /> Alterar Vencimento
+                        className="flex-1 flex items-center justify-center gap-1 border border-dashed border-amber-300 rounded-xl py-2 text-sm text-amber-700 hover:bg-amber-50">
+                        <Pencil className="w-3.5 h-3.5" /> Alterar Vencimento
                       </button>
                     </div>
                   )}
 
                   {showChangeDueDay && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-3">
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col gap-3">
                       <p className="text-sm font-semibold text-amber-800">Alterar dia de vencimento permanente</p>
-                      <p className="text-xs text-amber-600">Atualiza o dia padrão e todas as cobranças pendentes.</p>
                       <div className="flex gap-2">
                         <input type="number" min="1" max="31" value={newDueDay}
                           onChange={e => setNewDueDay(e.target.value)} placeholder="Dia (1–31)" className={`${inputCls} flex-1`} autoFocus />
@@ -1295,62 +1311,76 @@ export default function CRMPage() {
                     </div>
                   )}
 
-                  {/* History list */}
-                  {profileHistory.length > 0 && (
-                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                      <ul className="divide-y divide-gray-100">
-                        {profileHistory.map((m, idx) => {
-                          const isPaid = m.status === 'paid'
-                          const isMig = m.origem === 'migracao'
-                          const graceCutoff = new Date(); graceCutoff.setDate(graceCutoff.getDate() - 2)
-                          const isOverdue = !isPaid && m.due_date && new Date(m.due_date) < graceCutoff
+                  {/* Visitas */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Visitas registradas</p>
+                    {profileVisits.length === 0 ? (
+                      <p className="text-sm text-gray-400">Nenhuma visita registrada.</p>
+                    ) : (
+                      <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200 overflow-hidden">
+                        {profileVisits.map((v: any) => {
+                          const RESULT_LABEL: Record<string, string> = {
+                            paid: 'Pagou', will_pay: 'Vai pagar', absent: 'Ausente', refused: 'Recusou'
+                          }
+                          const RESULT_COLOR: Record<string, string> = {
+                            paid: 'text-green-600', will_pay: 'text-blue-600', absent: 'text-gray-400', refused: 'text-red-500'
+                          }
                           return (
-                            <li key={m.id ?? `mig-${idx}`} className="px-4 py-3 flex items-center justify-between gap-3">
-                              <div className="flex items-center gap-3 min-w-0 flex-1">
-                                <div className={`w-2 h-2 rounded-full shrink-0 ${isPaid ? 'bg-green-400' : isOverdue ? 'bg-red-400' : 'bg-amber-400'}`} />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-sm font-semibold text-gray-800">{m.reference_month}</p>
-                                    {isMig && <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Migração</span>}
-                                  </div>
-                                  {isPaid && m.paid_at ? (
-                                    <p className="text-xs text-green-600">Pago em {fmtDate(m.paid_at)}</p>
-                                  ) : m.due_date ? (
-                                    editDueDateId === m.id ? (
-                                      <div className="flex items-center gap-1 mt-1">
-                                        <input type="date" value={editDueDateVal}
-                                          onChange={e => setEditDueDateVal(e.target.value)}
-                                          className="text-xs border border-gray-300 rounded px-1.5 py-0.5" autoFocus />
-                                        <button onClick={() => handleSaveDueDate(m.id!, false)} disabled={savingDueDate}
-                                          className="text-[10px] bg-[#26619c] text-white px-1.5 py-0.5 rounded disabled:opacity-50">
-                                          {savingDueDate ? '…' : 'Salvar'}
-                                        </button>
-                                        <button onClick={() => handleSaveDueDate(m.id!, true)} disabled={savingDueDate}
-                                          className="text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded disabled:opacity-50">
-                                          + Padrão
-                                        </button>
-                                        <button onClick={() => setEditDueDateId(null)}><X className="w-3.5 h-3.5 text-gray-400" /></button>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center gap-1">
-                                        <p className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>Venc. {fmtDate(m.due_date)}</p>
-                                        {!isMig && isAdmin && (
-                                          <button onClick={() => { setEditDueDateId(m.id!); setEditDueDateVal(m.due_date!) }}
-                                            className="text-gray-300 hover:text-[#26619c]">
-                                            <Pencil className="w-3 h-3" />
-                                          </button>
-                                        )}
-                                      </div>
-                                    )
+                            <li key={v.id} className="px-4 py-2.5 flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <p className={`text-sm font-medium ${RESULT_COLOR[v.result] ?? 'text-gray-600'}`}>
+                                  {RESULT_LABEL[v.result] ?? v.result}
+                                </p>
+                                <p className="text-xs text-gray-400">{v.agent_name} · {fmtDate(v.visited_at)}</p>
+                                {v.notes && <p className="text-xs text-gray-500 mt-0.5 italic">{v.notes}</p>}
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                  </div>
+
+                  {/* Mensalidades pendentes */}
+                  {profileHistory.filter(m => m.status !== 'paid').length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mensalidades em aberto</p>
+                      <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200 overflow-hidden">
+                        {profileHistory.filter(m => m.status !== 'paid' && m.id).map(m => {
+                          const graceCutoff = new Date(); graceCutoff.setDate(graceCutoff.getDate() - 2)
+                          const isOverdue = m.due_date && new Date(m.due_date) < graceCutoff
+                          return (
+                            <li key={m.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-gray-800">{m.reference_month}</p>
+                                {m.due_date && (
+                                  editDueDateId === m.id ? (
+                                    <div className="flex items-center gap-1 mt-1">
+                                      <input type="date" value={editDueDateVal} onChange={e => setEditDueDateVal(e.target.value)}
+                                        className="text-xs border border-gray-300 rounded px-1.5 py-0.5" autoFocus />
+                                      <button onClick={() => handleSaveDueDate(m.id!, false)} disabled={savingDueDate}
+                                        className="text-[10px] bg-[#26619c] text-white px-1.5 py-0.5 rounded">
+                                        {savingDueDate ? '…' : 'Salvar'}
+                                      </button>
+                                      <button onClick={() => handleSaveDueDate(m.id!, true)} disabled={savingDueDate}
+                                        className="text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded">+ Padrão</button>
+                                      <button onClick={() => setEditDueDateId(null)}><X className="w-3.5 h-3.5 text-gray-400" /></button>
+                                    </div>
                                   ) : (
-                                    <p className="text-xs text-gray-400">Histórico anterior</p>
-                                  )}
-                                </div>
+                                    <div className="flex items-center gap-1">
+                                      <p className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>Venc. {fmtDate(m.due_date)}</p>
+                                      {isAdmin && (
+                                        <button onClick={() => { setEditDueDateId(m.id!); setEditDueDateVal(m.due_date!) }}
+                                          className="text-gray-300 hover:text-[#26619c]"><Pencil className="w-3 h-3" /></button>
+                                      )}
+                                    </div>
+                                  )
+                                )}
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
                                 <span className="text-sm font-bold text-gray-800">{fmt(m.amount)}</span>
-                                {!isPaid && !isMig && !isAgente && m.id && (
-                                  <button onClick={() => openPay(m.id!, profileModal.name, parseFloat(m.amount))}
+                                {!isAgente && (
+                                  <button onClick={() => openPay(m.id!, profileModal.full_name, parseFloat(m.amount))}
                                     disabled={payingId === m.id}
                                     className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-3 py-1 rounded-lg">
                                     {payingId === m.id ? '…' : 'Pagar'}
@@ -1362,10 +1392,6 @@ export default function CRMPage() {
                         })}
                       </ul>
                     </div>
-                  )}
-
-                  {profileHistory.length === 0 && (
-                    <p className="text-sm text-center text-gray-400 py-6">Nenhuma cobrança encontrada.</p>
                   )}
                 </>
               )}

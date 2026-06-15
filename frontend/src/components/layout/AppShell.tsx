@@ -288,7 +288,7 @@ export function AppShell() {
     ? [{ to: '/geral', label: 'Escritório', icon: Building2 }]
     : isAgente
     ? [
-        { to: '/crm', label: 'CRM', icon: UserCheck },
+        { to: '/financeiro', label: 'Financeiro', icon: TrendingUp },
       ]
     : (() => {
         const items: NavItem[] = [{ to: '/overview', label: 'Visão', icon: BarChart2 }]
@@ -299,9 +299,6 @@ export function AppShell() {
         if (permissions?.settings?.can_view || isSuperAdmin) items.push(SETTINGS_NAV)
         if (isAdmin) { items.push(ADMIN_NAV); items.push(LOGS_NAV) }
         if (isSuperAdmin) { items.push({ to: '/ti', label: 'TI', icon: Activity }) }
-        if (isAdmin || isSuperAdmin) {
-          items.push({ to: '/crm', label: 'CRM', icon: UserCheck })
-        }
         items.push({ to: '/help', label: 'Ajuda', icon: HelpCircle, end: false })
         return items
       })()
