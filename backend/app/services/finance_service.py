@@ -222,7 +222,7 @@ class FinanceService:
     async def register_transaction(
         self,
         association_id: UUID,
-        cash_session_id: UUID,
+        cash_session_id: UUID | None,
         tx_type: TransactionType,
         amount: Decimal,
         description: str,

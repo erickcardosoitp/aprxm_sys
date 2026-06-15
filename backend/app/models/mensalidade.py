@@ -39,6 +39,8 @@ class Mensalidade(SQLModel, table=True):
     transaction_id_2: UUID | None = Field(default=None, foreign_key="transactions.id")
     amount_2: Decimal | None = Field(default=None, decimal_places=2, max_digits=10)
     notes: str | None = None
+    payment_channel: str = Field(default="cash", max_length=20)
+    payment_proof_url: str | None = None
 
     created_by: UUID = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
