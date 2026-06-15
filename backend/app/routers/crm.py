@@ -428,8 +428,11 @@ async def agentes_ranking(
         for a in ranked:
             a["prize"] = (a["prize"] or 0) + 30
 
+    total_members = adimplencia_row.total if adimplencia_row else 0
+
     return {
         "ref_month": ref_month,
+        "total_members": total_members,
         "ranking": ranked,
         "bonus": {
             "liberado": bonus_liberado,

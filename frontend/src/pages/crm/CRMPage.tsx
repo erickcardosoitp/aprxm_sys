@@ -434,6 +434,7 @@ export default function CRMPage() {
   const [agMonth, setAgMonth] = useState(now.getMonth() + 1)
   const [agRanking, setAgRanking] = useState<AgentRank[]>([])
   const [agBonus, setAgBonus] = useState<BonusInfo | null>(null)
+  const [agTotalMembers, setAgTotalMembers] = useState(0)
   const [agLoading, setAgLoading] = useState(false)
 
   const fetchRanking = async (y = agYear, m = agMonth) => {
@@ -445,6 +446,7 @@ export default function CRMPage() {
         : res.data.ranking
       )
       setAgBonus(res.data.bonus)
+      setAgTotalMembers(res.data.total_members ?? 0)
     } catch { toast.error('Erro ao carregar ranking.') }
     finally { setAgLoading(false) }
   }
@@ -953,7 +955,7 @@ export default function CRMPage() {
       {/* === ABA AGENTES === */}
       {tab === 'agentes' && (() => {
         const META_NOVOS = 5
-        const META_COB = 10
+        const META_COB = agTotalMembers > 0 ? Math.ceil(agTotalMembers / 6) : 10
         const FIXED_AGENTS = ['Danielly', 'Carla', 'Vinicius', 'Monique', 'Hosana', 'Paulo Victor']
         const MEDAL_COLOR = ['text-amber-500', 'text-gray-400', 'text-orange-400']
         const BORDER = ['border-amber-300', 'border-gray-300', 'border-orange-300', 'border-gray-100', 'border-gray-100', 'border-gray-100']
