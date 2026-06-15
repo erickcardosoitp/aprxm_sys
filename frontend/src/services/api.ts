@@ -1,5 +1,6 @@
 import axios from 'axios'
 import toast from 'react-hot-toast'
+import { useAuthStore } from '../store/authStore'
 
 function getDeviceToken(): string {
   const KEY = 'aprxm-device-token'
@@ -46,8 +47,7 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const raw = localStorage.getItem('aprxm-auth') ?? sessionStorage.getItem('aprxm-auth')
-  const token = raw ? JSON.parse(raw)?.state?.token : null
+  const token = useAuthStore.getState().token
   if (token) config.headers.Authorization = `Bearer ${token}`
   config.headers['X-Device-Token'] = getDeviceToken()
   if (config.data instanceof FormData) {
@@ -110,14 +110,9 @@ api.interceptors.response.use(
         )
         const { access_token, refresh_token: newRefresh } = res.data
 
-        // Atualiza token no store sem re-render
-        const storeKey = localStorage.getItem('aprxm-auth') ? 'localStorage' : 'sessionStorage'
-        const raw = window[storeKey === 'localStorage' ? 'localStorage' : 'sessionStorage'].getItem('aprxm-auth')
-        if (raw) {
-          const parsed = JSON.parse(raw)
-          parsed.state.token = access_token
-          window[storeKey === 'localStorage' ? 'localStorage' : 'sessionStorage'].setItem('aprxm-auth', JSON.stringify(parsed))
-        }
+        // Atualiza token no store Zustand (fonte de verdade para o interceptor)
+        const s = useAuthStore.getState()
+        s.setAuth(access_token, s.userId!, s.associationId!, s.role!, s.fullName ?? '', s.linkedAssociationIds, s.associationName, s.rememberDevice, s.isOffice)
         if (newRefresh) saveRefreshToken(newRefresh)
 
         // Resolve fila

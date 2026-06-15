@@ -324,7 +324,8 @@ export function AppShell() {
       const res = await api.post<{ access_token: string }>('/auth/switch-association', { association_id: assocId })
       const token = res.data.access_token
       const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean }>(token)
-      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', false, payload.is_office ?? false)
+      const prevRemember = useAuthStore.getState().rememberDevice
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', prevRemember, payload.is_office ?? false)
       setMenuOpen(false)
       navigate('/')
       toast.success(`Ambiente: ${payload.association_name}`)
