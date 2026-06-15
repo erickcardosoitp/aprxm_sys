@@ -434,7 +434,7 @@ export default function CRMPage() {
   const [agMonth, setAgMonth] = useState(now.getMonth() + 1)
   const [agRanking, setAgRanking] = useState<AgentRank[]>([])
   const [agBonus, setAgBonus] = useState<BonusInfo | null>(null)
-  const [agTotalMembers, setAgTotalMembers] = useState(0)
+  const [agTotalsByAssoc, setAgTotalsByAssoc] = useState<Record<string, number>>({})
   const [agLoading, setAgLoading] = useState(false)
 
   const fetchRanking = async (y = agYear, m = agMonth) => {
@@ -446,7 +446,7 @@ export default function CRMPage() {
         : res.data.ranking
       )
       setAgBonus(res.data.bonus)
-      setAgTotalMembers(res.data.total_members ?? 0)
+      setAgTotalsByAssoc(res.data.totals_by_assoc ?? {})
     } catch { toast.error('Erro ao carregar ranking.') }
     finally { setAgLoading(false) }
   }
@@ -955,7 +955,21 @@ export default function CRMPage() {
       {/* === ABA AGENTES === */}
       {tab === 'agentes' && (() => {
         const META_NOVOS = 5
-        const META_COB = agTotalMembers > 0 ? Math.ceil(agTotalMembers / 6) : 10
+        // Totais por associação — match por substring do nome
+        const totalVL = Object.entries(agTotalsByAssoc).find(([k]) => k.toLowerCase().includes('vaz') || k.toLowerCase().includes('lobo'))?.[1] ?? 0
+        const totalCon = Object.entries(agTotalsByAssoc).find(([k]) => k.toLowerCase().includes('congonha'))?.[1] ?? 0
+        // Meta de cobranças por agente = total dos moradores que ele cobre / qtd agentes naquela assoc
+        const metaVL  = totalVL  > 0 ? Math.ceil(totalVL  / 5) : 0
+        const metaCon = totalCon > 0 ? Math.ceil(totalCon / 3) : 0
+        // Mapeamento: agente → associações que cobre
+        const AGENT_META: Record<string, number> = {
+          'Danielly':     metaVL,
+          'Monique':      metaVL,
+          'Paulo Victor': metaVL,
+          'Vinicius':     metaVL + metaCon,
+          'Carla':        metaVL + metaCon,
+          'Hosana':       metaCon,
+        }
         const FIXED_AGENTS = ['Danielly', 'Carla', 'Vinicius', 'Monique', 'Hosana', 'Paulo Victor']
         const MEDAL_COLOR = ['text-amber-500', 'text-gray-400', 'text-orange-400']
         const BORDER = ['border-amber-300', 'border-gray-300', 'border-orange-300', 'border-gray-100', 'border-gray-100', 'border-gray-100']
@@ -1001,10 +1015,11 @@ export default function CRMPage() {
                 {/* Grid 2 colunas */}
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {merged.map(agent => {
+                    const metaCob = AGENT_META[agent.display_name] || 10
                     const pctN = Math.min(100, (agent.novos / META_NOVOS) * 100)
-                    const pctC = Math.min(100, (agent.cobrancas / META_COB) * 100)
+                    const pctC = Math.min(100, (agent.cobrancas / metaCob) * 100)
                     const nOk  = agent.novos >= META_NOVOS
-                    const cOk  = agent.cobrancas >= META_COB
+                    const cOk  = agent.cobrancas >= metaCob
                     return (
                       <div key={agent.display_name}
                         className={`rounded-xl border bg-white p-3 flex flex-col gap-2 ${BORDER[agent.rank - 1]}`}>
@@ -1039,7 +1054,7 @@ export default function CRMPage() {
                           <div className="flex justify-between text-[10px] mb-0.5">
                             <span className="text-gray-500">Cobranças</span>
                             <span className={`font-semibold ${cOk ? 'text-[#26619c]' : 'text-gray-600'}`}>
-                              {agent.cobrancas}/{META_COB}{cOk ? ' ✓' : ''}
+                              {agent.cobrancas}/{metaCob}{cOk ? ' ✓' : ''}
                             </span>
                           </div>
                           <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
