@@ -70,7 +70,6 @@ const TIPage            = lazyWithReload(() => import('./pages/ti/TIPage'))
 const ChatPage          = lazyWithReload(() => import('./pages/chat/ChatPage'))
 const HelpPage          = lazyWithReload(() => import('./pages/help/HelpPage'))
 const CRMPage           = lazyWithReload(() => import('./pages/crm/CRMPage'))
-const AgentesPage       = lazyWithReload(() => import('./pages/crm/AgentesPage'))
 
 function PageLoader() {
   return (
@@ -169,7 +168,7 @@ export default function App() {
           <Route path="ti"             element={<RequireSuperAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireSuperAdmin>} />
           <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />
           <Route path="crm"            element={<Suspense fallback={<PageLoader />}><CRMPage /></Suspense>} />
-          <Route path="agentes"        element={<Suspense fallback={<PageLoader />}><AgentesPage /></Suspense>} />
+          <Route path="agentes"        element={<Navigate to="/crm" replace />} />
           <Route path="help"           element={<Navigate to="/help/abrir-caixa" replace />} />
           <Route path="help/:slug"     element={<Suspense fallback={<PageLoader />}><HelpPage /></Suspense>} />
         </Route>

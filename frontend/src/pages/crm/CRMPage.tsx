@@ -1,12 +1,31 @@
 import { useEffect, useState } from 'react'
 import {
-  AlertCircle, Plus, Search, X, Users, MessageCircle, MapPin,
-  Pencil, CalendarPlus, UserCheck, Upload, ChevronLeft, ChevronRight
+  Search, X, Users, MessageCircle, MapPin,
+  Pencil, CalendarPlus, UserCheck, Upload,
+  ChevronLeft, ChevronRight, Plus, AlertCircle,
+  CreditCard, TrendingDown, CheckCircle, DollarSign,
+  Trophy, TrendingUp, XCircle
 } from 'lucide-react'
 import api from '../../services/api'
 import { uploadService } from '../../services/upload'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
+
+// ── Agentes types ─────────────────────────────────────────────────────────────
+interface AgentRank {
+  agent_id: string; agent_name: string
+  cobrancas: number; novos: number; position: number; prize: number
+}
+interface BonusInfo {
+  liberado: boolean; novos_ok: boolean
+  adimplencia_pct: number; adimplencia_ok: boolean
+  agentes_com_5_novos: number; total_agentes: number
+}
+const MEDAL = ['1', '2', '3']
+const fmtCurrency = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+function monthLabel(y: number, m: number) {
+  return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -15,6 +34,7 @@ interface CRMMember {
   full_name: string
   address: string
   created_at: string | null
+  phone_primary: string | null
   valor_atrasado: number
   qtd_pendentes: number
   ultima_entrega: string | null
@@ -88,7 +108,7 @@ function daysAgo(iso: string | null): string {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'associados' | 'pendentes' | 'inadimplentes' | 'pagos' | 'historico'
+type Tab = 'associados' | 'pendentes' | 'inadimplentes' | 'pagos' | 'agentes'
 
 export default function CRMPage() {
   const role = useAuthStore(s => s.role)
@@ -128,6 +148,11 @@ export default function CRMPage() {
     return () => clearTimeout(t)
   }, [search, statusFilter])
 
+  // ── KPI calculations ──────────────────────────────────────────────────────
+  const kpiAdimplentes = members.filter(m => m.situacao === 'adimplente').length
+  const kpiInadimplentes = members.filter(m => m.situacao === 'inadimplente').length
+  const kpiValorAberto = members.reduce((s, m) => s + (m.valor_atrasado || 0), 0)
+
   // ── Cobranças state ───────────────────────────────────────────────────────
   const [pendingList, setPendingList] = useState<Mensalidade[]>([])
   const [delinquent, setDelinquent] = useState<Mensalidade[]>([])
@@ -137,12 +162,6 @@ export default function CRMPage() {
   const [paidItems, setPaidItems] = useState<PaidItem[]>([])
   const [paidMonth, setPaidMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [loadingPaid, setLoadingPaid] = useState(false)
-
-  const [historyResidentId, setHistoryResidentId] = useState<string | null>(null)
-  const [historyResidentName, setHistoryResidentName] = useState<string | null>(null)
-  const [historySearch, setHistorySearch] = useState('')
-  const [history, setHistory] = useState<Mensalidade[]>([])
-  const [historySearchResults, setHistorySearchResults] = useState<Resident[]>([])
 
   // create / generate forms
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -166,6 +185,14 @@ export default function CRMPage() {
   const [savingDueDay, setSavingDueDay] = useState(false)
   const [advanceLoading, setAdvanceLoading] = useState(false)
 
+  // member pending list (multi-mensalidade)
+  const [memberPendingList, setMemberPendingList] = useState<{ member: CRMMember; items: Mensalidade[] } | null>(null)
+
+  // profile modal
+  const [profileModal, setProfileModal] = useState<{ id: string; name: string } | null>(null)
+  const [profileHistory, setProfileHistory] = useState<Mensalidade[]>([])
+  const [profileLoading, setProfileLoading] = useState(false)
+
   const loadCobrancas = async () => {
     setLoadingCobrancas(true)
     try {
@@ -186,28 +213,10 @@ export default function CRMPage() {
     } catch { setPaidItems([]) } finally { setLoadingPaid(false) }
   }
 
-  const loadHistory = async (residentId: string, residentName?: string) => {
-    try {
-      const res = await api.get<Mensalidade[]>(`/mensalidades/residents/${residentId}`)
-      setHistory(res.data)
-      setHistoryResidentId(residentId)
-      if (residentName) setHistoryResidentName(residentName)
-      setTab('historico')
-    } catch { toast.error('Erro ao carregar histórico.') }
-  }
-
   useEffect(() => {
     if (tab === 'pendentes' || tab === 'inadimplentes') loadCobrancas()
     if (tab === 'pagos') loadPaid(paidMonth)
   }, [tab])
-
-  const searchForHistory = async (q: string) => {
-    if (q.length < 2) { setHistorySearchResults([]); return }
-    try {
-      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      setHistorySearchResults(res.data.slice(0, 6))
-    } catch { }
-  }
 
   const searchForCreate = async (q: string) => {
     if (q.length < 2) { setResidentResults([]); return }
@@ -257,11 +266,73 @@ export default function CRMPage() {
       })
       toast.success('Mensalidade paga!')
       setPayTarget(null)
-      if (tab === 'historico' && historyResidentId) loadHistory(historyResidentId, historyResidentName ?? undefined)
-      else { loadCobrancas(); loadMembers() }
+      if (profileModal) {
+        openProfile(profileModal.id, profileModal.name)
+      } else {
+        loadCobrancas()
+        loadMembers()
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao pagar.')
     } finally { setPaying(false); setPayingId(null) }
+  }
+
+  // ── Open pay for member (multiple pending) ─────────────────────────────────
+  const openPayForMember = async (m: CRMMember) => {
+    try {
+      const res = await api.get<Mensalidade[]>(`/mensalidades/residents/${m.id}`)
+      const pending = res.data.filter(x => x.status !== 'paid' && x.id)
+      if (pending.length === 0) { toast.error('Nenhuma mensalidade pendente.'); return }
+      if (pending.length === 1) {
+        openPay(pending[0].id!, m.full_name, parseFloat(pending[0].amount))
+      } else {
+        setMemberPendingList({ member: m, items: pending })
+      }
+    } catch { toast.error('Erro ao carregar mensalidades.') }
+  }
+
+  // ── Profile modal ──────────────────────────────────────────────────────────
+  const openProfile = async (id: string, name: string) => {
+    setProfileModal({ id, name })
+    setProfileLoading(true)
+    try {
+      const res = await api.get<Mensalidade[]>(`/mensalidades/residents/${id}`)
+      setProfileHistory(res.data)
+    } catch { toast.error('Erro ao carregar perfil.') }
+    finally { setProfileLoading(false) }
+  }
+
+  const handleAdvancePaymentProfile = async () => {
+    if (!profileModal) return
+    setAdvanceLoading(true)
+    try {
+      const res = await api.post('/mensalidades/advance', { resident_id: profileModal.id })
+      toast.success(`Mensalidade ${res.data.reference_month} criada.`)
+      await openProfile(profileModal.id, profileModal.name)
+      openPay(res.data.id, profileModal.name, parseFloat(res.data.amount))
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+    finally { setAdvanceLoading(false) }
+  }
+
+  const handleChangeDueDayProfile = async () => {
+    const day = parseInt(newDueDay)
+    if (!profileModal || !day || day < 1 || day > 31) return
+    setSavingDueDay(true)
+    try {
+      await api.put(`/residents/${profileModal.id}`, { monthly_payment_day: day })
+      const pending = profileHistory.filter(m => m.status !== 'paid' && m.id && m.due_date)
+      await Promise.all(pending.map(m => {
+        const [yr, mo] = m.due_date!.split('-').map(Number)
+        const lastDay = new Date(yr, mo, 0).getDate()
+        const d = String(Math.min(day, lastDay)).padStart(2, '0')
+        return api.patch(`/mensalidades/${m.id}/due-date`, { due_date: `${yr}-${String(mo).padStart(2,'0')}-${d}`, update_resident_day: false }).catch(() => null)
+      }))
+      toast.success(`Dia de vencimento alterado para dia ${day}.`)
+      setShowChangeDueDay(false)
+      setNewDueDay('')
+      openProfile(profileModal.id, profileModal.name)
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
+    finally { setSavingDueDay(false) }
   }
 
   // ── Visit modal ────────────────────────────────────────────────────────────
@@ -343,43 +414,44 @@ export default function CRMPage() {
       await api.patch(`/mensalidades/${mensalidadeId}/due-date`, { due_date: editDueDateVal, update_resident_day: updateResident })
       toast.success(updateResident ? 'Vencimento e dia padrão atualizados.' : 'Vencimento atualizado.')
       setEditDueDateId(null)
-      if (historyResidentId) loadHistory(historyResidentId, historyResidentName ?? undefined)
+      if (profileModal) openProfile(profileModal.id, profileModal.name)
       loadCobrancas()
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
     finally { setSavingDueDate(false) }
   }
 
-  const handleChangeDueDay = async () => {
-    const day = parseInt(newDueDay)
-    if (!historyResidentId || !day || day < 1 || day > 31) return
-    setSavingDueDay(true)
+  // ── Agentes state ─────────────────────────────────────────────────────────
+  const now = new Date()
+  const [agYear, setAgYear] = useState(now.getFullYear())
+  const [agMonth, setAgMonth] = useState(now.getMonth() + 1)
+  const [agRanking, setAgRanking] = useState<AgentRank[]>([])
+  const [agBonus, setAgBonus] = useState<BonusInfo | null>(null)
+  const [agLoading, setAgLoading] = useState(false)
+
+  const fetchRanking = async (y = agYear, m = agMonth) => {
+    setAgLoading(true)
     try {
-      await api.put(`/residents/${historyResidentId}`, { monthly_payment_day: day })
-      const pending = history.filter(m => m.status !== 'paid' && m.id && m.due_date)
-      await Promise.all(pending.map(m => {
-        const [yr, mo] = m.due_date!.split('-').map(Number)
-        const lastDay = new Date(yr, mo, 0).getDate()
-        const d = String(Math.min(day, lastDay)).padStart(2, '0')
-        return api.patch(`/mensalidades/${m.id}/due-date`, { due_date: `${yr}-${String(mo).padStart(2,'0')}-${d}`, update_resident_day: false }).catch(() => null)
-      }))
-      toast.success(`Dia de vencimento alterado para dia ${day}.`)
-      setShowChangeDueDay(false)
-      setNewDueDay('')
-      loadHistory(historyResidentId, historyResidentName ?? undefined)
-    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
-    finally { setSavingDueDay(false) }
+      const res = await api.get('/crm/agentes/ranking', { params: { year: y, month: m } })
+      setAgRanking(isAgente
+        ? res.data.ranking.filter((a: AgentRank) => a.agent_id === useAuthStore.getState().userId)
+        : res.data.ranking
+      )
+      setAgBonus(res.data.bonus)
+    } catch { toast.error('Erro ao carregar ranking.') }
+    finally { setAgLoading(false) }
   }
 
-  const handleAdvancePayment = async () => {
-    if (!historyResidentId) return
-    setAdvanceLoading(true)
-    try {
-      const res = await api.post('/mensalidades/advance', { resident_id: historyResidentId })
-      toast.success(`Mensalidade ${res.data.reference_month} criada.`)
-      await loadHistory(historyResidentId, historyResidentName ?? undefined)
-      openPay(res.data.id, historyResidentName ?? '', parseFloat(res.data.amount))
-    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
-    finally { setAdvanceLoading(false) }
+  useEffect(() => { if (tab === 'agentes') fetchRanking(agYear, agMonth) }, [tab, agYear, agMonth])
+
+  const agPrevMonth = () => {
+    if (agMonth === 1) { setAgYear(y => y - 1); setAgMonth(12) }
+    else setAgMonth(m => m - 1)
+  }
+  const agNextMonth = () => {
+    const cur = new Date()
+    if (agYear === cur.getFullYear() && agMonth === cur.getMonth() + 1) return
+    if (agMonth === 12) { setAgYear(y => y + 1); setAgMonth(1) }
+    else setAgMonth(m => m + 1)
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -398,16 +470,36 @@ export default function CRMPage() {
     { key: 'pendentes' as Tab, label: 'A Receber' },
     { key: 'inadimplentes' as Tab, label: 'Inadimplentes' },
     { key: 'pagos' as Tab, label: 'Pagos' },
-    { key: 'historico' as Tab, label: 'Por Morador' },
+    { key: 'agentes' as Tab, label: 'Agentes' },
   ]
 
   return (
     <div className="flex flex-col gap-4 pb-10">
-      <div className="flex items-center gap-3">
-        <UserCheck className="w-5 h-5 text-[#26619c]" />
-        <h1 className="text-lg font-bold text-gray-800">CRM — Cobranças</h1>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <UserCheck className="w-5 h-5 text-[#26619c]" />
+          <h1 className="text-lg font-bold text-gray-800">CRM — Associados</h1>
+        </div>
+        {isAdmin && (
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => { setTab('pendentes'); setTimeout(() => { setShowGenMonth(v => !v); setShowCreateForm(false); setShowDeleteMonth(false) }, 0) }}
+              className="flex items-center gap-1 border border-green-300 text-green-700 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg text-xs font-medium">
+              <Plus className="w-3.5 h-3.5" /> Gerar Mês
+            </button>
+            <button onClick={() => { setTab('pendentes'); setTimeout(() => { setShowCreateForm(v => !v); setShowGenMonth(false); setShowDeleteMonth(false) }, 0) }}
+              className="flex items-center gap-1 border border-[#26619c]/30 text-[#26619c] bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-medium">
+              <Plus className="w-3.5 h-3.5" /> Nova
+            </button>
+            <button onClick={() => { setTab('pendentes'); setTimeout(() => { setShowDeleteMonth(v => !v); setShowCreateForm(false); setShowGenMonth(false) }, 0) }}
+              className="flex items-center gap-1 border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-medium">
+              <X className="w-3.5 h-3.5" /> Excluir Mês
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* Tab navigation */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 flex-wrap">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -419,9 +511,46 @@ export default function CRMPage() {
         ))}
       </div>
 
-      {/* ── ASSOCIADOS ─────────────────────────────────────────────────── */}
+      {/* === ABA ASSOCIADOS === */}
       {tab === 'associados' && (
-        <div className="flex flex-col gap-3">
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1 shadow-sm">
+              <div className="flex items-center gap-2 text-gray-400">
+                <Users className="w-4 h-4" />
+                <span className="text-xs">Total</span>
+              </div>
+              <p className="text-2xl font-bold text-gray-800">{totalMembers}</p>
+              <p className="text-xs text-gray-400">associados ativos</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1 shadow-sm">
+              <div className="flex items-center gap-2 text-green-500">
+                <CheckCircle className="w-4 h-4" />
+                <span className="text-xs">Adimplentes</span>
+              </div>
+              <p className="text-2xl font-bold text-green-600">{kpiAdimplentes}</p>
+              <p className="text-xs text-gray-400">nesta página</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1 shadow-sm">
+              <div className="flex items-center gap-2 text-red-500">
+                <TrendingDown className="w-4 h-4" />
+                <span className="text-xs">Inadimplentes</span>
+              </div>
+              <p className="text-2xl font-bold text-red-600">{kpiInadimplentes}</p>
+              <p className="text-xs text-gray-400">nesta página</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1 shadow-sm">
+              <div className="flex items-center gap-2 text-amber-500">
+                <DollarSign className="w-4 h-4" />
+                <span className="text-xs">Valor em Aberto</span>
+              </div>
+              <p className="text-lg font-bold text-amber-600">{fmt(kpiValorAberto)}</p>
+              <p className="text-xs text-gray-400">nesta página</p>
+            </div>
+          </div>
+
+          {/* Filtros */}
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -437,6 +566,7 @@ export default function CRMPage() {
             </select>
           </div>
 
+          {/* Tabela */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
             {!loadingMembers && members.length === 0 ? (
               <div className="p-6 text-center text-gray-400 text-sm">Nenhum associado encontrado.</div>
@@ -483,15 +613,35 @@ export default function CRMPage() {
                         {m.enc_mes > 0 ? m.enc_mes.toFixed(1) : '—'}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
-                        <div className="flex items-center gap-3 justify-center">
-                          <button onClick={() => loadHistory(m.id, m.full_name)}
-                            className="text-xs text-[#26619c] hover:underline">
-                            Perfil
-                          </button>
+                        <div className="flex items-center gap-2 justify-center">
+                          {m.phone_primary && (
+                            <a
+                              href={`https://wa.me/55${m.phone_primary.replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1 text-green-500 hover:text-green-700 rounded"
+                              title="WhatsApp">
+                              <MessageCircle className="w-4 h-4" />
+                            </a>
+                          )}
+                          {!isAgente && m.qtd_pendentes > 0 && (
+                            <button
+                              onClick={() => openPayForMember(m)}
+                              className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded-lg">
+                              Pagar
+                            </button>
+                          )}
                           <button
                             onClick={() => { setVisitModal({ memberId: m.id, memberName: m.full_name }); setVisitResult('absent'); setVisitNotes('') }}
-                            className="text-xs text-gray-500 hover:text-gray-700">
-                            Visita
+                            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                            title="Registrar visita">
+                            <MapPin className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openProfile(m.id, m.full_name)}
+                            className="p-1 text-[#26619c] hover:text-[#1a4f87] rounded"
+                            title="Perfil 360">
+                            <Users className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -500,6 +650,7 @@ export default function CRMPage() {
                 </tbody>
               </table>
             )}
+            {/* Paginação */}
             {totalMembers > 100 && (
               <div className="px-4 py-2 border-t border-gray-100 flex items-center justify-between">
                 <button disabled={membersPage === 1}
@@ -516,10 +667,10 @@ export default function CRMPage() {
               </div>
             )}
           </div>
-        </div>
+        </>
       )}
 
-      {/* ── ADMIN ACTIONS ──────────────────────────────────────────────── */}
+      {/* === ADMIN ACTIONS (gerar mês etc) — só nas tabs de cobrança === */}
       {isAdmin && (tab === 'pendentes' || tab === 'inadimplentes') && (
         <>
           <div className="flex gap-2 flex-wrap">
@@ -639,7 +790,9 @@ export default function CRMPage() {
         </>
       )}
 
-      {/* ── PENDENTES ──────────────────────────────────────────────────── */}
+      {/* === ABAS SECUNDÁRIAS === */}
+
+      {/* PENDENTES */}
       {tab === 'pendentes' && (
         <>
           <div className="relative">
@@ -690,7 +843,7 @@ export default function CRMPage() {
         </>
       )}
 
-      {/* ── INADIMPLENTES ──────────────────────────────────────────────── */}
+      {/* INADIMPLENTES */}
       {tab === 'inadimplentes' && (
         <>
           <div className="relative">
@@ -732,9 +885,9 @@ export default function CRMPage() {
                           <span className="text-sm font-bold text-gray-800">{fmt(d.amount)}</span>
                           <div className="flex gap-1 items-center">
                             {waLink && <a href={waLink} target="_blank" rel="noreferrer" className="p-1.5 text-green-500 hover:text-green-700 rounded-lg"><MessageCircle className="w-4 h-4" /></a>}
-                            <button onClick={() => loadHistory(d.resident_id, d.resident_name)}
+                            <button onClick={() => openProfile(d.resident_id, d.resident_name ?? '')}
                               className="text-xs text-[#26619c] hover:underline flex items-center gap-1">
-                              <Users className="w-3 h-3" /> Histórico
+                              <Users className="w-3 h-3" /> Perfil
                             </button>
                             {!isAgente && d.id && (
                               <button onClick={() => openPay(d.id!, d.resident_name ?? '', parseFloat(d.amount))}
@@ -755,7 +908,7 @@ export default function CRMPage() {
         </>
       )}
 
-      {/* ── PAGOS ──────────────────────────────────────────────────────── */}
+      {/* PAGOS */}
       {tab === 'pagos' && (
         <div className="flex flex-col gap-3">
           <input type="month" value={paidMonth}
@@ -791,165 +944,95 @@ export default function CRMPage() {
         </div>
       )}
 
-      {/* ── HISTORICO ──────────────────────────────────────────────────── */}
-      {tab === 'historico' && (
-        <div className="flex flex-col gap-3">
-          {!historyResidentId ? (
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input value={historySearch} placeholder="Buscar morador…" className={`${inputCls} pl-9`}
-                onChange={e => { setHistorySearch(e.target.value); searchForHistory(e.target.value) }} />
-              {historySearchResults.length > 0 && (
-                <ul className="absolute z-10 top-full left-0 right-0 mt-1 border border-gray-200 rounded-xl bg-white shadow-lg max-h-52 overflow-y-auto">
-                  {historySearchResults.map(r => (
-                    <li key={r.id}>
-                      <button className="w-full text-left px-4 py-3 text-sm hover:bg-blue-50"
-                        onClick={() => { setHistorySearchResults([]); setHistorySearch(''); loadHistory(r.id, r.full_name) }}>
-                        <span className="font-medium text-gray-800">{r.full_name}</span>
-                        {r.cpf && <span className="text-xs text-gray-400 ml-2">{r.cpf}</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+      {/* === ABA AGENTES === */}
+      {tab === 'agentes' && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-center gap-3">
+            <button onClick={agPrevMonth}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">‹</button>
+            <span className="font-semibold text-gray-700 capitalize">{monthLabel(agYear, agMonth)}</span>
+            <button onClick={agNextMonth}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">›</button>
+          </div>
+
+          {agLoading ? (
+            <div className="text-center py-12 text-gray-400 text-sm">Carregando...</div>
           ) : (
-            <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
-              <div>
-                <p className="text-xs text-gray-500">Histórico de</p>
-                <p className="text-sm font-semibold text-[#1a3f6f]">{historyResidentName}</p>
-              </div>
-              <button onClick={() => { setHistoryResidentId(null); setHistoryResidentName(null); setHistory([]) }}
-                className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1">
-                <X className="w-3.5 h-3.5" /> Trocar
-              </button>
-            </div>
-          )}
-
-          {historyResidentId && isAdmin && (
-            <div className="flex gap-2">
-              <button onClick={handleAdvancePayment} disabled={advanceLoading}
-                className="flex-1 flex items-center justify-center gap-1 border-2 border-dashed border-blue-400/50 rounded-xl py-2.5 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
-                <CalendarPlus className="w-4 h-4" />{advanceLoading ? 'Criando…' : 'Pagar Adiantado'}
-              </button>
-              <button onClick={() => { setShowChangeDueDay(v => !v); setNewDueDay('') }}
-                className="flex-1 flex items-center justify-center gap-1 border-2 border-dashed border-amber-400/50 rounded-xl py-2.5 text-sm text-amber-700 hover:bg-amber-50">
-                <Pencil className="w-4 h-4" /> Alterar Vencimento
-              </button>
-            </div>
-          )}
-
-          {showChangeDueDay && historyResidentId && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-3">
-              <p className="text-sm font-semibold text-amber-800">Alterar dia de vencimento permanente</p>
-              <p className="text-xs text-amber-600">Atualiza o dia padrão e todas as cobranças pendentes.</p>
-              <div className="flex gap-2">
-                <input type="number" min="1" max="31" value={newDueDay}
-                  onChange={e => setNewDueDay(e.target.value)} placeholder="Dia (1–31)" className={`${inputCls} flex-1`} autoFocus />
-                <button onClick={handleChangeDueDay} disabled={savingDueDay || !newDueDay}
-                  className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
-                  {savingDueDay ? '…' : 'Salvar'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {history.length > 0 && (() => {
-            const paid = history.filter(m => m.status === 'paid')
-            const pending = history.filter(m => m.status !== 'paid')
-            return (
-              <div className="grid grid-cols-3 gap-2">
-                <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
-                  <p className="text-lg font-bold text-green-600">{paid.length}</p>
-                  <p className="text-xs text-gray-400">Pagas</p>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
-                  <p className="text-lg font-bold text-red-500">{pending.length}</p>
-                  <p className="text-xs text-gray-400">Pendentes</p>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
-                  <p className="text-sm font-bold text-gray-700">{fmt(paid.reduce((s, m) => s + parseFloat(m.amount), 0))}</p>
-                  <p className="text-xs text-gray-400">de {fmt(history.reduce((s, m) => s + parseFloat(m.amount), 0))}</p>
-                </div>
-              </div>
-            )
-          })()}
-
-          {history.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <ul className="divide-y divide-gray-100">
-                {history.map((m, idx) => {
-                  const isPaid = m.status === 'paid'
-                  const isMig = m.origem === 'migracao'
-                  const graceCutoff = new Date(); graceCutoff.setDate(graceCutoff.getDate() - 2)
-                  const isOverdue = !isPaid && m.due_date && new Date(m.due_date) < graceCutoff
-                  return (
-                    <li key={m.id ?? `mig-${idx}`} className="px-4 py-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className={`w-2 h-2 rounded-full shrink-0 ${isPaid ? 'bg-green-400' : isOverdue ? 'bg-red-400' : 'bg-amber-400'}`} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-gray-800">{m.reference_month}</p>
-                            {isMig && <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Migração</span>}
-                          </div>
-                          {isPaid && m.paid_at ? (
-                            <p className="text-xs text-green-600">Pago em {fmtDate(m.paid_at)}</p>
-                          ) : m.due_date ? (
-                            editDueDateId === m.id ? (
-                              <div className="flex items-center gap-1 mt-1">
-                                <input type="date" value={editDueDateVal}
-                                  onChange={e => setEditDueDateVal(e.target.value)}
-                                  className="text-xs border border-gray-300 rounded px-1.5 py-0.5" autoFocus />
-                                <button onClick={() => handleSaveDueDate(m.id!, false)} disabled={savingDueDate}
-                                  className="text-[10px] bg-[#26619c] text-white px-1.5 py-0.5 rounded disabled:opacity-50">
-                                  {savingDueDate ? '…' : 'Salvar'}
-                                </button>
-                                <button onClick={() => handleSaveDueDate(m.id!, true)} disabled={savingDueDate}
-                                  className="text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded disabled:opacity-50">
-                                  + Padrão
-                                </button>
-                                <button onClick={() => setEditDueDateId(null)}><X className="w-3.5 h-3.5 text-gray-400" /></button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1">
-                                <p className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>Venc. {fmtDate(m.due_date)}</p>
-                                {!isMig && isAdmin && (
-                                  <button onClick={() => { setEditDueDateId(m.id!); setEditDueDateVal(m.due_date!) }}
-                                    className="text-gray-300 hover:text-[#26619c]">
-                                    <Pencil className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            )
-                          ) : (
-                            <p className="text-xs text-gray-400">Histórico anterior</p>
-                          )}
-                        </div>
+            <>
+              <div className="flex flex-col gap-2">
+                {agRanking.length === 0 && (
+                  <p className="text-center text-gray-400 py-8 text-sm">Nenhuma atividade registrada neste mês.</p>
+                )}
+                {agRanking.map(agent => (
+                  <div key={agent.agent_id}
+                    className={`rounded-xl border p-4 flex items-center gap-4 ${
+                      agent.position === 1 ? 'border-amber-300 bg-amber-50' :
+                      agent.position === 2 ? 'border-gray-300 bg-gray-50' :
+                      agent.position === 3 ? 'border-orange-200 bg-orange-50' :
+                      'border-gray-100 bg-white'
+                    }`}>
+                    <div className="w-9 h-9 flex items-center justify-center rounded-full font-bold text-sm shrink-0
+                      bg-white border border-gray-200 text-gray-600">
+                      {agent.position <= 3
+                        ? <Trophy className={`w-4 h-4 ${agent.position === 1 ? 'text-amber-500' : agent.position === 2 ? 'text-gray-400' : 'text-orange-400'}`} />
+                        : `${agent.position}º`}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-800 text-sm truncate">{agent.agent_name}</p>
+                      <div className="flex gap-4 mt-0.5 text-xs text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3 text-[#26619c]" />
+                          {agent.cobrancas} cobranças
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3 h-3 text-emerald-600" />
+                          {agent.novos} novos
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-sm font-bold text-gray-800">{fmt(m.amount)}</span>
-                        {!isPaid && !isMig && !isAgente && m.id && (
-                          <button onClick={() => openPay(m.id!, historyResidentName ?? '', parseFloat(m.amount))}
-                            disabled={payingId === m.id}
-                            className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-3 py-1 rounded-lg">
-                            {payingId === m.id ? '…' : 'Pagar'}
-                          </button>
-                        )}
+                    </div>
+                    {agent.prize > 0 && (
+                      <div className="text-right shrink-0">
+                        <p className="font-bold text-gray-800 text-sm">{fmtCurrency(agent.prize)}</p>
+                        <p className="text-xs text-gray-400">prêmio</p>
                       </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-          )}
+                    )}
+                  </div>
+                ))}
+              </div>
 
-          {historyResidentId && history.length === 0 && (
-            <p className="text-sm text-center text-gray-400 py-6">Nenhuma cobrança encontrada.</p>
+              {agBonus && !isAgente && (
+                <div className={`rounded-xl border p-4 ${agBonus.liberado ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+                  <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2 text-sm">
+                    {agBonus.liberado
+                      ? <CheckCircle className="w-4 h-4 text-green-600" />
+                      : <XCircle className="w-4 h-4 text-gray-400" />}
+                    Bônus de Equipe (+R$ 30 por agente)
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Agentes com ≥5 novos: {agBonus.agentes_com_5_novos}/{agBonus.total_agentes}</span>
+                      {agBonus.novos_ok
+                        ? <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                        : <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Adimplência: {agBonus.adimplencia_pct}%</span>
+                      {agBonus.adimplencia_ok
+                        ? <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                        : <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                    </div>
+                    <p className={`text-sm font-semibold mt-1 ${agBonus.liberado ? 'text-green-700' : 'text-gray-400'}`}>
+                      {agBonus.liberado ? 'Bonus liberado!' : 'Bonus nao liberado este mes'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {/* ── PAYMENT MODAL ──────────────────────────────────────────────── */}
+      {/* === PAYMENT MODAL === */}
       {payTarget && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 flex flex-col gap-3">
@@ -972,7 +1055,7 @@ export default function CRMPage() {
                 </label>
                 {proofUrl ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium">✓ Enviado</span>
+                    <span className="text-xs text-green-600 font-medium">Enviado</span>
                     <button onClick={() => setProofUrl('')} className="text-xs text-red-500 hover:underline">Remover</button>
                   </div>
                 ) : (
@@ -999,7 +1082,7 @@ export default function CRMPage() {
         </div>
       )}
 
-      {/* ── VISIT MODAL ────────────────────────────────────────────────── */}
+      {/* === VISIT MODAL === */}
       {visitModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 flex flex-col gap-3">
@@ -1038,6 +1121,187 @@ export default function CRMPage() {
                 className="flex-1 py-2 rounded-xl bg-[#26619c] text-white text-sm font-medium disabled:opacity-50">
                 {savingVisit ? 'Salvando…' : 'Registrar'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === MEMBER PENDING LIST MODAL === */}
+      {memberPendingList && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 flex flex-col gap-3 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-800">Selecionar mensalidade</h2>
+              <button onClick={() => setMemberPendingList(null)}><X className="w-4 h-4 text-gray-400" /></button>
+            </div>
+            <p className="text-xs text-gray-500">{memberPendingList.member.full_name}</p>
+            <ul className="divide-y divide-gray-100">
+              {memberPendingList.items.map(item => (
+                <li key={item.id} className="py-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{item.reference_month}</p>
+                    {item.due_date && <p className="text-xs text-gray-400">Venc. {fmtDateOnly(item.due_date)}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-gray-700">{fmt(item.amount)}</span>
+                    <button
+                      onClick={() => { openPay(item.id!, memberPendingList.member.full_name, parseFloat(item.amount)); setMemberPendingList(null) }}
+                      className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg">
+                      Pagar
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* === PROFILE MODAL === */}
+      {profileModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 shrink-0">
+              <div>
+                <h2 className="text-base font-semibold text-gray-800">{profileModal.name}</h2>
+                <p className="text-xs text-gray-400">Perfil 360</p>
+              </div>
+              <button onClick={() => { setProfileModal(null); setProfileHistory([]); setShowChangeDueDay(false); setNewDueDay('') }}>
+                <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-5 py-4 flex flex-col gap-4">
+              {profileLoading ? (
+                <p className="text-sm text-center text-gray-400 py-6">Carregando…</p>
+              ) : (
+                <>
+                  {/* Stats */}
+                  {profileHistory.length > 0 && (() => {
+                    const paid = profileHistory.filter(m => m.status === 'paid')
+                    const pending = profileHistory.filter(m => m.status !== 'paid')
+                    return (
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+                          <p className="text-lg font-bold text-green-600">{paid.length}</p>
+                          <p className="text-xs text-gray-400">Pagas</p>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+                          <p className="text-lg font-bold text-red-500">{pending.length}</p>
+                          <p className="text-xs text-gray-400">Pendentes</p>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+                          <p className="text-sm font-bold text-gray-700">{fmt(paid.reduce((s, m) => s + parseFloat(m.amount), 0))}</p>
+                          <p className="text-xs text-gray-400">de {fmt(profileHistory.reduce((s, m) => s + parseFloat(m.amount), 0))}</p>
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Admin actions */}
+                  {isAdmin && (
+                    <div className="flex gap-2">
+                      <button onClick={handleAdvancePaymentProfile} disabled={advanceLoading}
+                        className="flex-1 flex items-center justify-center gap-1 border-2 border-dashed border-blue-400/50 rounded-xl py-2.5 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
+                        <CalendarPlus className="w-4 h-4" />{advanceLoading ? 'Criando…' : 'Pagar Adiantado'}
+                      </button>
+                      <button onClick={() => { setShowChangeDueDay(v => !v); setNewDueDay('') }}
+                        className="flex-1 flex items-center justify-center gap-1 border-2 border-dashed border-amber-400/50 rounded-xl py-2.5 text-sm text-amber-700 hover:bg-amber-50">
+                        <Pencil className="w-4 h-4" /> Alterar Vencimento
+                      </button>
+                    </div>
+                  )}
+
+                  {showChangeDueDay && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-3">
+                      <p className="text-sm font-semibold text-amber-800">Alterar dia de vencimento permanente</p>
+                      <p className="text-xs text-amber-600">Atualiza o dia padrão e todas as cobranças pendentes.</p>
+                      <div className="flex gap-2">
+                        <input type="number" min="1" max="31" value={newDueDay}
+                          onChange={e => setNewDueDay(e.target.value)} placeholder="Dia (1–31)" className={`${inputCls} flex-1`} autoFocus />
+                        <button onClick={handleChangeDueDayProfile} disabled={savingDueDay || !newDueDay}
+                          className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                          {savingDueDay ? '…' : 'Salvar'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* History list */}
+                  {profileHistory.length > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      <ul className="divide-y divide-gray-100">
+                        {profileHistory.map((m, idx) => {
+                          const isPaid = m.status === 'paid'
+                          const isMig = m.origem === 'migracao'
+                          const graceCutoff = new Date(); graceCutoff.setDate(graceCutoff.getDate() - 2)
+                          const isOverdue = !isPaid && m.due_date && new Date(m.due_date) < graceCutoff
+                          return (
+                            <li key={m.id ?? `mig-${idx}`} className="px-4 py-3 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className={`w-2 h-2 rounded-full shrink-0 ${isPaid ? 'bg-green-400' : isOverdue ? 'bg-red-400' : 'bg-amber-400'}`} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-semibold text-gray-800">{m.reference_month}</p>
+                                    {isMig && <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Migração</span>}
+                                  </div>
+                                  {isPaid && m.paid_at ? (
+                                    <p className="text-xs text-green-600">Pago em {fmtDate(m.paid_at)}</p>
+                                  ) : m.due_date ? (
+                                    editDueDateId === m.id ? (
+                                      <div className="flex items-center gap-1 mt-1">
+                                        <input type="date" value={editDueDateVal}
+                                          onChange={e => setEditDueDateVal(e.target.value)}
+                                          className="text-xs border border-gray-300 rounded px-1.5 py-0.5" autoFocus />
+                                        <button onClick={() => handleSaveDueDate(m.id!, false)} disabled={savingDueDate}
+                                          className="text-[10px] bg-[#26619c] text-white px-1.5 py-0.5 rounded disabled:opacity-50">
+                                          {savingDueDate ? '…' : 'Salvar'}
+                                        </button>
+                                        <button onClick={() => handleSaveDueDate(m.id!, true)} disabled={savingDueDate}
+                                          className="text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded disabled:opacity-50">
+                                          + Padrão
+                                        </button>
+                                        <button onClick={() => setEditDueDateId(null)}><X className="w-3.5 h-3.5 text-gray-400" /></button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1">
+                                        <p className={`text-xs ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>Venc. {fmtDate(m.due_date)}</p>
+                                        {!isMig && isAdmin && (
+                                          <button onClick={() => { setEditDueDateId(m.id!); setEditDueDateVal(m.due_date!) }}
+                                            className="text-gray-300 hover:text-[#26619c]">
+                                            <Pencil className="w-3 h-3" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    )
+                                  ) : (
+                                    <p className="text-xs text-gray-400">Histórico anterior</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-sm font-bold text-gray-800">{fmt(m.amount)}</span>
+                                {!isPaid && !isMig && !isAgente && m.id && (
+                                  <button onClick={() => openPay(m.id!, profileModal.name, parseFloat(m.amount))}
+                                    disabled={payingId === m.id}
+                                    className="text-xs bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white px-3 py-1 rounded-lg">
+                                    {payingId === m.id ? '…' : 'Pagar'}
+                                  </button>
+                                )}
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  )}
+
+                  {profileHistory.length === 0 && (
+                    <p className="text-sm text-center text-gray-400 py-6">Nenhuma cobrança encontrada.</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
