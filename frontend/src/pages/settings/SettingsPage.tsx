@@ -449,11 +449,32 @@ export default function SettingsPage() {
     }
   }
 
+  // ── CEP auto-fill ──
+  const handleCepBlur = async (cep: string) => {
+    const digits = cep.replace(/\D/g, '')
+    if (digits.length !== 8) return
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      const data = await res.json()
+      if (data.erro) return
+      const addr = [data.logradouro, data.bairro, data.localidade, data.uf].filter(Boolean).join(', ')
+      setAssocForm(f => ({ ...f, address: addr || f.address }))
+    } catch { /* ignore */ }
+  }
+
   // ── Save Association settings ──
   const handleSaveAssoc = async () => {
     setSavingAssoc(true)
     try {
-      await api.put('/settings/association', assocForm)
+      await api.put('/settings/association', {
+        assoc_name: assocForm.name,
+        assoc_phone: assocForm.phone,
+        assoc_email: assocForm.email,
+        assoc_address: assocForm.address,
+        assoc_cep: assocForm.cep,
+        president_user_id: assocForm.president_user_id || null,
+        slug: assocForm.slug,
+      })
       const fresh = await api.get<AssociationData>('/settings/association')
       setAssoc(fresh.data)
       setAssocForm(fresh.data)
@@ -727,6 +748,7 @@ export default function SettingsPage() {
                       type="text"
                       value={assocForm.cep ?? ''}
                       onChange={e => setAssocField('cep', e.target.value)}
+                      onBlur={e => handleCepBlur(e.target.value)}
                       className={inputCls}
                       placeholder="00000-000"
                     />
