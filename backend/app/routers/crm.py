@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -550,3 +550,197 @@ async def list_visits(
         ],
         "page": page,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PUBLIC AGENT PAYMENT LINK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AgentLinkRequest(BaseModel):
+    resident_id: UUID
+
+
+@router.post("/agent-link", summary="Gerar link de pagamento para morador")
+async def generate_agent_link(
+    body: AgentLinkRequest,
+    request: Request,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    _check_access(current)
+    from app.config import settings
+    from jose import jwt as jose_jwt
+
+    resident = (await session.execute(
+        text("SELECT id, full_name FROM residents WHERE id = :rid AND association_id = :aid"),
+        {"rid": str(body.resident_id), "aid": str(current.association_id)},
+    )).fetchone()
+    if not resident:
+        raise HTTPException(404, "Morador não encontrado.")
+
+    payload = {
+        "association_id": str(current.association_id),
+        "agent_id": str(current.user_id),
+        "resident_id": str(body.resident_id),
+        "exp": datetime.utcnow() + timedelta(hours=48),
+    }
+    token = jose_jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+    base = str(request.base_url).rstrip("/").replace("api/v1", "").rstrip("/")
+    return {"token": token, "url": f"{base}/associar?token={token}", "resident_name": resident.full_name}
+
+
+def _decode_agent_token(token: str) -> dict:
+    from app.config import settings
+    from jose import jwt as jose_jwt, JWTError
+    try:
+        return jose_jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        raise HTTPException(401, "Token inválido ou expirado.")
+
+
+@router.get("/public/member", summary="Dados do morador para link público")
+async def public_member_data(
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    payload = _decode_agent_token(token)
+    aid = payload["association_id"]
+    rid = payload["resident_id"]
+
+    resident = (await session.execute(text("""
+        SELECT r.id, r.full_name, r.phone_primary, r.address_street, r.address_number,
+               r.unit, r.status, r.created_at
+        FROM residents r
+        WHERE r.id = :rid AND r.association_id = :aid
+    """), {"rid": rid, "aid": aid})).fetchone()
+    if not resident:
+        raise HTTPException(404, "Morador não encontrado.")
+
+    mensalidades = (await session.execute(text("""
+        SELECT id, reference_month, due_date, amount, status, paid_at
+        FROM mensalidades
+        WHERE resident_id = :rid AND association_id = :aid
+          AND status != 'paid'
+        ORDER BY reference_month DESC
+        LIMIT 24
+    """), {"rid": rid, "aid": aid})).fetchall()
+
+    payment_methods = (await session.execute(text("""
+        SELECT id, name FROM payment_methods
+        WHERE association_id = :aid AND is_active = TRUE
+        ORDER BY name
+    """), {"aid": aid})).fetchall()
+
+    return {
+        "resident": {
+            "id": str(resident.id),
+            "full_name": resident.full_name,
+            "phone": resident.phone_primary,
+            "address": f"{resident.address_street or ''}, {resident.address_number or ''}".strip(", "),
+            "unit": resident.unit,
+            "status": resident.status,
+        },
+        "mensalidades": [
+            {
+                "id": str(m.id),
+                "reference_month": m.reference_month,
+                "due_date": str(m.due_date) if m.due_date else None,
+                "amount": str(m.amount),
+                "status": m.status,
+            }
+            for m in mensalidades
+        ],
+        "payment_methods": [{"id": str(pm.id), "name": pm.name} for pm in payment_methods],
+    }
+
+
+class PublicPayRequest(BaseModel):
+    mensalidade_id: UUID
+    payment_method_id: UUID
+    payment_proof_url: str | None = None
+
+
+@router.post("/public/pay", summary="Registrar pagamento via link público")
+async def public_pay(
+    body: PublicPayRequest,
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    payload = _decode_agent_token(token)
+    aid = UUID(payload["association_id"])
+    agent_id = UUID(payload["agent_id"])
+
+    pm_name = (await session.execute(
+        text("SELECT name FROM payment_methods WHERE id = :id"),
+        {"id": str(body.payment_method_id)},
+    )).scalar()
+    is_pix = pm_name and "pix" in pm_name.lower()
+    if is_pix and not body.payment_proof_url:
+        raise HTTPException(422, "Comprovante obrigatório para pagamento PIX.")
+
+    return await _do_remote_pay(
+        session=session,
+        association_id=aid,
+        mensalidade_id=body.mensalidade_id,
+        payment_method_id=body.payment_method_id,
+        payment_proof_url=body.payment_proof_url,
+        paid_by=agent_id,
+    )
+
+
+class PublicAcordoRequest(BaseModel):
+    date_from: str
+    date_to: str
+    installments: int
+    monthly_amount: str
+    payment_method_id: UUID | None = None
+
+
+@router.post("/public/acordo", summary="Registrar acordo via link público")
+async def public_acordo(
+    body: PublicAcordoRequest,
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    payload = _decode_agent_token(token)
+    aid = payload["association_id"]
+    rid = payload["resident_id"]
+    agent_id = payload["agent_id"]
+
+    # Get all overdue pending mensalidades in range
+    rows = (await session.execute(text("""
+        SELECT id FROM mensalidades
+        WHERE resident_id = :rid AND association_id = :aid
+          AND status = 'pending'
+          AND reference_month BETWEEN :df AND :dt
+        ORDER BY reference_month
+    """), {"rid": rid, "aid": aid, "df": body.date_from, "dt": body.date_to})).fetchall()
+
+    if not rows:
+        raise HTTPException(404, "Nenhuma mensalidade encontrada no período.")
+
+    await session.execute(text("""
+        UPDATE mensalidades
+        SET notes = CONCAT(COALESCE(notes, ''), ' | Acordo: ', :installments, 'x R$', :amount, ' registrado em ', NOW()::date),
+            updated_at = NOW()
+        WHERE resident_id = :rid AND association_id = :aid
+          AND status = 'pending'
+          AND reference_month BETWEEN :df AND :dt
+    """), {
+        "rid": rid, "aid": aid,
+        "df": body.date_from, "dt": body.date_to,
+        "installments": body.installments,
+        "amount": body.monthly_amount,
+    })
+
+    # Register a CRM visit with result = acordo
+    await session.execute(text("""
+        INSERT INTO crm_visitas (association_id, agent_id, resident_id, visited_at, result, notes)
+        VALUES (:aid, :agid, :rid, NOW(), 'acordo', :notes)
+    """), {
+        "aid": aid, "agid": agent_id, "rid": rid,
+        "notes": f"Acordo: {body.installments}x R${body.monthly_amount} ({body.date_from} a {body.date_to})",
+    })
+
+    await session.commit()
+    return {"ok": True, "mensalidades_updated": len(rows)}

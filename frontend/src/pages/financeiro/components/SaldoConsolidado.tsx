@@ -55,12 +55,6 @@ export function SaldoConsolidado() {
                 <div className="flex justify-between text-gray-400"><span>Dinheiro</span><span>{fmtCurrency(data.caixas.dinheiro)}</span></div>
               </div>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-3">
-              <p className="text-xs font-semibold text-gray-500 mb-2">Porta a Porta ({data.porta_a_porta.total_pagos} pagos)</p>
-              <div className="flex flex-col gap-1 text-xs">
-                <div className="flex justify-between border-t border-gray-100 pt-1"><span className="font-semibold text-gray-700">Recebido</span><span className="font-bold text-green-700">{fmtCurrency(data.porta_a_porta.recebido)}</span></div>
-              </div>
-            </div>
           </div>
         </div>
       )}

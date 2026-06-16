@@ -194,6 +194,8 @@ export default function CRMPage() {
   const [profileHistory, setProfileHistory] = useState<Mensalidade[]>([])
   const [profileVisits, setProfileVisits] = useState<any[]>([])
   const [profileLoading, setProfileLoading] = useState(false)
+  const [agentLinkUrl, setAgentLinkUrl] = useState<string | null>(null)
+  const [agentLinkLoading, setAgentLinkLoading] = useState(false)
 
   const loadCobrancas = async () => {
     setLoadingCobrancas(true)
@@ -1251,7 +1253,7 @@ export default function CRMPage() {
                     : <span className="text-red-500">Inadimplente · {profileModal.qtd_pendentes} {profileModal.qtd_pendentes === 1 ? 'mês' : 'meses'} em atraso</span>}
                 </p>
               </div>
-              <button onClick={() => { setProfileModal(null); setProfileHistory([]); setProfileVisits([]); setShowChangeDueDay(false); setNewDueDay('') }}>
+              <button onClick={() => { setProfileModal(null); setProfileHistory([]); setProfileVisits([]); setShowChangeDueDay(false); setNewDueDay(''); setAgentLinkUrl(null) }}>
                 <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
               </button>
             </div>
@@ -1304,6 +1306,32 @@ export default function CRMPage() {
                       </button>
                     </div>
                   )}
+
+                  {/* Gerar link de cobrança */}
+                  <div>
+                    {!agentLinkUrl ? (
+                      <button
+                        disabled={agentLinkLoading}
+                        onClick={async () => {
+                          if (!profileModal) return
+                          setAgentLinkLoading(true)
+                          try {
+                            const r = await api.post('/crm/agent-link', { resident_id: profileModal.id })
+                            setAgentLinkUrl(r.data.url)
+                          } catch { toast.error('Erro ao gerar link') }
+                          finally { setAgentLinkLoading(false) }
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 border border-dashed border-[#26619c]/40 rounded-xl py-2 text-sm text-[#26619c] hover:bg-[#26619c]/5 disabled:opacity-40">
+                        <Upload className="w-3.5 h-3.5" />{agentLinkLoading ? 'Gerando…' : 'Gerar link de cobrança'}
+                      </button>
+                    ) : (
+                      <div className="flex gap-2 items-center bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
+                        <span className="text-xs text-blue-700 truncate flex-1 font-mono">{agentLinkUrl}</span>
+                        <button onClick={() => { navigator.clipboard.writeText(agentLinkUrl); toast.success('Link copiado!') }}
+                          className="text-xs font-semibold text-blue-700 shrink-0 hover:underline">Copiar</button>
+                      </div>
+                    )}
+                  </div>
 
                   {showChangeDueDay && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col gap-3">

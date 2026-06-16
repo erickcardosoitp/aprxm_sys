@@ -1,185 +1,306 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import toast, { Toaster } from 'react-hot-toast'
 import axios from 'axios'
-import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
+import { CheckCircle2, Upload, X, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react'
 
 const API = '/api/v1'
-const inp = 'w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]'
 
-interface Dependent { name: string; phone: string; cpf: string }
+interface Mensalidade {
+  id: string
+  reference_month: string
+  due_date: string | null
+  amount: string
+  status: string
+}
+interface PaymentMethod { id: string; name: string }
+interface Resident {
+  id: string; full_name: string; phone: string | null
+  address: string; unit: string | null; status: string
+}
 
-export default function CadastroPortaAPorta() {
+const MONTH_LABELS: Record<string, string> = {
+  '01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun',
+  '07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez',
+}
+function fmtMonth(ref: string) {
+  const [y, m] = ref.split('-')
+  return `${MONTH_LABELS[m] ?? m}/${y}`
+}
+function fmtCurrency(v: string | number) {
+  return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+function isOverdue(m: Mensalidade) {
+  if (!m.due_date) return false
+  return new Date(m.due_date) < new Date()
+}
+
+export default function AgentPaymentPage() {
   const [params] = useSearchParams()
   const token = params.get('token') ?? ''
 
-  const [done, setDone] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [users, setUsers] = useState<{ id: string; full_name: string }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [resident, setResident] = useState<Resident | null>(null)
+  const [mensalidades, setMensalidades] = useState<Mensalidade[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
 
-  const [form, setForm] = useState({
-    lancado_por: '',
-    full_name: '',
-    phone: '',
-    cpf: '',
-    address_street: '',
-    address_number: '',
-    address_complement: '',
-    notes: '',
-  })
+  // Pay state
+  const [paying, setPaying] = useState<string | null>(null)
+  const [payMethod, setPayMethod] = useState('')
+  const [proofUrl, setProofUrl] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [paidIds, setPaidIds] = useState<Set<string>>(new Set())
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  // Acordo state
+  const [acordoOpen, setAcordoOpen] = useState(false)
+  const [acordoFrom, setAcordoFrom] = useState('')
+  const [acordoTo, setAcordoTo] = useState('')
+  const [acordoInstallments, setAcordoInstallments] = useState('1')
+  const [acordoAmount, setAcordoAmount] = useState('')
+  const [acordoSubmitting, setAcordoSubmitting] = useState(false)
+  const [acordoDone, setAcordoDone] = useState(false)
 
   useEffect(() => {
-    if (!token) return
-    axios.get(`${API}/porta-a-porta/public-users?token=${token}`)
-      .then(r => setUsers(r.data))
-      .catch(() => {})
-  }, [token])
-  const [dependents, setDependents] = useState<Dependent[]>([])
-
-  const set = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }))
-
-  const addDep = () => {
-    if (dependents.length >= 3) { toast.error('Máximo de 3 dependentes.'); return }
-    setDependents(d => [...d, { name: '', phone: '', cpf: '' }])
-  }
-  const setDep = (i: number, k: keyof Dependent, v: string) =>
-    setDependents(d => d.map((x, idx) => idx === i ? { ...x, [k]: v } : x))
-  const removeDep = (i: number) => setDependents(d => d.filter((_, idx) => idx !== i))
-
-  const handleSubmit = async () => {
-    if (!form.lancado_por.trim()) { toast.error('Informe quem está lançando o cadastro.'); return }
-    if (!form.full_name.trim()) { toast.error('Informe o nome completo.'); return }
-    if (!form.address_street.trim() || !form.address_number.trim()) { toast.error('Informe o endereço.'); return }
-    if (!token) { toast.error('Link inválido.'); return }
-    for (const d of dependents) {
-      if (!d.name.trim()) { toast.error('Informe o nome do dependente.'); return }
-    }
-    setLoading(true)
-    try {
-      await axios.post(`${API}/porta-a-porta/public-register`, {
-        token,
-        ...form,
-        dependents: dependents.map(d => ({ name: d.name, phone: d.phone || null, cpf: d.cpf || null })),
+    if (!token) { setError('Token inválido.'); setLoading(false); return }
+    axios.get(`${API}/crm/public/member?token=${encodeURIComponent(token)}`)
+      .then(r => {
+        setResident(r.data.resident)
+        setMensalidades(r.data.mensalidades)
+        setPaymentMethods(r.data.payment_methods)
+        if (r.data.payment_methods.length > 0) setPayMethod(r.data.payment_methods[0].id)
       })
-      setDone(true)
+      .catch(() => setError('Link inválido ou expirado.'))
+      .finally(() => setLoading(false))
+  }, [token])
+
+  const selectedMethod = paymentMethods.find(pm => pm.id === payMethod)
+  const isPix = selectedMethod?.name?.toLowerCase().includes('pix') ?? false
+
+  const handleUpload = async (file: File) => {
+    setUploading(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('folder', 'comprovantes')
+    try {
+      const r = await axios.post(`${API}/uploads/image`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setProofUrl(r.data.url)
+      toast.success('Comprovante enviado')
+    } catch { toast.error('Erro ao enviar comprovante') }
+    finally { setUploading(false) }
+  }
+
+  const handlePay = async (mId: string) => {
+    if (!payMethod) { toast.error('Selecione a forma de pagamento'); return }
+    if (isPix && !proofUrl) { toast.error('Comprovante PIX obrigatório'); return }
+    setPaying(mId)
+    try {
+      await axios.post(`${API}/crm/public/pay?token=${encodeURIComponent(token)}`, {
+        mensalidade_id: mId,
+        payment_method_id: payMethod,
+        payment_proof_url: proofUrl || null,
+      })
+      setPaidIds(s => new Set([...s, mId]))
+      setProofUrl('')
+      toast.success('Pagamento registrado!')
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao enviar cadastro.')
-    } finally {
-      setLoading(false)
-    }
+      toast.error(e.response?.data?.detail ?? 'Erro ao registrar pagamento')
+    } finally { setPaying(null) }
   }
 
-  if (!token) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <p className="text-gray-500 text-sm">Link inválido ou expirado.</p>
-      </div>
-    )
+  const handleAcordo = async () => {
+    if (!acordoFrom || !acordoTo) { toast.error('Informe o período'); return }
+    if (!acordoAmount) { toast.error('Informe o valor da parcela'); return }
+    setAcordoSubmitting(true)
+    try {
+      await axios.post(`${API}/crm/public/acordo?token=${encodeURIComponent(token)}`, {
+        date_from: acordoFrom,
+        date_to: acordoTo,
+        installments: parseInt(acordoInstallments),
+        monthly_amount: acordoAmount,
+        payment_method_id: payMethod || null,
+      })
+      setAcordoDone(true)
+      toast.success('Acordo registrado!')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail ?? 'Erro ao registrar acordo')
+    } finally { setAcordoSubmitting(false) }
   }
 
-  if (done) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 gap-4">
-        <Toaster position="top-center" />
-        <CheckCircle2 className="w-16 h-16 text-green-500" />
-        <h1 className="text-xl font-bold text-gray-800 text-center">Cadastro enviado!</h1>
-        <p className="text-sm text-gray-500 text-center max-w-xs">
-          Suas informações foram recebidas. O pagamento será confirmado pelo nosso time.
-        </p>
-      </div>
-    )
-  }
+  const pendentes = mensalidades.filter(m => !paidIds.has(m.id))
+  const overdue = pendentes.filter(isOverdue)
+  const upcoming = pendentes.filter(m => !isOverdue(m))
+
+  if (loading) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-[#26619c] border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+
+  if (error) return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-3 p-6">
+      <AlertCircle className="w-12 h-12 text-red-400" />
+      <p className="text-gray-600 text-center">{error}</p>
+    </div>
+  )
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4">
+    <div className="min-h-screen bg-gray-50">
       <Toaster position="top-center" />
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6 flex flex-col gap-5">
-        <div className="text-center">
-          <h1 className="text-xl font-bold text-[#26619c]">Associe-se</h1>
-          <p className="text-xs text-gray-500 mt-1">Preencha seus dados para se associar.</p>
-        </div>
 
-        {/* Lançado por */}
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Responsável pelo cadastro</p>
-          {users.length > 0 ? (
-            <select className={`${inp} border-[#26619c]/40 bg-blue-50`} value={form.lancado_por} onChange={e => set('lancado_por', e.target.value)}>
-              <option value="">— Selecione quem está lançando —</option>
-              {users.map(u => <option key={u.id} value={u.full_name}>{u.full_name}</option>)}
-            </select>
-          ) : (
-            <input className={`${inp} border-[#26619c]/40 bg-blue-50`} placeholder="Lançado por (seu nome) *" value={form.lancado_por}
-              onChange={e => set('lancado_por', e.target.value)} />
+      {/* Header */}
+      <div className="bg-[#26619c] text-white px-4 py-5">
+        <p className="text-xs opacity-70 uppercase tracking-wide font-medium mb-0.5">Cobrança</p>
+        <h1 className="text-lg font-bold leading-tight">{resident?.full_name}</h1>
+        {resident?.address && <p className="text-xs opacity-80 mt-0.5">{resident.address}{resident.unit ? ` — ${resident.unit}` : ''}</p>}
+      </div>
+
+      <div className="px-4 py-4 flex flex-col gap-4 max-w-md mx-auto">
+
+        {/* Forma de pagamento (global) */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-4">
+          <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Forma de Pagamento</p>
+          <div className="flex flex-wrap gap-2">
+            {paymentMethods.map(pm => (
+              <button key={pm.id} onClick={() => { setPayMethod(pm.id); setProofUrl('') }}
+                className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition ${payMethod === pm.id ? 'bg-[#26619c] text-white border-[#26619c]' : 'bg-white text-gray-600 border-gray-200'}`}>
+                {pm.name}
+              </button>
+            ))}
+          </div>
+
+          {isPix && (
+            <div className="mt-3">
+              {proofUrl ? (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                  <span className="text-xs text-green-700 truncate flex-1">Comprovante anexado</span>
+                  <button onClick={() => setProofUrl('')}><X className="w-4 h-4 text-green-500" /></button>
+                </div>
+              ) : (
+                <button onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-[#26619c]/40 rounded-xl py-3 text-sm text-[#26619c] font-medium hover:bg-[#26619c]/5 transition disabled:opacity-50">
+                  <Upload className="w-4 h-4" />
+                  {uploading ? 'Enviando…' : 'Anexar comprovante PIX (obrigatório)'}
+                </button>
+              )}
+              <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} />
+            </div>
           )}
         </div>
 
-        {/* Dados pessoais */}
-        <div className="flex flex-col gap-3">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Dados do novo associado</p>
-          <input className={inp} placeholder="Nome completo *" value={form.full_name}
-            onChange={e => set('full_name', e.target.value)} />
-          <input className={inp} placeholder="Telefone" value={form.phone} inputMode="tel"
-            onChange={e => set('phone', e.target.value)} />
-          <input className={inp} placeholder="CPF (opcional)" value={form.cpf} inputMode="numeric"
-            onChange={e => set('cpf', e.target.value)} />
-        </div>
-
-        {/* Endereço */}
-        <div className="flex flex-col gap-3">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Endereço</p>
-          <input className={inp} placeholder="Nome da rua *" value={form.address_street}
-            onChange={e => set('address_street', e.target.value)} />
-          <div className="flex gap-2">
-            <input className={`${inp} flex-1`} placeholder="Número *" value={form.address_number}
-              onChange={e => set('address_number', e.target.value)} />
-            <input className={`${inp} flex-[2]`} placeholder="Complemento" value={form.address_complement}
-              onChange={e => set('address_complement', e.target.value)} />
+        {/* Mensalidades em atraso */}
+        {overdue.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2 px-1">Em atraso ({overdue.length})</p>
+            <div className="flex flex-col gap-2">
+              {overdue.map(m => (
+                <div key={m.id} className="bg-white rounded-2xl border border-red-100 p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-800 text-sm">{fmtMonth(m.reference_month)}</p>
+                    <p className="text-xs text-red-500">{m.due_date ? `Venceu ${new Date(m.due_date).toLocaleDateString('pt-BR')}` : 'Vencido'}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-gray-800">{fmtCurrency(m.amount)}</p>
+                    <button onClick={() => handlePay(m.id)}
+                      disabled={paying === m.id || (isPix && !proofUrl)}
+                      className="bg-[#26619c] text-white text-xs font-semibold px-3 py-1.5 rounded-xl disabled:opacity-40">
+                      {paying === m.id ? '…' : 'Pagar'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Dependentes */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Dependentes (máx. 3)</p>
-            {dependents.length < 3 && (
-              <button onClick={addDep}
-                className="flex items-center gap-1 text-xs text-[#26619c] font-medium hover:underline">
-                <Plus className="w-3.5 h-3.5" /> Adicionar
-              </button>
-            )}
+        {/* Mensalidades futuras/atuais */}
+        {upcoming.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 px-1">Próximas / Atuais ({upcoming.length})</p>
+            <div className="flex flex-col gap-2">
+              {upcoming.map(m => (
+                <div key={m.id} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-800 text-sm">{fmtMonth(m.reference_month)}</p>
+                    {m.due_date && <p className="text-xs text-gray-400">Vence {new Date(m.due_date).toLocaleDateString('pt-BR')}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-gray-800">{fmtCurrency(m.amount)}</p>
+                    <button onClick={() => handlePay(m.id)}
+                      disabled={paying === m.id || (isPix && !proofUrl)}
+                      className="bg-gray-100 text-gray-700 text-xs font-semibold px-3 py-1.5 rounded-xl disabled:opacity-40 hover:bg-gray-200">
+                      {paying === m.id ? '…' : 'Pagar'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          {dependents.map((d, i) => (
-            <div key={i} className="bg-gray-50 rounded-xl p-3 flex flex-col gap-2 border border-gray-200">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-gray-600">Dependente {i + 1}</p>
-                <button onClick={() => removeDep(i)} className="text-gray-400 hover:text-red-500">
-                  <Trash2 className="w-3.5 h-3.5" />
+        )}
+
+        {pendentes.length === 0 && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-5 text-center">
+            <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto mb-2" />
+            <p className="text-green-700 font-semibold text-sm">Tudo em dia!</p>
+          </div>
+        )}
+
+        {/* Acordo */}
+        {overdue.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <button onClick={() => setAcordoOpen(o => !o)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700">
+              Registrar Acordo de Dívida
+              {acordoOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+            {acordoOpen && !acordoDone && (
+              <div className="px-4 pb-4 flex flex-col gap-3 border-t border-gray-100">
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">De (AAAA-MM)</label>
+                    <input type="month" value={acordoFrom} onChange={e => setAcordoFrom(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Até (AAAA-MM)</label>
+                    <input type="month" value={acordoTo} onChange={e => setAcordoTo(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Parcelas</label>
+                    <input type="number" min="1" max="24" value={acordoInstallments} onChange={e => setAcordoInstallments(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Valor/parcela (R$)</label>
+                    <input type="number" min="0" step="0.01" value={acordoAmount} onChange={e => setAcordoAmount(e.target.value)}
+                      placeholder="0,00"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30" />
+                  </div>
+                </div>
+                <button onClick={handleAcordo} disabled={acordoSubmitting}
+                  className="w-full bg-[#26619c] text-white rounded-xl py-3 text-sm font-semibold disabled:opacity-50">
+                  {acordoSubmitting ? 'Registrando…' : 'Confirmar Acordo'}
                 </button>
               </div>
-              <input className={inp} placeholder="Nome completo *" value={d.name}
-                onChange={e => setDep(i, 'name', e.target.value)} />
-              <input className={inp} placeholder="Telefone" value={d.phone}
-                onChange={e => setDep(i, 'phone', e.target.value)} />
-              <input className={inp} placeholder="CPF (opcional)" value={d.cpf}
-                onChange={e => setDep(i, 'cpf', e.target.value)} />
-            </div>
-          ))}
-        </div>
+            )}
+            {acordoOpen && acordoDone && (
+              <div className="px-4 pb-4 pt-3 border-t border-gray-100 flex items-center gap-2 text-green-700">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="text-sm font-medium">Acordo registrado com sucesso.</span>
+              </div>
+            )}
+          </div>
+        )}
 
-        <input className={inp} placeholder="Observações (opcional)" value={form.notes}
-          onChange={e => set('notes', e.target.value)} />
-
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="w-full bg-[#26619c] hover:bg-[#1a4f87] text-white py-3 rounded-xl font-semibold text-sm transition disabled:opacity-50"
-        >
-          {loading ? 'Enviando…' : 'Enviar Cadastro'}
-        </button>
-
-        <p className="text-xs text-gray-400 text-center">
-          Após o envio, o pagamento será confirmado pelo nosso time e você receberá a confirmação.
-        </p>
       </div>
     </div>
   )

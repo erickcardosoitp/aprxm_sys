@@ -11,7 +11,7 @@ from app.core.limiter import limiter
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, chat, crm, daily_tasks, datalake, demands, finance, financeiro, geral, mensalidades, notifications, packages, porta_a_porta, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
+from app.routers import admin, agent, auth, carriers, chat, crm, daily_tasks, datalake, demands, finance, financeiro, geral, mensalidades, notifications, packages, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -1079,7 +1079,6 @@ app.include_router(public.router, prefix=PREFIX)
 app.include_router(senso.router, prefix=PREFIX)
 app.include_router(agent.router, prefix=PREFIX)
 # cash_boxes router desativado — funcionalidade removida
-app.include_router(porta_a_porta.router, prefix=PREFIX)
 app.include_router(carriers.router, prefix=PREFIX)
 app.include_router(demands.router, prefix=PREFIX)
 app.include_router(chat.router, prefix=PREFIX)

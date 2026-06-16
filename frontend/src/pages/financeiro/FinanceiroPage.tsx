@@ -14,7 +14,6 @@ import RelatoriosTab from './tabs/RelatoriosTab'
 import ConciliacaoInteligente from './tabs/ConciliacaoInteligente'
 import DRETab from './tabs/DRETab'
 import EsteiraTab from './tabs/EsteiraTab'
-import PortaAPortaTab from './PortaAPortaTab'
 
 function FinanceiroInner() {
   const location = useLocation()
@@ -95,7 +94,6 @@ function FinanceiroInner() {
       {tab === 'relatorios' && <RelatoriosTab />}
       {tab === 'dre' && <DRETab />}
       {tab === 'conciliacao' && <ConciliacaoInteligente />}
-      {tab === 'porta_a_porta' && <PortaAPortaTab users={users} />}
 
       {/* Admin close modal (global) */}
       {adminCloseTarget && (

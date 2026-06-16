@@ -1,4 +1,4 @@
-import { BarChart2, GitBranch, ArrowLeftRight, UserCheck, DollarSign, FileBarChart, CheckCircle, MapPin } from 'lucide-react'
+import { BarChart2, GitBranch, ArrowLeftRight, UserCheck, DollarSign, FileBarChart, CheckCircle } from 'lucide-react'
 import type { Tab } from '../types/financeiro'
 
 export const SUBTYPE_LABELS: Record<string, string> = {
@@ -29,5 +29,4 @@ export const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: 'relatorios',     label: 'Sessões',       icon: DollarSign },
   { key: 'dre',            label: 'Relatórios',    icon: FileBarChart },
   { key: 'conciliacao',    label: 'PIX',           icon: CheckCircle },
-  { key: 'porta_a_porta',  label: 'Porta a Porta', icon: MapPin },
 ]

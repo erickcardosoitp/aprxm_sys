@@ -1,4 +1,4 @@
-export type Tab = 'dashboard' | 'movimentacoes' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'porta_a_porta' | 'dre' | 'esteira'
+export type Tab = 'dashboard' | 'movimentacoes' | 'cobrancas' | 'relatorios' | 'conciliacao' | 'dre' | 'esteira'
 
 export interface FinanceSummary {
   total_income: number
