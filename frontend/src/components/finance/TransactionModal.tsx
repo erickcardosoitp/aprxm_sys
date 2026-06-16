@@ -271,14 +271,14 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
   // Fetch resident mensalidades when resident selected + mensalidade subtype
   useEffect(() => {
-    if (!resident || incomeSubtype !== 'mensalidade' || isAcordo) {
+    if (!resident || incomeSubtype !== 'mensalidade') {
       setResidentMensalidades([])
       return
     }
     api.get<{ reference_month: string; status: string }[]>(`/mensalidades/residents/${resident.id}`)
       .then(r => setResidentMensalidades(r.data))
       .catch(() => setResidentMensalidades([]))
-  }, [resident?.id, incomeSubtype, isAcordo])
+  }, [resident?.id, incomeSubtype])
 
   // Auto-select pending months based on amount
   useEffect(() => {
@@ -547,7 +547,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         acordo_entrada: isAcordo && acordoEntrada ? parseFloat(acordoEntrada) : undefined,
         payer_name: isPix && pixPayerName.trim() ? pixPayerName.trim() : undefined,
         payer_entity_id: isPix && pixPayerEntityId ? pixPayerEntityId : undefined,
-        mensalidade_months: isMensalidade && !isAcordo && mensalidadeMonths.length > 0
+        mensalidade_months: isMensalidade && mensalidadeMonths.length > 0
           ? mensalidadeMonths
           : undefined,
       }
@@ -1113,14 +1113,49 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                     const parcelasValor = acordoInstallments > 0 ? restante / acordoInstallments : 0
                     return (
                       <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex flex-col gap-3">
-                        <div className="grid grid-cols-3 gap-2">
-                          <div>
-                            <label className="block text-[10px] text-purple-600 font-semibold mb-1">Meses</label>
-                            <select value={acordoMonths} onChange={e => setAcordoMonths(Number(e.target.value))}
-                              className="w-full border border-purple-300 rounded-lg px-2 py-1.5 text-xs text-purple-800 bg-white">
-                              {[1,2,3,4,5,6,7,8,9,10,11,12,18,24].map(n => <option key={n} value={n}>{n} {n === 1 ? 'mês' : 'meses'}</option>)}
-                            </select>
-                          </div>
+                        {/* Seleção de meses do acordo */}
+                        {(() => {
+                          const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+                          const paidSet = new Set(residentMensalidades.filter(m => m.status === 'paid').map(m => m.reference_month))
+                          const months: string[] = []
+                          const start = new Date(2022, 0, 1)
+                          const now = new Date()
+                          for (let d = new Date(start); d <= now; d.setMonth(d.getMonth() + 1)) {
+                            months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+                          }
+                          return (
+                            <div>
+                              <label className="block text-[10px] text-purple-600 font-semibold mb-1.5">
+                                Meses do acordo {mensalidadeMonths.length > 0 && <span className="font-normal">({mensalidadeMonths.length} selecionado{mensalidadeMonths.length > 1 ? 's' : ''})</span>}
+                              </label>
+                              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                                {months.map(ym => {
+                                  const [y, m] = ym.split('-')
+                                  const isPaid = paidSet.has(ym)
+                                  const isSelected = mensalidadeMonths.includes(ym)
+                                  if (isPaid) return (
+                                    <span key={ym} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-50 text-green-600 border border-green-200 opacity-60">
+                                      ✓ {MONTH_NAMES[parseInt(m)-1]}/{y.slice(2)}
+                                    </span>
+                                  )
+                                  return (
+                                    <button key={ym} type="button"
+                                      onClick={() => {
+                                        setMensalidadeMonths(prev => isSelected ? prev.filter(x => x !== ym) : [...prev, ym])
+                                        setAcordoMonths(prev => isSelected ? Math.max(1, prev - 1) : prev + 1)
+                                      }}
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition ${
+                                        isSelected ? 'bg-purple-600 text-white border-purple-600' : 'border-purple-300 text-purple-700 bg-white hover:bg-purple-100'
+                                      }`}>
+                                      {MONTH_NAMES[parseInt(m)-1]}/{y.slice(2)}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })()}
+                        <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[10px] text-purple-600 font-semibold mb-1">Entrada (R$)</label>
                             <input type="number" inputMode="decimal" min="0" step="0.01" value={acordoEntrada}
