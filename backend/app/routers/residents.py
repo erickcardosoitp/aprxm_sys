@@ -127,6 +127,7 @@ def _serialize_list(r: Resident) -> dict:
         "phone_secondary": r.phone_secondary,
         "address_cep": r.address_cep,
         "address_street": r.address_street,
+        "address_number": r.address_number,
         "address_neighborhood": getattr(r, "address_neighborhood", None),
         "responsible_id": str(r.responsible_id) if r.responsible_id else None,
         "is_member_confirmed": r.is_member_confirmed,
