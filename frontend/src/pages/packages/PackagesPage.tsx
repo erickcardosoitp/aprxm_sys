@@ -1463,9 +1463,11 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
     if (clean.length !== 8) return
     setCepLoading(true)
     try {
-      const res = await packageService.lookupCep(clean)
-      const d = res.data
-      setGuest(g => ({ ...g, address_street: d.street, address_district: d.district, address_city: d.city, address_state: d.state }))
+      const r = await fetch(`https://viacep.com.br/ws/${clean}/json/`)
+      const d = await r.json()
+      if (!d.erro) {
+        setGuest(g => ({ ...g, address_street: d.logradouro ?? '', address_district: d.bairro ?? '', address_city: d.localidade ?? '', address_state: d.uf ?? '' }))
+      }
     } catch { /* silent */ } finally { setCepLoading(false) }
   }
 
@@ -1526,6 +1528,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
 
   const createGuest = async () => {
     if (!guest.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
+    if (newResType === 'guest' && !newResCpf.trim()) { toast.error('CPF é obrigatório.'); return }
     if (newResType === 'dependent' && !newResResponsible) { toast.error('Selecione o responsável.'); return }
     setLoading(true)
     try {
@@ -1538,6 +1541,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
       }
       if (newResType === 'guest') {
         payload.type = 'guest'; payload.is_member_confirmed = false; payload.terms_accepted = false; payload.lgpd_accepted = true
+        if (newResCpf.trim()) payload.cpf = newResCpf.replace(/\D/g, '')
       } else {
         payload.type = 'member'; payload.is_member_confirmed = true; payload.terms_accepted = true; payload.lgpd_accepted = true
         if (newResCpf.trim()) payload.cpf = newResCpf.trim()
@@ -2687,6 +2691,8 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                     )}
                     {newResType === 'guest' && (
                       <>
+                        <input value={newResCpf} onChange={e => { const v = e.target.value; startTransition(() => setNewResCpf(v)) }}
+                          className={inputCls} placeholder="CPF *" inputMode="numeric" />
                         <input value={guest.phone_primary} onChange={e => { const v = e.target.value; startTransition(() => setGuest(g => ({ ...g, phone_primary: v }))) }}
                           className={inputCls} placeholder="Telefone (opcional)" type="tel" inputMode="tel" />
                         <div className="grid grid-cols-3 gap-2">
