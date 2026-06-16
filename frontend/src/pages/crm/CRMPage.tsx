@@ -961,20 +961,22 @@ export default function CRMPage() {
         const totalVL = Object.entries(agTotalsByAssoc).find(([k]) => k.toLowerCase().includes('vaz') || k.toLowerCase().includes('lobo'))?.[1] ?? 0
         const totalCon = Object.entries(agTotalsByAssoc).find(([k]) => k.toLowerCase().includes('congonha'))?.[1] ?? 0
         // Meta de cobranças por agente = total dos moradores que ele cobre / qtd agentes naquela assoc
-        const metaVL  = totalVL  > 0 ? Math.ceil(totalVL  / 5) : 0
-        const metaCon = totalCon > 0 ? Math.ceil(totalCon / 3) : 0
+        const metaVL      = totalVL  > 0 ? Math.ceil(totalVL  / 4) : 0
+        const metaVLHalf  = totalVL  > 0 ? Math.ceil(totalVL  / 8) : 0
+        const metaCon     = totalCon > 0 ? Math.ceil(totalCon / 3) : 0
         // Mapeamento: agente → associações que cobre
         const AGENT_META: Record<string, number> = {
           'Danielly':     metaVL,
           'Monique':      metaVL,
           'Paulo Victor': metaVL,
-          'Vinicius':     metaVL + metaCon,
-          'Carla':        metaVL + metaCon,
+          'Fernanda':     metaVL,
+          'Vinicius':     metaVLHalf + metaCon,
+          'Carla':        metaVLHalf + metaCon,
           'Hosana':       metaCon,
         }
-        const FIXED_AGENTS = ['Danielly', 'Carla', 'Vinicius', 'Monique', 'Hosana', 'Paulo Victor']
+        const FIXED_AGENTS = ['Danielly', 'Carla', 'Vinicius', 'Monique', 'Hosana', 'Paulo Victor', 'Fernanda']
         const MEDAL_COLOR = ['text-amber-500', 'text-gray-400', 'text-orange-400']
-        const BORDER = ['border-amber-300', 'border-gray-300', 'border-orange-300', 'border-gray-100', 'border-gray-100', 'border-gray-100']
+        const BORDER = ['border-amber-300', 'border-gray-300', 'border-orange-300', 'border-gray-100', 'border-gray-100', 'border-gray-100', 'border-gray-100']
 
         const merged = FIXED_AGENTS.map(name => {
           const found = agRanking.find(r =>
