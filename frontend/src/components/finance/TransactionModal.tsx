@@ -221,6 +221,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   // mensalidade — months
   const [mensalidadeMode, setMensalidadeMode] = useState<'unica' | 'multipla'>('unica')
   const [mensalidadeMonths, setMensalidadeMonths] = useState<string[]>([])
+  const [residentMensalidades, setResidentMensalidades] = useState<{ reference_month: string; status: string }[]>([])
 
   // Step 3 — barcode confirmation
   const [pendingBarcodeCode, setPendingBarcodeCode] = useState('')
@@ -268,17 +269,33 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
     }
   }, [incomeSubtype, txType, settings])
 
-  // Auto-select months when mensalidade amount changes
+  // Fetch resident mensalidades when resident selected + mensalidade subtype
   useEffect(() => {
-    if (txType !== 'income' || incomeSubtype !== 'mensalidade') return
+    if (!resident || incomeSubtype !== 'mensalidade' || isAcordo) {
+      setResidentMensalidades([])
+      return
+    }
+    api.get<{ reference_month: string; status: string }[]>(`/mensalidades/residents/${resident.id}`)
+      .then(r => setResidentMensalidades(r.data))
+      .catch(() => setResidentMensalidades([]))
+  }, [resident?.id, incomeSubtype, isAcordo])
+
+  // Auto-select pending months based on amount
+  useEffect(() => {
+    if (txType !== 'income' || incomeSubtype !== 'mensalidade' || isAcordo) return
     const defaultAmt = parseFloat(settings?.default_mensalidade_amount || '0')
-    const count = mensalidadeMode === 'unica' ? 1 : (defaultAmt > 0 && amount ? Math.max(1, Math.round(parseFloat(amount) / defaultAmt)) : 1)
-    const now = new Date()
-    setMensalidadeMonths(Array.from({ length: count }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    }))
-  }, [amount, incomeSubtype, txType, settings?.default_mensalidade_amount, mensalidadeMode])
+    const count = defaultAmt > 0 && amount ? Math.max(1, Math.round(parseFloat(amount) / defaultAmt)) : 1
+    // Build candidate months: March 2026 → current + 3, skip already paid
+    const paidSet = new Set(residentMensalidades.filter(m => m.status === 'paid').map(m => m.reference_month))
+    const candidates: string[] = []
+    const start = new Date(2026, 2, 1) // March 2026
+    const end = new Date(); end.setMonth(end.getMonth() + 3)
+    for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!paidSet.has(ym)) candidates.push(ym)
+    }
+    setMensalidadeMonths(candidates.slice(0, count))
+  }, [amount, incomeSubtype, txType, isAcordo, settings?.default_mensalidade_amount, residentMensalidades])
 
   // Auto-fill from resident lookup into proof fields
   useEffect(() => {
@@ -530,7 +547,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         acordo_entrada: isAcordo && acordoEntrada ? parseFloat(acordoEntrada) : undefined,
         payer_name: isPix && pixPayerName.trim() ? pixPayerName.trim() : undefined,
         payer_entity_id: isPix && pixPayerEntityId ? pixPayerEntityId : undefined,
-        mensalidade_months: isMensalidade && mensalidadeMode === 'multipla' && mensalidadeMonths.length > 0
+        mensalidade_months: isMensalidade && !isAcordo && mensalidadeMonths.length > 0
           ? mensalidadeMonths
           : undefined,
       }
@@ -1152,18 +1169,44 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                       </div>
                     </div>
                   )}
-                  {txType === 'income' && incomeSubtype === 'mensalidade' && (
-                    <div className="flex gap-2">
-                      {(['unica', 'multipla'] as const).map(m => (
-                        <button key={m} type="button" onClick={() => setMensalidadeMode(m)}
-                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition ${
-                            mensalidadeMode === m ? 'border-[#26619c] bg-blue-50 text-[#26619c]' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                          }`}>
-                          {m === 'unica' ? 'Única (1 mês)' : 'Múltipla'}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  {txType === 'income' && incomeSubtype === 'mensalidade' && !isAcordo && resident && (() => {
+                    const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+                    const paidSet = new Set(residentMensalidades.filter(m => m.status === 'paid').map(m => m.reference_month))
+                    const months: string[] = []
+                    const start = new Date(2026, 2, 1)
+                    const end = new Date(); end.setMonth(end.getMonth() + 3)
+                    for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
+                      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+                    }
+                    return (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                          Meses {mensalidadeMonths.length > 0 && <span className="text-[#26619c] font-normal">({mensalidadeMonths.length} selecionado{mensalidadeMonths.length > 1 ? 's' : ''})</span>}
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {months.map(ym => {
+                            const [y, m] = ym.split('-')
+                            const isPaid = paidSet.has(ym)
+                            const isSelected = mensalidadeMonths.includes(ym)
+                            if (isPaid) return (
+                              <span key={ym} className="px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-600 border border-green-200 opacity-60">
+                                ✓ {MONTH_NAMES[parseInt(m)-1]}/{y}
+                              </span>
+                            )
+                            return (
+                              <button key={ym} type="button"
+                                onClick={() => setMensalidadeMonths(prev => isSelected ? prev.filter(x => x !== ym) : [...prev, ym])}
+                                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition ${
+                                  isSelected ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100'
+                                }`}>
+                                {MONTH_NAMES[parseInt(m)-1]}/{y}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
                       Valor (R$) <span className="text-red-500">*</span>
@@ -1175,35 +1218,6 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                       onChange={(e) => setAmount(e.target.value)} placeholder="0,00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]" />
                   </div>
-                  {txType === 'income' && incomeSubtype === 'mensalidade' && mensalidadeMode === 'multipla' && mensalidadeMonths.length > 0 && (() => {
-                    const now = new Date()
-                    const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-                    return (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          Meses referentes <span className="text-[#26619c] font-normal">({mensalidadeMonths.length}x)</span>
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {Array.from({ length: 15 }, (_, i) => {
-                            const d = new Date(now.getFullYear(), now.getMonth() - 3 + i, 1)
-                            const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-                            const selected = mensalidadeMonths.includes(ym)
-                            return (
-                              <button key={ym} type="button"
-                                onClick={() => setMensalidadeMonths(prev =>
-                                  selected ? prev.filter(m => m !== ym) : [...prev, ym]
-                                )}
-                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-                                  selected ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600 hover:border-[#26619c]'
-                                }`}>
-                                {monthNames[d.getMonth()]}/{d.getFullYear()}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
                   {!(txType === 'income' && incomeSubtype === 'mensalidade') && (
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Descrição <span className="text-red-500">*</span></label>
