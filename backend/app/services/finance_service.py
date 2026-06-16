@@ -53,6 +53,16 @@ class FinanceService:
         notes: str | None = None,
         device_token: str | None = None,
     ) -> CashSession:
+        from sqlmodel import select as _sel
+        existing = await self._session.execute(
+            _sel(CashSession).where(
+                CashSession.association_id == association_id,
+                CashSession.opened_by == opened_by,
+                CashSession.closed_at == None,  # noqa: E711
+            )
+        )
+        if existing.scalars().first():
+            raise CashSessionError("Você já possui um caixa aberto. Feche-o antes de abrir outro.")
 
         session = CashSession(
             association_id=association_id,
