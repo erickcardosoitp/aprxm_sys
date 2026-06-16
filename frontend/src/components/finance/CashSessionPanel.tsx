@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, CheckCircle, ClipboardCheck, DollarSign, Lock, MinusCircle,
   PlusCircle, TrendingUp, Unlock, User, X,
@@ -747,16 +748,22 @@ export function CashSessionPanel({ session, onRefresh, canConferencia = true }: 
   const role = useAuthStore((s) => s.role)
   const isOperator = role === 'operator'
   const [openBalance, setOpenBalance] = useState('')
+  const [sessionType, setSessionType] = useState<'pdv' | 'externo'>('pdv')
   const [opening, setOpening] = useState(false)
   const [showClose, setShowClose] = useState(false)
   const [showConferencia, setShowConferencia] = useState(false)
+  const navigate = useNavigate()
 
   const handleOpen = async () => {
     setOpening(true)
     try {
-      await financeService.openSession(parseFloat(openBalance) || 0)
+      await financeService.openSession(parseFloat(openBalance) || 0, undefined, sessionType)
       toast.success('Caixa aberto!')
-      onRefresh()
+      if (sessionType === 'externo') {
+        navigate('/crm')
+      } else {
+        onRefresh()
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao abrir caixa.')
     } finally {
@@ -790,19 +797,36 @@ export function CashSessionPanel({ session, onRefresh, canConferencia = true }: 
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">Saldo inicial (R$)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={openBalance}
-              onChange={e => setOpenBalance(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleOpen() }}
-              placeholder="0,00"
-              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
-            />
+          <div className="flex gap-2">
+            {(['pdv', 'externo'] as const).map(t => (
+              <button key={t} type="button" onClick={() => setSessionType(t)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition ${sessionType === t ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600 hover:border-[#26619c]'}`}>
+                {t === 'pdv' ? '🖥 PDV' : '📱 Externo'}
+              </button>
+            ))}
           </div>
+
+          {sessionType === 'pdv' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Saldo inicial (R$)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={openBalance}
+                onChange={e => setOpenBalance(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleOpen() }}
+                placeholder="0,00"
+                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]"
+              />
+            </div>
+          )}
+
+          {sessionType === 'externo' && (
+            <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+              Sessão de campo — somente registro de mensalidades via CRM.
+            </p>
+          )}
 
           <button
             onClick={handleOpen}

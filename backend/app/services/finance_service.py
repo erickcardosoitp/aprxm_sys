@@ -52,6 +52,7 @@ class FinanceService:
         opening_balance: Decimal = Decimal("0.00"),
         notes: str | None = None,
         device_token: str | None = None,
+        session_type: str = "pdv",
     ) -> CashSession:
         from sqlmodel import select as _sel
         existing = await self._session.execute(
@@ -71,6 +72,7 @@ class FinanceService:
             notes=notes,
             origin="Sessão de Caixa",
             device_token=device_token,
+            session_type=session_type,
         )
         self._session.add(session)
         await self._session.flush()

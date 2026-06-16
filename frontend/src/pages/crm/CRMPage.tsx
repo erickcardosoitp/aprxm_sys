@@ -197,6 +197,9 @@ export default function CRMPage() {
   const [agentLinkUrl, setAgentLinkUrl] = useState<string | null>(null)
   const [agentLinkLoading, setAgentLinkLoading] = useState(false)
 
+  const [portalLinkUrl, setPortalLinkUrl] = useState<string | null>(null)
+  const [portalLinkLoading, setPortalLinkLoading] = useState(false)
+
   const loadCobrancas = async () => {
     setLoadingCobrancas(true)
     try {
@@ -492,6 +495,33 @@ export default function CRMPage() {
         <div className="flex items-center gap-2">
           <UserCheck className="w-5 h-5 text-[#26619c]" />
           <h1 className="text-lg font-bold text-gray-800">CRM — Associados</h1>
+        </div>
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* Meu link de agente — visível para todos */}
+          {!portalLinkUrl ? (
+            <button
+              disabled={portalLinkLoading}
+              onClick={async () => {
+                setPortalLinkLoading(true)
+                try {
+                  const r = await api.get('/crm/portal-token')
+                  setPortalLinkUrl(r.data.url)
+                } catch { toast.error('Erro ao gerar link') }
+                finally { setPortalLinkLoading(false) }
+              }}
+              className="flex items-center gap-1.5 border border-[#26619c]/40 bg-blue-50 text-[#26619c] px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-100 disabled:opacity-40">
+              {portalLinkLoading ? 'Gerando…' : 'Meu link de agente'}
+            </button>
+          ) : (
+            <div className="flex gap-1.5 items-center bg-blue-50 border border-blue-200 rounded-lg px-2 py-1">
+              <span className="text-xs text-blue-700 font-mono max-w-[160px] truncate">{portalLinkUrl}</span>
+              <button onClick={() => { navigator.clipboard.writeText(portalLinkUrl); toast.success('Link copiado!') }}
+                className="text-xs font-semibold text-blue-700 hover:underline shrink-0">Copiar</button>
+              <button onClick={() => setPortalLinkUrl(null)} className="text-gray-400 hover:text-gray-600 shrink-0">
+                <span className="text-xs">✕</span>
+              </button>
+            </div>
+          )}
         </div>
         {isAdmin && (
           <div className="flex gap-2 flex-wrap">

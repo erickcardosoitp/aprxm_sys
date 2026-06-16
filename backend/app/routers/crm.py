@@ -744,3 +744,303 @@ async def public_acordo(
 
     await session.commit()
     return {"ok": True, "mensalidades_updated": len(rows)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AGENT PORTAL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PortalPayRequest(BaseModel):
+    resident_id: UUID
+    mensalidade_id: UUID
+    payment_method_id: UUID
+    payment_proof_url: str | None = None
+
+
+class PortalRegisterRequest(BaseModel):
+    full_name: str
+    cpf: str
+    phone_primary: str | None = None
+    address_cep: str | None = None
+    address_street: str | None = None
+    address_number: str | None = None
+    address_complement: str | None = None
+    address_neighborhood: str | None = None
+
+
+def _decode_portal_token(token: str) -> dict:
+    from app.config import settings
+    from jose import jwt as jose_jwt, JWTError
+    try:
+        payload = jose_jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        if payload.get("type") != "portal":
+            raise HTTPException(401, "Token inválido.")
+        return payload
+    except JWTError:
+        raise HTTPException(401, "Token inválido ou expirado.")
+
+
+@router.get("/portal-token", summary="Gerar token de portal para agente")
+async def get_portal_token(
+    request: Request,
+    current: CurrentUser = Depends(get_current_user),
+) -> dict:
+    _check_access(current)
+    from app.config import settings
+    from jose import jwt as jose_jwt
+
+    payload = {
+        "type": "portal",
+        "association_id": str(current.association_id),
+        "agent_id": str(current.user_id),
+        "exp": datetime.utcnow() + timedelta(days=365),
+    }
+    token = jose_jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+    base = str(request.base_url).rstrip("/").replace("api/v1", "").rstrip("/")
+    return {"token": token, "url": f"{base}/agente?token={token}"}
+
+
+@router.get("/public/portal/init", summary="Inicializar portal de agente")
+async def portal_init(
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    payload = _decode_portal_token(token)
+    aid = payload["association_id"]
+
+    assoc = (await session.execute(
+        text("SELECT name, logo_url FROM associations WHERE id = :aid"),
+        {"aid": aid},
+    )).fetchone()
+
+    payment_methods = (await session.execute(
+        text("SELECT id, name FROM payment_methods WHERE association_id = :aid AND is_active = TRUE ORDER BY name"),
+        {"aid": aid},
+    )).fetchall()
+
+    return {
+        "association": {
+            "name": assoc.name if assoc else "",
+            "logo_url": assoc.logo_url if assoc else None,
+        },
+        "payment_methods": [{"id": str(pm.id), "name": pm.name} for pm in payment_methods],
+    }
+
+
+@router.get("/public/portal/search", summary="Buscar associados no portal")
+async def portal_search(
+    token: str = Query(...),
+    q: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> list:
+    payload = _decode_portal_token(token)
+    aid = payload["association_id"]
+
+    q_clean = q.strip()
+    rows = (await session.execute(text("""
+        SELECT id, full_name, cpf, address_street, address_number, status, type
+        FROM residents
+        WHERE association_id = :aid
+          AND status = 'active'
+          AND type = 'member'
+          AND (full_name ILIKE :q OR regexp_replace(cpf, '[^0-9]', '', 'g') LIKE :q_digits)
+        ORDER BY full_name
+        LIMIT 8
+    """), {
+        "aid": aid,
+        "q": f"%{q_clean}%",
+        "q_digits": f"%{q_clean.replace('.', '').replace('-', '').replace(' ', '')}%",
+    })).fetchall()
+
+    def mask_cpf(cpf: str | None) -> str | None:
+        if not cpf:
+            return None
+        digits = ''.join(c for c in cpf if c.isdigit())
+        if len(digits) < 3:
+            return cpf
+        return digits[:3] + "****"
+
+    return [
+        {
+            "id": str(r.id),
+            "full_name": r.full_name,
+            "cpf": mask_cpf(r.cpf),
+            "address_street": r.address_street,
+            "address_number": r.address_number,
+            "status": r.status,
+            "type": r.type,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/public/portal/member", summary="Dados do morador para portal")
+async def portal_member(
+    token: str = Query(...),
+    resident_id: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    payload = _decode_portal_token(token)
+    aid = payload["association_id"]
+
+    resident = (await session.execute(text("""
+        SELECT id, full_name, address_street, address_number
+        FROM residents
+        WHERE id = :rid AND association_id = :aid
+    """), {"rid": resident_id, "aid": aid})).fetchone()
+
+    if not resident:
+        raise HTTPException(404, "Morador não encontrado.")
+
+    mensalidades = (await session.execute(text("""
+        SELECT id, reference_month, due_date, amount, status
+        FROM mensalidades
+        WHERE resident_id = :rid AND association_id = :aid
+          AND status != 'paid'
+        ORDER BY reference_month DESC
+        LIMIT 24
+    """), {"rid": resident_id, "aid": aid})).fetchall()
+
+    return {
+        "resident": {
+            "id": str(resident.id),
+            "full_name": resident.full_name,
+            "address": f"{resident.address_street or ''}, {resident.address_number or ''}".strip(", "),
+        },
+        "mensalidades": [
+            {
+                "id": str(m.id),
+                "reference_month": m.reference_month,
+                "due_date": str(m.due_date) if m.due_date else None,
+                "amount": str(m.amount),
+                "status": m.status,
+            }
+            for m in mensalidades
+        ],
+    }
+
+
+@router.post("/public/portal/pay", summary="Registrar pagamento via portal")
+async def portal_pay(
+    body: PortalPayRequest,
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    payload = _decode_portal_token(token)
+    aid = UUID(payload["association_id"])
+    agent_id = UUID(payload["agent_id"])
+
+    # Verify resident belongs to this association
+    resident_check = (await session.execute(
+        text("SELECT id FROM residents WHERE id = :rid AND association_id = :aid"),
+        {"rid": str(body.resident_id), "aid": str(aid)},
+    )).fetchone()
+    if not resident_check:
+        raise HTTPException(404, "Morador não encontrado.")
+
+    pm_name = (await session.execute(
+        text("SELECT name FROM payment_methods WHERE id = :id"),
+        {"id": str(body.payment_method_id)},
+    )).scalar()
+    is_pix = pm_name and "pix" in pm_name.lower()
+    if is_pix and not body.payment_proof_url:
+        raise HTTPException(422, "Comprovante obrigatório para pagamento PIX.")
+
+    return await _do_remote_pay(
+        session=session,
+        association_id=aid,
+        mensalidade_id=body.mensalidade_id,
+        payment_method_id=body.payment_method_id,
+        payment_proof_url=body.payment_proof_url,
+        paid_by=agent_id,
+    )
+
+
+@router.post("/public/portal/register", summary="Cadastrar novo associado via portal")
+async def portal_register(
+    body: PortalRegisterRequest,
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from uuid import uuid4
+    from datetime import date as date_type
+
+    payload = _decode_portal_token(token)
+    aid = payload["association_id"]
+
+    # Strip non-digits from CPF
+    cpf_clean = ''.join(c for c in body.cpf if c.isdigit()) if body.cpf else None
+
+    resident_id = str(uuid4())
+    await session.execute(text("""
+        INSERT INTO residents (
+            id, association_id, type, status, full_name, cpf, phone_primary,
+            address_cep, address_street, address_number, address_complement, address_neighborhood,
+            is_member_confirmed, terms_accepted, lgpd_accepted, created_at, updated_at
+        ) VALUES (
+            :id, :aid, 'member', 'active', :full_name, :cpf, :phone,
+            :cep, :street, :number, :complement, :neighborhood,
+            FALSE, FALSE, TRUE, NOW(), NOW()
+        )
+    """), {
+        "id": resident_id,
+        "aid": aid,
+        "full_name": body.full_name,
+        "cpf": cpf_clean,
+        "phone": body.phone_primary,
+        "cep": body.address_cep,
+        "street": body.address_street,
+        "number": body.address_number,
+        "complement": body.address_complement,
+        "neighborhood": body.address_neighborhood,
+    })
+
+    # Get default mensalidade amount and due day from settings
+    settings_row = (await session.execute(
+        text("SELECT COALESCE(default_mensalidade_amount, 0), COALESCE(default_due_day, 10) FROM association_settings WHERE association_id = :aid"),
+        {"aid": aid},
+    )).fetchone()
+    default_amount = settings_row[0] if settings_row else 0
+    default_due_day = settings_row[1] if settings_row else 10
+
+    today = date_type.today()
+    reference_month = today.strftime("%Y-%m")
+    import calendar
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    due_day = min(int(default_due_day), last_day)
+    due_date = date_type(today.year, today.month, due_day)
+
+    mensalidade_id = str(uuid4())
+    # Use a dummy created_by — the agent_id from token
+    agent_id = payload["agent_id"]
+    await session.execute(text("""
+        INSERT INTO mensalidades (
+            id, association_id, resident_id, reference_month, due_date, amount, status,
+            payment_channel, created_by, created_at, updated_at
+        ) VALUES (
+            :id, :aid, :rid, :ref_month, :due_date, :amount, 'pending',
+            'remote', :created_by, NOW(), NOW()
+        )
+    """), {
+        "id": mensalidade_id,
+        "aid": aid,
+        "rid": resident_id,
+        "ref_month": reference_month,
+        "due_date": str(due_date),
+        "amount": str(default_amount),
+        "created_by": agent_id,
+    })
+
+    payment_methods = (await session.execute(
+        text("SELECT id, name FROM payment_methods WHERE association_id = :aid AND is_active = TRUE ORDER BY name"),
+        {"aid": aid},
+    )).fetchall()
+
+    await session.commit()
+
+    return {
+        "resident_id": resident_id,
+        "mensalidade_id": mensalidade_id,
+        "mensalidade_amount": str(default_amount),
+        "payment_methods": [{"id": str(pm.id), "name": pm.name} for pm in payment_methods],
+    }

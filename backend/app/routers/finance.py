@@ -25,6 +25,7 @@ class OpenSessionRequest(BaseModel):
     opening_balance: Decimal = Field(default=Decimal("0.00"), ge=0)
     notes: str | None = None
     device_token: str | None = None
+    session_type: str = "pdv"
 
 
 class CloseSessionRequest(BaseModel):
@@ -422,8 +423,9 @@ async def open_session(
         opening_balance=body.opening_balance,
         notes=body.notes,
         device_token=body.device_token,
+        session_type=body.session_type,
     )
-    return {"id": str(cash.id), "status": cash.status, "opened_at": str(cash.opened_at)}
+    return {"id": str(cash.id), "status": cash.status, "opened_at": str(cash.opened_at), "session_type": cash.session_type}
 
 
 @router.post("/sessions/manual", response_model=dict, summary="Criar sessão de caixa manual")
@@ -474,6 +476,7 @@ async def current_session(
         "opened_by": str(cash.opened_by),
         "opened_by_name": opener.full_name if opener else None,
         "is_mine": is_mine,
+        "session_type": cash.session_type,
     }
 
 

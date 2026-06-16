@@ -54,6 +54,7 @@ import OverviewPage from './pages/overview/OverviewPage'
 import PublicRegisterPage from './pages/public/PublicRegisterPage'
 import PublicUpdatePage from './pages/public/PublicUpdatePage'
 import CadastroPortaAPorta from './pages/public/CadastroPortaAPorta'
+import AgentPortalPage from './pages/public/AgentPortalPage'
 
 // Lazy — carregados sob demanda, auto-reload se chunk mudar após deploy
 const FinancePage       = lazyWithReload(() => import('./pages/finance/FinancePage'))
@@ -144,6 +145,7 @@ export default function App() {
         <Route path="/cadastro/:slug" element={<PublicRegisterPage />} />
         <Route path="/atualizar/:slug" element={<PublicUpdatePage />} />
         <Route path="/associar" element={<CadastroPortaAPorta />} />
+        <Route path="/agente" element={<AgentPortalPage />} />
         <Route
           path="/"
           element={

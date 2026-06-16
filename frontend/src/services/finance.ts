@@ -6,8 +6,8 @@ function getDeviceToken(): string {
 }
 
 export const financeService = {
-  openSession: (opening_balance: number, notes?: string) =>
-    api.post<CashSession>('/finance/sessions/open', { opening_balance, notes, device_token: getDeviceToken() }),
+  openSession: (opening_balance: number, notes?: string, session_type?: string) =>
+    api.post<CashSession>('/finance/sessions/open', { opening_balance, notes, session_type: session_type ?? 'pdv', device_token: getDeviceToken() }),
 
   getCurrentSession: () =>
     api.get<CashSession>('/finance/sessions/current'),

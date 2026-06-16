@@ -53,6 +53,7 @@ export interface CashSession {
   closed_at?: string
   opened_by: string
   opened_by_name?: string
+  session_type?: string
 }
 
 export interface Transaction {
