@@ -1355,6 +1355,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
   const [activeTab, setActiveTab] = useState<ResidentTab>('associados')
   const [filterStatus, setFilterStatus] = useState<ResidentStatus | ''>('')
   const [filterDelinquent, setFilterDelinquent] = useState(false)
+  const [hideInactive, setHideInactive] = useState(true)
   const [delinquentIds, setDelinquentIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [counts, setCounts] = useState({ associados: 0, dependentes: 0, visitantes: 0 })
@@ -1509,6 +1510,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
       else if (activeTab === 'visitantes') { if (r.type !== 'guest') return false }
     }
     if (filterDelinquent && !delinquentIds.has(r.id)) return false
+    if (hideInactive && (r.status === 'inactive' || r.status === 'suspended')) return false
     return true
   })
 
@@ -1706,6 +1708,10 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
             }`}>
             Inadimplentes {delinquentIds.size > 0 && `(${delinquentIds.size})`}
           </button>
+          <label className="flex items-center gap-1.5 whitespace-nowrap cursor-pointer px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition select-none">
+            <input type="checkbox" checked={hideInactive} onChange={e => setHideInactive(e.target.checked)} className="w-3 h-3 accent-[#26619c]" />
+            Ocultar inativos/suspensos
+          </label>
         </div>
       </div>
 
