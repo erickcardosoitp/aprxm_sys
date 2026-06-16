@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { printCarne as printCarneUtil } from '../../utils/printCarne'
 import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2, Download, Printer, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -230,6 +230,9 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
   // Step 2 — expense specific
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState('')
+  const expenseSigRef = useRef<HTMLCanvasElement>(null)
+  const [expenseSigDrawing, setExpenseSigDrawing] = useState(false)
+  const [expenseSigHas, setExpenseSigHas] = useState(false)
 
   useEffect(() => {
     settingsService.get().then(r => setSettings(r.data)).catch(() => {})
@@ -514,6 +517,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
       const isMensalidade = txType === 'income' && incomeSubtype === 'mensalidade'
       if (!amount || (!isMensalidade && !description.trim())) return
+      if (txType === 'expense' && !expenseSigHas) { toast.error('Assinatura do operador é obrigatória para despesas.'); setSaving(false); return }
       const monthsLabel = isMensalidade && mensalidadeMonths.length > 0
         ? [...mensalidadeMonths].sort().map(ym => {
             const [y, m] = ym.split('-')
@@ -534,6 +538,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
       const selectedPmName = paymentMethods.find(m => m.id === paymentMethodId)?.name ?? ''
       const isPix = selectedPmName.toLowerCase().includes('pix')
+      const expenseSigUrl = txType === 'expense' && expenseSigRef.current ? expenseSigRef.current.toDataURL('image/png') : undefined
       const basePayload = {
         type: txType,
         description: mensalidadeDesc,
@@ -550,6 +555,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         mensalidade_months: isMensalidade && mensalidadeMonths.length > 0
           ? mensalidadeMonths
           : undefined,
+        signature_url: expenseSigUrl,
       }
 
       const txPayload = {
@@ -1390,7 +1396,57 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                   )}
 
                   {txType === 'expense' && (
-                    <PhotoCapture label="Foto do Comprovante" onCapture={(e) => setReceiptPhotoUrl(e.url)} />
+                    <>
+                      <PhotoCapture label="Foto do Comprovante" onCapture={(e) => setReceiptPhotoUrl(e.url)} />
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 mb-1.5">Assinatura do operador <span className="text-red-500">*</span></p>
+                        <div className="relative border-2 border-dashed border-gray-200 rounded-xl overflow-hidden bg-gray-50">
+                          <canvas
+                            ref={expenseSigRef}
+                            className="w-full touch-none cursor-crosshair"
+                            style={{ height: '100px' }}
+                            onMouseDown={e => {
+                              const c = expenseSigRef.current; if (!c) return
+                              const ratio = window.devicePixelRatio || 1
+                              if (c.width !== c.offsetWidth * ratio) { c.width = c.offsetWidth * ratio; c.height = 100 * ratio; const ctx = c.getContext('2d'); if (ctx) ctx.scale(ratio, ratio) }
+                              setExpenseSigDrawing(true); setExpenseSigHas(true)
+                              const ctx = c.getContext('2d')!; const r = c.getBoundingClientRect()
+                              ctx.beginPath(); ctx.moveTo(e.clientX - r.left, e.clientY - r.top)
+                            }}
+                            onMouseMove={e => {
+                              if (!expenseSigDrawing) return
+                              const c = expenseSigRef.current!; const ctx = c.getContext('2d')!; const r = c.getBoundingClientRect()
+                              ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.strokeStyle = '#1a3f6f'
+                              ctx.lineTo(e.clientX - r.left, e.clientY - r.top); ctx.stroke()
+                            }}
+                            onMouseUp={() => setExpenseSigDrawing(false)}
+                            onMouseLeave={() => setExpenseSigDrawing(false)}
+                            onTouchStart={e => {
+                              const c = expenseSigRef.current; if (!c) return
+                              const ratio = window.devicePixelRatio || 1
+                              if (c.width !== c.offsetWidth * ratio) { c.width = c.offsetWidth * ratio; c.height = 100 * ratio; const ctx = c.getContext('2d'); if (ctx) ctx.scale(ratio, ratio) }
+                              setExpenseSigDrawing(true); setExpenseSigHas(true)
+                              const ctx = c.getContext('2d')!; const r = c.getBoundingClientRect()
+                              ctx.beginPath(); ctx.moveTo(e.touches[0].clientX - r.left, e.touches[0].clientY - r.top)
+                            }}
+                            onTouchMove={e => {
+                              if (!expenseSigDrawing) return
+                              const c = expenseSigRef.current!; const ctx = c.getContext('2d')!; const r = c.getBoundingClientRect()
+                              ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.strokeStyle = '#1a3f6f'
+                              ctx.lineTo(e.touches[0].clientX - r.left, e.touches[0].clientY - r.top); ctx.stroke()
+                            }}
+                            onTouchEnd={() => setExpenseSigDrawing(false)}
+                          />
+                          {!expenseSigHas && <p className="absolute inset-0 flex items-center justify-center text-xs text-gray-300 pointer-events-none">Assine aqui</p>}
+                        </div>
+                        {expenseSigHas && (
+                          <button type="button" onClick={() => {
+                            const c = expenseSigRef.current; if (!c) return
+                            c.getContext('2d')!.clearRect(0, 0, c.width, c.height); setExpenseSigHas(false)
+                          }} className="text-xs text-gray-400 hover:text-gray-600 mt-1">Limpar</button>
+                        )}
+                      </div>
+                    </>
                   )}
                 </>
               )}

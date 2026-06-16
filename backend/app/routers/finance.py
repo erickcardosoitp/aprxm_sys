@@ -98,6 +98,7 @@ class TransactionRequest(BaseModel):
     payer_name: str | None = None
     payer_entity_id: UUID | None = None
     mensalidade_months: list[str] | None = None
+    signature_url: str | None = None
 
 
 class ConferenciaRequest(BaseModel):
@@ -637,6 +638,7 @@ async def register_transaction(
             payer_name=body.payer_name,
             payer_entity_id=body.payer_entity_id,
             mensalidade_months=body.mensalidade_months,
+            signature_url=body.signature_url,
         )
         return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
 

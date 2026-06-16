@@ -239,9 +239,10 @@ class FinanceService:
         payer_name: str | None = None,
         payer_entity_id: UUID | None = None,
         mensalidade_months: list[str] | None = None,
+        signature_url: str | None = None,
     ) -> Transaction:
-        # Expense transactions require approval before affecting balance
-        approval_status = "pending" if tx_type == TransactionType.expense else None
+        from datetime import datetime as _dt
+        is_expense = tx_type == TransactionType.expense
 
         tx = Transaction(
             association_id=association_id,
@@ -256,7 +257,10 @@ class FinanceService:
             reference_number=reference_number,
             package_id=package_id,
             created_by=created_by,
-            approval_status=approval_status,
+            approval_status="approved" if is_expense else None,
+            approved_by=created_by if is_expense else None,
+            approved_at=_dt.utcnow() if is_expense else None,
+            approval_signature_url=signature_url if is_expense else None,
             payer_name=payer_name,
             payer_entity_id=payer_entity_id,
         )

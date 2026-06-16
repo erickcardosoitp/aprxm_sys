@@ -5,7 +5,7 @@ import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
 const TransactionModal = lazy(() => import('../../components/finance/TransactionModal').then(m => ({ default: m.TransactionModal })))
 import api from '../../services/api'
-import { financeService, type PendingApproval } from '../../services/finance'
+import { financeService } from '../../services/finance'
 import { settingsService } from '../../services/settings'
 import { useAuthStore } from '../../store/authStore'
 import type { AssociationSettings, CashSession, CashSessionSummary, Transaction } from '../../types'
@@ -35,142 +35,6 @@ const parseTxName = (desc: string, subtype: string | null): string => {
   return desc
 }
 
-// ── Approval modal ─────────────────────────────────────────────────────────────
-
-function ApprovalModal({
-  item,
-  onClose,
-  onDone,
-}: {
-  item: PendingApproval
-  onClose: () => void
-  onDone: () => void
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [drawing, setDrawing] = useState(false)
-  const [hasSig, setHasSig] = useState(false)
-  const [rejectMode, setRejectMode] = useState(false)
-  const [rejectReason, setRejectReason] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ratio = window.devicePixelRatio || 1
-    canvas.width = canvas.offsetWidth * ratio
-    canvas.height = 120 * ratio
-    const ctx = canvas.getContext('2d')
-    if (ctx) ctx.scale(ratio, ratio)
-  }, [rejectMode])
-
-  const startDraw = (e: React.MouseEvent | React.TouchEvent) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    setDrawing(true)
-    setHasSig(true)
-    const ctx = canvas.getContext('2d')!
-    const rect = canvas.getBoundingClientRect()
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top
-    ctx.beginPath(); ctx.moveTo(x, y)
-  }
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!drawing) return
-    const canvas = canvasRef.current!
-    const ctx = canvas.getContext('2d')!
-    const rect = canvas.getBoundingClientRect()
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top
-    ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.strokeStyle = '#1a3f6f'
-    ctx.lineTo(x, y); ctx.stroke()
-  }
-  const stopDraw = () => setDrawing(false)
-  const clearSig = () => {
-    const canvas = canvasRef.current!
-    canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
-    setHasSig(false)
-  }
-
-  const handleApprove = async () => {
-    if (!hasSig) { toast.error('Assine para aprovar.'); return }
-    setLoading(true)
-    try {
-      const sig = canvasRef.current!.toDataURL('image/png')
-      await financeService.approveTransaction(item.id, sig)
-      toast.success('Despesa aprovada.')
-      onDone()
-    } catch { toast.error('Erro ao aprovar.') } finally { setLoading(false) }
-  }
-
-  const handleReject = async () => {
-    if (!rejectReason.trim() || rejectReason.length < 5) { toast.error('Informe o motivo (mín. 5 caracteres).'); return }
-    setLoading(true)
-    try {
-      await financeService.rejectTransaction(item.id, rejectReason)
-      toast.success('Despesa recusada.')
-      onDone()
-    } catch { toast.error('Erro ao recusar.') } finally { setLoading(false) }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900 text-sm">Aprovação de Despesa</h2>
-          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          <div className="bg-red-50 rounded-xl p-3 border border-red-100">
-            <p className="text-sm font-semibold text-red-800">{item.description}</p>
-            <p className="text-xs text-red-600 mt-0.5">R$ {parseFloat(item.amount).toFixed(2)} · {item.creator_name}</p>
-            {item.category_name && <p className="text-xs text-gray-400 mt-0.5">{item.category_name}</p>}
-          </div>
-          {!rejectMode ? (
-            <>
-              <p className="text-xs text-gray-500 font-medium">Assinatura do aprovador</p>
-              <div className="relative border-2 border-dashed border-gray-200 rounded-xl overflow-hidden bg-gray-50">
-                <canvas
-                  ref={canvasRef}
-                  className="w-full touch-none cursor-crosshair"
-                  style={{ height: '120px' }}
-                  onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
-                  onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
-                />
-                {!hasSig && (
-                  <p className="absolute inset-0 flex items-center justify-center text-xs text-gray-300 pointer-events-none">Assine aqui</p>
-                )}
-              </div>
-              {hasSig && <button onClick={clearSig} className="text-xs text-gray-400 hover:text-gray-600">Limpar assinatura</button>}
-              <div className="flex gap-2 pt-1">
-                <button onClick={() => setRejectMode(true)} className="flex-1 flex items-center justify-center gap-1.5 border border-red-200 text-red-600 py-2.5 rounded-xl text-sm hover:bg-red-50 transition">
-                  <XCircle className="w-4 h-4" /> Recusar
-                </button>
-                <button onClick={handleApprove} disabled={loading} className="flex-1 flex items-center justify-center gap-1.5 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" /> Aprovar</>}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-xs text-gray-500 font-medium">Motivo da recusa</p>
-              <textarea
-                value={rejectReason} onChange={e => setRejectReason(e.target.value)}
-                rows={3} placeholder="Descreva o motivo..."
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
-              />
-              <div className="flex gap-2">
-                <button onClick={() => setRejectMode(false)} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50">Voltar</button>
-                <button onClick={handleReject} disabled={loading} className="flex-1 flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar Recusa'}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 type Tab = 'caixa' | 'sessoes' | 'extrato' | 'relatorios'
 
@@ -625,9 +489,7 @@ export default function FinancePage() {
   const [recalcingRow, setRecalcingRow] = useState<string | null>(null)
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
   const [selectedSession, setSelectedSession] = useState<CashSessionSummary | null>(null)
-  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
-  const [approvalItem, setApprovalItem] = useState<PendingApproval | null>(null)
-  const [showOfflineExpense, setShowOfflineExpense] = useState(false)
+const [showOfflineExpense, setShowOfflineExpense] = useState(false)
   const [offlineType, setOfflineType] = useState<'expense' | 'income'>('expense')
   const [offlinePaymentStatus, setOfflinePaymentStatus] = useState<'paid' | 'pending'>('paid')
   const [offlineForm, setOfflineForm] = useState({ description: '', amount: '', category_id: '' })
@@ -656,12 +518,6 @@ export default function FinancePage() {
     if (!adminCloseTarget) return
     const bal = parseFloat(adminCloseBalance)
     if (isNaN(bal)) { toast.error('Valor inválido.'); return }
-    if (pendingApprovals.length > 0) {
-      const ok = window.confirm(
-        `⚠️ Atenção: há ${pendingApprovals.length} despesa(s) pendente(s) de aprovação nesta associação.\n\nSe fechar agora, essas despesas ficam sem aprovação e podem gerar diferença no caixa.\n\nDeseja fechar mesmo assim?`
-      )
-      if (!ok) return
-    }
     setAdminClosing(true)
     try {
       await financeService.closeSession(bal, undefined, adminCloseTarget.id)
@@ -669,7 +525,6 @@ export default function FinancePage() {
       setAdminCloseTarget(null)
       setAdminCloseBalance('')
       loadSession()
-      loadPendingApprovals()
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao fechar caixa.')
     } finally { setAdminClosing(false) }
@@ -741,13 +596,7 @@ export default function FinancePage() {
     } finally { setSavingPayMethod(false) }
   }
 
-  const loadPendingApprovals = async () => {
-    if (!isConferenteOrAbove) return
-    try { const res = await financeService.listPendingApprovals(); setPendingApprovals(res.data) }
-    catch { setPendingApprovals([]) }
-  }
-
-  const loadSessions = async () => {
+const loadSessions = async () => {
     setLoadingSessions(true)
     try {
       const [sessRes, boxRes] = await Promise.all([
@@ -818,10 +667,7 @@ export default function FinancePage() {
   useEffect(() => {
     if (canSeeTotals) settingsService.get().then(r => setSettings(r.data)).catch(() => {})
   }, [canSeeTotals])
-  useEffect(() => { loadPendingApprovals() }, [])
-  useEffect(() => { if (!session) loadPendingApprovals() }, [session?.id])
-
-  const todayLabel = new Date().toLocaleDateString('pt-BR')
+const todayLabel = new Date().toLocaleDateString('pt-BR')
   const activeTxs = transactions.filter(t => !t.reversed_at && !t.is_reversal)
   const todayTxs = activeTxs.filter(t => new Date(t.transaction_at).toLocaleDateString('pt-BR') === todayLabel)
   const income = todayTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
@@ -1137,38 +983,6 @@ export default function FinancePage() {
             <ArrowDownLeft className="w-4 h-4" /> Lançamento sem caixa
           </button>
 
-          {/* Pendentes — sempre visível, mesmo sem caixa aberto */}
-          {isConferenteOrAbove && pendingApprovals.length > 0 && (
-            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl overflow-hidden">
-              <div className="px-4 py-2.5 bg-amber-100 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4" />
-                  {pendingApprovals.length} despesa{pendingApprovals.length > 1 ? 's' : ''} aguardando aprovação
-                </h3>
-                {!session && (
-                  <span className="text-[10px] bg-red-100 text-red-700 font-semibold px-2 py-0.5 rounded-full">Caixa fechado</span>
-                )}
-              </div>
-              <ul className="divide-y divide-amber-100">
-                {pendingApprovals.map(p => (
-                  <li key={p.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">{p.description}</p>
-                      <p className="text-xs text-gray-500">{p.creator_name} · {p.category_name ?? '—'}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-sm font-semibold text-red-600">R$ {parseFloat(p.amount).toFixed(2)}</span>
-                      <button onClick={() => setApprovalItem(p)}
-                        className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg font-medium transition">
-                        Revisar
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
           {session && (
             <>
               {sangriaAlert && (
@@ -1250,27 +1064,8 @@ export default function FinancePage() {
                 </div>
               )}
 
-              {/* Pending approvals — now rendered above session block, kept here for spacing */}
-              {false && isConferenteOrAbove && pendingApprovals.length > 0 && (
-                <div className="hidden">
-                  <ul className="divide-y divide-amber-100">
-                    {pendingApprovals.map(p => (
-                      <li key={p.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{p.description}</p>
-                          <p className="text-xs text-gray-500">{p.creator_name} · {p.category_name ?? '—'}</p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-sm font-semibold text-red-600">R$ {parseFloat(p.amount).toFixed(2)}</span>
-                          <button onClick={() => setApprovalItem(p)} className="hidden">Revisar</button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
 
-              <div className="flex gap-3">
+<div className="flex gap-3">
                 <button onClick={() => setShowTransaction(true)}
                   className="flex-1 flex items-center justify-center gap-2 bg-[#26619c] hover:bg-[#1a4f87] text-white py-2.5 rounded-xl text-sm font-semibold transition">
                   <Plus className="w-4 h-4" /> Nova Transação
@@ -1321,13 +1116,11 @@ export default function FinancePage() {
                                 )}
                                 {isEstorno && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500">Estorno</span>}
                                 {isVoided && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-500">Estornado</span>}
-                                {tx.approval_status === 'pending' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Aguarda aprovação</span>}
-                                {tx.approval_status === 'rejected' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Recusada</span>}
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                               {canSeeTotals && (
-                                <span className={`text-sm font-semibold ${isCanceled ? 'line-through text-gray-400' : tx.type === 'income' ? 'text-green-600' : tx.approval_status === 'pending' ? 'text-amber-500' : 'text-red-600'}`}>
+                                <span className={`text-sm font-semibold ${isCanceled ? 'line-through text-gray-400' : tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                                   {tx.type === 'income' ? '+' : '-'} R$ {parseFloat(tx.amount).toFixed(2)}
                                 </span>
                               )}
@@ -1623,11 +1416,6 @@ export default function FinancePage() {
                         {e.metodo ? ` · ${e.metodo}` : ''}
                         {e.operador ? ` · ${e.operador}` : ''}
                       </p>
-                      {e.aprovacao && e.aprovacao !== 'approved' && (
-                        <span className={`text-xs font-medium ${e.aprovacao === 'pending' ? 'text-amber-600' : 'text-red-600'}`}>
-                          {e.aprovacao === 'pending' ? 'Pendente aprovação' : 'Rejeitada'}
-                        </span>
-                      )}
                     </div>
                     <span className={`text-sm font-semibold shrink-0 ${e.tipo === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                       {e.tipo === 'income' ? '+' : '-'}R$ {parseFloat(e.valor).toFixed(2)}
@@ -1713,7 +1501,7 @@ export default function FinancePage() {
       {showSangria && <SangriaModal onClose={() => setShowSangria(false)} onSuccess={loadTransactions} />}
       {showTransaction && session && (
         <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"><Loader2 className="w-8 h-8 text-white animate-spin" /></div>}>
-          <TransactionModal onClose={() => setShowTransaction(false)} onSuccess={() => { loadTransactions(); loadPendingApprovals() }} />
+          <TransactionModal onClose={() => setShowTransaction(false)} onSuccess={loadTransactions} />
         </Suspense>
       )}
       {selectedSession && (
@@ -1722,15 +1510,8 @@ export default function FinancePage() {
           onClose={() => setSelectedSession(null)}
         />
       )}
-      {approvalItem && (
-        <ApprovalModal
-          item={approvalItem}
-          onClose={() => setApprovalItem(null)}
-          onDone={() => { setApprovalItem(null); loadPendingApprovals(); loadTransactions() }}
-        />
-      )}
 
-      {adminCloseTarget && (
+{adminCloseTarget && (
         <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
             <div className="flex items-center justify-between">
