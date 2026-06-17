@@ -273,7 +273,7 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
                 </div>
               )}
               <PhotoCapture
-                onCapture={url => setEditPhotos(ps => [...ps, { url, label: `Foto ${ps.length + 1}` }])}
+                onCapture={entry => setEditPhotos(ps => [...ps, { url: entry.url, label: entry.label }])}
                 label="Adicionar foto"
               />
               <div className="flex gap-2 mt-1">
