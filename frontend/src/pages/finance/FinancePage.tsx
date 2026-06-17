@@ -53,7 +53,7 @@ type SessionTx = {
   description: string; transaction_at: string; is_sangria: boolean
   created_by_name: string; conferido: boolean; observacao: string | null
   payment_method_id: string | null; payment_method_name: string | null
-  reversed_at: string | null
+  reversed_at: string | null; resident_name: string | null
 }
 
 type PaymentMethodOption = { id: string; name: string }
@@ -1108,6 +1108,7 @@ const todayLabel = new Date().toLocaleDateString('pt-BR')
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0 flex-1">
                               <p className={`text-sm font-medium truncate ${isCanceled ? 'line-through text-gray-400' : 'text-gray-800'}`}>{tx.description}</p>
+                              {tx.resident_name && <p className="text-xs text-[#26619c] font-medium truncate">👤 {tx.resident_name}</p>}
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                 <span className="text-xs text-gray-400">{new Date(tx.transaction_at).toLocaleString('pt-BR')}</span>
                                 {!isCanceled && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLORS[tx.type]}`}>{TYPE_LABELS[tx.type]}</span>}

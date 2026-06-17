@@ -1608,14 +1608,15 @@ async def get_session_transactions(
                t.payment_method_id,
                pm.name AS payment_method_name,
                t.reversed_at,
-               res.full_name AS resident_name
+               COALESCE(res_direct.full_name, res_men.full_name) AS resident_name
           FROM transactions t
           LEFT JOIN users u ON u.id = t.created_by
           LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
           LEFT JOIN session_transaction_reviews r
                  ON r.transaction_id = t.id AND r.cash_session_id = :sid
+          LEFT JOIN residents res_direct ON res_direct.id = t.resident_id
           LEFT JOIN mensalidades men ON men.transaction_id = t.id
-          LEFT JOIN residents res ON res.id = men.resident_id
+          LEFT JOIN residents res_men ON res_men.id = men.resident_id
          WHERE t.cash_session_id = :sid AND t.association_id = :aid
          ORDER BY t.transaction_at
     """), {"sid": session_id, "aid": str(current.association_id)})).fetchall()

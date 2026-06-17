@@ -72,6 +72,7 @@ export interface Transaction {
   created_by?: string
   payment_method_id?: string
   payment_method_name?: string
+  resident_name?: string | null
 }
 
 export interface TransactionCategory {

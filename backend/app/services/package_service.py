@@ -143,7 +143,7 @@ class PackageService:
                 tx_type=TransactionType.income,
                 income_subtype=IncomeSubtype.delivery_fee,
                 amount=DELIVERY_FEE,
-                description=f"Taxa de entrega — {delivered_to_name}",
+                description=f"Entrega — {delivered_to_name}",
                 created_by=delivered_by,
                 package_id=package_id,
                 resident_id=effective_resident_id,
