@@ -663,9 +663,9 @@ async def merge_residents(
     primary_type = primary[10]  # type column index
     if str(primary_type) == "member":
         await session.execute(sa_text("""
-            UPDATE packages SET has_delivery_fee = FALSE, resident_type = 'member'
+            UPDATE packages SET has_delivery_fee = FALSE
             WHERE resident_id = :pid AND association_id = :aid
-              AND (has_delivery_fee = TRUE OR resident_type != 'member')
+              AND has_delivery_fee = TRUE
               AND status NOT IN ('delivered', 'returned')
         """), {"pid": str(body.primary_id), "aid": aid})
 
