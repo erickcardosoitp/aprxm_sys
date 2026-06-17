@@ -302,11 +302,11 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
                 </div>
               ) : (<>
               <div className="grid grid-cols-2 gap-2 text-sm mb-2">
-                {pkg.delivered_to_name && (
+                {pkg.received_by_name && (
                   <div>
                     <p className="text-xs text-gray-500">Recebido por</p>
-                    <p className="font-medium text-gray-800">{pkg.delivered_to_name}</p>
-                    {pkg.delivered_to_cpf && <p className="text-xs text-gray-400">CPF: {maskCpf(pkg.delivered_to_cpf)}</p>}
+                    <p className="font-medium text-gray-800">{pkg.received_by_name}</p>
+                    {pkg.deliverer_name && <p className="text-xs text-gray-400">{pkg.deliverer_name}</p>}
                   </div>
                 )}
                 {pkg.delivered_at && (
@@ -319,10 +319,17 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
                     </p>
                   </div>
                 )}
-                {pkg.deliverer_name && (
+                {pkg.delivered_by_name && (
                   <div>
-                    <p className="text-xs text-gray-500">Entregador</p>
-                    <p className="font-medium text-gray-800">{pkg.deliverer_name}</p>
+                    <p className="text-xs text-gray-500">Entregue por</p>
+                    <p className="font-medium text-gray-800">{pkg.delivered_by_name}</p>
+                  </div>
+                )}
+                {pkg.delivered_to_name && (
+                  <div>
+                    <p className="text-xs text-gray-500">Entregue para</p>
+                    <p className="font-medium text-gray-800">{pkg.delivered_to_name}</p>
+                    {pkg.delivered_to_cpf && <p className="text-xs text-gray-400">CPF: {maskCpf(pkg.delivered_to_cpf)}</p>}
                   </div>
                 )}
               </div>
@@ -468,7 +475,7 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
               else if (ev.event_type === 'comment') items.push({ key: ev.id, at: ev.created_at, label: ev.comment ?? '', sub: ev.author_name, color: 'bg-gray-400' })
             }
             if (pkg.delivered_at && !events.some(e => e.event_type === 'reversal')) {
-              items.push({ key: 'delivered', at: pkg.delivered_at, label: 'Entregue', sub: pkg.delivered_by_name ?? pkg.deliverer_name ?? undefined, color: 'bg-green-500' })
+              items.push({ key: 'delivered', at: pkg.delivered_at, label: 'Entregue para', sub: pkg.delivered_to_name ?? undefined, color: 'bg-green-500' })
             }
             items.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
             return (
@@ -632,9 +639,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const [detailPkg, setDetailPkg] = useState<Package | null>(null)
   const [detailDependents, setDetailDependents] = useState<{ id: string; full_name: string; phone_primary?: string }[]>([])
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({})
-  const [editPkg, setEditPkg] = useState<Package | null>(null)
-  const [editPkgForm, setEditPkgForm] = useState({ sender_name: '', carrier_name: '', tracking_code: '', object_type: '', notes: '', resident_cep: '' })
-  const [savingEditPkg, setSavingEditPkg] = useState(false)
   const [photoPreviewUrls, setPhotoPreviewUrls] = useState<{ url: string; label?: string }[] | null>(null)
 
   // Auto-abre modal via prop de modo (Simplifica) ou ?action= (URL)
@@ -1772,12 +1776,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
               Entregar
             </button>
           )}
-          {isAdmin && (
-            <button onClick={e => { e.stopPropagation(); setEditPkg(pkg); setEditPkgForm({ sender_name: pkg.sender_name ?? '', carrier_name: pkg.carrier_name ?? '', tracking_code: pkg.tracking_code ?? '', object_type: pkg.object_type ?? '', notes: pkg.notes ?? '', resident_cep: pkg.resident_cep ?? '' }) }}
-              className="text-xs text-gray-400 hover:text-[#26619c] hover:bg-gray-100 px-2 py-1 rounded-lg transition">
-              Editar
-            </button>
-          )}
         </div>
       </div>
     </div>
@@ -2392,69 +2390,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
         </div>
       )}
 
-      {/* Edit Package Info Modal */}
-      {editPkg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-bold text-gray-900 text-sm">Editar Encomenda</h2>
-              <button onClick={() => setEditPkg(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="px-5 py-4 flex flex-col gap-3">
-              {([
-                { label: 'Remetente', key: 'sender_name' },
-                { label: 'Transportadora', key: 'carrier_name' },
-                { label: 'Código de rastreio', key: 'tracking_code' },
-                { label: 'Tipo de objeto', key: 'object_type' },
-                { label: 'Observações', key: 'notes' },
-              ] as { label: string; key: keyof typeof editPkgForm }[]).map(({ label, key }) => (
-                <div key={key}>
-                  <label className="block text-xs text-gray-600 mb-1">{label}</label>
-                  <input value={editPkgForm[key]} onChange={e => { const v = e.target.value; startTransition(() => setEditPkgForm(f => ({ ...f, [key]: v }))) }}
-                    className={inputCls} placeholder={label} />
-                </div>
-              ))}
-              {editPkg?.resident_id && (
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">CEP do morador</label>
-                  <input value={editPkgForm.resident_cep} onChange={e => { const v = e.target.value; startTransition(() => setEditPkgForm(f => ({ ...f, resident_cep: v }))) }}
-                    className={inputCls} placeholder="00000-000" maxLength={9} inputMode="numeric" />
-                </div>
-              )}
-            </div>
-            <div className="flex gap-3 px-5 pb-5">
-              <button onClick={() => setEditPkg(null)}
-                className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50">Cancelar</button>
-              <button disabled={savingEditPkg} onClick={async () => {
-                if (!editPkg) return
-                setSavingEditPkg(true)
-                try {
-                  const pkgFields = ['sender_name', 'carrier_name', 'tracking_code', 'object_type', 'notes'] as const
-                  const orig: Record<string, string> = {
-                    sender_name: editPkg.sender_name ?? '', carrier_name: editPkg.carrier_name ?? '',
-                    tracking_code: editPkg.tracking_code ?? '', object_type: editPkg.object_type ?? '', notes: editPkg.notes ?? '',
-                  }
-                  const payload: Record<string, string | null> = {}
-                  for (const k of pkgFields) {
-                    if (editPkgForm[k] !== orig[k]) payload[k] = editPkgForm[k] || null
-                  }
-                  if (Object.keys(payload).length) await api.patch(`/packages/${editPkg.id}/info`, payload)
-                  if (editPkg.resident_id && editPkgForm.resident_cep !== (editPkg.resident_cep ?? '')) {
-                    await api.put(`/residents/${editPkg.resident_id}`, { address_cep: editPkgForm.resident_cep || null })
-                  }
-                  toast.success('Encomenda atualizada.')
-                  setEditPkg(null)
-                  loadPackages()
-                } catch (e: any) { toast.error(apiErr(e, 'Erro ao salvar.')) }
-                finally { setSavingEditPkg(false) }
-              }}
-                className="flex-1 bg-[#26619c] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1e4d7d] disabled:opacity-50">
-                {savingEditPkg ? '…' : 'Salvar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Receive Modal */}
       {showReceive && (
