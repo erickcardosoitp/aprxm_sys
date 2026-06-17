@@ -569,14 +569,17 @@ async def reassign_package(
 
 
 class EditPackageInfoRequest(BaseModel):
-    sender_name: str | None = None
     carrier_name: str | None = None
     tracking_code: str | None = None
-    object_type: str | None = None
     notes: str | None = None
+    photo_urls: list[dict] | None = None
+    resident_address_cep: str | None = None
+    resident_address_street: str | None = None
+    resident_address_number: str | None = None
+    resident_address_complement: str | None = None
 
 
-@router.patch("/{package_id}/info", summary="Editar informações da encomenda (admin+)")
+@router.patch("/{package_id}/info", summary="Editar informações da encomenda")
 async def edit_package_info(
     package_id: UUID,
     body: EditPackageInfoRequest,
@@ -585,18 +588,28 @@ async def edit_package_info(
 ) -> dict:
     from fastapi import HTTPException
     from datetime import datetime
-    if not current.is_admin:
-        raise HTTPException(403, "Apenas admins podem editar informações da encomenda.")
     pkg = await session.get(Package, package_id)
     if not pkg or str(pkg.association_id) != str(current.association_id):
         raise HTTPException(404, "Encomenda não encontrada.")
-    if body.sender_name is not None: pkg.sender_name = body.sender_name or None
     if body.carrier_name is not None: pkg.carrier_name = body.carrier_name or None
     if body.tracking_code is not None: pkg.tracking_code = body.tracking_code or None
-    if body.object_type is not None: pkg.object_type = body.object_type or None
     if body.notes is not None: pkg.notes = body.notes or None
+    if body.photo_urls is not None: pkg.photo_urls = body.photo_urls
     pkg.updated_at = datetime.utcnow()
     session.add(pkg)
+    # Update resident address if provided
+    if pkg.resident_id and any(v is not None for v in [
+        body.resident_address_cep, body.resident_address_street,
+        body.resident_address_number, body.resident_address_complement,
+    ]):
+        from app.models.resident import Resident
+        resident = await session.get(Resident, pkg.resident_id)
+        if resident and str(resident.association_id) == str(current.association_id):
+            if body.resident_address_cep is not None: resident.address_cep = body.resident_address_cep or None
+            if body.resident_address_street is not None: resident.address_street = body.resident_address_street or None
+            if body.resident_address_number is not None: resident.address_number = body.resident_address_number or None
+            if body.resident_address_complement is not None: resident.address_complement = body.resident_address_complement or None
+            session.add(resident)
     await session.commit()
     return {"ok": True}
 

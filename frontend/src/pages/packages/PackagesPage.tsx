@@ -89,8 +89,49 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
   const [editingDelivery, setEditingDelivery] = useState(false)
   const [deliveryEdit, setDeliveryEdit] = useState({ delivered_to_name: '', delivered_to_cpf: '', delivery_person_name: '', notes: '', admin_password: '' })
   const [savingDelivery, setSavingDelivery] = useState(false)
+  const [showEditPanel, setShowEditPanel] = useState(false)
+  const [editForm, setEditForm] = useState({ notes: '', carrier_name: '', tracking_code: '', cep: '', street: '', number: '', complement: '' })
+  const [editPhotos, setEditPhotos] = useState<{ url: string; label?: string }[]>([])
+  const [savingEdit, setSavingEdit] = useState(false)
   const role = useAuthStore((s) => s.role)
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
+
+  const openEditPanel = () => {
+    setEditForm({
+      notes: pkg.notes ?? '',
+      carrier_name: pkg.carrier_name ?? '',
+      tracking_code: pkg.tracking_code ?? '',
+      cep: pkg.resident_cep ?? '',
+      street: pkg.resident_address_street ?? '',
+      number: pkg.resident_address_number ?? '',
+      complement: pkg.resident_address_complement ?? '',
+    })
+    setEditPhotos((pkg.photo_urls ?? []).filter((p: any) => !p.url?.startsWith('blob:')))
+    setShowEditPanel(true)
+  }
+
+  const handleSaveEdit = async () => {
+    setSavingEdit(true)
+    try {
+      const payload: Record<string, unknown> = {}
+      if (editForm.notes !== (pkg.notes ?? '')) payload.notes = editForm.notes || null
+      if (editForm.carrier_name !== (pkg.carrier_name ?? '')) payload.carrier_name = editForm.carrier_name || null
+      if (editForm.tracking_code !== (pkg.tracking_code ?? '')) payload.tracking_code = editForm.tracking_code || null
+      if (editForm.cep !== (pkg.resident_cep ?? '')) payload.resident_address_cep = editForm.cep || null
+      if (editForm.street !== (pkg.resident_address_street ?? '')) payload.resident_address_street = editForm.street || null
+      if (editForm.number !== (pkg.resident_address_number ?? '')) payload.resident_address_number = editForm.number || null
+      if (editForm.complement !== (pkg.resident_address_complement ?? '')) payload.resident_address_complement = editForm.complement || null
+      const currentUrls = JSON.stringify((pkg.photo_urls ?? []).filter((p: any) => !p.url?.startsWith('blob:')))
+      if (JSON.stringify(editPhotos) !== currentUrls) payload.photo_urls = editPhotos
+      if (Object.keys(payload).length === 0) { setShowEditPanel(false); return }
+      await api.patch(`/packages/${pkg.id}/info`, payload)
+      const refreshed = await api.get<Package>(`/packages/${pkg.id}`)
+      setPkg(refreshed.data)
+      toast.success('Encomenda atualizada.')
+      setShowEditPanel(false)
+      onRefresh?.()
+    } catch { toast.error('Erro ao salvar.') } finally { setSavingEdit(false) }
+  }
 
   const handleNotify = async () => {
     setNotifying(true)
@@ -168,10 +209,83 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Detalhes da Encomenda</h3>
-          <button onClick={onClose} className="p-2 -mr-2"><X className="w-5 h-5 text-gray-400" /></button>
+          <div className="flex items-center gap-2">
+            {!showEditPanel && pkg.status !== 'delivered' && (
+              <button onClick={openEditPanel} className="text-xs text-[#26619c] border border-[#26619c] px-2.5 py-1 rounded-lg hover:bg-blue-50 transition flex items-center gap-1">
+                <Pencil className="w-3 h-3" /> Editar
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 -mr-2"><X className="w-5 h-5 text-gray-400" /></button>
+          </div>
         </div>
 
         <div className="px-5 py-4 flex flex-col gap-3">
+          {/* Edit panel */}
+          {showEditPanel && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-3">
+              <p className="text-xs font-semibold text-[#26619c] uppercase tracking-wide">Editar Encomenda</p>
+              {[
+                { label: 'Transportadora', key: 'carrier_name' },
+                { label: 'Código de rastreio', key: 'tracking_code' },
+                { label: 'Observações', key: 'notes' },
+              ].map(({ label, key }) => (
+                <div key={key}>
+                  <label className="text-xs text-gray-600 mb-0.5 block">{label}</label>
+                  <input value={editForm[key as keyof typeof editForm]}
+                    onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white"
+                    placeholder={label} />
+                </div>
+              ))}
+              <p className="text-xs font-medium text-gray-600 mt-1">Endereço do destinatário</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-1">
+                  <label className="text-xs text-gray-500 mb-0.5 block">CEP</label>
+                  <input value={editForm.cep} onChange={e => setEditForm(f => ({ ...f, cep: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="00000-000" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-gray-500 mb-0.5 block">Rua</label>
+                  <input value={editForm.street} onChange={e => setEditForm(f => ({ ...f, street: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="Rua..." />
+                </div>
+                <div className="col-span-1">
+                  <label className="text-xs text-gray-500 mb-0.5 block">Nº</label>
+                  <input value={editForm.number} onChange={e => setEditForm(f => ({ ...f, number: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="123" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-gray-500 mb-0.5 block">Complemento</label>
+                  <input value={editForm.complement} onChange={e => setEditForm(f => ({ ...f, complement: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="Apto, bloco..." />
+                </div>
+              </div>
+              <p className="text-xs font-medium text-gray-600 mt-1">Fotos</p>
+              {editPhotos.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {editPhotos.map((p, i) => (
+                    <div key={i} className="relative">
+                      <img src={p.url} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                      <button onClick={() => setEditPhotos(ps => ps.filter((_, j) => j !== i))}
+                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <PhotoCapture
+                onCapture={url => setEditPhotos(ps => [...ps, { url, label: `Foto ${ps.length + 1}` }])}
+                label="Adicionar foto"
+              />
+              <div className="flex gap-2 mt-1">
+                <button onClick={() => setShowEditPanel(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm hover:bg-gray-50">Cancelar</button>
+                <button disabled={savingEdit} onClick={handleSaveEdit}
+                  className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold hover:bg-[#1e4d7d] disabled:opacity-50">
+                  {savingEdit ? 'Salvando…' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Status */}
           <span className={`inline-flex self-start text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[pkg.status]}`}>
             {STATUS_LABELS[pkg.status]}
