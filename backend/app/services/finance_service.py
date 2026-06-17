@@ -887,6 +887,89 @@ class FinanceService:
 
         return bytes(pdf.output())
 
+    @staticmethod
+    def _build_blank_proof_pdf(
+        community_name: str,
+        assoc_name: str,
+        assoc_address: str,
+        assoc_cep: str,
+        logo_bytes: bytes,
+        barcodes: list[tuple[str, bytes]],  # list of (code, barcode_png_bytes)
+    ) -> bytes:
+        from fpdf import FPDF  # type: ignore
+
+        def _safe(s: str) -> str:
+            return s.encode("latin-1", errors="replace").decode("latin-1")
+
+        community_name = _safe(community_name)
+        assoc_address = _safe(assoc_address)
+        assoc_name = _safe(assoc_name)
+
+        pdf = FPDF()
+        pdf.set_margins(20, 20, 20)
+        pdf.set_auto_page_break(auto=True, margin=20)
+
+        for barcode_code, barcode_png in barcodes:
+            pdf.add_page()
+
+            # Barcode — canto superior direito
+            if barcode_png:
+                from PIL import Image as _PILImage  # type: ignore
+                bc_w = 28.0
+                bc_x = pdf.w - pdf.r_margin - bc_w
+                bc_y = 10.0
+                _pil = _PILImage.open(BytesIO(barcode_png))
+                bc_h = bc_w * _pil.height / _pil.width
+                pdf.image(BytesIO(barcode_png), x=bc_x, y=bc_y, w=bc_w, h=bc_h)
+                pdf.set_font("Helvetica", size=6)
+                pdf.set_text_color(80, 80, 80)
+                pdf.set_xy(bc_x, bc_y + bc_h + 0.5)
+                pdf.cell(bc_w, 3, barcode_code, align="C")
+
+            logo_io = BytesIO(logo_bytes)
+            pdf.image(logo_io, x=80, y=15, w=50)
+            pdf.set_y(68)
+
+            pdf.set_font("Helvetica", size=9)
+            pdf.set_text_color(100, 100, 100)
+            if assoc_address:
+                pdf.cell(0, 5, assoc_address, ln=True, align="C")
+            if assoc_cep:
+                pdf.cell(0, 5, f"CEP: {assoc_cep}", ln=True, align="C")
+            pdf.ln(8)
+
+            pdf.set_draw_color(200, 200, 200)
+            pdf.line(20, pdf.get_y(), 190, pdf.get_y())
+            pdf.ln(8)
+
+            pdf.set_font("Helvetica", "B", 15)
+            pdf.set_text_color(26, 63, 111)
+            pdf.cell(0, 10, "DECLARAÇÃO DE RESIDÊNCIA", ln=True, align="C")
+            pdf.ln(6)
+
+            pdf.set_font("Helvetica", size=11)
+            pdf.set_text_color(30, 30, 30)
+            LINE = "___________________________________"
+            SHORT = "______________"
+            body = (
+                f"O Sr(a) {LINE}, portador(a) do CPF {SHORT}, "
+                f"residente na comunidade {community_name or LINE}, em {LINE}, "
+                f"n\xba {SHORT}, {LINE}, CEP {SHORT}, "
+                f"localizado no bairro de {LINE}."
+            )
+            pdf.multi_cell(0, 8, body, align="J")
+            pdf.ln(12)
+
+            pdf.set_font("Helvetica", size=12)
+            pdf.cell(0, 8, "Rio de Janeiro, _____ de _______________________ de _________.", ln=True, align="R")
+            pdf.ln(10)
+
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_text_color(26, 63, 111)
+            pdf.cell(0, 8, assoc_name.upper(), ln=True, align="C")
+
+        return bytes(pdf.output())
+
     async def list_transactions(
         self, association_id: UUID, cash_session_id: UUID | None = None
     ) -> list[Transaction]:

@@ -355,6 +355,9 @@ function ComprovanteReport() {
   const [editing, setEditing] = useState<ProofEntry | null>(null)
   const [editForm, setEditForm] = useState<EditProofForm>({ resident_name: '', resident_cpf: '', resident_neighborhood: '', resident_cep: '', amount: '' })
   const [saving, setSaving] = useState(false)
+  const [showBlankModal, setShowBlankModal] = useState(false)
+  const [blankQty, setBlankQty] = useState(1)
+  const [generatingBlank, setGeneratingBlank] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -395,10 +398,56 @@ function ComprovanteReport() {
     } catch { toast.error('Erro ao re-emitir comprovante.') } finally { setSaving(false) }
   }
 
+  const handleGenerateBlank = async () => {
+    setGeneratingBlank(true)
+    try {
+      const res = await api.post('/admin/proof-of-residence/blank', { quantity: blankQty }, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const a = document.createElement('a'); a.href = url; a.download = `comprovantes_em_branco_${blankQty}x.pdf`; a.click()
+      URL.revokeObjectURL(url)
+      toast.success(`${blankQty} comprovante(s) gerado(s)!`)
+      setShowBlankModal(false)
+      setBlankQty(1)
+    } catch (e: any) {
+      const msg = e?.response?.data ? await new Response(e.response.data).text() : 'Erro ao gerar comprovantes.'
+      toast.error(msg)
+    } finally { setGeneratingBlank(false) }
+  }
+
   const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 focus:border-[#26619c]'
 
   return (
     <>
+      {showBlankModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-xs bg-white rounded-2xl shadow-2xl p-6 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-900">Comprovantes em Branco</h3>
+              <button onClick={() => setShowBlankModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-xs text-gray-500">Cada comprovante terá um código de barras único registrado no sistema para controle.</p>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1 font-medium">Quantidade</label>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={blankQty}
+                onChange={e => setBlankQty(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                className={inputCls}
+              />
+              <p className="text-xs text-gray-400 mt-1">Máximo 50 por vez. Desconta do estoque.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowBlankModal(false)} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50">Cancelar</button>
+              <button disabled={generatingBlank} onClick={handleGenerateBlank}
+                className="flex-1 bg-[#26619c] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1e4d7d] disabled:opacity-50">
+                {generatingBlank ? 'Gerando…' : 'Gerar PDF'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 flex flex-col gap-4">
@@ -427,7 +476,13 @@ function ComprovanteReport() {
           <h3 className="font-bold text-gray-900 flex items-center gap-2">
             <FileText className="w-4 h-4 text-[#26619c]" /> Histórico de Comprovantes Emitidos
           </h3>
-          <button onClick={load} className="text-gray-400 hover:text-gray-600 text-xs border border-gray-200 px-2 py-1 rounded-lg">Atualizar</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowBlankModal(true)}
+              className="text-xs font-medium bg-[#26619c] text-white px-3 py-1.5 rounded-lg hover:bg-[#1e4d7d] flex items-center gap-1.5 transition">
+              <Plus className="w-3.5 h-3.5" /> Em Branco
+            </button>
+            <button onClick={load} className="text-gray-400 hover:text-gray-600 text-xs border border-gray-200 px-2 py-1 rounded-lg">Atualizar</button>
+          </div>
         </div>
         {loading ? (
           <div className="p-8 text-center text-gray-400 text-sm">Carregando…</div>

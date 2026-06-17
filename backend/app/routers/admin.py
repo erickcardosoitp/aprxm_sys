@@ -612,6 +612,107 @@ async def generate_delivery_exemption_token(
     return {"token": token, "expires_at": expires_at.isoformat()}
 
 
+class BlankProofRequest(BaseModel):
+    quantity: int = 1
+
+
+@router.post("/proof-of-residence/blank", summary="Gerar comprovantes de residência em branco com código de barras único")
+async def blank_proof_of_residence(
+    body: BlankProofRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> "Response":
+    import random
+    import string
+    from fastapi.responses import Response as FastAPIResponse
+    import httpx
+
+    if body.quantity < 1 or body.quantity > 50:
+        raise HTTPException(400, "Quantidade deve ser entre 1 e 50.")
+
+    row = (await session.execute(text("""
+        SELECT s.assoc_logo_url, s.community_name, s.assoc_address, s.assoc_cep, a.name, COALESCE(s.proof_stock, 0)
+        FROM association_settings s
+        JOIN associations a ON a.id = s.association_id
+        WHERE s.association_id = :aid
+    """), {"aid": str(current.association_id)})).fetchone()
+    if not row:
+        raise HTTPException(400, "Configurações da associação não encontradas.")
+    logo_url, community_name, assoc_address, assoc_cep, assoc_name, proof_stock = row
+    if not logo_url:
+        raise HTTPException(400, "Logo da associação não cadastrado. Configure no módulo Admin.")
+    if proof_stock < body.quantity:
+        raise HTTPException(400, f"Estoque insuficiente: {proof_stock} disponível(is).")
+
+    # Ensure blank log table exists
+    await session.execute(text("""
+        CREATE TABLE IF NOT EXISTS proof_of_residence_blanks (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            association_id UUID NOT NULL,
+            barcode_code VARCHAR(20) NOT NULL UNIQUE,
+            issued_by UUID NOT NULL,
+            issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            used_at TIMESTAMPTZ,
+            used_by_transaction_id UUID
+        )
+    """))
+
+    # Generate unique barcodes
+    barcodes: list[str] = []
+    for _ in range(body.quantity):
+        for _attempt in range(20):
+            code = "".join(random.choices(string.digits, k=8))
+            exists = (await session.execute(
+                text("SELECT 1 FROM proof_of_residence_blanks WHERE barcode_code = :c"),
+                {"c": code}
+            )).fetchone()
+            if not exists:
+                barcodes.append(code)
+                break
+
+    if len(barcodes) < body.quantity:
+        raise HTTPException(500, "Não foi possível gerar códigos únicos.")
+
+    # Register each blank in the log and decrement stock
+    for code in barcodes:
+        await session.execute(text("""
+            INSERT INTO proof_of_residence_blanks (association_id, barcode_code, issued_by)
+            VALUES (:aid, :code, :uid)
+        """), {"aid": str(current.association_id), "code": code, "uid": str(current.user_id)})
+
+    await session.execute(text("""
+        UPDATE association_settings SET proof_stock = proof_stock - :qty
+        WHERE association_id = :aid
+    """), {"qty": body.quantity, "aid": str(current.association_id)})
+    await session.commit()
+
+    # Fetch logo
+    async with httpx.AsyncClient() as client:
+        logo_bytes = (await client.get(logo_url)).content
+
+    # Build barcode images
+    from app.services.finance_service import FinanceService
+    barcode_data: list[tuple[str, bytes]] = []
+    for code in barcodes:
+        bc_bytes = FinanceService._build_barcode_image(code)
+        barcode_data.append((code, bc_bytes))
+
+    pdf_bytes = FinanceService._build_blank_proof_pdf(
+        community_name=community_name or "",
+        assoc_name=assoc_name or "",
+        assoc_address=assoc_address or "",
+        assoc_cep=assoc_cep or "",
+        logo_bytes=logo_bytes,
+        barcodes=barcode_data,
+    )
+    fname = f"comprovantes_em_branco_{body.quantity}x.pdf"
+    return FastAPIResponse(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
+
+
 @router.get("/association-profile", summary="Perfil da associação (endereço, nome, contato)")
 async def get_association_profile(
     current: CurrentUser = Depends(get_current_user),
