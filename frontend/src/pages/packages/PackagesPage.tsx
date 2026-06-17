@@ -98,17 +98,22 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
 
   const openEditPanel = () => {
+    const initialCep = pkg.resident_cep ?? ''
+    const initialStreet = pkg.resident_address_street ?? ''
     setEditForm({
       notes: pkg.notes ?? '',
       carrier_name: pkg.carrier_name ?? '',
       tracking_code: pkg.tracking_code ?? '',
-      cep: pkg.resident_cep ?? '',
-      street: pkg.resident_address_street ?? '',
+      cep: initialCep,
+      street: initialStreet,
       number: pkg.resident_address_number ?? '',
       complement: pkg.resident_address_complement ?? '',
     })
     setEditPhotos((pkg.photo_urls ?? []).filter((p: any) => !p.url?.startsWith('blob:')))
     setShowEditPanel(true)
+    if (initialCep.replace(/\D/g, '').length === 8 && !initialStreet) {
+      handleCepChange(initialCep)
+    }
   }
 
   const handleSaveEdit = async () => {
@@ -262,11 +267,12 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
                     {cepLoading && <span className="absolute right-2.5 top-1.5 text-xs text-gray-400">buscando…</span>}
                   </div>
                 </div>
-                {editForm.street && (
+                {editForm.cep.replace(/\D/g, '').length === 8 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-0.5 block">Rua</label>
                     <input value={editForm.street} readOnly
-                      className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-gray-50 text-gray-600" />
+                      className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-gray-50 text-gray-600"
+                      placeholder={cepLoading ? 'Buscando…' : ''} />
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2">
