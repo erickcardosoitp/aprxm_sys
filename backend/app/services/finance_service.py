@@ -953,7 +953,7 @@ class FinanceService:
             SHORT = "______________"
             body = (
                 f"O Sr(a) {LINE}, portador(a) do CPF {SHORT}, "
-                f"residente na comunidade {community_name or LINE}, em {LINE}, "
+                f"residente na comunidade {LINE}, em {LINE}, "
                 f"n\xba {SHORT}, {LINE}, CEP {SHORT}, "
                 f"localizado no bairro de {LINE}."
             )
