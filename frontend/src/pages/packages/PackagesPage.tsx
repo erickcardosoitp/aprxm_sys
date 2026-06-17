@@ -2692,9 +2692,20 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                   />
                 </div>
 
-                {searchResults.length > 0 && (
-                  <ul className="border border-gray-200 rounded-lg mb-3 divide-y divide-gray-100 max-h-52 overflow-y-auto">
-                    {searchResults.map(r => {
+                {searchResults.length > 0 && (() => {
+                  const firstName = (n: string) => n.trim().split(/\s+/)[0].toLowerCase()
+                  const names = searchResults.map(r => firstName(r.full_name))
+                  const hasDuplicate = names.some((w, i) => names.indexOf(w) !== i)
+                  return (
+                    <>
+                      {hasDuplicate && (
+                        <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 mb-2 text-xs text-amber-800">
+                          <span className="text-base leading-none mt-0.5">⚠️</span>
+                          <p><strong>Possível duplicata:</strong> {searchResults.length} cadastros com nomes similares encontrados. Verifique se é a mesma pessoa e use a tela de Moradores para mesclar se necessário.</p>
+                        </div>
+                      )}
+                      <ul className="border border-gray-200 rounded-lg mb-3 divide-y divide-gray-100 max-h-52 overflow-y-auto">
+                        {searchResults.map(r => {
                       const isGuest = r.type === 'guest'
                       return (
                         <li key={r.id}>
@@ -2726,8 +2737,10 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                         </li>
                       )
                     })}
-                  </ul>
-                )}
+                      </ul>
+                    </>
+                  )
+                })()}
 
                 {selectedRecipient && (
                   <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-3">
@@ -4163,8 +4176,19 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                   </div>
 
                   {/* Search results */}
-                  {brxResults.length > 0 && (
-                    <ul className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-48 overflow-y-auto shadow-sm">
+                  {brxResults.length > 0 && (() => {
+                    const fn = (n: string) => n.trim().split(/\s+/)[0].toLowerCase()
+                    const ns = brxResults.map(r => fn(r.full_name))
+                    const dup = ns.some((w, i) => ns.indexOf(w) !== i)
+                    return (
+                      <>
+                        {dup && (
+                          <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 mb-2 text-xs text-amber-800">
+                            <span className="text-base leading-none mt-0.5">⚠️</span>
+                            <p><strong>Possível duplicata:</strong> {brxResults.length} cadastros com nomes similares. Verifique antes de registrar.</p>
+                          </div>
+                        )}
+                        <ul className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-48 overflow-y-auto shadow-sm">
                       {brxResults.map((r, idx) => (
                         <li key={r.id}>
                           <button
@@ -4191,8 +4215,10 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                           </button>
                         </li>
                       ))}
-                    </ul>
-                  )}
+                        </ul>
+                      </>
+                    )
+                  })()}
 
                   {/* No results — suggest guest */}
                   {brxSearch.length >= 2 && brxResults.length === 0 && !brxPending && (
