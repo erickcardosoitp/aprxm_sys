@@ -112,7 +112,7 @@ async def _search_residents(aid: str, q: str, session: AsyncSession) -> list[dic
         SELECT full_name, cpf, phone_primary, status
         FROM residents
         WHERE association_id = :aid AND (
-            full_name ILIKE :q OR cpf ILIKE :q OR phone_primary ILIKE :q
+            unaccent(lower(full_name)) LIKE unaccent(lower(:q)) OR cpf ILIKE :q OR phone_primary ILIKE :q
         ) LIMIT 10
     """), {"aid": aid, "q": f"%{q}%"})
     return [{"name": x[0], "cpf": x[1], "phone": x[2], "status": x[3]} for x in r.fetchall()]
@@ -124,7 +124,7 @@ async def _pending_mensalidades(aid: str, name: str, session: AsyncSession) -> l
         FROM mensalidades m
         JOIN residents r ON r.id = m.resident_id
         WHERE m.association_id = :aid AND m.status = 'pending'
-          AND (:name = '' OR r.full_name ILIKE :nameq)
+          AND (:name = '' OR unaccent(lower(r.full_name)) LIKE unaccent(lower(:nameq)))
         ORDER BY m.due_date LIMIT 15
     """), {"aid": aid, "name": name, "nameq": f"%{name}%"})
     return [{"name": x[0], "month": x[1], "amount": float(x[2]), "due": str(x[3])} for x in r.fetchall()]

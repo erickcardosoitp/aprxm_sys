@@ -2,7 +2,7 @@ from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, text
+from sqlalchemy import func, or_, text
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -250,7 +250,7 @@ async def search_residents_global(
               {type_clause}
               {street_clause}
               AND (
-                r.full_name ILIKE :q
+                unaccent(lower(r.full_name)) LIKE unaccent(lower(:q))
                 OR r.cpf ILIKE :qraw
                 OR r.phone_primary ILIKE :q
                 OR r.phone_secondary ILIKE :q
@@ -301,7 +301,7 @@ async def list_residents(
         stmt = stmt.where(Resident.responsible_id == responsible_id)
     if q:
         q_digits = ''.join(c for c in q if c.isdigit())
-        filters = [Resident.full_name.ilike(f"%{q}%")]
+        filters = [func.unaccent(func.lower(Resident.full_name)).like(func.unaccent(func.lower(f"%{q}%")))]
         filters.append(Resident.phone_primary.ilike(f"%{q}%"))
         if q_digits:
             filters.append(Resident.phone_secondary.ilike(f"%{q_digits}%"))

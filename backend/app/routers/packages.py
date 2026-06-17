@@ -196,7 +196,7 @@ async def deliver_package(
             SELECT id, full_name, type, status
               FROM residents
              WHERE association_id = :aid
-               AND LOWER(full_name) LIKE LOWER(:pat)
+               AND unaccent(lower(full_name)) LIKE unaccent(lower(:pat))
                AND id != :exclude
              LIMIT 5
         """), {
@@ -374,7 +374,7 @@ async def list_packages(
     # Filtros de busca no SQL (eliminam o filtro em Python)
     if q:
         filters.append(
-            "(r.full_name ILIKE :q "
+            "(unaccent(lower(r.full_name)) LIKE unaccent(lower(:q)) "
             "OR p.tracking_code ILIKE :q "
             "OR p.carrier_name ILIKE :q)"
         )

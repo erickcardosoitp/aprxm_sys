@@ -164,7 +164,7 @@ async def public_search_resident(
         SELECT id, full_name, cpf, phone_primary
           FROM residents
          WHERE association_id = :aid
-           AND (full_name ILIKE :q OR cpf ILIKE :q OR phone_primary ILIKE :q)
+           AND (unaccent(lower(full_name)) LIKE unaccent(lower(:q)) OR cpf ILIKE :q OR phone_primary ILIKE :q)
          ORDER BY full_name LIMIT 10
     """), {"aid": str(assoc.id), "q": f"%{q}%"})).fetchall()
     return [{"id": str(r[0]), "full_name": r[1], "cpf": r[2], "phone_primary": r[3]} for r in rows]

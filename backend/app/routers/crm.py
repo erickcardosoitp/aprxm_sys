@@ -64,7 +64,7 @@ async def crm_residents(
     params: dict = {"aid": aid, "grace_days": grace_days, "limit": 100, "offset": offset}
 
     if search:
-        filters.append("(r.full_name ILIKE :search OR r.address_street ILIKE :search)")
+        filters.append("(unaccent(lower(r.full_name)) LIKE unaccent(lower(:search)) OR r.address_street ILIKE :search)")
         params["search"] = f"%{search}%"
 
     if status_filter == "adimplente":
@@ -843,7 +843,7 @@ async def portal_search(
         WHERE association_id = :aid
           AND status = 'active'
           AND type = 'member'
-          AND (full_name ILIKE :q OR regexp_replace(cpf, '[^0-9]', '', 'g') LIKE :q_digits)
+          AND (unaccent(lower(full_name)) LIKE unaccent(lower(:q)) OR regexp_replace(cpf, '[^0-9]', '', 'g') LIKE :q_digits)
         ORDER BY full_name
         LIMIT 8
     """), {

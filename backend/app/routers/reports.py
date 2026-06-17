@@ -115,7 +115,7 @@ async def _query_residents(session, aid: str, res_type=None, res_status=None, q=
     p: dict = {"aid": aid}
     if res_type: conds.append("type = :tp"); p["tp"] = res_type
     if res_status: conds.append("status = :st"); p["st"] = res_status
-    if q: conds.append("(full_name ILIKE :q OR cpf ILIKE :q)"); p["q"] = f"%{q}%"
+    if q: conds.append("(unaccent(lower(full_name)) LIKE unaccent(lower(:q)) OR cpf ILIKE :q)"); p["q"] = f"%{q}%"
     w = " AND ".join(conds)
     rows = (await session.execute(text(f"""
         SELECT full_name, cpf, phone_primary, email, address_street,

@@ -166,7 +166,7 @@ async def geral_moradores(
     where_search = ""
     params: dict = {"ids": ids_str}
     if q:
-        where_search = "AND (r.full_name ILIKE :q OR r.cpf ILIKE :q)"
+        where_search = "AND (unaccent(lower(r.full_name)) LIKE unaccent(lower(:q)) OR r.cpf ILIKE :q)"
         params["q"] = f"%{q}%"
 
     result = await session.execute(
