@@ -612,6 +612,27 @@ async def generate_delivery_exemption_token(
     return {"token": token, "expires_at": expires_at.isoformat()}
 
 
+@router.get("/association-profile", summary="Perfil da associação (endereço, nome, contato)")
+async def get_association_profile(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from app.models.association import Association as AssocModel
+    from sqlmodel import select as _sel
+    result = await session.execute(_sel(AssocModel).where(AssocModel.id == current.association_id))
+    a = result.scalar_one_or_none()
+    if not a:
+        return {}
+    parts = [a.address_street, a.address_number, a.address_complement, a.address_district, a.address_city]
+    address = ", ".join(p for p in parts if p)
+    return {
+        "name": a.name,
+        "address": address or None,
+        "address_zip": a.address_zip,
+        "phone": a.phone,
+    }
+
+
 @router.post("/reset-balance", summary="Zerar saldo do caixa (atualiza balance_start_date = hoje)")
 async def reset_balance(
     current: CurrentUser = Depends(require_admin),

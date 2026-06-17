@@ -597,7 +597,7 @@ interface PackagesPageProps {
 }
 
 export default function PackagesPage({ modalMode = false, retiradaMode = false, devolucaoMode = false, consultarMode = false, minhasMode = false, onModalClosed }: PackagesPageProps) {
-  const { fullName, role, associationId } = useAuthStore()
+  const { fullName, role, associationId, associationName } = useAuthStore()
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
   const navigate = useNavigate()
@@ -640,6 +640,20 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const [detailDependents, setDetailDependents] = useState<{ id: string; full_name: string; phone_primary?: string }[]>([])
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({})
   const [photoPreviewUrls, setPhotoPreviewUrls] = useState<{ url: string; label?: string }[] | null>(null)
+  const [waDropdownPkgId, setWaDropdownPkgId] = useState<string | null>(null)
+  const [assocProfile, setAssocProfile] = useState<{ name: string; address: string | null } | null>(null)
+
+  useEffect(() => {
+    api.get<{ name: string; address: string | null }>('/admin/association-profile')
+      .then(r => setAssocProfile(r.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!waDropdownPkgId) return
+    const close = () => setWaDropdownPkgId(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [waDropdownPkgId])
 
   // Auto-abre modal via prop de modo (Simplifica) ou ?action= (URL)
   useEffect(() => {
@@ -1691,6 +1705,28 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const displayPackages = filterOpSet.size > 0 ? packages.filter(p => p.received_by_name && filterOpSet.has(p.received_by_name)) : packages
   const activeFilterCount = [filterQ, filterDateFrom, filterDateTo, filterStatus].filter(Boolean).length + filterOpSet.size
 
+  const buildWaNotification = (pkg: Package): string => {
+    const pending = packages.filter(
+      p => p.resident_id === pkg.resident_id && (p.status === 'received' || p.status === 'notified')
+    )
+    const fmt = (d: string) => new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    const lines = pending.map(p => `📦 *${p.tracking_code ?? 'Sem código'}* — chegou ${fmt(p.received_at)}`)
+    const assocAddr = assocProfile?.address ? `, ${assocProfile.address}` : ''
+    const assocNm = assocProfile?.name ?? associationName
+    return [
+      `Olá, *${pkg.resident_name ?? 'morador'}*! 😊`,
+      ``,
+      `Sou *${fullName ?? 'sua portaria'}*, falo em nome da *${assocNm}*.`,
+      ``,
+      `${pending.length === 1 ? 'Sua encomenda está' : `Suas ${pending.length} encomendas estão`} aguardando retirada:`,
+      ``,
+      ...lines,
+      ``,
+      `🏠 ${pending.length === 1 ? 'Ela está' : 'Elas estão'} aqui na Associação de Moradores${assocAddr}.`,
+      `⏰ Venha buscar o mais rápido possível, de *9h às 18h*. 🙏`,
+    ].join('\n')
+  }
+
   const PackageCard = ({ pkg }: { pkg: Package }) => (
     <div className="px-4 py-3 hover:bg-gray-50/80 cursor-pointer transition group" onClick={() => setDetailPkg(pkg)}>
       <div className="flex items-start justify-between gap-3">
@@ -1770,6 +1806,42 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
             )}
             <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${STATUS_COLORS[pkg.status]}`}>{STATUS_LABELS[pkg.status]}</span>
           </div>
+          {(pkg.status === 'received' || pkg.status === 'notified') && pkg.resident_phone && (
+            <div className="relative" onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => setWaDropdownPkgId(waDropdownPkgId === pkg.id ? null : pkg.id)}
+                className="flex items-center justify-center w-7 h-7 rounded-full bg-green-100 hover:bg-green-200 transition"
+                title="WhatsApp"
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4 fill-green-600">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                </svg>
+              </button>
+              {waDropdownPkgId === pkg.id && (
+                <div className="absolute right-0 top-8 z-50 bg-white rounded-xl shadow-xl border border-gray-100 min-w-[210px] py-1 overflow-hidden">
+                  <a
+                    href={`https://wa.me/55${pkg.resident_phone.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition"
+                    onClick={() => setWaDropdownPkgId(null)}
+                  >
+                    <span className="text-base">💬</span> Falar com morador
+                  </a>
+                  <div className="h-px bg-gray-100 mx-3" />
+                  <a
+                    href={`https://wa.me/55${pkg.resident_phone.replace(/\D/g, '')}?text=${encodeURIComponent(buildWaNotification(pkg))}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition"
+                    onClick={() => setWaDropdownPkgId(null)}
+                  >
+                    <span className="text-base">📦</span> Notificar sobre encomendas
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
           {(pkg.status === 'received' || pkg.status === 'notified' || pkg.status === 'reversed') && (
             <button onClick={e => { e.stopPropagation(); setDeliveryTarget(pkg); setRecipientName(pkg.resident_name ?? ''); setDeliveryPersonName(fullName ?? '') }}
               className="text-xs font-medium text-[#26619c] hover:bg-[#26619c]/10 px-2 py-1 rounded-lg transition">
