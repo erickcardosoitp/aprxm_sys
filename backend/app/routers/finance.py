@@ -1349,6 +1349,33 @@ async def reverse_transaction(
         reversed_by=current.user_id,
         reason=body.reason,
     )
+
+    # Se a transação era taxa de entrega de encomenda, sincroniza o pacote
+    from app.models.package import Package, PackageStatus as PkgStatus
+    from sqlmodel import select as sq_pkg
+    from datetime import datetime as _dt
+    pkg_row = await session.execute(
+        sq_pkg(Package).where(
+            Package.delivery_fee_tx_id == transaction_id,
+            Package.association_id == current.association_id,
+        )
+    )
+    pkg = pkg_row.scalar_one_or_none()
+    if pkg and pkg.status == PkgStatus.delivered:
+        pkg.status = PkgStatus.reversed
+        pkg.has_delivery_fee = False
+        pkg.delivery_fee_amount = None
+        pkg.delivery_fee_paid = False
+        pkg.delivery_fee_tx_id = None
+        pkg.delivered_to_name = None
+        pkg.delivered_to_cpf = None
+        pkg.delivered_to_resident_id = None
+        pkg.delivered_at = None
+        pkg.delivered_by = None
+        pkg.signature_url = None
+        pkg.updated_at = _dt.utcnow()
+        session.add(pkg)
+
     await session.commit()
     return {
         "id": str(reversal.id),
