@@ -93,6 +93,7 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
   const [editForm, setEditForm] = useState({ notes: '', carrier_name: '', tracking_code: '', cep: '', street: '', number: '', complement: '' })
   const [editPhotos, setEditPhotos] = useState<{ url: string; label?: string }[]>([])
   const [savingEdit, setSavingEdit] = useState(false)
+  const [cepLoading, setCepLoading] = useState(false)
   const role = useAuthStore((s) => s.role)
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
 
@@ -131,6 +132,20 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
       setShowEditPanel(false)
       onRefresh?.()
     } catch { toast.error('Erro ao salvar.') } finally { setSavingEdit(false) }
+  }
+
+  const handleCepChange = async (cep: string) => {
+    setEditForm(f => ({ ...f, cep }))
+    const digits = cep.replace(/\D/g, '')
+    if (digits.length !== 8) return
+    setCepLoading(true)
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      const data = await res.json()
+      if (!data.erro) {
+        setEditForm(f => ({ ...f, street: data.logradouro ?? f.street }))
+      }
+    } catch { /* silent */ } finally { setCepLoading(false) }
   }
 
   const handleNotify = async () => {
@@ -238,26 +253,33 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
                 </div>
               ))}
               <p className="text-xs font-medium text-gray-600 mt-1">Endereço do destinatário</p>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-1">
+              <div className="flex flex-col gap-2">
+                <div>
                   <label className="text-xs text-gray-500 mb-0.5 block">CEP</label>
-                  <input value={editForm.cep} onChange={e => setEditForm(f => ({ ...f, cep: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="00000-000" />
+                  <div className="relative">
+                    <input value={editForm.cep} onChange={e => handleCepChange(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="00000-000" maxLength={9} inputMode="numeric" />
+                    {cepLoading && <span className="absolute right-2.5 top-1.5 text-xs text-gray-400">buscando…</span>}
+                  </div>
                 </div>
-                <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-0.5 block">Rua</label>
-                  <input value={editForm.street} onChange={e => setEditForm(f => ({ ...f, street: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="Rua..." />
-                </div>
-                <div className="col-span-1">
-                  <label className="text-xs text-gray-500 mb-0.5 block">Nº</label>
-                  <input value={editForm.number} onChange={e => setEditForm(f => ({ ...f, number: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="123" />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-0.5 block">Complemento</label>
-                  <input value={editForm.complement} onChange={e => setEditForm(f => ({ ...f, complement: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="Apto, bloco..." />
+                {editForm.street && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-0.5 block">Rua</label>
+                    <input value={editForm.street} readOnly
+                      className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-gray-50 text-gray-600" />
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-0.5 block">Nº</label>
+                    <input value={editForm.number} onChange={e => setEditForm(f => ({ ...f, number: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="123" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-0.5 block">Complemento</label>
+                    <input value={editForm.complement} onChange={e => setEditForm(f => ({ ...f, complement: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white" placeholder="Apto, bloco..." />
+                  </div>
                 </div>
               </div>
               <p className="text-xs font-medium text-gray-600 mt-1">Fotos</p>
@@ -1507,6 +1529,37 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   useEffect(() => { loadDelivererOpts() }, [])
   useEffect(() => { if (showReceiveMode) loadDelivererOpts() }, [showReceiveMode])
 
+  const enrichMissingStreets = async (pkgs: Package[]) => {
+    const toEnrich = pkgs.filter(p => p.resident_cep && !p.resident_address_street && p.resident_id)
+    if (toEnrich.length === 0) return
+    const uniqueCeps = [...new Set(toEnrich.map(p => p.resident_cep!.replace(/\D/g, '')))]
+    const streetMap: Record<string, string> = {}
+    await Promise.allSettled(uniqueCeps.map(async cep => {
+      try {
+        const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
+        const data = await r.json()
+        if (!data.erro && data.logradouro) streetMap[cep] = data.logradouro
+      } catch { /* silent */ }
+    }))
+    if (Object.keys(streetMap).length === 0) return
+    setPackages(prev => prev.map(p => {
+      if (!p.resident_cep || p.resident_address_street) return p
+      const street = streetMap[p.resident_cep.replace(/\D/g, '')]
+      return street ? { ...p, resident_address_street: street } : p
+    }))
+    // Persist to backend — one PATCH per unique resident_id + cep combination
+    const seen = new Set<string>()
+    for (const p of toEnrich) {
+      const cep = p.resident_cep!.replace(/\D/g, '')
+      const street = streetMap[cep]
+      if (!street) continue
+      const key = `${p.resident_id}:${cep}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      api.patch(`/packages/${p.id}/info`, { resident_address_street: street }).catch(() => {})
+    }
+  }
+
   const loadPackages = async (append = false, offsetOverride?: number) => {
     const key = ++loadPackagesKeyRef.current
     setPackagesLoading(true)
@@ -1527,7 +1580,9 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
         })]),
       ])
       if (key !== loadPackagesKeyRef.current) return
+      const loaded = append ? [] : res.data  // only enrich on fresh load, not pagination
       setPackages(prev => append ? [...prev, ...res.data] : res.data)
+      if (!append) enrichMissingStreets(loaded)
       setHasMorePkgs(res.data.length === PKG_PAGE_SIZE)
       if (!append) {
         setPkgOffset(0)
@@ -1847,7 +1902,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
         <div className="min-w-0 flex-1">
           {/* Row 1: name + badges */}
           <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            <span className="text-sm font-semibold text-gray-800 truncate">{pkg.resident_name ?? '—'}</span>
+            <span className="text-sm font-semibold text-gray-800 break-words">{pkg.resident_name ?? '—'}</span>
             {pkg.resident_type === 'guest' && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">VISITANTE</span>}
             {pkg.resident_type === 'member' && delinquentIds.has(pkg.resident_id ?? '') && (pkg.status === 'received' || pkg.status === 'notified') && (
               <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">INADIMPLENTE</span>
