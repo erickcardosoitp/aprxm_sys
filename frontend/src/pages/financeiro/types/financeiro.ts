@@ -25,6 +25,8 @@ export interface Tx {
   payment_method_name?: string | null
   created_by_name?: string | null
   resident_name?: string | null
+  resident_type?: string | null
+  resident_responsible_name?: string | null
 }
 
 export interface Session {

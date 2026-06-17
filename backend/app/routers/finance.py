@@ -962,13 +962,16 @@ async def list_transactions(
                    t.is_reversal, t.reversed_at, t.payment_method_id,
                    pm.name AS payment_method_name,
                    u.full_name AS created_by_name,
-                   COALESCE(res.full_name, res2.full_name) AS resident_name
+                   COALESCE(res.full_name, res2.full_name) AS resident_name,
+                   COALESCE(res.type, res2.type)::text AS resident_type,
+                   res_resp.full_name AS resident_responsible_name
             FROM transactions t
             LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
             LEFT JOIN users u ON u.id = t.created_by
             LEFT JOIN mensalidades men ON men.transaction_id = t.id
             LEFT JOIN residents res ON res.id = men.resident_id
             LEFT JOIN residents res2 ON res2.id = t.resident_id
+            LEFT JOIN residents res_resp ON res_resp.id = COALESCE(res.responsible_id, res2.responsible_id)
             WHERE {filters}
             ORDER BY t.transaction_at DESC
         """),
@@ -991,6 +994,8 @@ async def list_transactions(
             "payment_method_name": r[11],
             "created_by_name": r[12],
             "resident_name": r[13],
+            "resident_type": r[14],
+            "resident_responsible_name": r[15],
         }
         for r in rows
     ]

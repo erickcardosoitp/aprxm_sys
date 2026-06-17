@@ -246,6 +246,12 @@ export default function MovimentacoesTab({ period, setPeriod }: Props) {
                   <p className="text-sm font-medium truncate text-gray-800">
                     {parseTxName(t.description, t.income_subtype, t.resident_name)}
                   </p>
+                  {t.resident_type === 'dependent' && (
+                    <p className="text-[10px] text-purple-600 mt-0.5">Dependente{t.resident_responsible_name ? ` de ${t.resident_responsible_name}` : ''}</p>
+                  )}
+                  {t.resident_type === 'guest' && (
+                    <p className="text-[10px] text-orange-500 mt-0.5">Visitante</p>
+                  )}
                   <p className="text-xs text-gray-400 mt-0.5">
                     {fmtDate(t.transaction_at)}
                     {t.created_by_name && <span className="ml-1.5 text-[10px] text-gray-400">· {t.created_by_name}</span>}
