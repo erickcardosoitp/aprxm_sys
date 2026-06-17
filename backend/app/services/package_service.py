@@ -52,6 +52,11 @@ class PackageService:
         if not photo_urls:
             raise UnprocessableError("Ao menos uma foto da etiqueta é obrigatória.")
 
+        if resident_id:
+            resident = await self._resolve_resident(resident_id, association_id)
+            if resident and resident.status not in (ResidentStatus.active,):
+                raise UnprocessableError("Morador suspenso ou inativo. Não é possível receber encomendas.")
+
         package = Package(
             association_id=association_id,
             resident_id=resident_id,
@@ -103,6 +108,8 @@ class PackageService:
         resident = await self._resolve_resident(
             delivered_to_resident_id or package.resident_id, association_id
         )
+        if resident and resident.status not in (ResidentStatus.active,):
+            raise UnprocessableError("Morador suspenso ou inativo. Não é possível entregar encomendas.")
         is_active_member = self._is_active_member(resident)
 
         # Delinquent members (overdue > 2 days) also pay the fee — dependents never delinquent

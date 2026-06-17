@@ -77,6 +77,10 @@ class MensalidadeService:
         if m.status == MensalidadeStatus.paid:
             raise UnprocessableError("Mensalidade já está paga.")
 
+        resident_check = await self._session.get(Resident, m.resident_id)
+        if resident_check and resident_check.status not in ("active",):
+            raise UnprocessableError("Morador suspenso ou inativo. Não é possível registrar pagamento.")
+
         is_split = payment_method_id_2 is not None and amount_2 is not None and amount_2 > Decimal("0")
 
         if is_split:
