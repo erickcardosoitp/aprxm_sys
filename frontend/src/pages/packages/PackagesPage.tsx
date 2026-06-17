@@ -148,7 +148,7 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
       const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
       const data = await res.json()
       if (!data.erro) {
-        setEditForm(f => ({ ...f, street: data.logradouro ?? f.street }))
+        setEditForm(f => ({ ...f, street: data.logradouro || f.street }))
       }
     } catch { /* silent */ } finally { setCepLoading(false) }
   }
@@ -270,9 +270,10 @@ function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, onRefres
                 {editForm.cep.replace(/\D/g, '').length === 8 && (
                   <div>
                     <label className="text-xs text-gray-500 mb-0.5 block">Rua</label>
-                    <input value={editForm.street} readOnly
-                      className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-gray-50 text-gray-600"
-                      placeholder={cepLoading ? 'Buscando…' : ''} />
+                    <input value={editForm.street}
+                      onChange={e => setEditForm(f => ({ ...f, street: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/30 bg-white"
+                      placeholder={cepLoading ? 'Buscando…' : 'Rua (preencha se não auto-preencheu)'} />
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2">
@@ -1318,6 +1319,9 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const [brxSelected, setBrxSelected] = useState<Resident | null>(null)
   const [brxLastAdded, setBrxLastAdded] = useState<string | null>(null)
   const [showBrxScanner, setShowBrxScanner] = useState(false)
+  const [scanChoice, setScanChoice] = useState<'single' | 'bulk' | null>(null)
+  const [scanMode, setScanMode] = useState<'barcode' | 'qrcode'>('barcode')
+  const isMobile = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
   const brxBarcodeRef = useRef<HTMLInputElement>(null)
   const brxSearchRef = useRef<HTMLInputElement>(null)
 
@@ -2667,7 +2671,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowScanner(true)}
+                    onClick={() => isMobile ? setScanChoice('single') : setShowScanner(true)}
                     title="Escanear com câmera"
                     className="flex items-center justify-center gap-1.5 bg-[#26619c] hover:bg-[#1a4f87] text-white px-3 rounded-lg text-sm font-medium transition shrink-0"
                   >
@@ -4126,7 +4130,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                     </div>
                     <button
                       type="button"
-                      onClick={() => setShowBrxScanner(true)}
+                      onClick={() => isMobile ? setScanChoice('bulk') : setShowBrxScanner(true)}
                       title="Escanear com câmera"
                       className="flex items-center justify-center gap-1.5 bg-[#26619c] hover:bg-[#1a4f87] text-white px-3 rounded-lg text-sm font-medium transition shrink-0"
                     >
@@ -4425,9 +4429,45 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
         </div>
       )}
 
+      {/* Scan type choice — mobile only */}
+      {scanChoice && (
+        <div className="fixed inset-0 z-[70] bg-black/50 flex items-end" onClick={() => setScanChoice(null)}>
+          <div className="w-full bg-white rounded-t-2xl p-6 pb-8" onClick={e => e.stopPropagation()}>
+            <p className="text-center text-sm font-semibold text-gray-700 mb-4">O que você vai escanear?</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  setScanMode('barcode')
+                  setScanChoice(null)
+                  if (scanChoice === 'single') setShowScanner(true)
+                  else setShowBrxScanner(true)
+                }}
+                className="flex flex-col items-center gap-2 border-2 border-[#26619c] rounded-xl p-4 text-[#26619c] font-semibold text-sm active:bg-blue-50"
+              >
+                <span className="text-3xl">▬</span>
+                Código de Barras
+              </button>
+              <button
+                onClick={() => {
+                  setScanMode('qrcode')
+                  setScanChoice(null)
+                  if (scanChoice === 'single') setShowScanner(true)
+                  else setShowBrxScanner(true)
+                }}
+                className="flex flex-col items-center gap-2 border-2 border-gray-300 rounded-xl p-4 text-gray-700 font-semibold text-sm active:bg-gray-50"
+              >
+                <span className="text-3xl">⊞</span>
+                QR Code
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Barcode Scanner — single receive */}
       {showScanner && (
         <BarcodeScannerModal
+          scanMode={scanMode}
           onScan={(code) => { setTracking(code); setShowScanner(false); document.getElementById('recipient-search')?.focus() }}
           onClose={() => setShowScanner(false)}
         />
@@ -4436,6 +4476,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
       {/* Barcode Scanner — bulk receive */}
       {showBrxScanner && (
         <BarcodeScannerModal
+          scanMode={scanMode}
           onScan={(code) => {
             setShowBrxScanner(false)
             setBrxTracking(code)

@@ -383,11 +383,11 @@ export function AppShell() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Simplifica toggle */}
+          {/* Simplifica toggle — mobile only */}
           {simplificaEnabled && !isOffice && (
             <button
               onClick={handleSimplificaToggle}
-              className="text-xs font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg transition"
+              className="sm:hidden text-xs font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg transition"
             >
               Simplifica
             </button>

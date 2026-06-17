@@ -101,7 +101,7 @@ function RedirectByRole() {
   const isOffice         = useAuthStore((s) => s.isOffice)
   const simplificaMode   = useAuthStore((s) => s.simplificaMode)
   const simplificaEnabled = useAuthStore((s) => s.simplificaEnabled)
-  if (simplificaMode && simplificaEnabled) return <Navigate to="/simplifica" replace />
+  // Sem auto-redirect ao simplifica — acesso apenas pelo botão mobile
   if (isOffice) return <Navigate to="/geral" replace />
   if (role === 'agente') return <Navigate to="/financeiro" replace />
   if (role === 'operator' || role === 'viewer') return <Navigate to="/finance" replace />

@@ -3,27 +3,30 @@ import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser'
 import { DecodeHintType, BarcodeFormat } from '@zxing/library'
 import { X, Camera, Zap, ZapOff } from 'lucide-react'
 
+export type ScanMode = 'barcode' | 'qrcode'
+
 interface BarcodeScannerProps {
   onScan: (code: string) => void
   onClose: () => void
+  scanMode?: ScanMode
 }
 
 const SCAN_ERRORS = new Set(['NotFoundException', 'ChecksumException', 'FormatException', 'ReedSolomonException'])
 
-const hints = new Map()
-hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-  BarcodeFormat.CODE_128,
-  BarcodeFormat.CODE_39,
-  BarcodeFormat.ITF,
-  BarcodeFormat.EAN_13,
-  BarcodeFormat.EAN_8,
-  BarcodeFormat.QR_CODE,
-  BarcodeFormat.DATA_MATRIX,
-  BarcodeFormat.AZTEC,
+const barcodeHints = new Map()
+barcodeHints.set(DecodeHintType.POSSIBLE_FORMATS, [
+  BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.ITF,
+  BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
 ])
-hints.set(DecodeHintType.TRY_HARDER, true)
+barcodeHints.set(DecodeHintType.TRY_HARDER, true)
 
-export function BarcodeScannerModal({ onScan, onClose }: BarcodeScannerProps) {
+const qrcodeHints = new Map()
+qrcodeHints.set(DecodeHintType.POSSIBLE_FORMATS, [
+  BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX, BarcodeFormat.AZTEC,
+])
+qrcodeHints.set(DecodeHintType.TRY_HARDER, true)
+
+export function BarcodeScannerModal({ onScan, onClose, scanMode = 'barcode' }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const controlsRef = useRef<IScannerControls | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -33,7 +36,7 @@ export function BarcodeScannerModal({ onScan, onClose }: BarcodeScannerProps) {
   const [torchAvailable, setTorchAvailable] = useState(false)
 
   useEffect(() => {
-    const reader = new BrowserMultiFormatReader(hints)
+    const reader = new BrowserMultiFormatReader(scanMode === 'qrcode' ? qrcodeHints : barcodeHints)
 
     const start = async () => {
       try {
@@ -137,12 +140,12 @@ export function BarcodeScannerModal({ onScan, onClose }: BarcodeScannerProps) {
             />
             {scanning && !error && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-52 h-32 border-2 border-white/80 rounded-lg relative">
+                <div className={`border-2 border-white/80 rounded-lg relative ${scanMode === 'qrcode' ? 'w-48 h-48' : 'w-52 h-32'}`}>
                   <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-[#26619c] rounded-tl-lg" />
                   <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-[#26619c] rounded-tr-lg" />
                   <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-[#26619c] rounded-bl-lg" />
                   <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-[#26619c] rounded-br-lg" />
-                  <div className="absolute inset-x-0 top-1/2 h-0.5 bg-[#26619c]/70 animate-pulse" />
+                  {scanMode !== 'qrcode' && <div className="absolute inset-x-0 top-1/2 h-0.5 bg-[#26619c]/70 animate-pulse" />}
                 </div>
               </div>
             )}
@@ -154,7 +157,7 @@ export function BarcodeScannerModal({ onScan, onClose }: BarcodeScannerProps) {
             ) : (
               <>
                 <Camera className="w-5 h-5 text-white/50 mx-auto mb-1" />
-                <p className="text-white text-sm">Aponte para o código de barras da etiqueta</p>
+                <p className="text-white text-sm">{scanMode === 'qrcode' ? 'Aponte para o QR Code' : 'Aponte para o código de barras da etiqueta'}</p>
                 <p className="text-white/40 text-xs mt-1">O código será lido automaticamente</p>
               </>
             )}
