@@ -292,24 +292,54 @@ async def list_residents(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    stmt = select(Resident).where(Resident.association_id == current.association_id)
+    from sqlalchemy import text as sa_text
+    conditions = ["r.association_id = :aid"]
+    params: dict = {"aid": str(current.association_id), "lim": limit, "off": offset}
     if status:
-        stmt = stmt.where(Resident.status == status)
+        conditions.append("r.status = :status")
+        params["status"] = status.value
     if type:
-        stmt = stmt.where(Resident.type == type)
+        conditions.append("r.type = :rtype")
+        params["rtype"] = type.value
     if responsible_id:
-        stmt = stmt.where(Resident.responsible_id == responsible_id)
+        conditions.append("r.responsible_id = :rid")
+        params["rid"] = str(responsible_id)
     if q:
         q_digits = ''.join(c for c in q if c.isdigit())
-        filters = [func.unaccent(func.lower(Resident.full_name)).like(func.unaccent(func.lower(f"%{q}%")))]
-        filters.append(Resident.phone_primary.ilike(f"%{q}%"))
+        parts = ["unaccent(lower(r.full_name)) LIKE unaccent(lower(:q))", "r.phone_primary ILIKE :qp"]
+        params["q"] = f"%{q}%"; params["qp"] = f"%{q}%"
         if q_digits:
-            filters.append(Resident.phone_secondary.ilike(f"%{q_digits}%"))
-        stmt = stmt.where(or_(*filters))
-    stmt = stmt.order_by(Resident.full_name).limit(limit).offset(offset)
-    result = await session.execute(stmt)
-    # Lista usa serialização leve — campos pesados (census) omitidos
-    return [_serialize_list(r) for r in result.scalars().all()]
+            parts.append("r.phone_secondary ILIKE :qs")
+            params["qs"] = f"%{q_digits}%"
+        conditions.append(f"({' OR '.join(parts)})")
+    where = " AND ".join(conditions)
+    rows = (await session.execute(sa_text(f"""
+        SELECT r.id, r.type, r.status, r.full_name, r.cpf,
+               r.phone_primary, r.phone_secondary,
+               r.address_cep, r.address_street, r.address_number, r.address_neighborhood,
+               r.responsible_id, r.is_member_confirmed, r.monthly_payment_day,
+               r.photo_url, r.created_at, resp.full_name AS responsible_name
+        FROM residents r
+        LEFT JOIN residents resp ON resp.id = r.responsible_id
+        WHERE {where}
+        ORDER BY r.full_name
+        LIMIT :lim OFFSET :off
+    """), params)).fetchall()
+    return [
+        {
+            "id": str(r[0]), "type": r[1], "status": r[2], "full_name": r[3],
+            "cpf": r[4], "phone_primary": r[5], "phone_secondary": r[6],
+            "address_cep": r[7], "address_street": r[8], "address_number": r[9],
+            "address_neighborhood": r[10],
+            "responsible_id": str(r[11]) if r[11] else None,
+            "is_member_confirmed": r[12], "monthly_payment_day": r[13],
+            "photo_url": r[14],
+            "created_at": r[15].isoformat() if r[15] else None,
+            "responsible_name": r[16],
+            "neighborhood_problems": [], "household_profiles": [], "address_access": [],
+        }
+        for r in rows
+    ]
 
 
 @router.get("/reports/by-street", summary="Relatório de moradores por rua")

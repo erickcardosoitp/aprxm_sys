@@ -716,7 +716,7 @@ interface MigrationEntry {
   valor_pago?: string | null; data_pagamento?: string | null
 }
 
-type ProfileTab = 'mensalidades' | 'inadimplencia' | 'encomendas' | 'migracao'
+type ProfileTab = 'mensalidades' | 'inadimplencia' | 'encomendas' | 'migracao' | 'dependentes'
 
 const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 function fmtComp(comp: string) {
@@ -739,6 +739,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [inadimplencias, setInadimplencias] = useState<InadimplenciaEntry[]>([])
   const [pkgs, setPkgs] = useState<ResidentPackage[]>([])
   const [migracoes, setMigracoes] = useState<MigrationEntry[]>([])
+  const [dependents, setDependents] = useState<Resident[]>([])
   const [tab, setTab] = useState<ProfileTab>('mensalidades')
   const [loading, setLoading] = useState(true)
   const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_de: '', quitado_ate: '', mode: 'single' as 'single' | 'bulk' | 'range', valor_pago: '', data_pagamento: '' })
@@ -824,6 +825,11 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
     }
     fetch()
     loadMigracoes()
+    if (resident.type === 'member') {
+      api.get<Resident[]>('/residents', { params: { type: 'dependent', responsible_id: resident.id, limit: 50 } })
+        .then(res => setDependents(res.data))
+        .catch(() => {})
+    }
   }, [resident.id])
 
   const handleMigSave = async () => {
@@ -1015,6 +1021,12 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
               {t === 'mensalidades' ? 'Mensais' : t === 'inadimplencia' ? 'Inadimp.' : t === 'encomendas' ? 'Encomen.' : 'Migração'}
             </button>
           ))}
+          {currentResident.type === 'member' && (
+            <button onClick={() => setTab('dependentes')}
+              className={`flex-1 py-2 text-xs font-medium rounded-lg transition ${tab === 'dependentes' ? 'bg-white text-[#26619c] shadow-sm' : 'text-gray-500'}`}>
+              Depend. {dependents.length > 0 && `(${dependents.length})`}
+            </button>
+          )}
         </div>
 
         <div className="overflow-y-auto flex-1 px-4 pb-4">
@@ -1202,6 +1214,30 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                         {i.pago_em_atraso ? 'Pago em atraso' : STATUS_MAP[i.status] ?? i.status}
                       </span>
                     </div>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : tab === 'dependentes' ? (
+            dependents.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-sm">Nenhum dependente cadastrado.</div>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {dependents.map(d => (
+                  <li key={d.id} className="bg-gray-50 rounded-xl px-3 py-3 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm shrink-0">
+                      {d.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-800">{d.full_name}</p>
+                      <p className="text-xs text-gray-400">
+                        {d.cpf ? maskCpf(d.cpf) : 'Sem CPF'}
+                        {d.phone_primary ? ` · ${d.phone_primary}` : ''}
+                      </p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLORS[d.status]}`}>
+                      {STATUS_LABELS[d.status]}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -1768,7 +1804,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
       {activeTab !== 'atualizacoes' && (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {displayedResidents.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">Nenhum {TAB_LABELS[activeTab].toLowerCase().replace('s','')} encontrado.</div>
+          <div className="p-8 text-center text-gray-400 text-sm">Nenhum {TAB_LABELS[activeTab].toLowerCase().replace(/s$/, '')} encontrado.</div>
         ) : (
           <>
           <ul className="divide-y divide-gray-100">
@@ -1793,6 +1829,12 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
                       {TYPE_LABELS[r.type] ?? r.type}
                       {r.cpf ? ` · ${maskCpf(r.cpf)}` : ''}
                     </p>
+                    {r.type === 'dependent' && r.responsible_name && (
+                      <p className="text-xs text-indigo-500">Dep. de {r.responsible_name}</p>
+                    )}
+                    {r.type === 'dependent' && delinquentIds.has(r.responsible_id ?? '') && (
+                      <span className="inline-block text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded mt-0.5">MORADOR INADIMPLENTE</span>
+                    )}
                     {(r.address_street || r.address_cep) && (
                       <p className="text-xs text-gray-400 truncate">
                         {r.address_street ? `${r.address_street}${r.address_number ? `, ${r.address_number}` : ''}` : `CEP ${r.address_cep}`}

@@ -112,6 +112,7 @@ export interface Resident {
   parking_spot?: string
   photo_url?: string
   responsible_id?: string
+  responsible_name?: string | null
 
   address_cep?: string
   address_street?: string
