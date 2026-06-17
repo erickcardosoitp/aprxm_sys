@@ -1724,8 +1724,8 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
               {pkg.resident_address_street ? `${pkg.resident_address_street}${pkg.resident_address_number ? `, ${pkg.resident_address_number}` : ''}` : `CEP ${pkg.resident_cep}`}
             </p>
           )}
-          {/* Reassign resident — only for "received" */}
-          {pkg.status === 'received' && (
+          {/* Reassign resident — not for delivered */}
+          {['received', 'notified', 'reversed', 'returned'].includes(pkg.status) && (
             <div onClick={e => e.stopPropagation()} className="mt-1.5">
               {cardReassignPkgId === pkg.id ? (
                 <div className="relative">
