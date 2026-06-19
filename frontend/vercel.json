@@ -33,7 +33,7 @@
         { "key": "Permissions-Policy", "value": "camera=(self), microphone=(), geolocation=()" },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.supabase.co https://*.openstreetmap.org https://res.cloudinary.com; connect-src 'self' https://*.vercel.app https://*.neon.tech https://brasilapi.com.br https://nominatim.openstreetmap.org https://overpass-api.de https://*.supabase.co https://viacep.com.br; frame-src 'none'; frame-ancestors 'none'; worker-src blob:"
+          "value": "default-src 'self'; script-src 'self' 'sha256-xww8/T/vv6bCo7WXPtopX7x4t1zJQR6w7+Mb7VPETIo='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.supabase.co https://*.openstreetmap.org https://res.cloudinary.com; connect-src 'self' https://*.vercel.app https://*.neon.tech https://brasilapi.com.br https://nominatim.openstreetmap.org https://overpass-api.de https://*.supabase.co https://viacep.com.br; frame-src 'none'; frame-ancestors 'none'; worker-src blob:"
         }
       ]
     }
