@@ -987,8 +987,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Association-ID"],
 )
 
 _SECURITY_HEADERS = {
@@ -997,6 +997,8 @@ _SECURITY_HEADERS = {
     "X-XSS-Protection": "1; mode=block",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "X-Permitted-Cross-Domain-Policies": "none",
+    "Permissions-Policy": "camera=(self), microphone=(), geolocation=()",
 }
 
 @app.middleware("http")
