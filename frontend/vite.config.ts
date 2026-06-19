@@ -5,6 +5,9 @@ export default defineConfig({
   plugins: [
     react(),
   ],
+  build: {
+    modulePreload: { polyfill: false },
+  },
   server: {
     port: 5173,
     strictPort: true,

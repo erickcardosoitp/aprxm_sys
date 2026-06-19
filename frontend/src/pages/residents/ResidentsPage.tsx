@@ -811,16 +811,14 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   useEffect(() => {
     const fetch = async () => {
       setLoading(true)
-      try {
-        const [mRes, iRes, pRes] = await Promise.all([
-          api.get<MensalidadeEntry[]>(`/mensalidades/residents/${resident.id}`),
-          api.get<InadimplenciaEntry[]>(`/mensalidades/residents/${resident.id}/inadimplencia`),
-          api.get<ResidentPackage[]>(`/packages/resident/${resident.id}`),
-        ])
-        setMensalidades(mRes.data)
-        setInadimplencias(iRes.data)
-        setPkgs(pRes.data)
-      } catch { /* silent */ }
+      const [mRes, iRes, pRes] = await Promise.allSettled([
+        api.get<MensalidadeEntry[]>(`/mensalidades/residents/${resident.id}`),
+        api.get<InadimplenciaEntry[]>(`/mensalidades/residents/${resident.id}/inadimplencia`),
+        api.get<ResidentPackage[]>(`/packages/resident/${resident.id}`),
+      ])
+      if (mRes.status === 'fulfilled') setMensalidades(mRes.value.data)
+      if (iRes.status === 'fulfilled') setInadimplencias(iRes.value.data)
+      if (pRes.status === 'fulfilled') setPkgs(pRes.value.data)
       setLoading(false)
     }
     fetch()

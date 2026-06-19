@@ -25,6 +25,15 @@ class MensalidadeService:
         created_by: UUID,
         notes: str | None = None,
     ) -> Mensalidade:
+        from app.models.resident import Resident, ResidentType
+        from sqlmodel import select as sm_select
+        r_result = await self._session.execute(
+            sm_select(Resident).where(Resident.id == resident_id, Resident.association_id == association_id)
+        )
+        resident = r_result.scalar_one_or_none()
+        if resident and resident.type == ResidentType.guest:
+            raise UnprocessableError("Visitantes não possuem mensalidade.")
+
         from app.services.migration_payment_service import MigrationPaymentService
         mig_svc = MigrationPaymentService(self._session)
         if await mig_svc.exists(association_id, resident_id, reference_month):
