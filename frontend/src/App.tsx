@@ -166,7 +166,7 @@ export default function App() {
           <Route path="reports"        element={<RequireNotOffice><Suspense fallback={<PageLoader />}><ReportsPage /></Suspense></RequireNotOffice>} />
           <Route path="geral"          element={<RequireAggregator><Suspense fallback={<PageLoader />}><GeralPage /></Suspense></RequireAggregator>} />
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><LogsPage /></Suspense></RequireAdmin></RequireNotOffice>} />
-          <Route path="ti"             element={<RequireSuperAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireSuperAdmin>} />
+          <Route path="ti"             element={<RequireAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireAdmin>} />
           <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />
           <Route path="crm"            element={<Navigate to="/financeiro" replace />} />
           <Route path="agentes"        element={<Navigate to="/financeiro" replace />} />

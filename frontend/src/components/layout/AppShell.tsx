@@ -297,8 +297,8 @@ export function AppShell() {
         }
         items.push(REPORTS_NAV)
         if (permissions?.settings?.can_view || isSuperAdmin) items.push(SETTINGS_NAV)
-        if (isAdmin) { items.push(ADMIN_NAV); items.push(LOGS_NAV) }
-        if (isSuperAdmin) { items.push({ to: '/ti', label: 'TI', icon: Activity }) }
+        if (isAdmin) { items.push(ADMIN_NAV); items.push(LOGS_NAV); items.push({ to: '/ti', label: 'Analytics', icon: Activity }) }
+        if (isSuperAdmin && !isAdmin) { items.push({ to: '/ti', label: 'Analytics', icon: Activity }) }
         items.push({ to: '/help', label: 'Ajuda', icon: HelpCircle, end: false })
         return items
       })()
