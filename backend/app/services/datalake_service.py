@@ -79,6 +79,8 @@ GOLD_PATHS = {
     "tasks_weekly":              ("equipe",     "tarefas_semanais"),
     "tasks_by_collaborator":     ("equipe",     "ranking_colaboradores"),
     "runway":                    ("financeiro", "runway"),
+    "receita_por_operador_tipo": ("financeiro", "receita_por_operador_tipo"),
+    "cobranca_por_rua":          ("financeiro", "cobranca_por_rua"),
 }
 
 
@@ -897,6 +899,54 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 
         if rows_runway:
             up(pd.DataFrame(rows_runway), "runway")
+
+    # 19. Receita por operador × tipo de receita (para aba FINANCEIRO do consolidado)
+    # Exclui sangrias e despesas; exclui repassos internos (caixinha)
+    if not tx.empty:
+        users_df = frames.get("users", pd.DataFrame())
+        op_ids = set(users_df[users_df["role"] == "operator"]["id"].tolist()) if not users_df.empty else set()
+        df_op = tx[(tx["type"] == "income") & tx["created_by"].isin(op_ids)].copy()
+        if not df_op.empty:
+            df_op = df_op.groupby(
+                ["created_by_name", "association_id", "association_name", "week", "month"]
+            ).apply(lambda g: pd.Series({
+                "mensalidade":        g.loc[g["income_subtype"] == "mensalidade",        "amount"].sum(),
+                "delivery_fee":       g.loc[g["income_subtype"] == "delivery_fee",       "amount"].sum(),
+                "proof_of_residence": g.loc[g["income_subtype"] == "proof_of_residence", "amount"].sum(),
+                "other_income":       g.loc[g["income_subtype"] == "other",              "amount"].sum(),
+                "total":              g["amount"].sum(),
+                "n_transacoes":       len(g),
+            })).reset_index()
+            up(df_op, "receita_por_operador_tipo")
+
+    # 20. Cobrança por rua — cobranças geradas (mensalidades a pagar, excl. isenção)
+    # Cruza mensalidades com endereço do morador via residents_clean
+    if not mens.empty and not res.empty:
+        STATUS_VALIDOS = {"pending", "paid", "overdue", "agreement"}
+        mens_v = mens[mens["status"].isin(STATUS_VALIDOS)].copy()
+        mens_v["month"] = _month(mens_v["due_date"].fillna(mens_v["created_at"]))
+
+        res_addr = res[["id", "address_street", "association_name"]].drop_duplicates("id")
+        m_rua = mens_v.merge(
+            res_addr, left_on="resident_id", right_on="id", how="left"
+        )
+        m_rua["street"] = _normalize_street(m_rua["address_street"].fillna("Não Informado"))
+
+        df_rua = m_rua.groupby(
+            ["street", "month", "association_id", "association_name"]
+        ).apply(lambda g: pd.Series({
+            "total":       len(g),
+            "pagas":       (g["status"] == "paid").sum(),
+            "pendentes":   (g["status"] == "pending").sum(),
+            "vencidas":    (g["status"] == "overdue").sum(),
+            "acordos":     (g["status"] == "agreement").sum(),
+            "valor_total": g["amount"].sum(),
+            "valor_pago":  g.loc[g["status"] == "paid", "amount"].sum(),
+        })).reset_index()
+        df_rua["taxa_pct"] = (
+            df_rua["pagas"] / df_rua["total"].replace(0, pd.NA) * 100
+        ).round(1)
+        up(df_rua.sort_values("valor_total", ascending=False), "cobranca_por_rua")
 
     return stats, gold_frames
 
