@@ -456,7 +456,7 @@ async def run_task_now(
                     configured_amount = Decimal(str(last_row[0])) if last_row else None
 
                 cb_row = (await session.execute(text(
-                    "SELECT id FROM users WHERE association_id = :aid AND role IN ('admin','superadmin','admin_master','diretoria') LIMIT 1"
+                    "SELECT id FROM users WHERE association_id = :aid AND role IN ('admin','superadmin','admin_master','diretoria','conferente') AND is_active = TRUE LIMIT 1"
                 ), {"aid": target_aid})).fetchone()
                 created_by = cb_row[0] if cb_row else None
 
