@@ -924,7 +924,7 @@ Private Sub WriteChartBlock(ws As Worksheet, wsDados As Worksheet)
             .Position   = xlLegendPositionTop
         End With
 
-        ' Rotulos de dados — apenas na serie Total, ultimo ponto visivel
+        ' Rotulos de dados — serie Total, todos os pontos
         Dim sT As Series: Set sT = .SeriesCollection(1) ' Total
         sT.HasDataLabels = True
         With sT.DataLabels
@@ -936,11 +936,6 @@ Private Sub WriteChartBlock(ws As Worksheet, wsDados As Worksheet)
             .NumberFormat   = "#,##0"
             .Position       = xlLabelPositionAbove
         End With
-        ' Mostra rotulo apenas no ultimo ponto (maior indice)
-        Dim ptIdx As Integer
-        For ptIdx = 1 To sT.Points.Count - 1
-            sT.Points(ptIdx).DataLabel.Delete
-        Next ptIdx
     End With
 End Sub
 
