@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -387,12 +387,19 @@ async def toggle_task(
 @router.post("/scheduled-tasks/{task_key}/run", summary="Executar tarefa agora")
 async def run_task_now(
     task_key: str,
+    target_association_id: str | None = Query(default=None, alias="association_id"),
     current: CurrentUser = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from datetime import datetime as dt
-    aid = str(current.association_id)
-    assoc_id = current.association_id
+    # superadmin/admin_master pode direcionar para outra associação
+    if target_association_id and current.role in ("superadmin", "admin_master"):
+        from uuid import UUID as _UUID
+        aid = target_association_id
+        assoc_id = _UUID(target_association_id)
+    else:
+        aid = str(current.association_id)
+        assoc_id = current.association_id
     status = "success"
     result_msg = ""
 
@@ -419,43 +426,55 @@ async def run_task_now(
             from app.services.mensalidade_service import MensalidadeService
             from decimal import Decimal
             from datetime import date
+            from uuid import UUID as _UUID
 
             ref_month = date.today().strftime("%Y-%m")
+            default_due_day = 10
 
-            # Fetch default_mensalidade_amount from association_settings
-            settings_row = (await session.execute(text("""
-                SELECT COALESCE(default_mensalidade_amount, 0)
-                FROM association_settings WHERE association_id = :aid
-            """), {"aid": aid})).fetchone()
-            default_due_day = 10  # dia padrão de vencimento
-            configured_amount = Decimal(str(settings_row[0])) if settings_row else Decimal("0")
-
-            # Fallback: last known mensalidade amount
-            if not configured_amount or configured_amount <= 0:
-                last_row = (await session.execute(text("""
-                    SELECT amount FROM mensalidades WHERE association_id = :aid
-                    ORDER BY created_at DESC LIMIT 1
-                """), {"aid": aid})).fetchone()
-                configured_amount = Decimal(str(last_row[0])) if last_row else None
-
-            cb_row = (await session.execute(text(
-                "SELECT id FROM users WHERE association_id = :aid AND role IN ('admin','superadmin','admin_master','diretoria') LIMIT 1"
-            ), {"aid": aid})).fetchone()
-            created_by = cb_row[0] if cb_row else None
-
-            if configured_amount and configured_amount > 0 and created_by:
-                svc = MensalidadeService(session)
-                gen_result = await svc.generate_month(
-                    association_id=current.association_id,
-                    reference_month=ref_month,
-                    due_day=default_due_day,
-                    amount=configured_amount,
-                    created_by=created_by,
-                )
-                created = gen_result.get("created", 0)
-                result_msg = f"{created} mensalidade(s) gerada(s) para {ref_month} (venc. dia {default_due_day})."
+            # Se agregador (escritório), roda para todas as associações vinculadas
+            if current.is_aggregator:
+                target_ids = [str(i) for i in current.linked_association_ids]
             else:
-                result_msg = "Nenhuma mensalidade gerada: valor não configurado."
+                target_ids = [aid]
+
+            total_created = 0
+            skipped_assocs = []
+            svc = MensalidadeService(session)
+
+            for target_aid in target_ids:
+                settings_row = (await session.execute(text("""
+                    SELECT COALESCE(default_mensalidade_amount, 0)
+                    FROM association_settings WHERE association_id = :aid
+                """), {"aid": target_aid})).fetchone()
+                configured_amount = Decimal(str(settings_row[0])) if settings_row else Decimal("0")
+
+                if not configured_amount or configured_amount <= 0:
+                    last_row = (await session.execute(text("""
+                        SELECT amount FROM mensalidades WHERE association_id = :aid
+                        ORDER BY created_at DESC LIMIT 1
+                    """), {"aid": target_aid})).fetchone()
+                    configured_amount = Decimal(str(last_row[0])) if last_row else None
+
+                cb_row = (await session.execute(text(
+                    "SELECT id FROM users WHERE association_id = :aid AND role IN ('admin','superadmin','admin_master','diretoria') LIMIT 1"
+                ), {"aid": target_aid})).fetchone()
+                created_by = cb_row[0] if cb_row else None
+
+                if configured_amount and configured_amount > 0 and created_by:
+                    gen_result = await svc.generate_month(
+                        association_id=_UUID(target_aid),
+                        reference_month=ref_month,
+                        due_day=default_due_day,
+                        amount=configured_amount,
+                        created_by=created_by,
+                    )
+                    total_created += gen_result.get("created", 0)
+                else:
+                    skipped_assocs.append(target_aid)
+
+            result_msg = f"{total_created} mensalidade(s) gerada(s) para {ref_month}."
+            if skipped_assocs:
+                result_msg += f" {len(skipped_assocs)} associação(ões) sem valor configurado."
         elif task_key == "vacuum_dead_rows":
             tables = [
                 "notifications", "transactions", "packages",
