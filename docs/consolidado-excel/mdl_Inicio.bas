@@ -916,6 +916,13 @@ Private Sub WriteChartBlock(ws As Worksheet, wsDados As Worksheet)
         Next w
     Next i
 
+    ' Arredonda para 1 decimal — evita floating point noise na exibicao
+    For w = 0 To N_WEEKS - 1
+        totData(w) = Round(totData(w), 1)
+        vlData(w)  = Round(vlData(w),  1)
+        cgData(w)  = Round(cgData(w),  1)
+    Next w
+
     ' Remove grafico anterior
     On Error Resume Next: ws.ChartObjects("ChartReceita").Delete: On Error GoTo 0
 
@@ -1005,7 +1012,7 @@ Private Sub WriteChartBlock(ws As Worksheet, wsDados As Worksheet)
             .ShowValue           = True
             .ShowSeriesName      = False
             .NumberFormatLinked  = False
-            .NumberFormat        = """R$ ""#,##0.0"
+            .NumberFormat        = "#,##0.0"
             .Font.Color          = RGB(255, 255, 255)
             .Font.Size           = 7
             .Font.Bold           = False
