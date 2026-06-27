@@ -1022,45 +1022,34 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> int:
     """Escreve todos os DataFrames Gold no Neon Analytics via SQLAlchemy sync.
 
-    Usa TRUNCATE+INSERT quando a tabela ja existe (evita DROP/CREATE que gera
-    DDL WAL excessivo no Neon). Na primeira execucao usa replace para criar.
+    Cada tabela roda em transação independente para que uma falha não aborte
+    as demais. Usa replace (DROP+CREATE) para lidar com mudanças de schema.
     """
     from sqlalchemy import create_engine
     engine = create_engine(settings.analytics_db_url, pool_pre_ping=True)
     total = 0
     try:
-        with engine.begin() as conn:
-            for table_name, df in gold_frames.items():
-                if df.empty:
-                    continue
-                df_clean = df.copy()
-                for col in df_clean.columns:
-                    dtype_str = str(df_clean[col].dtype)
-                    if dtype_str.startswith("period["):
-                        try:
-                            df_clean[col] = df_clean[col].dt.to_timestamp()
-                        except Exception:
-                            df_clean[col] = df_clean[col].astype(str)
-                    elif dtype_str == "bool":
-                        df_clean[col] = df_clean[col].astype(int)
-                try:
-                    exists = conn.execute(text(
-                        "SELECT EXISTS (SELECT FROM pg_tables "
-                        "WHERE schemaname='public' AND tablename=:t)"
-                    ), {"t": table_name}).scalar()
-
-                    if exists:
-                        conn.execute(text(f'TRUNCATE TABLE "{table_name}"'))
-                        df_clean.to_sql(table_name, conn, if_exists="append",
-                                        index=False, method="multi", chunksize=500)
-                    else:
-                        df_clean.to_sql(table_name, conn, if_exists="replace",
-                                        index=False, method="multi", chunksize=500)
-
-                    total += len(df_clean)
-                    logger.info("Analytics %-35s %5d rows", table_name, len(df_clean))
-                except Exception as e:
-                    logger.warning("Analytics: falha em %s: %s", table_name, e)
+        for table_name, df in gold_frames.items():
+            if df.empty:
+                continue
+            df_clean = df.copy()
+            for col in df_clean.columns:
+                dtype_str = str(df_clean[col].dtype)
+                if dtype_str.startswith("period["):
+                    try:
+                        df_clean[col] = df_clean[col].dt.to_timestamp()
+                    except Exception:
+                        df_clean[col] = df_clean[col].astype(str)
+                elif dtype_str == "bool":
+                    df_clean[col] = df_clean[col].astype(int)
+            try:
+                with engine.begin() as conn:
+                    df_clean.to_sql(table_name, conn, if_exists="replace",
+                                    index=False, method="multi", chunksize=500)
+                total += len(df_clean)
+                logger.info("Analytics %-35s %5d rows", table_name, len(df_clean))
+            except Exception as e:
+                logger.warning("Analytics: falha em %s: %s", table_name, e)
     finally:
         engine.dispose()
     return total
