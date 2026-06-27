@@ -578,25 +578,18 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         })).reset_index()
         up(df, "resident_overview")
 
-    # 4. Taxa de cobranca — denominador = membros ativos (não apenas os com registro)
+    # 4. Taxa de cobranca — denominador = cobranças geradas no mês
     if not mens.empty:
         df = mens.copy()
         df["month"] = _month(mens["reference_month"].fillna(mens["due_date"]).fillna(mens["created_at"]))
         agg = df.groupby(["month","association_id"]).apply(lambda g: pd.Series({
             "paid":        (g["status"]=="paid").sum(),
+            "total":       len(g),
             "valor_total": g["amount"].sum(),
             "valor_pago":  g.loc[g["status"]=="paid","amount"].sum(),
         })).reset_index()
-        # Usa membros ativos como denominador correto
-        if not res.empty:
-            active = res[(res["status"] == "active") & (res["type"] == "member")].groupby("association_id").size().reset_index(name="active_members")
-            agg = agg.merge(active, on="association_id", how="left")
-            agg["active_members"] = agg["active_members"].fillna(agg["paid"]).astype(int)
-        else:
-            agg["active_members"] = agg["paid"]
-        agg["total"]     = agg["active_members"]
-        agg["pendentes"] = (agg["active_members"] - agg["paid"]).clip(lower=0)
-        agg["taxa_pct"]  = (agg["paid"] / agg["active_members"].replace(0, pd.NA) * 100).round(1)
+        agg["pendentes"] = (agg["total"] - agg["paid"]).clip(lower=0)
+        agg["taxa_pct"]  = (agg["paid"] / agg["total"].replace(0, pd.NA) * 100).round(1)
         up(agg, "collection_rate")
 
     # 5. Inadimplencia — apenas members ativos (alinhado com logica do sistema)
