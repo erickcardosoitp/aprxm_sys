@@ -1002,18 +1002,21 @@ Private Sub WriteChartBlock(ws As Worksheet, wsDados As Worksheet)
         Dim sT As Series: Set sT = .SeriesCollection(1) ' Total
         sT.HasDataLabels = True
         With sT.DataLabels
-            .ShowValue      = True
-            .ShowSeriesName = False
-            .Font.Color     = RGB(255, 255, 255)
-            .Font.Size      = 7
-            .Font.Bold      = False
-            .NumberFormat   = """R$ ""#,##0.0"
-            .Position       = xlLabelPositionAbove
+            .ShowValue           = True
+            .ShowSeriesName      = False
+            .NumberFormatLinked  = False
+            .NumberFormat        = """R$ ""#,##0.0"
+            .Font.Color          = RGB(255, 255, 255)
+            .Font.Size           = 7
+            .Font.Bold           = False
+            .Position            = xlLabelPositionAbove
         End With
-        ' Forca formato em cada ponto individualmente
         Dim ptFmt As Integer
         For ptFmt = 1 To sT.Points.Count
-            sT.Points(ptFmt).DataLabel.NumberFormat = """R$ ""#,##0.0"
+            With sT.Points(ptFmt).DataLabel
+                .NumberFormatLinked = False
+                .NumberFormat       = """R$ ""#,##0.0"
+            End With
         Next ptFmt
     End With
 End Sub
