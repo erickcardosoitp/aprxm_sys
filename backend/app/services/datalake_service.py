@@ -580,7 +580,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     # 4. Taxa de cobranca
     if not mens.empty:
         df = mens.copy()
-        df["month"] = _month(mens["due_date"].fillna(mens["created_at"]))
+        df["month"] = _month(mens["reference_month"].fillna(mens["due_date"]).fillna(mens["created_at"]))
         agg = df.groupby(["month","association_id"]).apply(lambda g: pd.Series({
             "total":       len(g),
             "paid":        (g["status"]=="paid").sum(),
