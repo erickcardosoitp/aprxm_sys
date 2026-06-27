@@ -85,6 +85,10 @@ GOLD_PATHS = {
     "resident_monthly":           ("moradores",  "moradores_por_mes"),
     "packages_monthly":           ("operacional","pacotes_por_mes"),
     "os_monthly":                 ("operacional","os_por_mes"),
+    "retention_monthly":          ("financeiro", "retencao_mensal"),
+    "tasks_monthly":              ("equipe",     "tarefas_por_mes"),
+    "operator_score_monthly":     ("operacional","score_operadores"),
+    "margem_mensal":              ("financeiro", "margem_mensal"),
 }
 
 
@@ -1064,6 +1068,152 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "pendentes": g["status"].isin(["open", "in_progress"]).sum(),
         })).reset_index()
         up(agg_so, "os_monthly")
+
+    # 24. Retenção mensal — % de pagadores do mês N que pagaram em N+1
+    if not mens.empty:
+        mn = mens.copy()
+        mn["association_id"] = mn["association_id"].astype(str)
+        mn["month"] = mn["reference_month"].str[:7]  # "YYYY-MM"
+        paid = mn[mn["status"] == "paid"][["association_id", "resident_id", "month"]].drop_duplicates()
+        rows_ret = []
+        for aid in paid["association_id"].unique():
+            aname = assoc_map.get(aid, "")
+            sub = paid[paid["association_id"] == aid]
+            months_sorted = sorted(sub["month"].unique())
+            for i, m in enumerate(months_sorted[:-1]):
+                m_next = months_sorted[i + 1]
+                # só considera meses consecutivos
+                from datetime import datetime
+                try:
+                    dt_m = datetime.strptime(m, "%Y-%m")
+                    dt_n = datetime.strptime(m_next, "%Y-%m")
+                    if (dt_n.year * 12 + dt_n.month) - (dt_m.year * 12 + dt_m.month) != 1:
+                        continue
+                except ValueError:
+                    continue
+                pagantes_m = set(sub[sub["month"] == m]["resident_id"])
+                pagantes_n = set(sub[sub["month"] == m_next]["resident_id"])
+                retidos = len(pagantes_m & pagantes_n)
+                rows_ret.append({
+                    "month":            m_next,
+                    "association_id":   aid,
+                    "association_name": aname,
+                    "pagantes_mes_ant": len(pagantes_m),
+                    "retidos":          retidos,
+                    "taxa_retencao":    round(retidos / len(pagantes_m) * 100, 1) if pagantes_m else None,
+                })
+        if rows_ret:
+            up(pd.DataFrame(rows_ret), "retention_monthly")
+
+    # 25. Tarefas por mês — % concluídas no prazo
+    if not tasks.empty:
+        tk = tasks.copy()
+        tk["association_id"] = tk["association_id"].astype(str)
+        tk["month"] = _month(tk["due_date"]).dt.strftime("%Y-%m")
+        tk["association_name"] = tk["association_id"].map(assoc_map)
+        tk["done_dt"] = _to_dt(tk["updated_at"])
+        tk["due_dt"] = pd.to_datetime(tk["due_date"], errors="coerce")
+        tk_valid = tk[tk["month"].notna() & (tk["deleted_at"].isna() if "deleted_at" in tk.columns else True)]
+        agg_tk = tk_valid.groupby(["month", "association_id", "association_name"]).apply(lambda g: pd.Series({
+            "total":           len(g),
+            "concluidas":      (g["status"] == "done").sum(),
+            "no_prazo":        ((g["status"] == "done") & (g["done_dt"] <= g["due_dt"])).sum(),
+            "em_atraso":       ((g["status"] == "done") & (g["done_dt"] > g["due_dt"])).sum(),
+            "pendentes":       g["status"].isin(["pending", "in_progress"]).sum(),
+            "pct_on_time":     round(
+                ((g["status"] == "done") & (g["done_dt"] <= g["due_dt"])).sum() /
+                max((g["status"] == "done").sum(), 1) * 100, 1
+            ),
+        }), include_groups=False).reset_index()
+        up(agg_tk, "tasks_monthly")
+
+    # 26. Score de performance por operador por mês
+    if not tx.empty and not tasks.empty:
+        # Estornos por operador por mês
+        rev = tx[tx["is_reversal"] == True].copy() if "is_reversal" in tx.columns else pd.DataFrame()
+        rev_agg = pd.DataFrame()
+        if not rev.empty and "reversed_by" in rev.columns:
+            rev["association_id"] = rev["association_id"].astype(str)
+            rev["month"] = _month(rev["reversed_at"] if "reversed_at" in rev.columns else rev["created_at"]).dt.strftime("%Y-%m")
+            users_df = frames.get("users", pd.DataFrame())
+            if not users_df.empty:
+                rev = rev.merge(users_df[["id", "full_name"]].rename(columns={"id": "reversed_by", "full_name": "op_name"}),
+                                on="reversed_by", how="left")
+            else:
+                rev["op_name"] = "Desconhecido"
+            rev_agg = rev.groupby(["month", "association_id", "op_name"]).size().reset_index(name="estornos")
+
+        # Tarefas em atraso por operador por mês
+        tk2 = tasks.copy()
+        tk2["association_id"] = tk2["association_id"].astype(str)
+        tk2["month"] = _month(tk2["due_date"]).dt.strftime("%Y-%m")
+        tk2["done_dt"] = _to_dt(tk2["updated_at"])
+        tk2["due_dt"] = pd.to_datetime(tk2["due_date"], errors="coerce")
+        tk2["em_atraso"] = (tk2["status"] == "done") & (tk2["done_dt"] > tk2["due_dt"])
+        tk2["total_acoes"] = 1
+        tk_op = tk2.groupby(["month", "association_id", "assigned_to_name"]).agg(
+            tarefas_atraso=("em_atraso", "sum"),
+            tarefas_total=("total_acoes", "sum"),
+        ).reset_index().rename(columns={"assigned_to_name": "op_name"})
+
+        # Entregas por operador por mês (atividade positiva)
+        delv = pkgs[pkgs["status"] == "delivered"].copy() if not pkgs.empty else pd.DataFrame()
+        delv_agg = pd.DataFrame()
+        if not delv.empty and "delivered_by" in delv.columns:
+            delv["association_id"] = delv["association_id"].astype(str)
+            delv["month"] = _month(delv["delivered_at"]).dt.strftime("%Y-%m")
+            users_df = frames.get("users", pd.DataFrame())
+            if not users_df.empty:
+                delv = delv.merge(users_df[["id", "full_name"]].rename(columns={"id": "delivered_by", "full_name": "op_name"}),
+                                  on="delivered_by", how="left")
+            else:
+                delv["op_name"] = "Desconhecido"
+            delv_agg = delv.groupby(["month", "association_id", "op_name"]).size().reset_index(name="entregas")
+
+        # Merge tudo
+        base = tk_op.copy()
+        if not rev_agg.empty:
+            base = base.merge(rev_agg, on=["month", "association_id", "op_name"], how="left")
+        else:
+            base["estornos"] = 0
+        if not delv_agg.empty:
+            base = base.merge(delv_agg, on=["month", "association_id", "op_name"], how="left")
+        else:
+            base["entregas"] = 0
+
+        base["estornos"] = base["estornos"].fillna(0).astype(int)
+        base["entregas"] = base["entregas"].fillna(0).astype(int)
+        base["association_name"] = base["association_id"].map(assoc_map)
+
+        # Score 0-100: base 100, -5 por estorno, -3 por tarefa em atraso, +0.5 por entrega (cap 10)
+        base["score"] = (
+            100
+            - base["estornos"] * 5
+            - base["tarefas_atraso"] * 3
+            + (base["entregas"] * 0.5).clip(upper=10)
+        ).clip(lower=0, upper=100).round(1)
+
+        base["total_acoes"] = base["tarefas_total"] + base["entregas"]
+        up(base[["month", "association_id", "association_name", "op_name",
+                  "score", "estornos", "tarefas_atraso", "entregas", "total_acoes"]], "operator_score_monthly")
+
+    # 27. Margem mensal — receita, despesa, margem líquida por mês
+    if not tx.empty:
+        tx2 = tx.copy()
+        tx2["association_id"] = tx2["association_id"].astype(str)
+        col_at = "transaction_at" if "transaction_at" in tx2.columns else "created_at"
+        tx2["month"] = _month(tx2[col_at]).dt.strftime("%Y-%m")
+        tx2["association_name"] = tx2["association_id"].map(assoc_map)
+        tx2["amount_f"] = pd.to_numeric(tx2["amount"], errors="coerce").fillna(0)
+        tx2["is_income"]  = tx2["type"] == "income"
+        tx2["is_expense"] = tx2["type"].isin(["expense", "sangria"])
+        mg = tx2.groupby(["month", "association_id", "association_name"]).apply(lambda g: pd.Series({
+            "total_income":  g.loc[g["is_income"],  "amount_f"].sum(),
+            "total_expense": g.loc[g["is_expense"], "amount_f"].sum(),
+        }), include_groups=False).reset_index()
+        mg["net"] = mg["total_income"] - mg["total_expense"]
+        mg["margem_pct"] = (mg["net"] / mg["total_income"].replace(0, pd.NA) * 100).round(1)
+        up(mg, "margem_mensal")
 
     return stats, gold_frames
 
