@@ -174,9 +174,9 @@ Private Sub WriteHeader(ws As Worksheet, wsDados As Worksheet)
     ws.Range(ws.Cells(2, 2), ws.Cells(2, 19)).Merge
     Dim sub2 As String
     If m_FilterAssoc = "Todas" Then
-        sub2 = "  Todas as associacoes  —  " & m_FilterMes
+        sub2 = "  Todas as associacoes  " & Chr(8212) & "  " & m_FilterMes
     Else
-        sub2 = "  " & m_FilterAssoc & "  —  " & m_FilterMes
+        sub2 = "  " & m_FilterAssoc & "  " & Chr(8212) & "  " & m_FilterMes
     End If
     With ws.Cells(2, 2)
         .Value = sub2: .Font.Name = "Calibri": .Font.Size = 9
@@ -454,7 +454,7 @@ Private Sub WriteAlertsBlock(ws As Worksheet, wsDados As Worksheet)
     If pgC + pdC > 0 Then
         Dim pct As Double: pct = pgC / (pgC + pdC) * 100
         If pct < 60 Then
-            msgs(nMsgs) = ChrW(9888) & "  Taxa de cobranca " & Format(pct, "0.0") & "% — abaixo de 60%"
+            msgs(nMsgs) = ChrW(9888) & "  Taxa de cobranca " & Format(pct, "0.0") & "% " & Chr(8212) & " abaixo de 60%"
             nMsgs = nMsgs + 1
         End If
     End If
@@ -768,6 +768,10 @@ Private Sub WriteChartBlock(ws As Worksheet, wsDados As Worksheet)
     ' Header da secao
     Dim hRng As Range
     Set hRng = ws.Range(ws.Cells(24, C_L_LBL), ws.Cells(24, C_R_VAL))
+    ' Se o grafico ja existe, nao recria — ele ignora filtros por design
+    Dim coExist As ChartObject
+    On Error Resume Next: Set coExist = ws.ChartObjects("ChartReceita"): On Error GoTo 0
+    If Not coExist Is Nothing Then Exit Sub
     hRng.Interior.Color = CLR_CARD_HDR
     With ws.Cells(24, C_L_LBL)
         .Value = "  RECEITA SEMANAL  (ultimas " & N_WEEKS & " semanas)"
