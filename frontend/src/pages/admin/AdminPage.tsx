@@ -559,8 +559,8 @@ function TarefasAgendadasTab() {
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState<string | null>(null)
   const [targetAssoc, setTargetAssoc] = useState('')
-  const { user } = useAuthStore()
-  const isSuperadmin = user?.role === 'superadmin'
+  const role = useAuthStore(s => s.role)
+  const isSuperadmin = role === 'superadmin'
 
   const load = async () => {
     setLoading(true)
