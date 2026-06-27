@@ -100,6 +100,7 @@ async def update_settings(
             association_id=current.association_id,
             default_cash_balance=body.default_cash_balance,
             max_cash_before_sangria=body.max_cash_before_sangria,
+            default_mensalidade_amount=body.default_mensalidade_amount,
             updated_by=current.user_id,
         )
         session.add(cfg)
