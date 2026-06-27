@@ -1007,7 +1007,7 @@ Private Sub WriteChartBlock(ws As Worksheet, wsDados As Worksheet)
             .Font.Color     = RGB(255, 255, 255)
             .Font.Size      = 7
             .Font.Bold      = False
-            .NumberFormat   = "#,##0"
+            .NumberFormat   = """R$ ""#,##0.0"
             .Position       = xlLabelPositionAbove
         End With
     End With
