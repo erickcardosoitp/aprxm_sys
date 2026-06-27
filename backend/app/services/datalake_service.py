@@ -819,16 +819,14 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             if not cs_assoc.empty:
                 open_sess = cs_assoc[cs_assoc["status"] == "open"]
                 if not open_sess.empty:
-                    val = open_sess["expected_balance"].fillna(open_sess["opening_balance"])
-                    saldo_atual = float(val.sum() or 0)
-                    # Se expected_balance também for 0, recalcula via transações da sessão aberta
-                    if saldo_atual == 0 and not tx_assoc_all.empty:
-                        sess_ids = set(open_sess["id"].astype(str).tolist())
-                        tx_sess = tx_assoc_all[tx_assoc_all["cash_session_id"].astype(str).isin(sess_ids)]
-                        opening = float(open_sess["opening_balance"].fillna(0).sum())
-                        income  = float(tx_sess[tx_sess["type"] == "income"]["amount"].sum() or 0)
-                        expense = float(tx_sess[tx_sess["type"].isin(["expense","sangria"])]["amount"].sum() or 0)
-                        saldo_atual = opening + income - expense
+                    # expected_balance é NULL para sessões abertas (só setado ao fechar).
+                    # Sempre recalcula via transações para capturar receitas/despesas correntes.
+                    sess_ids = set(open_sess["id"].astype(str).tolist())
+                    tx_sess  = tx_assoc_all[tx_assoc_all["cash_session_id"].astype(str).isin(sess_ids)] if not tx_assoc_all.empty else pd.DataFrame()
+                    opening  = float(open_sess["opening_balance"].fillna(0).sum())
+                    income   = float(tx_sess[tx_sess["type"] == "income"]["amount"].sum() or 0) if not tx_sess.empty else 0.0
+                    expense  = float(tx_sess[tx_sess["type"].isin(["expense","sangria"])]["amount"].sum() or 0) if not tx_sess.empty else 0.0
+                    saldo_atual = opening + income - expense
                 else:
                     last_closed = cs_assoc[cs_assoc["status"].isin(["closed","conferido"])].sort_values("opened_at")
                     if not last_closed.empty:
