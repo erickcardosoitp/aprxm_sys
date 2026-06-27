@@ -422,13 +422,13 @@ async def run_task_now(
 
             ref_month = date.today().strftime("%Y-%m")
 
-            # Fetch default_due_day and default_mensalidade_amount from association_settings
+            # Fetch default_mensalidade_amount from association_settings
             settings_row = (await session.execute(text("""
-                SELECT COALESCE(default_due_day, 10), COALESCE(default_mensalidade_amount, 0)
+                SELECT COALESCE(default_mensalidade_amount, 0)
                 FROM association_settings WHERE association_id = :aid
             """), {"aid": aid})).fetchone()
-            default_due_day = int(settings_row[0]) if settings_row else 10
-            configured_amount = Decimal(str(settings_row[1])) if settings_row else Decimal("0")
+            default_due_day = 10  # dia padrão de vencimento
+            configured_amount = Decimal(str(settings_row[0])) if settings_row else Decimal("0")
 
             # Fallback: last known mensalidade amount
             if not configured_amount or configured_amount <= 0:

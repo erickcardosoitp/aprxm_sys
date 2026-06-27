@@ -79,8 +79,9 @@ GOLD_PATHS = {
     "tasks_weekly":              ("equipe",     "tarefas_semanais"),
     "tasks_by_collaborator":     ("equipe",     "ranking_colaboradores"),
     "runway":                    ("financeiro", "runway"),
-    "receita_por_operador_tipo": ("financeiro", "receita_por_operador_tipo"),
-    "cobranca_por_rua":          ("financeiro", "cobranca_por_rua"),
+    "receita_por_operador_tipo":  ("financeiro", "receita_por_operador_tipo"),
+    "cobranca_por_rua":           ("financeiro", "cobranca_por_rua"),
+    "cash_session_anomalies":     ("operacional","anomalias_caixa"),
 }
 
 
@@ -577,17 +578,25 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         })).reset_index()
         up(df, "resident_overview")
 
-    # 4. Taxa de cobranca
+    # 4. Taxa de cobranca — denominador = membros ativos (não apenas os com registro)
     if not mens.empty:
         df = mens.copy()
         df["month"] = _month(mens["reference_month"].fillna(mens["due_date"]).fillna(mens["created_at"]))
         agg = df.groupby(["month","association_id"]).apply(lambda g: pd.Series({
-            "total":       len(g),
             "paid":        (g["status"]=="paid").sum(),
             "valor_total": g["amount"].sum(),
             "valor_pago":  g.loc[g["status"]=="paid","amount"].sum(),
         })).reset_index()
-        agg["taxa_pct"] = (agg["paid"] / agg["total"].replace(0, pd.NA) * 100).round(1)
+        # Usa membros ativos como denominador correto
+        if not res.empty:
+            active = res[res["status"] == "active"].groupby("association_id").size().reset_index(name="active_members")
+            agg = agg.merge(active, on="association_id", how="left")
+            agg["active_members"] = agg["active_members"].fillna(agg["paid"]).astype(int)
+        else:
+            agg["active_members"] = agg["paid"]
+        agg["total"]     = agg["active_members"]
+        agg["pendentes"] = (agg["active_members"] - agg["paid"]).clip(lower=0)
+        agg["taxa_pct"]  = (agg["paid"] / agg["active_members"].replace(0, pd.NA) * 100).round(1)
         up(agg, "collection_rate")
 
     # 5. Inadimplencia — apenas members ativos (alinhado com logica do sistema)
@@ -840,7 +849,38 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         if rows_kpi:
             up(pd.DataFrame(rows_kpi), "operational_kpis")
 
-    # ── 18. RUNWAY FINANCEIRO ────────────────────────────────────────────────
+    # ── 18. ANOMALIAS DE CAIXA ─────────────────────────────────────────────────
+    if not cs.empty:
+        now_ts = pd.Timestamp.now()
+        cutoff  = now_ts - pd.Timedelta(days=30)
+        cs30    = cs[_to_dt(cs["opened_at"]) >= cutoff].copy()
+        if not cs30.empty:
+            cs30["opened_dt"]  = _to_dt(cs30["opened_at"])
+            cs30["closed_dt"]  = _to_dt(cs30["closed_at"])
+            cs30["duracao_min"] = (cs30["closed_dt"] - cs30["opened_dt"]).dt.total_seconds() / 60
+
+            def _anomalia(r):
+                if pd.isna(r["closed_dt"]):
+                    return "ABERTO_SEM_FECHAR"
+                if r["opened_dt"].date() != r["closed_dt"].date():
+                    return "FECHOU_DIA_SEGUINTE"
+                if r["duracao_min"] < 30:
+                    return "MUITO_CURTO"
+                return "NORMAL"
+
+            cs30["anomalia"] = cs30.apply(_anomalia, axis=1)
+            anom = cs30[cs30["anomalia"] != "NORMAL"].copy()
+            if not anom.empty:
+                anom["dia"]          = anom["opened_dt"].dt.date.astype(str)
+                anom["hora_abertura"] = anom["opened_dt"].dt.strftime("%H:%M")
+                anom["hora_fechamento"] = anom["closed_dt"].dt.strftime("%H:%M").where(~anom["closed_dt"].isna(), "—")
+                anom["duracao_min"]  = anom["duracao_min"].round(0).where(~anom["closed_dt"].isna(), pd.NA)
+                cols = ["association_id","association_name","operador_name",
+                        "dia","hora_abertura","hora_fechamento","duracao_min","anomalia"]
+                available = [c for c in cols if c in anom.columns]
+                up(anom[available].reset_index(drop=True), "cash_session_anomalies")
+
+    # ── 19. RUNWAY FINANCEIRO ────────────────────────────────────────────────
     # Quanto tempo (em semanas) a associacao consegue operar com o saldo atual
     # sem nenhuma nova receita, baseado na media de despesas das ultimas 8 semanas
     if not tx.empty and not cs.empty:

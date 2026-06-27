@@ -70,6 +70,7 @@ Public Sub RefreshAllData()
     step_ = "RECEITA_MENSAL_ASSOC": Call LoadTable(conn, wsDados, "RECEITA_MENSAL_ASSOC", SQL_ReceitaMensalAssoc())
     step_ = "MORADORES_TOTAL":      Call LoadTable(conn, wsDados, "MORADORES_TOTAL",       SQL_MoradoresTotal())
     step_ = "INADIMPL_TOTAL":       Call LoadTable(conn, wsDados, "INADIMPL_TOTAL",         SQL_InadimplenciaTotal())
+    step_ = "CAIXA_ANOMALIAS":      Call LoadTable(conn, wsDados, "CAIXA_ANOMALIAS",        SQL_CaixaAnomalias())
     step_ = "CalcMovingAverage": Call CalcMovingAverage(wsDados)
     step_ = "StampTimestamp":    Call StampTimestamp()
 
@@ -408,7 +409,15 @@ Private Function SQL_RankColab() As String
 End Function
 
 Private Function SQL_KpiOp() As String
-    ' operational_kpis: mapeia para os nomes esperados pelo VBA
+    ' Colunas novas podem nao existir — verifica antes de incluir no SELECT
+    Dim extraCols As String
+    If ColumnExists("operational_kpis", "avg_dwell_dias") Then
+        extraCols = ", COALESCE(avg_dwell_dias,    0) AS avg_dwell_dias" & _
+                    ", COALESCE(taxa_retencao_pct, 0) AS taxa_retencao_pct"
+    Else
+        extraCols = ", 0::float AS avg_dwell_dias" & _
+                    ", 0::float AS taxa_retencao_pct"
+    End If
     SQL_KpiOp = _
         "SELECT " & _
         "  association_id, association_name, " & _
@@ -420,8 +429,27 @@ Private Function SQL_KpiOp() As String
         "  0                 AS sangrias, " & _
         "  associados_ativos, inadimplentes, " & _
         "  enc_paradas_3d, enc_pendentes, " & _
-        "  caixas_abertos, receita_hoje, novos_semana " & _
-        "FROM operational_kpis" & Filter()
+        "  caixas_abertos, receita_hoje, novos_semana" & extraCols & _
+        " FROM operational_kpis" & Filter()
+End Function
+
+Private Function ColumnExists(tableName As String, colName As String) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next: Set ws = ThisWorkbook.Sheets(SHEET_DADOS): On Error GoTo 0
+    If ws Is Nothing Then ColumnExists = False: Exit Function
+    Dim connStr As String: connStr = ws.Range(CONN_CELL).Value
+    If Len(Trim(connStr)) = 0 Then ColumnExists = False: Exit Function
+    Dim c As Object: Set c = CreateObject("ADODB.Connection")
+    Dim rs As Object: Set rs = CreateObject("ADODB.Recordset")
+    On Error Resume Next
+    c.Open connStr
+    rs.Open "SELECT COUNT(*) FROM information_schema.columns " & _
+            "WHERE table_schema='public' AND table_name='" & tableName & _
+            "' AND column_name='" & colName & "'", c
+    If Not rs.EOF Then ColumnExists = (rs.Fields(0).Value > 0)
+    rs.Close: c.Close
+    Set rs = Nothing: Set c = Nothing
+    On Error GoTo 0
 End Function
 
 Private Function SQL_QuebrasCaixa() As String
@@ -482,6 +510,21 @@ Private Function SQL_ReceitaMensalAssoc() As String
         "  SUM(other_income)        AS other_income " & _
         "FROM daily_revenue" & Filter() & _
         " GROUP BY month, association_name ORDER BY month DESC"
+End Function
+
+Private Function SQL_CaixaAnomalias() As String
+    If Not TableExists("cash_session_anomalies") Then
+        SQL_CaixaAnomalias = "SELECT NULL::uuid AS association_id, NULL::text AS association_name, " & _
+            "NULL::text AS operador_name, NULL::text AS dia, " & _
+            "NULL::text AS hora_abertura, NULL::text AS hora_fechamento, " & _
+            "NULL::float AS duracao_min, NULL::text AS anomalia WHERE 1=0"
+        Exit Function
+    End If
+    SQL_CaixaAnomalias = _
+        "SELECT association_id, association_name, operador_name, " & _
+        "  dia, hora_abertura, hora_fechamento, duracao_min, anomalia " & _
+        "FROM cash_session_anomalies" & Filter() & _
+        " ORDER BY dia DESC, anomalia"
 End Function
 
 Private Function SQL_InadimplenciaTotal() As String
