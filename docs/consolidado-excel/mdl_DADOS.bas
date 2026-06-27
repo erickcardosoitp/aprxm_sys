@@ -71,6 +71,9 @@ Public Sub RefreshAllData()
     step_ = "MORADORES_TOTAL":      Call LoadTable(conn, wsDados, "MORADORES_TOTAL",       SQL_MoradoresTotal())
     step_ = "INADIMPL_TOTAL":       Call LoadTable(conn, wsDados, "INADIMPL_TOTAL",         SQL_InadimplenciaTotal())
     step_ = "CAIXA_ANOMALIAS":      Call LoadTable(conn, wsDados, "CAIXA_ANOMALIAS",        SQL_CaixaAnomalias())
+    step_ = "MORADORES_MES":        Call LoadTable(conn, wsDados, "MORADORES_MES",           SQL_MoradoresMes())
+    step_ = "PACOTES_MES":          Call LoadTable(conn, wsDados, "PACOTES_MES",             SQL_PacotesMes())
+    step_ = "OS_MES":               Call LoadTable(conn, wsDados, "OS_MES",                 SQL_OsMes())
     step_ = "CalcMovingAverage": Call CalcMovingAverage(wsDados)
     step_ = "StampTimestamp":    Call StampTimestamp()
 
@@ -544,6 +547,44 @@ Private Function SQL_InadimplenciaTotal() As String
         "  COALESCE(dr.vencidas, 0)::int AS vencidas, " & _
         "  COALESCE(dr.total_owed, 0)    AS total_owed " & _
         "FROM cr, dr"
+End Function
+
+
+Private Function SQL_MoradoresMes() As String
+    If Not TableExists("resident_monthly") Then
+        SQL_MoradoresMes = "SELECT NULL::text AS month, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::int AS total, 0::int AS members, " & _
+            "0::int AS dependents, 0::int AS guests WHERE 1=0"
+        Exit Function
+    End If
+    SQL_MoradoresMes = _
+        "SELECT month, association_id, association_name, total, members, dependents, guests " & _
+        "FROM resident_monthly" & Filter() & " ORDER BY month DESC"
+End Function
+
+Private Function SQL_PacotesMes() As String
+    If Not TableExists("packages_monthly") Then
+        SQL_PacotesMes = "SELECT NULL::text AS month, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::int AS recebidos, 0::int AS entregues, " & _
+            "0::int AS devolvidos, 0::int AS pendentes, 0::float AS avg_dwell_dias WHERE 1=0"
+        Exit Function
+    End If
+    SQL_PacotesMes = _
+        "SELECT month, association_id, association_name, recebidos, entregues, " & _
+        "  devolvidos, pendentes, avg_dwell_dias " & _
+        "FROM packages_monthly" & Filter() & " ORDER BY month DESC"
+End Function
+
+Private Function SQL_OsMes() As String
+    If Not TableExists("os_monthly") Then
+        SQL_OsMes = "SELECT NULL::text AS month, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::int AS abertas, 0::int AS fechadas, " & _
+            "0::int AS pendentes WHERE 1=0"
+        Exit Function
+    End If
+    SQL_OsMes = _
+        "SELECT month, association_id, association_name, abertas, fechadas, pendentes " & _
+        "FROM os_monthly" & Filter() & " ORDER BY month DESC"
 End Function
 
 

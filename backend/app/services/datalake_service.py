@@ -82,6 +82,9 @@ GOLD_PATHS = {
     "receita_por_operador_tipo":  ("financeiro", "receita_por_operador_tipo"),
     "cobranca_por_rua":           ("financeiro", "cobranca_por_rua"),
     "cash_session_anomalies":     ("operacional","anomalias_caixa"),
+    "resident_monthly":           ("moradores",  "moradores_por_mes"),
+    "packages_monthly":           ("operacional","pacotes_por_mes"),
+    "os_monthly":                 ("operacional","os_por_mes"),
 }
 
 
@@ -1006,6 +1009,61 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             df_rua["pagas"] / df_rua["total"].replace(0, pd.NA) * 100
         ).round(1)
         up(df_rua.sort_values("valor_total", ascending=False), "cobranca_por_rua")
+
+    # 21. Moradores por mês — contagem acumulada por mês de cadastro
+    if not res.empty:
+        res_cp = res.copy()
+        res_cp["created_dt"] = _to_dt(res_cp["created_at"])
+        now_m = pd.Timestamp.now().to_period("M")
+        start_m = res_cp["created_dt"].dropna().min().to_period("M")
+        months = pd.period_range(start=start_m, end=now_m, freq="M")
+        rows_rm = []
+        for aid in res_cp["association_id"].unique():
+            sub = res_cp[res_cp["association_id"] == aid]
+            aname = assoc_map.get(aid, "")
+            for m in months:
+                end_ts = m.to_timestamp("M")
+                snap = sub[sub["created_dt"] <= end_ts]
+                rows_rm.append({
+                    "month":            m.strftime("%Y-%m"),
+                    "association_id":   aid,
+                    "association_name": aname,
+                    "total":            len(snap),
+                    "members":          int((snap["type"] == "member").sum()),
+                    "dependents":       int((snap["type"] == "dependent").sum()),
+                    "guests":           int((snap["type"] == "guest").sum()),
+                })
+        if rows_rm:
+            up(pd.DataFrame(rows_rm), "resident_monthly")
+
+    # 22. Pacotes por mês
+    if not pkgs.empty:
+        pk = pkgs.copy()
+        pk["month"] = _month(pk["received_at"]).dt.strftime("%Y-%m")
+        pk["association_name"] = pk["association_id"].map(assoc_map)
+        agg_pk = pk.groupby(["month", "association_id", "association_name"]).apply(lambda g: pd.Series({
+            "recebidos":   len(g),
+            "entregues":   (g["status"] == "delivered").sum(),
+            "devolvidos":  (g["status"] == "returned").sum(),
+            "pendentes":   (g["status"] == "pending").sum(),
+            "avg_dwell_dias": (
+                (_to_dt(g["delivered_at"]) - _to_dt(g["received_at"])).dt.total_seconds() / 86400
+            ).dropna().mean().__round__(1) if (g["status"] == "delivered").any() else None,
+        })).reset_index()
+        up(agg_pk, "packages_monthly")
+
+    # 23. Ordens de serviço por mês
+    sos = frames.get("service_orders", pd.DataFrame())
+    if not sos.empty:
+        so = sos.copy()
+        so["month"] = _month(so["created_at"]).dt.strftime("%Y-%m")
+        so["association_name"] = so["association_id"].map(assoc_map)
+        agg_so = so.groupby(["month", "association_id", "association_name"]).apply(lambda g: pd.Series({
+            "abertas":   len(g),
+            "fechadas":  g["status"].isin(["resolved", "closed", "done"]).sum(),
+            "pendentes": g["status"].isin(["open", "in_progress"]).sum(),
+        })).reset_index()
+        up(agg_so, "os_monthly")
 
     return stats, gold_frames
 

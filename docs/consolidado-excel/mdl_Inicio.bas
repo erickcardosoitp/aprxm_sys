@@ -371,32 +371,45 @@ Private Sub WriteMoradoresBlock(ws As Worksheet, wsDados As Worksheet)
     Dim aF      As String: aF      = GetFilterAssocFull()
     Dim assocId As String: assocId = GetAssocId(wsDados, aF)
     Dim t As Variant, mc As Variant, dp As Variant, g As Variant
-    If assocId = "" Then
-        t  = GetScalar(wsDados, "MORADORES_TOTAL", "total",      "", "")
-        mc = GetScalar(wsDados, "MORADORES_TOTAL", "members",    "", "")
-        dp = GetScalar(wsDados, "MORADORES_TOTAL", "dependents", "", "")
-        g  = GetScalar(wsDados, "MORADORES_TOTAL", "guests",     "", "")
+
+    ' Tenta usar resident_monthly (historico por mes)
+    Dim hasMes As Boolean: hasMes = Not (wsDados.Range("DL_MORADORES_MES") Is Nothing)
+    On Error Resume Next: hasMes = Not (wsDados.Range("DL_MORADORES_MES") Is Nothing): On Error GoTo 0
+
+    If hasMes Then
+        ' Dados historicos filtrados por mes
+        If assocId = "" Then
+            t  = GetSum(wsDados, "MORADORES_MES", "total",      "month", m_FilterMes)
+            mc = GetSum(wsDados, "MORADORES_MES", "members",    "month", m_FilterMes)
+            dp = GetSum(wsDados, "MORADORES_MES", "dependents", "month", m_FilterMes)
+            g  = GetSum(wsDados, "MORADORES_MES", "guests",     "month", m_FilterMes)
+        Else
+            t  = GetScalar2(wsDados, "MORADORES_MES", "total",      "month", m_FilterMes, "association_id", assocId)
+            mc = GetScalar2(wsDados, "MORADORES_MES", "members",    "month", m_FilterMes, "association_id", assocId)
+            dp = GetScalar2(wsDados, "MORADORES_MES", "dependents", "month", m_FilterMes, "association_id", assocId)
+            g  = GetScalar2(wsDados, "MORADORES_MES", "guests",     "month", m_FilterMes, "association_id", assocId)
+        End If
     Else
-        t  = GetScalar(wsDados, "MORADORES_GERAL", "total",      "association_id", assocId)
-        mc = GetScalar(wsDados, "MORADORES_GERAL", "members",    "association_id", assocId)
-        dp = GetScalar(wsDados, "MORADORES_GERAL", "dependents", "association_id", assocId)
-        g  = GetScalar(wsDados, "MORADORES_GERAL", "guests",     "association_id", assocId)
+        ' Fallback snapshot
+        If assocId = "" Then
+            t  = GetScalar(wsDados, "MORADORES_TOTAL", "total",      "", "")
+            mc = GetScalar(wsDados, "MORADORES_TOTAL", "members",    "", "")
+            dp = GetScalar(wsDados, "MORADORES_TOTAL", "dependents", "", "")
+            g  = GetScalar(wsDados, "MORADORES_TOTAL", "guests",     "", "")
+        Else
+            t  = GetScalar(wsDados, "MORADORES_GERAL", "total",      "association_id", assocId)
+            mc = GetScalar(wsDados, "MORADORES_GERAL", "members",    "association_id", assocId)
+            dp = GetScalar(wsDados, "MORADORES_GERAL", "dependents", "association_id", assocId)
+            g  = GetScalar(wsDados, "MORADORES_GERAL", "guests",     "association_id", assocId)
+        End If
     End If
+
     Call DrawKpiRow(ws, 14, C_L_LBL, C_L_VAL, "Total de Moradores",    t,  "n", CLR_WHITE)
     Call DrawKpiRow(ws, 15, C_L_LBL, C_L_VAL, "Associados",            mc, "n", CLR_GREEN)
     Call DrawKpiRow(ws, 16, C_L_LBL, C_L_VAL, "Dependentes",           dp, "n", CLR_TEXT_DIM)
     Call DrawKpiRow(ws, 17, C_L_LBL, C_L_VAL, "Visitantes",            g,  "n", CLR_TEXT_DIM)
 
-    ' Nota: moradores e um snapshot atual — nao muda com filtro de mes
-    With ws.Cells(18, C_L_LBL)
-        .Value = "  * Dados atuais — sem historico mensal"
-        .Font.Size = 7: .Font.Italic = True: .Font.Name = "Calibri"
-        .Font.Color = CLR_TEXT_DIM: .Interior.Color = CLR_CARD
-        .VerticalAlignment = xlCenter: .HorizontalAlignment = xlLeft
-    End With
-    ws.Range(ws.Cells(18, C_L_LBL), ws.Cells(18, C_L_VAL)).Interior.Color = CLR_CARD
-
-    Call DrawCardBorder(ws, 13, 18, C_L_LBL, C_L_VAL)
+    Call DrawCardBorder(ws, 13, 17, C_L_LBL, C_L_VAL)
 End Sub
 
 
@@ -408,29 +421,26 @@ Private Sub WriteOperacoesBlock(ws As Worksheet, wsDados As Worksheet)
 
     Dim aF      As String: aF      = GetFilterAssocFull()
     Dim assocId As String: assocId = GetAssocId(wsDados, aF)
-    Dim st As Variant
-    If assocId = "" Then
-        st = GetSum(wsDados, "PACOTES_STUCK", "total")
-    Else
-        st = GetSum(wsDados, "PACOTES_STUCK", "total", "association_id", assocId)
-    End If
-    Dim os As Variant, tf As Variant, dw As Variant
-    If assocId = "" Then
-        os = GetScalar(wsDados, "KPI_OP", "os_abertas",    "", "")
-        tf = GetScalar(wsDados, "KPI_OP", "tarefas_semana","", "")
-        dw = GetScalar(wsDados, "KPI_OP", "avg_dwell_dias","", "")
-    Else
-        os = GetScalar(wsDados, "KPI_OP", "os_abertas",    "association_id", assocId)
-        tf = GetScalar(wsDados, "KPI_OP", "tarefas_semana","association_id", assocId)
-        dw = GetScalar(wsDados, "KPI_OP", "avg_dwell_dias","association_id", assocId)
-    End If
-    Dim stClr As Long: stClr = IIf(SafeD(st) > 50, CLR_RED_VAL, IIf(SafeD(st) > 20, CLR_AMBER, CLR_GREEN))
-    Dim dwClr As Long: dwClr = IIf(SafeD(dw) <= 2, CLR_GREEN, IIf(SafeD(dw) <= 5, CLR_AMBER, CLR_RED_VAL))
 
-    Call DrawKpiRow(ws, 14, C_R_LBL, C_R_VAL, "Pacotes Parados +3d",  st, "n",   stClr)
-    Call DrawKpiRow(ws, 15, C_R_LBL, C_R_VAL, "Tempo Medio na Assoc", dw, "dias", dwClr)
-    Call DrawKpiRow(ws, 16, C_R_LBL, C_R_VAL, "OS Abertas",           os, "n",   CLR_AMBER)
-    Call DrawKpiRow(ws, 17, C_R_LBL, C_R_VAL, "Tarefas Semana",       tf, "n",   CLR_WHITE)
+    Dim pkRec As Variant, pkDw As Variant, osAb As Variant, osFe As Variant
+    If assocId = "" Then
+        pkRec = GetSum(wsDados, "PACOTES_MES",  "recebidos",      "month", m_FilterMes)
+        pkDw  = GetSum(wsDados, "PACOTES_MES",  "avg_dwell_dias", "month", m_FilterMes)
+        osAb  = GetSum(wsDados, "OS_MES",       "abertas",        "month", m_FilterMes)
+        osFe  = GetSum(wsDados, "OS_MES",       "fechadas",       "month", m_FilterMes)
+    Else
+        pkRec = GetScalar2(wsDados, "PACOTES_MES", "recebidos",      "month", m_FilterMes, "association_id", assocId)
+        pkDw  = GetScalar2(wsDados, "PACOTES_MES", "avg_dwell_dias", "month", m_FilterMes, "association_id", assocId)
+        osAb  = GetScalar2(wsDados, "OS_MES",      "abertas",        "month", m_FilterMes, "association_id", assocId)
+        osFe  = GetScalar2(wsDados, "OS_MES",      "fechadas",       "month", m_FilterMes, "association_id", assocId)
+    End If
+
+    Dim dwClr As Long: dwClr = IIf(SafeD(pkDw) <= 2, CLR_GREEN, IIf(SafeD(pkDw) <= 5, CLR_AMBER, CLR_RED_VAL))
+
+    Call DrawKpiRow(ws, 14, C_R_LBL, C_R_VAL, "Pacotes Recebidos",    pkRec, "n",   CLR_WHITE)
+    Call DrawKpiRow(ws, 15, C_R_LBL, C_R_VAL, "Tempo Medio Entrega",  pkDw,  "dias", dwClr)
+    Call DrawKpiRow(ws, 16, C_R_LBL, C_R_VAL, "OS Abertas",           osAb,  "n",   CLR_AMBER)
+    Call DrawKpiRow(ws, 17, C_R_LBL, C_R_VAL, "OS Fechadas",          osFe,  "n",   CLR_GREEN)
 
     Call DrawCardBorder(ws, 13, 17, C_R_LBL, C_R_VAL)
 End Sub
