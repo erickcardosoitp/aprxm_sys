@@ -74,6 +74,10 @@ Public Sub RefreshAllData()
     step_ = "MORADORES_MES":        Call LoadTable(conn, wsDados, "MORADORES_MES",           SQL_MoradoresMes())
     step_ = "PACOTES_MES":          Call LoadTable(conn, wsDados, "PACOTES_MES",             SQL_PacotesMes())
     step_ = "OS_MES":               Call LoadTable(conn, wsDados, "OS_MES",                 SQL_OsMes())
+    step_ = "RETENCAO_MES":         Call LoadTable(conn, wsDados, "RETENCAO_MES",           SQL_RetencaoMes())
+    step_ = "TASKS_MES":            Call LoadTable(conn, wsDados, "TASKS_MES",              SQL_TasksMes())
+    step_ = "OP_SCORE_MES":         Call LoadTable(conn, wsDados, "OP_SCORE_MES",           SQL_OpScoreMes())
+    step_ = "MARGEM_MES":           Call LoadTable(conn, wsDados, "MARGEM_MES",             SQL_MargemMes())
     step_ = "CalcMovingAverage": Call CalcMovingAverage(wsDados)
     step_ = "StampTimestamp":    Call StampTimestamp()
 
@@ -172,7 +176,8 @@ Private Function SQL_TaxaCobranca() As String
         "  total - paid              AS pendentes, " & _
         "  0                         AS vencidas, " & _
         "  valor_total, valor_pago, " & _
-        "  taxa_pct                  AS pct_paid " & _
+        "  taxa_pct                  AS pct_paid, " & _
+        "  ROUND((100 - taxa_pct)::numeric, 1) AS pct_pendente " & _
         "FROM collection_rate" & Filter() & _
         " ORDER BY month DESC"
 End Function
@@ -585,6 +590,65 @@ Private Function SQL_OsMes() As String
     SQL_OsMes = _
         "SELECT month, association_id, association_name, abertas, fechadas, pendentes " & _
         "FROM os_monthly" & Filter() & " ORDER BY month DESC"
+End Function
+
+Private Function SQL_RetencaoMes() As String
+    If Not TableExists("retention_monthly") Then
+        SQL_RetencaoMes = "SELECT NULL::text AS month, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::int AS pagantes_mes_ant, " & _
+            "0::int AS retidos, 0::float AS taxa_retencao WHERE 1=0"
+        Exit Function
+    End If
+    SQL_RetencaoMes = _
+        "SELECT month, association_id, association_name, " & _
+        "  pagantes_mes_ant, retidos, " & _
+        "  COALESCE(taxa_retencao, 0) AS taxa_retencao " & _
+        "FROM retention_monthly" & Filter() & " ORDER BY month DESC"
+End Function
+
+Private Function SQL_TasksMes() As String
+    If Not TableExists("tasks_monthly") Then
+        SQL_TasksMes = "SELECT NULL::text AS month, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::int AS total, 0::int AS concluidas, " & _
+            "0::int AS pendentes, 0::float AS pct_on_time WHERE 1=0"
+        Exit Function
+    End If
+    SQL_TasksMes = _
+        "SELECT month, association_id, association_name, " & _
+        "  total, concluidas, pendentes, " & _
+        "  COALESCE(pct_on_time, 0) AS pct_on_time " & _
+        "FROM tasks_monthly" & Filter() & " ORDER BY month DESC"
+End Function
+
+Private Function SQL_OpScoreMes() As String
+    If Not TableExists("operator_score_monthly") Then
+        SQL_OpScoreMes = "SELECT NULL::text AS month, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::float AS score WHERE 1=0"
+        Exit Function
+    End If
+    ' Agrega para uma linha por (month, association): AVG score, SUM estornos/entregas
+    SQL_OpScoreMes = _
+        "SELECT month, association_id, association_name, " & _
+        "  ROUND(AVG(score)::numeric, 1)    AS score, " & _
+        "  SUM(estornos)                    AS estornos, " & _
+        "  SUM(tarefas_atraso)              AS tarefas_atraso, " & _
+        "  SUM(entregas)                    AS entregas " & _
+        "FROM operator_score_monthly" & Filter() & _
+        " GROUP BY month, association_id, association_name" & _
+        " ORDER BY month DESC"
+End Function
+
+Private Function SQL_MargemMes() As String
+    If Not TableExists("margem_mensal") Then
+        SQL_MargemMes = "SELECT NULL::text AS month, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::float AS total_income, " & _
+            "0::float AS total_expense, 0::float AS net, 0::float AS margem_pct WHERE 1=0"
+        Exit Function
+    End If
+    SQL_MargemMes = _
+        "SELECT month, association_id, association_name, " & _
+        "  total_income, total_expense, net, margem_pct " & _
+        "FROM margem_mensal" & Filter() & " ORDER BY month DESC"
 End Function
 
 

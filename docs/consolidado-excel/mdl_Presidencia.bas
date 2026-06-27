@@ -1,257 +1,657 @@
 Attribute VB_Name = "mdl_Presidencia"
 '=============================================================================
-' Aba: PRESIDENCIA — Pulso da Associação
-' Pergunta diretriz: "Como está a saúde geral da associação esta semana?"
+' Aba: PRESIDENCIA — 9 KPI Cards com Sparklines
+' Layout: 3 colunas × 3 linhas, colunas A-T, zoom 150%
 '
-' Gauge "Pulso da Associação" (0-100):
-'   Componente              Peso   Fonte
-'   ─────────────────────────────────────
-'   Taxa de cobrança        30%    collection_rate.pct_paid
-'   Adimplência acumulada   20%    delinquency_report
-'   Crescimento moradores   10%    member_growth_weekly
-'   SLA pacotes             15%    sla_by_type
-'   Performance operadores  15%    operator_performance
-'   Tarefas concluídas      10%    tasks_by_collaborator
+' Cards (esquerda→direita, cima→baixo):
+'   1. Receita Líquida     2. Taxa de Cobrança    3. Inadimplência
+'   4. Crescimento          5. Retenção Pagantes   6. Encomendas
+'   7. Tempo de Entrega     8. Tarefas no Prazo    9. Score Operadores
 '=============================================================================
 Option Explicit
 
-Private Const CLR_NAVY     As Long = 2298644   ' #141323 RGB(20,19,35)
-Private Const CLR_CERULEAN As Long = 11702536  ' RGB(8,145,178)
-Private Const CLR_AMBER    As Long = 761589    ' RGB(245,158,11)
+' ── Colors (consistent with mdl_Inicio) ─────────────────────────────────────
+Private Const CLR_BG       As Long = 2298644    ' RGB(20, 19, 35) navy dark
+Private Const CLR_CARD     As Long = 3286830    ' RGB(46, 51, 50) card bg
+Private Const CLR_ACCENT   As Long = 11702536   ' RGB(8, 145, 178) cerulean
 Private Const CLR_WHITE    As Long = 16777215
-Private Const CLR_LIGHT    As Long = 16184563  ' RGB(243,244,246)
-Private Const CLR_GREEN    As Long = 4891414   ' RGB(22,163,74)
-Private Const CLR_RED      As Long = 2498780   ' RGB(220,38,38)
+Private Const CLR_GREEN    As Long = 4891414    ' RGB(22, 163, 74)
+Private Const CLR_RED      As Long = 2498780    ' RGB(220, 38, 38)
+Private Const CLR_AMBER    As Long = 761589     ' RGB(245, 158, 11)
+Private Const CLR_MUTED    As Long = 8684928    ' RGB(128, 140, 132) muted gray
 
+' ── Layout ────────────────────────────────────────────────────────────────────
+Private Const WS_PRES      As String = "PRESIDENCIA"
+Private Const TITLE_ROW    As Long = 1
+Private Const SUB_ROW      As Long = 2
+Private Const FILTER_ROW   As Long = 3
+Private Const SPACER_ROW   As Long = 4
+Private Const CARDS_START  As Long = 5
+Private Const CARD_H       As Long = 13   ' rows per card
+Private Const CARD_GAP     As Long = 1    ' gap rows between card tiers
+Private Const CARD_W       As Integer = 6
+Private Const COL_C1       As Integer = 2   ' col B — card left positions
+Private Const COL_C2       As Integer = 9   ' col I
+Private Const COL_C3       As Integer = 16  ' col P
+
+Private Const ASSOC_VL     As String = "fc5e1eaf-ac28-4fda-9c10-2c9184cf7297"
+Private Const ASSOC_CG     As String = "f9a29c3f-0b35-467d-82f4-4ac3b79a51b2"
+
+' Filter state (independent from mdl_Inicio)
+Public  m_PresAssocId As String   ' "" = all, or specific UUID
+Private m_PresInit    As Boolean
+
+
+'=============================================================================
+' ENTRY POINTS
+'=============================================================================
 Public Sub PopulatePresidencia()
     Dim ws     As Worksheet
     Dim wsDados As Worksheet
-
     On Error GoTo ErrHandler
 
-    Set ws = ThisWorkbook.Sheets("PRESIDENCIA")
+    Set ws = ThisWorkbook.Sheets(WS_PRES)
     Set wsDados = ThisWorkbook.Sheets("_DADOS")
 
     Application.ScreenUpdating = False
-    ws.Range("B4:M60").ClearContents
+    Application.Calculation    = xlCalculationManual
 
-    ' Pergunta diretriz
-    With ws.Range("B4")
-        .Value = ChrW(8220) & "Como está a saúde geral da associação esta semana?" & ChrW(8221)
-        .Font.Italic = True
-        .Font.Color = CLR_CERULEAN
-        .Font.Size = 10
-    End With
+    ' Full clear
+    ClearPresidencia ws
 
-    ' ── Calcula componentes do Pulso ─────────────────────────────────────────
-    Dim scoreCobranca    As Double
-    Dim scoreAdimpl      As Double
-    Dim scoreCrescimento As Double
-    Dim scoreSLA         As Double
-    Dim scoreOp          As Double
-    Dim scoreTarefas     As Double
+    ' Background + column/row setup
+    SetupBackground ws
 
-    ' 1. Taxa cobrança — calculada dos totais combinados (ambas associações)
-    Dim pagasT As Variant: pagasT = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL", "pagas",    "", "")
-    Dim pendT  As Variant: pendT  = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL", "pendentes","", "")
-    Dim pct As Variant
-    Dim totCob As Double: totCob = mdl_Inicio.SafeD(pagasT) + mdl_Inicio.SafeD(pendT)
-    If totCob > 0 Then pct = Round(mdl_Inicio.SafeD(pagasT) / totCob * 100, 1)
-    scoreCobranca = NormalizeScore(pct, 0, 100) * 0.3
+    ' Static elements
+    SetupHeader ws
+    SetupFilterShapes ws
 
-    ' 2. Adimplência acumulada: pagas / (pagas + vencidas + pendentes) — dados combinados
-    Dim pagas As Variant, vencidas As Variant, pendentes As Variant
-    pagas    = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL", "pagas",    "", "")
-    vencidas = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL", "vencidas", "", "")
-    pendentes = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL","pendentes","", "")
-    Dim total As Double
-    total = SafeD(pagas) + SafeD(vencidas) + SafeD(pendentes)
-    Dim adimplRate As Double
-    adimplRate = IIf(total > 0, SafeD(pagas) / total * 100, 50)
-    scoreAdimpl = NormalizeScore(adimplRate, 0, 100) * 0.2
+    ' All 9 KPI cards with data
+    DrawAllCards ws, wsDados
 
-    ' 3. Crescimento de moradores (crescimento positivo = 100, queda = 0)
-    Dim crescimento As Variant
-    crescimento = mdl_Inicio.GetScalar(wsDados, "CRESCIMENTO", "net_new", "", "")
-    scoreCrescimento = IIf(SafeD(crescimento) >= 0, 100, 0) * 0.1
-
-    ' 4. SLA pacotes (% entregues dentro do SLA)
-    Dim sla As Variant
-    sla = mdl_Inicio.GetScalar(wsDados, "SLA_TIPO", "pct_on_time", "", "")
-    scoreSLA = NormalizeScore(sla, 0, 100) * 0.15
-
-    ' 5. Performance operadores (enc_recv = encaminhamentos por recebimento)
-    Dim encRecv As Variant
-    encRecv = mdl_Inicio.GetScalar(wsDados, "OP_PERFORMANCE", "enc_recv_pct", "", "")
-    scoreOp = NormalizeScore(encRecv, 0, 100) * 0.15
-
-    ' 6. Tarefas concluídas (% concluídas na semana)
-    Dim concluidas As Variant
-    Dim totalTarefas As Variant
-    concluidas = mdl_Inicio.GetScalar(wsDados, "RANK_COLAB", "concluidas", "", "")
-    totalTarefas = mdl_Inicio.GetScalar(wsDados, "KPI_OP", "tarefas_semana", "", "")
-    Dim pctTarefas As Double
-    pctTarefas = IIf(SafeD(totalTarefas) > 0, SafeD(concluidas) / SafeD(totalTarefas) * 100, 50)
-    scoreTarefas = NormalizeScore(pctTarefas, 0, 100) * 0.1
-
-    ' Score composto (0–100)
-    Dim pulso As Long
-    pulso = CLng(scoreCobranca + scoreAdimpl + scoreCrescimento + scoreSLA + scoreOp + scoreTarefas)
-    If pulso > 100 Then pulso = 100
-    If pulso < 0 Then pulso = 0
-
-    ' ── Escreve gauge (shape text + KPIs) ──────────────────────────────────
-    WriteGauge ws, pulso
-    WritePresidenciaKPIs ws, wsDados, scoreCobranca, scoreAdimpl, scoreCrescimento, scoreSLA, scoreOp, scoreTarefas, pct, adimplRate, crescimento, sla, encRecv, pctTarefas
-
+    m_PresInit = True
+    Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
     Exit Sub
 
 ErrHandler:
+    Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
-    MsgBox "Erro em PopulatePresidencia: " & Err.Description, vbCritical
+    MsgBox "Erro PopulatePresidencia: " & Err.Description, vbCritical
 End Sub
 
 
-Private Sub WriteGauge(ws As Worksheet, score As Long)
-    ' Escreve o score em célula central — o gauge visual está no design da aba
-    ' e usa uma shape vinculada ao named range PULSO_SCORE
-    Dim scoreRange As Range
-    On Error Resume Next
-    Set scoreRange = ws.Range("PULSO_SCORE")
-    On Error GoTo 0
-
-    If Not scoreRange Is Nothing Then
-        scoreRange.Value = score
-        scoreRange.Font.Size = 28
-        scoreRange.Font.Bold = True
-        scoreRange.HorizontalAlignment = xlCenter
-
-        Select Case score
-            Case 0 To 29:  scoreRange.Font.Color = CLR_RED
-            Case 30 To 59: scoreRange.Font.Color = CLR_AMBER
-            Case 60 To 79: scoreRange.Font.Color = RGB(134, 197, 80)
-            Case Else:     scoreRange.Font.Color = CLR_GREEN
-        End Select
-    End If
-
-    ' Label do score
-    Dim labelRange As Range
-    On Error Resume Next
-    Set labelRange = ws.Range("PULSO_LABEL")
-    On Error GoTo 0
-    If Not labelRange Is Nothing Then
-        Select Case score
-            Case 0 To 29:  labelRange.Value = "CRÍTICO"
-            Case 30 To 59: labelRange.Value = "ATENÇÃO"
-            Case 60 To 79: labelRange.Value = "BOM"
-            Case Else:     labelRange.Value = "EXCELENTE"
-        End Select
-    End If
+Public Sub RefreshPresidencia()
+    If Not m_PresInit Then Call PopulatePresidencia: Exit Sub
+    Dim ws As Worksheet, wsDados As Worksheet
+    Set ws = ThisWorkbook.Sheets(WS_PRES)
+    Set wsDados = ThisWorkbook.Sheets("_DADOS")
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    UpdateFilterStyles ws
+    DrawAllCards ws, wsDados
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
 End Sub
 
 
-Private Sub WritePresidenciaKPIs(ws As Worksheet, wsDados As Worksheet, _
-    sc1 As Double, sc2 As Double, sc3 As Double, sc4 As Double, sc5 As Double, sc6 As Double, _
-    pct As Variant, adimpl As Double, cresc As Variant, sla As Variant, encRecv As Variant, tarefas As Double)
+' Filter button handlers
+Public Sub Pres_All(): m_PresAssocId = "":       Call RefreshPresidencia: End Sub
+Public Sub Pres_VL():  m_PresAssocId = ASSOC_VL: Call RefreshPresidencia: End Sub
+Public Sub Pres_CG():  m_PresAssocId = ASSOC_CG: Call RefreshPresidencia: End Sub
 
-    Dim startRow As Long: startRow = 14
-    Dim col As Long:      col = 2
 
-    ' Cabeçalho da tabela de componentes
-    WriteKpiTableHeader ws, startRow, col
+'=============================================================================
+' SETUP — layout, background, header, filters
+'=============================================================================
+Private Sub ClearPresidencia(ws As Worksheet)
+    Dim co As ChartObject
+    For Each co In ws.ChartObjects: co.Delete: Next co
+    Dim sh As Shape
+    For Each sh In ws.Shapes
+        If Left(sh.Name, 4) = "FPA_" Then sh.Delete
+    Next sh
+    ws.Cells.ClearContents
+    ws.Cells.ClearFormats
+    ws.Cells.Interior.Color = CLR_BG
+End Sub
 
-    startRow = startRow + 1
-    WriteKpiTableRow ws, startRow,     col, "Taxa de Cobrança",       sc1 / 0.3, IIf(IsEmpty(pct), "–", Format(CDbl(pct), "0.0") & "%"),        sc1 * 100 / 30
-    WriteKpiTableRow ws, startRow + 1, col, "Adimplência Acumulada",  sc2 / 0.2, Format(adimpl, "0.0") & "%",                                    sc2 * 100 / 20
-    WriteKpiTableRow ws, startRow + 2, col, "Crescimento Moradores",  sc3 / 0.1, IIf(IsEmpty(cresc), "–", CStr(cresc) & " esta semana"),          sc3 * 100 / 10
-    WriteKpiTableRow ws, startRow + 3, col, "SLA Pacotes",            sc4 / 0.15, IIf(IsEmpty(sla), "–", Format(CDbl(sla), "0.0") & "%"),        sc4 * 100 / 15
-    WriteKpiTableRow ws, startRow + 4, col, "Performance Operadores", sc5 / 0.15, IIf(IsEmpty(encRecv), "–", Format(CDbl(encRecv), "0.0") & "%"), sc5 * 100 / 15
-    WriteKpiTableRow ws, startRow + 5, col, "Tarefas Concluídas",     sc6 / 0.1, Format(tarefas, "0.0") & "%",                                    sc6 * 100 / 10
 
-    ' Linha de tendência: morador mais ativo
-    Dim startRow2 As Long
-    startRow2 = startRow + 8
-    With ws.Cells(startRow2, col)
-        .Value = "OPERADOR COM MAIS ATIVIDADE NA SEMANA"
+Private Sub SetupBackground(ws As Worksheet)
+    ws.Tab.Color = CLR_BG
+    ws.DisplayGridlines = False
+
+    ' Margin columns (narrow)
+    ws.Columns(1).ColumnWidth = 1   ' col A left margin
+    ws.Columns(8).ColumnWidth = 1   ' col H gap between card 1-2
+    ws.Columns(15).ColumnWidth = 1  ' col O gap between card 2-3
+
+    ' Card columns: B-G (2-7), I-N (9-14), P-U (16-21) — using P-T (16-20)
+    Dim c As Integer
+    For c = 2 To 7:  ws.Columns(c).ColumnWidth = 10: Next c   ' card 1
+    For c = 9 To 14: ws.Columns(c).ColumnWidth = 10: Next c   ' card 2
+    For c = 16 To 20: ws.Columns(c).ColumnWidth = 10: Next c  ' card 3
+
+    ' Row heights
+    ws.Rows(TITLE_ROW).RowHeight  = 26
+    ws.Rows(SUB_ROW).RowHeight    = 14
+    ws.Rows(FILTER_ROW).RowHeight = 28
+    ws.Rows(SPACER_ROW).RowHeight = 6
+
+    ' Card tiers row heights
+    Dim tier As Integer, r As Long
+    For tier = 0 To 2
+        r = CARDS_START + tier * (CARD_H + CARD_GAP)
+        ws.Rows(r).RowHeight      = 14   ' r+0  title label
+        ws.Rows(r + 1).RowHeight  = 6    ' r+1  spacer
+        ws.Rows(r + 2).RowHeight  = 30   ' r+2  big number
+        ws.Rows(r + 3).RowHeight  = 13   ' r+3  unit/subtitle
+        ws.Rows(r + 4).RowHeight  = 6    ' r+4  separator
+        ws.Rows(r + 5).RowHeight  = 12   ' r+5  sparkline row 1
+        ws.Rows(r + 6).RowHeight  = 12   ' r+6  sparkline row 2
+        ws.Rows(r + 7).RowHeight  = 12   ' r+7  sparkline row 3
+        ws.Rows(r + 8).RowHeight  = 12   ' r+8  sparkline row 4
+        ws.Rows(r + 9).RowHeight  = 6    ' r+9  separator
+        ws.Rows(r + 10).RowHeight = 18   ' r+10 delta row
+        ws.Rows(r + 11).RowHeight = 8    ' r+11 bottom margin
+        ws.Rows(r + 12).RowHeight = 8    ' r+12 gap to next tier
+    Next tier
+
+    ' Background for all used area
+    ws.Range("A1:T60").Interior.Color = CLR_BG
+End Sub
+
+
+Private Sub SetupHeader(ws As Worksheet)
+    ' Title
+    With ws.Range(ws.Cells(TITLE_ROW, 2), ws.Cells(TITLE_ROW, 20))
+        .Merge
+        .Value = "PRESIDÊNCIA  " & ChrW(8212) & "  INDICADORES EXECUTIVOS"
+        .Font.Name = "Calibri"
+        .Font.Size = 13
         .Font.Bold = True
-        .Font.Size = 9
         .Font.Color = CLR_WHITE
-        .Interior.Color = CLR_NAVY
+        .HorizontalAlignment = xlLeft
+        .Interior.Color = CLR_BG
     End With
 
-    Dim topOp As Variant
-    topOp = mdl_Inicio.GetScalar(wsDados, "OP_PERFORMANCE", "operator_name", "", "")
-    ws.Cells(startRow2 + 1, col).Value = IIf(IsEmpty(topOp), "–", CStr(topOp))
-    ws.Cells(startRow2 + 1, col).Font.Bold = True
-    ws.Cells(startRow2 + 1, col).Font.Color = CLR_CERULEAN
+    ' Subtitle
+    With ws.Range(ws.Cells(SUB_ROW, 2), ws.Cells(SUB_ROW, 20))
+        .Merge
+        .Value = "Atualizado em " & Format(Now, "dd/mm/yyyy") & _
+                 "  " & ChrW(183) & "  Instituto Tia Pretinha  " & _
+                 ChrW(183) & "  Últimos 6 meses"
+        .Font.Name = "Calibri"
+        .Font.Size = 8
+        .Font.Color = CLR_MUTED
+        .HorizontalAlignment = xlLeft
+        .Interior.Color = CLR_BG
+    End With
 End Sub
 
 
-Private Sub WriteKpiTableHeader(ws As Worksheet, r As Long, c As Long)
-    Dim headers As Variant
-    headers = Array("Componente", "Score bruto", "Valor atual", "Contribuição %")
+Private Sub SetupFilterShapes(ws As Worksheet)
+    Dim btnH   As Single: btnH   = ws.Rows(FILTER_ROW).Height - 6
+    Dim btnTop As Single: btnTop = ws.Rows(FILTER_ROW).Top + 3
+    Dim btnW   As Single: btnW   = 80
+    Dim gap    As Single: gap    = 6
+    Dim leftX  As Single: leftX  = ws.Columns(COL_C1).Left
+
+    ' Label "ASSOCIAÇÃO"
+    With ws.Cells(FILTER_ROW, 2)
+        .Value = "FILTRO:"
+        .Font.Name = "Calibri"
+        .Font.Size = 7
+        .Font.Bold = True
+        .Font.Color = CLR_MUTED
+        .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
+        .Interior.Color = CLR_BG
+    End With
+
+    Dim labels(2) As String, macros(2) As String, ids(2) As String
+    labels(0) = "TODAS":    macros(0) = "mdl_Presidencia.Pres_All": ids(0) = "FPA_ALL"
+    labels(1) = "VAZ LOBO": macros(1) = "mdl_Presidencia.Pres_VL":  ids(1) = "FPA_VL"
+    labels(2) = "CONGONHA": macros(2) = "mdl_Presidencia.Pres_CG":  ids(2) = "FPA_CG"
+
     Dim i As Integer
-    For i = 0 To 3
-        With ws.Cells(r, c + i)
-            .Value = headers(i)
-            .Font.Bold = True
-            .Font.Color = CLR_WHITE
-            .Interior.Color = CLR_CERULEAN
-            .Font.Size = 8
-        End With
+    Dim offsetX As Single: offsetX = ws.Columns(COL_C1).Width + gap  ' leave col B for label
+
+    For i = 0 To 2
+        Dim shp As Shape
+        Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, _
+                  leftX + offsetX + i * (btnW + gap), btnTop, btnW, btnH)
+        shp.Name = ids(i)
+        shp.OnAction = macros(i)
+        shp.TextFrame2.TextRange.Characters.Text = labels(i)
+        shp.TextFrame2.TextRange.Characters.Font.Size = 7.5
+        shp.TextFrame2.TextRange.Characters.Font.Bold = msoTrue
+        shp.TextFrame2.TextRange.Characters.Font.Fill.ForeColor.RGB = CLR_WHITE
+        shp.TextFrame2.HorizontalAnchor = msoAnchorCenter
+        shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
+        shp.Line.Weight = 0.75
+
+        Dim isActive As Boolean
+        If i = 0 Then isActive = (m_PresAssocId = "")
+        If i = 1 Then isActive = (m_PresAssocId = ASSOC_VL)
+        If i = 2 Then isActive = (m_PresAssocId = ASSOC_CG)
+        ApplyBtnStyle shp, isActive
     Next i
 End Sub
 
 
-Private Sub WriteKpiTableRow(ws As Worksheet, r As Long, c As Long, _
-    label As String, scoreRaw As Double, valor As String, contrib As Double)
+Private Sub UpdateFilterStyles(ws As Worksheet)
+    Dim ids(2) As String
+    ids(0) = "FPA_ALL": ids(1) = "FPA_VL": ids(2) = "FPA_CG"
+    Dim i As Integer
+    For i = 0 To 2
+        Dim shp As Shape
+        On Error Resume Next: Set shp = ws.Shapes(ids(i)): On Error GoTo 0
+        If Not shp Is Nothing Then
+            Dim isActive As Boolean
+            If i = 0 Then isActive = (m_PresAssocId = "")
+            If i = 1 Then isActive = (m_PresAssocId = ASSOC_VL)
+            If i = 2 Then isActive = (m_PresAssocId = ASSOC_CG)
+            ApplyBtnStyle shp, isActive
+        End If
+    Next i
+End Sub
 
-    ws.Cells(r, c).Value = label
-    ws.Cells(r, c).Font.Size = 8
 
-    ws.Cells(r, c + 1).Value = Format(scoreRaw, "0.0")
-    ws.Cells(r, c + 1).HorizontalAlignment = xlRight
+Private Sub ApplyBtnStyle(shp As Shape, isActive As Boolean)
+    If isActive Then
+        shp.Fill.ForeColor.RGB = CLR_ACCENT
+        shp.Line.ForeColor.RGB = CLR_ACCENT
+    Else
+        shp.Fill.ForeColor.RGB = RGB(38, 48, 58)
+        shp.Line.ForeColor.RGB = RGB(60, 78, 95)
+    End If
+End Sub
 
-    ws.Cells(r, c + 2).Value = valor
 
-    ws.Cells(r, c + 3).Value = Format(contrib, "0.0") & "%"
-    ws.Cells(r, c + 3).HorizontalAlignment = xlRight
+'=============================================================================
+' CARD DRAWING
+'=============================================================================
+Private Sub DrawAllCards(ws As Worksheet, wsDados As Worksheet)
+    Dim cardCols(2) As Integer
+    cardCols(0) = COL_C1: cardCols(1) = COL_C2: cardCols(2) = COL_C3
 
-    ' Cor de fundo alternada
-    If r Mod 2 = 0 Then
-        ws.Range(ws.Cells(r, c), ws.Cells(r, c + 3)).Interior.Color = CLR_LIGHT
+    Dim i As Integer
+    For i = 0 To 8
+        Dim tier    As Integer: tier    = i \ 3
+        Dim cardCol As Integer: cardCol = i Mod 3
+        Dim topRow  As Long
+        topRow = CARDS_START + tier * (CARD_H + CARD_GAP)
+        DrawCard ws, wsDados, i, topRow, cardCols(cardCol)
+    Next i
+End Sub
+
+
+Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
+                     cardIdx As Integer, topRow As Long, leftCol As Integer)
+    ' ── Card metadata ──────────────────────────────────────────────────────────
+    Dim cardTitle As String, rangeKey As String, colName As String
+    Dim unitStr As String, fmtCode As String, invertDelta As Boolean
+    Dim useAvg As Boolean
+
+    Select Case cardIdx
+        Case 0
+            cardTitle = "RECEITA LÍQUIDA":    rangeKey = "MARGEM_MES":    colName = "net"
+            unitStr = "R$":                    fmtCode = "currency":       invertDelta = False: useAvg = False
+        Case 1
+            cardTitle = "TAXA DE COBRANÇA":   rangeKey = "TAXA_COBRANCA": colName = "pct_paid"
+            unitStr = "% pagas":               fmtCode = "pct":            invertDelta = False: useAvg = True
+        Case 2
+            cardTitle = "INADIMPLÊNCIA":       rangeKey = "TAXA_COBRANCA": colName = "pct_pendente"
+            unitStr = "% pendentes":           fmtCode = "pct":            invertDelta = True:  useAvg = True
+        Case 3
+            cardTitle = "CRESCIMENTO":         rangeKey = "MORADORES_MES": colName = "members"
+            unitStr = "associados":            fmtCode = "integer":        invertDelta = False: useAvg = False
+        Case 4
+            cardTitle = "RETENÇÃO PAGANTES":   rangeKey = "RETENCAO_MES":  colName = "taxa_retencao"
+            unitStr = "% retidos":             fmtCode = "pct":            invertDelta = False: useAvg = True
+        Case 5
+            cardTitle = "ENCOMENDAS":          rangeKey = "PACOTES_MES":   colName = "recebidos"
+            unitStr = "recebidas":             fmtCode = "integer":        invertDelta = False: useAvg = False
+        Case 6
+            cardTitle = "TEMPO DE ENTREGA":    rangeKey = "PACOTES_MES":   colName = "avg_dwell_dias"
+            unitStr = "dias médios":           fmtCode = "decimal1":       invertDelta = True:  useAvg = True
+        Case 7
+            cardTitle = "TAREFAS NO PRAZO":    rangeKey = "TASKS_MES":     colName = "pct_on_time"
+            unitStr = "% no prazo":            fmtCode = "pct":            invertDelta = False: useAvg = True
+        Case 8
+            cardTitle = "SCORE OPERADORES":    rangeKey = "OP_SCORE_MES":  colName = "score"
+            unitStr = "pts / 100":             fmtCode = "decimal1":       invertDelta = False: useAvg = True
+    End Select
+
+    ' ── Get series data (ASC, up to 13 months) ───────────────────────────────
+    Dim series As Variant
+    series = GetMonthlySeries(wsDados, rangeKey, colName, m_PresAssocId, 13, useAvg)
+
+    Dim nPts As Integer: nPts = 0
+    If IsArray(series) Then
+        On Error Resume Next: nPts = UBound(series) - LBound(series) + 1: On Error GoTo 0
     End If
 
-    ' Mini barra de contribuição (barra de fundo via cell pattern — simplificado)
-    With ws.Cells(r, c + 3)
-        If contrib >= 80 Then
-            .Font.Color = CLR_GREEN
-        ElseIf contrib >= 50 Then
-            .Font.Color = CLR_AMBER
-        Else
-            .Font.Color = CLR_RED
+    Dim currVal  As Double: currVal  = 0
+    Dim prev1Val As Double: prev1Val = 0
+    Dim prev3Val As Double: prev3Val = 0
+    Dim prev12Val As Double: prev12Val = 0
+
+    If nPts > 0  Then currVal   = series(nPts - 1)
+    If nPts > 1  Then prev1Val  = series(nPts - 2)
+    If nPts > 3  Then prev3Val  = series(nPts - 4)
+    If nPts > 12 Then prev12Val = series(0)
+
+    ' ── Card background ────────────────────────────────────────────────────────
+    ws.Range(ws.Cells(topRow, leftCol), ws.Cells(topRow + CARD_H - 2, leftCol + CARD_W - 1)) _
+        .Interior.Color = CLR_CARD
+
+    ' ── Title label ───────────────────────────────────────────────────────────
+    With ws.Cells(topRow, leftCol)
+        .Value = cardTitle
+        .Font.Name = "Calibri"
+        .Font.Size = 7
+        .Font.Bold = True
+        .Font.Color = CLR_MUTED
+        .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
+        .Interior.Color = CLR_CARD
+    End With
+
+    ' ── Big number ────────────────────────────────────────────────────────────
+    With ws.Range(ws.Cells(topRow + 2, leftCol), ws.Cells(topRow + 2, leftCol + CARD_W - 1))
+        .Merge
+        .Value = FormatKpi(currVal, fmtCode)
+        .Font.Name = "Calibri"
+        .Font.Size = 22
+        .Font.Bold = True
+        .Font.Color = CLR_WHITE
+        .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
+        .Interior.Color = CLR_CARD
+    End With
+
+    ' ── Unit / subtitle ───────────────────────────────────────────────────────
+    With ws.Range(ws.Cells(topRow + 3, leftCol), ws.Cells(topRow + 3, leftCol + CARD_W - 1))
+        .Merge
+        .Value = unitStr
+        .Font.Name = "Calibri"
+        .Font.Size = 7
+        .Font.Color = CLR_MUTED
+        .HorizontalAlignment = xlLeft
+        .Interior.Color = CLR_CARD
+    End With
+
+    ' ── Sparkline ─────────────────────────────────────────────────────────────
+    If nPts >= 2 Then
+        ' Extract last 6 points for sparkline
+        Dim spkStart As Integer: spkStart = IIf(nPts > 6, nPts - 6, 0)
+        Dim spkLen   As Integer: spkLen   = nPts - spkStart
+        Dim spkData() As Double
+        ReDim spkData(spkLen - 1)
+        Dim k As Integer
+        For k = 0 To spkLen - 1
+            spkData(k) = series(spkStart + k)
+        Next k
+        DrawSparkline ws, spkData, topRow + 5, leftCol, 4, CARD_W
+    End If
+
+    ' ── Delta badges ──────────────────────────────────────────────────────────
+    Dim deltaRow As Long: deltaRow = topRow + 10
+    Dim momStr As String, momClr As Long
+    Dim qoqStr As String, qoqClr As Long
+    Dim yoyStr As String, yoyClr As Long
+
+    momStr = CalcDelta(currVal, prev1Val,  invertDelta, momClr)
+    qoqStr = CalcDelta(currVal, prev3Val,  invertDelta, qoqClr)
+    yoyStr = CalcDelta(currVal, prev12Val, invertDelta, yoyClr)
+
+    WriteDeltaBadge ws, deltaRow, leftCol,         "M/M", momStr, momClr
+    WriteDeltaBadge ws, deltaRow, leftCol + 2,     "T/T", qoqStr, qoqClr
+    WriteDeltaBadge ws, deltaRow, leftCol + 4,     "A/A", yoyStr, yoyClr
+End Sub
+
+
+'=============================================================================
+' SPARKLINE CHART
+'=============================================================================
+Private Sub DrawSparkline(ws As Worksheet, dataArr() As Double, _
+                           topRow As Long, leftCol As Integer, _
+                           numRows As Long, numCols As Integer)
+    Dim nPts As Integer: nPts = UBound(dataArr) - LBound(dataArr) + 1
+    If nPts < 2 Then Exit Sub
+
+    Dim chartName As String: chartName = "SPK_" & topRow & "_" & leftCol
+
+    ' Compute position
+    Dim L As Single: L = ws.Cells(topRow, leftCol).Left + 1
+    Dim T As Single: T = ws.Cells(topRow, 1).Top + 1
+    Dim W As Single: W = ws.Range(ws.Cells(topRow, leftCol), _
+                                   ws.Cells(topRow, leftCol + numCols - 1)).Width - 2
+    Dim H As Single: H = ws.Range(ws.Cells(topRow, 1), _
+                                   ws.Cells(topRow + numRows - 1, 1)).Height - 2
+
+    ' Try to reuse existing chart
+    Dim co  As ChartObject
+    Dim cht As Chart
+    Dim srs As Series
+
+    On Error Resume Next: Set co = ws.ChartObjects(chartName): On Error GoTo 0
+
+    If co Is Nothing Then
+        ' Create new
+        Set co  = ws.ChartObjects.Add(L, T, W, H)
+        co.Name = chartName
+
+        Set cht = co.Chart
+        cht.ChartType = xlLine
+        Set srs = cht.SeriesCollection.NewSeries()
+        srs.Values = dataArr
+
+        ' No decoration
+        cht.HasTitle  = False
+        cht.HasLegend = False
+        co.Border.LineStyle       = xlNone
+        cht.ChartArea.Border.LineStyle   = xlNone
+        cht.ChartArea.Interior.Color     = CLR_CARD
+        cht.PlotArea.Border.LineStyle    = xlNone
+        cht.PlotArea.Interior.Color      = CLR_CARD
+
+        ' Hide axes
+        On Error Resume Next
+        cht.Axes(xlValue).Delete
+        cht.Axes(xlCategory).Delete
+        On Error GoTo 0
+
+        ' Series line style
+        On Error Resume Next
+        With srs.Format.Line
+            .ForeColor.RGB = CLR_ACCENT
+            .Weight = 1.5
+        End With
+        srs.MarkerStyle = xlMarkerStyleNone
+
+        ' Endpoint dot
+        With srs.Points(nPts)
+            .MarkerStyle             = xlMarkerStyleCircle
+            .MarkerSize              = 5
+            .MarkerForegroundColor   = CLR_ACCENT
+            .MarkerBackgroundColor   = CLR_ACCENT
+        End With
+        On Error GoTo 0
+    Else
+        ' Reuse: reposition + update data only
+        co.Left = L: co.Top = T: co.Width = W: co.Height = H
+        Set cht = co.Chart
+        If cht.SeriesCollection.Count > 0 Then
+            Set srs = cht.SeriesCollection(1)
+            srs.Values = dataArr
+            On Error Resume Next
+            With srs.Points(nPts)
+                .MarkerStyle           = xlMarkerStyleCircle
+                .MarkerSize            = 5
+                .MarkerForegroundColor = CLR_ACCENT
+                .MarkerBackgroundColor = CLR_ACCENT
+            End With
+            On Error GoTo 0
         End If
+    End If
+End Sub
+
+
+'=============================================================================
+' DELTA HELPERS
+'=============================================================================
+Private Function CalcDelta(curr As Double, prev As Double, _
+                            invertDelta As Boolean, ByRef outColor As Long) As String
+    If prev = 0 Then
+        CalcDelta = ChrW(8594) & " n/d"    ' →
+        outColor  = CLR_MUTED
+        Exit Function
+    End If
+    Dim pct As Double: pct = (curr - prev) / Abs(prev) * 100
+
+    ' Positive pct means improvement for normal, worsening for inverted
+    Dim isGood As Boolean: isGood = IIf(invertDelta, pct < 0, pct > 0)
+
+    If Abs(pct) < 0.05 Then
+        CalcDelta = ChrW(8594) & " 0.0%": outColor = CLR_MUTED
+    ElseIf isGood Then
+        CalcDelta = ChrW(8593) & " " & Format(Abs(pct), "0.0") & "%"  ' ↑
+        outColor  = CLR_GREEN
+    Else
+        CalcDelta = ChrW(8595) & " " & Format(Abs(pct), "0.0") & "%"  ' ↓
+        outColor  = CLR_RED
+    End If
+End Function
+
+
+Private Sub WriteDeltaBadge(ws As Worksheet, r As Long, c As Integer, _
+                             label As String, deltaStr As String, clr As Long)
+    With ws.Cells(r, c)
+        .Value = label
+        .Font.Name = "Calibri"
+        .Font.Size = 6
+        .Font.Bold = True
+        .Font.Color = CLR_MUTED
+        .HorizontalAlignment = xlCenter
+        .Interior.Color = CLR_CARD
+    End With
+    With ws.Cells(r, c + 1)
+        .Value = deltaStr
+        .Font.Name = "Calibri"
+        .Font.Size = 7
+        .Font.Bold = True
+        .Font.Color = clr
+        .HorizontalAlignment = xlLeft
+        .Interior.Color = CLR_CARD
     End With
 End Sub
 
 
-' ── Helpers ─────────────────────────────────────────────────────────────────
-Private Function NormalizeScore(val As Variant, minVal As Double, maxVal As Double) As Double
-    If IsEmpty(val) Or IsNull(val) Or Not IsNumeric(val) Then
-        NormalizeScore = 50  ' neutro quando sem dados
-        Exit Function
-    End If
-    Dim v As Double: v = CDbl(val)
-    If v <= minVal Then NormalizeScore = 0: Exit Function
-    If v >= maxVal Then NormalizeScore = 100: Exit Function
-    NormalizeScore = (v - minVal) / (maxVal - minVal) * 100
+Private Function FormatKpi(val As Double, fmtCode As String) As String
+    Select Case fmtCode
+        Case "currency"
+            If Abs(val) >= 1000 Then
+                FormatKpi = "R$ " & Format(val / 1000, "#,##0.0") & "k"
+            Else
+                FormatKpi = "R$ " & Format(val, "#,##0.0")
+            End If
+        Case "pct"
+            FormatKpi = Format(val, "0.0") & "%"
+        Case "integer"
+            FormatKpi = Format(val, "#,##0")
+        Case "decimal1"
+            FormatKpi = Format(val, "0.0")
+        Case Else
+            FormatKpi = CStr(val)
+    End Select
 End Function
 
-Private Function SafeD(val As Variant) As Double
-    If IsEmpty(val) Or IsNull(val) Or Not IsNumeric(val) Then
-        SafeD = 0
-    Else
-        SafeD = CDbl(val)
+
+'=============================================================================
+' DATA HELPER — extrai série mensal do _DADOS via named range DL_rangeKey
+' Retorna array Double em ordem ASC (mais antigo primeiro)
+' assocId = "" → agrega ambas as associações
+' useAvg = True → divide pelo count (para percentuais)
+'=============================================================================
+Private Function GetMonthlySeries(wsDados As Worksheet, rangeKey As String, _
+                                   colName As String, assocId As String, _
+                                   maxMonths As Integer, useAvg As Boolean) As Variant
+    GetMonthlySeries = Array()
+
+    Dim rng As Range
+    On Error Resume Next: Set rng = wsDados.Range("DL_" & rangeKey): On Error GoTo 0
+    If rng Is Nothing Then Exit Function
+
+    Dim hRow As Long: hRow = rng.Row - 1
+    Dim colIdx  As Integer: colIdx  = 0
+    Dim monthIdx As Integer: monthIdx = 0
+    Dim assocIdx As Integer: assocIdx = 0
+    Dim c As Integer
+
+    For c = 1 To 30
+        Select Case LCase(CStr(wsDados.Cells(hRow, c).Value))
+            Case LCase(colName):    colIdx   = c
+            Case "month":           monthIdx = c
+            Case "association_id":  assocIdx = c
+        End Select
+    Next c
+    If colIdx = 0 Or monthIdx = 0 Then Exit Function
+
+    ' Collect rows (SQL delivers DESC order)
+    Dim tmpV(500) As Double
+    Dim tmpN(500) As Integer    ' count for averaging
+    Dim tmpM(500) As String
+    Dim cnt As Integer: cnt = 0
+
+    Dim i As Long
+    For i = rng.Row To rng.Row + rng.Rows.Count - 1
+        Dim mv As String: mv = CStr(wsDados.Cells(i, monthIdx).Value)
+        If Len(mv) < 4 Then Exit For
+
+        ' Association filter
+        Dim match As Boolean: match = True
+        If assocIdx > 0 And assocId <> "" Then
+            match = (CStr(wsDados.Cells(i, assocIdx).Value) = assocId)
+        End If
+
+        If match Then
+            Dim cv As Variant: cv = wsDados.Cells(i, colIdx).Value
+            Dim dv As Double:  dv = IIf(IsNumeric(cv), CDbl(cv), 0)
+
+            ' Group by month (accumulate same month — handles 2-assoc sum/avg)
+            If cnt > 0 And tmpM(cnt - 1) = mv Then
+                tmpV(cnt - 1) = tmpV(cnt - 1) + dv
+                tmpN(cnt - 1) = tmpN(cnt - 1) + 1
+            Else
+                If cnt >= 500 Then Exit For
+                tmpM(cnt) = mv
+                tmpV(cnt) = dv
+                tmpN(cnt) = 1
+                cnt = cnt + 1
+            End If
+        End If
+    Next i
+
+    If cnt = 0 Then Exit Function
+
+    ' Average if requested (e.g. for percentages when combining associations)
+    If useAvg Then
+        Dim j As Integer
+        For j = 0 To cnt - 1
+            If tmpN(j) > 1 Then tmpV(j) = tmpV(j) / tmpN(j)
+        Next j
     End If
+
+    ' Take up to maxMonths; reverse DESC→ASC
+    Dim take As Integer: take = IIf(cnt < maxMonths, cnt, maxMonths)
+    Dim result() As Double
+    ReDim result(take - 1)
+    Dim m As Integer
+    For m = 0 To take - 1
+        result(m) = tmpV(take - 1 - m)   ' DESC index (take-1) → ASC index 0
+    Next m
+    GetMonthlySeries = result
 End Function
