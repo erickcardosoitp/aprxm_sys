@@ -141,7 +141,9 @@ async def get_run(
         FROM etl_task_runs WHERE run_id = :rid ORDER BY started_at ASC
     """), {"rid": run_id})).fetchall()
 
-    return {**dict(run._mapping), "tasks": [dict(t._mapping) for t in tasks]}
+    run_dict = {**dict(run._mapping), "duration_s": float(run._mapping["duration_s"]) if run._mapping["duration_s"] is not None else None, "neon_kb": float(run._mapping["neon_kb"]) if run._mapping["neon_kb"] is not None else None}
+    task_list = [{**dict(t._mapping), "duration_s": float(t._mapping["duration_s"]) if t._mapping["duration_s"] is not None else None} for t in tasks]
+    return {**run_dict, "tasks": task_list}
 
 
 # ── Governança completa ────────────────────────────────────────────────────────
@@ -222,7 +224,11 @@ async def governance(
                duration_s, bronze_rows, silver_rows, gold_files, neon_kb, error_msg, triggered_by
         FROM etl_runs ORDER BY started_at DESC LIMIT 10
     """))).fetchall()
-    runs = [dict(r._mapping) for r in runs_rows]
+    runs = [{
+        **dict(r._mapping),
+        "duration_s": float(r._mapping["duration_s"]) if r._mapping["duration_s"] is not None else None,
+        "neon_kb":    float(r._mapping["neon_kb"])    if r._mapping["neon_kb"]    is not None else None,
+    } for r in runs_rows]
 
     # ── Estatísticas acumuladas ───────────────────────────────────────────────
     stats_row = (await session.execute(text("""

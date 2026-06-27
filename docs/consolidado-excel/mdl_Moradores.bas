@@ -8,11 +8,11 @@ Attribute VB_Name = "mdl_Moradores"
 '=============================================================================
 Option Explicit
 
-Private Const CLR_NAVY     As Long = 888337
-Private Const CLR_CERULEAN As Long = 11573706
-Private Const CLR_AMBER    As Long = 1023485
+Private Const CLR_NAVY     As Long = 2298644   ' #141323 RGB(20,19,35)
+Private Const CLR_CERULEAN As Long = 11702536  ' RGB(8,145,178)
+Private Const CLR_AMBER    As Long = 761589    ' RGB(245,158,11)
 Private Const CLR_WHITE    As Long = 16777215
-Private Const CLR_LIGHT    As Long = 15921906
+Private Const CLR_LIGHT    As Long = 16184563  ' RGB(243,244,246)
 
 Public Sub PopulateMoradores()
     Dim ws     As Worksheet
@@ -27,7 +27,7 @@ Public Sub PopulateMoradores()
     ws.Range("B4:N100").ClearContents
 
     With ws.Range("B4")
-        .Value = Chr(8220) & "Quem mora aqui e qual é o perfil da comunidade? Estamos crescendo?" & Chr(8221)
+        .Value = ChrW(8220) & "Quem mora aqui e qual é o perfil da comunidade? Estamos crescendo?" & ChrW(8221)
         .Font.Italic = True
         .Font.Color = CLR_CERULEAN
         .Font.Size = 10
@@ -79,7 +79,7 @@ Private Sub WriteResidentKPIs(ws As Worksheet, wsDados As Worksheet)
     Dim i As Integer
     For i = 0 To 5
         Dim val As Variant
-        val = mdl_Inicio.GetScalar(wsDados, "MORADORES_GERAL", CStr(kpiCols(i)), "", "")
+        val = mdl_Inicio.GetScalar(wsDados, "MORADORES_TOTAL", CStr(kpiCols(i)), "", "")
 
         With ws.Cells(r, c + i)
             .Value = kpiLabels(i)

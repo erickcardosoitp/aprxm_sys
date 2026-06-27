@@ -470,7 +470,7 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         df["problems_list"] = df["neighborhood_problems"].apply(_parse_jsonb)
         df["problem_count"] = df["problems_list"].apply(len)
         df["has_problems"]  = df["problem_count"] > 0
-        df["sem_internet"]  = df["internet_access"].isin(["Sem acesso", "Nenhum"]) | df["internet_access"].isna()
+        df["sem_internet"]  = df["internet_access"].isin(["Sem acesso", "Nenhum"])
         df["created_week"]  = _week(df["created_at"])
         df["created_month"] = _month(df["created_at"])
         silver["residents_clean"] = df
@@ -554,7 +554,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 
     # 2. Crescimento semanal de associados
     if not res.empty:
-        df = res[res["status"].isin(["active","inactive"])].groupby(
+        df = res[res["status"] == "active"].groupby(
             ["created_week","association_id","association_name","type"]
         ).agg(novos=("id","count")).reset_index().rename(columns={"created_week":"week"})
         up(df, "member_growth_weekly")

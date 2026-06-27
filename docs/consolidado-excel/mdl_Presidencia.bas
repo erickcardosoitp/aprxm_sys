@@ -1,6 +1,6 @@
 Attribute VB_Name = "mdl_Presidencia"
 '=============================================================================
-' Aba: PRESIDÊNCIA — Pulso da Associação
+' Aba: PRESIDENCIA — Pulso da Associação
 ' Pergunta diretriz: "Como está a saúde geral da associação esta semana?"
 '
 ' Gauge "Pulso da Associação" (0-100):
@@ -15,13 +15,13 @@ Attribute VB_Name = "mdl_Presidencia"
 '=============================================================================
 Option Explicit
 
-Private Const CLR_NAVY     As Long = 888337
-Private Const CLR_CERULEAN As Long = 11573706
-Private Const CLR_AMBER    As Long = 1023485
+Private Const CLR_NAVY     As Long = 2298644   ' #141323 RGB(20,19,35)
+Private Const CLR_CERULEAN As Long = 11702536  ' RGB(8,145,178)
+Private Const CLR_AMBER    As Long = 761589    ' RGB(245,158,11)
 Private Const CLR_WHITE    As Long = 16777215
-Private Const CLR_LIGHT    As Long = 15921906
-Private Const CLR_GREEN    As Long = 338720
-Private Const CLR_RED      As Long = 3942400
+Private Const CLR_LIGHT    As Long = 16184563  ' RGB(243,244,246)
+Private Const CLR_GREEN    As Long = 4891414   ' RGB(22,163,74)
+Private Const CLR_RED      As Long = 2498780   ' RGB(220,38,38)
 
 Public Sub PopulatePresidencia()
     Dim ws     As Worksheet
@@ -29,7 +29,7 @@ Public Sub PopulatePresidencia()
 
     On Error GoTo ErrHandler
 
-    Set ws = ThisWorkbook.Sheets("PRESIDÊNCIA")
+    Set ws = ThisWorkbook.Sheets("PRESIDENCIA")
     Set wsDados = ThisWorkbook.Sheets("_DADOS")
 
     Application.ScreenUpdating = False
@@ -37,7 +37,7 @@ Public Sub PopulatePresidencia()
 
     ' Pergunta diretriz
     With ws.Range("B4")
-        .Value = Chr(8220) & "Como está a saúde geral da associação esta semana?" & Chr(8221)
+        .Value = ChrW(8220) & "Como está a saúde geral da associação esta semana?" & ChrW(8221)
         .Font.Italic = True
         .Font.Color = CLR_CERULEAN
         .Font.Size = 10
@@ -51,16 +51,19 @@ Public Sub PopulatePresidencia()
     Dim scoreOp          As Double
     Dim scoreTarefas     As Double
 
-    ' 1. Taxa cobrança (meta = 80%)
+    ' 1. Taxa cobrança — calculada dos totais combinados (ambas associações)
+    Dim pagasT As Variant: pagasT = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL", "pagas",    "", "")
+    Dim pendT  As Variant: pendT  = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL", "pendentes","", "")
     Dim pct As Variant
-    pct = mdl_Inicio.GetScalar(wsDados, "TAXA_COBRANCA", "pct_paid", "month", Format(Now, "yyyy-mm"))
+    Dim totCob As Double: totCob = mdl_Inicio.SafeD(pagasT) + mdl_Inicio.SafeD(pendT)
+    If totCob > 0 Then pct = Round(mdl_Inicio.SafeD(pagasT) / totCob * 100, 1)
     scoreCobranca = NormalizeScore(pct, 0, 100) * 0.3
 
-    ' 2. Adimplência acumulada: pagas / (pagas + vencidas + pendentes)
+    ' 2. Adimplência acumulada: pagas / (pagas + vencidas + pendentes) — dados combinados
     Dim pagas As Variant, vencidas As Variant, pendentes As Variant
-    pagas = mdl_Inicio.GetScalar(wsDados, "INADIMPLENCIA", "pagas", "", "")
-    vencidas = mdl_Inicio.GetScalar(wsDados, "INADIMPLENCIA", "vencidas", "", "")
-    pendentes = mdl_Inicio.GetScalar(wsDados, "INADIMPLENCIA", "pendentes", "", "")
+    pagas    = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL", "pagas",    "", "")
+    vencidas = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL", "vencidas", "", "")
+    pendentes = mdl_Inicio.GetScalar(wsDados, "INADIMPL_TOTAL","pendentes","", "")
     Dim total As Double
     total = SafeD(pagas) + SafeD(vencidas) + SafeD(pendentes)
     Dim adimplRate As Double

@@ -100,7 +100,7 @@ const STATUS_COLOR: Record<string, string> = {
   running: 'text-blue-600 bg-blue-50 border-blue-200',
   pending: 'text-gray-500 bg-gray-50 border-gray-200',
 }
-const fmtDur = (s: number | null) => s == null ? '—' : s >= 60 ? `${(s/60).toFixed(1)}min` : `${s.toFixed(1)}s`
+const fmtDur = (s: number | string | null | undefined) => { if (s == null) return '—'; const n = Number(s); return isNaN(n) ? '—' : n >= 60 ? `${(n/60).toFixed(1)}min` : `${n.toFixed(1)}s` }
 const fmtDate = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
 
 const STEP_LABEL: Record<string, string> = {
@@ -1079,7 +1079,7 @@ export default function TIPage() {
             <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">APDEX Score (24h)</span>
             <div className="flex items-end gap-2">
               <span className={`text-4xl font-black tabular-nums ${analytics.apdex.score >= 0.94 ? 'text-green-600' : analytics.apdex.score >= 0.85 ? 'text-blue-600' : analytics.apdex.score >= 0.7 ? 'text-amber-500' : 'text-red-600'}`}>
-                {analytics.apdex.score.toFixed(2)}
+                {Number(analytics.apdex.score).toFixed(2)}
               </span>
               <span className={`mb-1 text-xs font-semibold px-2 py-0.5 rounded-full ${analytics.apdex.score >= 0.94 ? 'bg-green-100 text-green-700' : analytics.apdex.score >= 0.85 ? 'bg-blue-100 text-blue-700' : analytics.apdex.score >= 0.7 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
                 {analytics.apdex.rating}

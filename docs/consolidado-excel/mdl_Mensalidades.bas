@@ -8,13 +8,13 @@ Attribute VB_Name = "mdl_Mensalidades"
 '=============================================================================
 Option Explicit
 
-Private Const CLR_NAVY     As Long = 888337
-Private Const CLR_CERULEAN As Long = 11573706
-Private Const CLR_AMBER    As Long = 1023485
+Private Const CLR_NAVY     As Long = 2298644   ' #141323 RGB(20,19,35)
+Private Const CLR_CERULEAN As Long = 11702536  ' RGB(8,145,178)
+Private Const CLR_AMBER    As Long = 761589    ' RGB(245,158,11)
 Private Const CLR_WHITE    As Long = 16777215
-Private Const CLR_LIGHT    As Long = 15921906
-Private Const CLR_GREEN    As Long = 338720
-Private Const CLR_RED      As Long = 3942400
+Private Const CLR_LIGHT    As Long = 16184563  ' RGB(243,244,246)
+Private Const CLR_GREEN    As Long = 4891414   ' RGB(22,163,74)
+Private Const CLR_RED      As Long = 2498780   ' RGB(220,38,38)
 
 Public Sub PopulateMensalidades()
     Dim ws     As Worksheet
@@ -29,7 +29,7 @@ Public Sub PopulateMensalidades()
     ws.Range("B4:N100").ClearContents
 
     With ws.Range("B4")
-        .Value = Chr(8220) & "Quantos moradores pagam em dia? Em quais ruas está a maior inadimplência?" & Chr(8221)
+        .Value = ChrW(8220) & "Quantos moradores pagam em dia? Em quais ruas está a maior inadimplência?" & ChrW(8221)
         .Font.Italic = True
         .Font.Color = CLR_CERULEAN
         .Font.Size = 10

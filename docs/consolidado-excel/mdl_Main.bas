@@ -18,6 +18,7 @@ Option Explicit
 
 Public Sub PopulateAll()
     Dim t0 As Single: t0 = Timer
+    Dim step_ As String
 
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
@@ -25,46 +26,29 @@ Public Sub PopulateAll()
 
     On Error GoTo ErrHandler
 
-    ' Verifica se _DADOS está disponível
+    step_ = "_DADOS check"
     Dim wsDados As Worksheet
     On Error Resume Next
     Set wsDados = ThisWorkbook.Sheets("_DADOS")
     On Error GoTo ErrHandler
 
     If wsDados Is Nothing Then
-        MsgBox "Aba _DADOS não encontrada." & vbCrLf & _
-               "Execute primeiro RefreshAllData (mdl_DADOS) para carregar os dados.", _
-               vbExclamation, "APRXM — Dados necessários"
+        MsgBox "Aba _DADOS nao encontrada.", vbExclamation, "APRXM"
         GoTo Cleanup
     End If
 
-    ' Popula cada aba na ordem
-    Application.StatusBar = "APRXM: populando INÍCIO..."
-    mdl_Inicio.PopulateInicio
+    step_ = "PopulateInicio":      mdl_Inicio.PopulateInicio
+    step_ = "PopulatePresidencia": mdl_Presidencia.PopulatePresidencia
+    step_ = "PopulateFinanceiro":  mdl_Financeiro.PopulateFinanceiro
+    step_ = "PopulateMoradores":   mdl_Moradores.PopulateMoradores
+    step_ = "PopulateMensalidades":mdl_Mensalidades.PopulateMensalidades
+    step_ = "PopulatePacotes":     mdl_Pacotes.PopulatePacotes
+    step_ = "PopulateOS":          mdl_OS.PopulateOS
+    step_ = "PopulateSenso":       mdl_Senso.PopulateSenso
+    step_ = "Activate INICIO":     ThisWorkbook.Sheets("INICIO").Activate
 
-    Application.StatusBar = "APRXM: populando PRESIDÊNCIA..."
-    mdl_Presidencia.PopulatePresidencia
-
-    Application.StatusBar = "APRXM: populando FINANCEIRO..."
-    mdl_Financeiro.PopulateFinanceiro
-
-    Application.StatusBar = "APRXM: populando MORADORES..."
-    mdl_Moradores.PopulateMoradores
-
-    Application.StatusBar = "APRXM: populando MENSALIDADES..."
-    mdl_Mensalidades.PopulateMensalidades
-
-    Application.StatusBar = "APRXM: populando PACOTES..."
-    mdl_Pacotes.PopulatePacotes
-
-    Application.StatusBar = "APRXM: populando OS..."
-    mdl_OS.PopulateOS
-
-    Application.StatusBar = "APRXM: populando SENSO..."
-    mdl_Senso.PopulateSenso
-
-    ' Volta para aba INÍCIO
-    ThisWorkbook.Sheets("INÍCIO").Activate
+    ' Atualiza todas as Tabelas Dinamicas (ativas apos Step 2)
+    step_ = "RefreshAll": ThisWorkbook.RefreshAll
 
 Cleanup:
     Application.ScreenUpdating = True
@@ -81,8 +65,9 @@ ErrHandler:
     Application.Calculation = xlCalculationAutomatic
     Application.EnableEvents = True
     Application.StatusBar = False
-    MsgBox "Erro em PopulateAll: " & Err.Description & vbCrLf & _
-           "Módulo: " & Erl, vbCritical, "APRXM — Erro"
+    MsgBox "Erro em PopulateAll" & vbCrLf & _
+           "Step: " & step_ & vbCrLf & _
+           "Err " & Err.Number & ": " & Err.Description, vbCritical, "APRXM - Erro"
 End Sub
 
 
@@ -111,7 +96,7 @@ End Sub
 '=============================================================================
 Public Sub SetupWorkbook()
     Dim sheetNames As Variant
-    sheetNames = Array("INÍCIO", "PRESIDÊNCIA", "FINANCEIRO", "MORADORES", _
+    sheetNames = Array("INICIO", "PRESIDENCIA", "FINANCEIRO", "MORADORES", _
                        "MENSALIDADES", "PACOTES", "OS", "SENSO")
 
     Dim i As Integer
@@ -160,8 +145,8 @@ End Sub
 
 
 Private Sub FormatSheet(ws As Worksheet, title As String)
-    Const CLR_NAVY     As Long = 888337
-    Const CLR_CERULEAN As Long = 11573706
+    Const CLR_NAVY     As Long = 2298644   ' #141323 RGB(20,19,35)
+    Const CLR_CERULEAN As Long = 11702536  ' RGB(8,145,178)
     Const CLR_WHITE    As Long = 16777215
 
     With ws
@@ -199,19 +184,24 @@ Private Sub FormatSheet(ws As Worksheet, title As String)
             .VerticalAlignment = xlCenter
         End With
 
-        ' Named range para timestamp (atualizado pelo mdl_DADOS)
+        ' Named range para timestamp
         On Error Resume Next
         ThisWorkbook.Names("TIMESTAMP_" & ws.Name).Delete
-        On Error GoTo 0
         ThisWorkbook.Names.Add Name:="TIMESTAMP_" & ws.Name, RefersTo:=ws.Range("A2")
-
-        ' Linhas de cabeçalho fixas (congelar painéis)
-        .Range("B5").Select
-        ActiveWindow.FreezePanes = True
+        On Error GoTo 0
 
         ' Tab color
         .Tab.Color = CLR_NAVY
-        .DisplayGridlines = False
         .Zoom = 90
     End With
+
+    ' Congelar painéis e ocultar gridlines requerem aba ativa
+    On Error Resume Next
+    ws.Activate
+    ActiveWindow.FreezePanes = False
+    ws.Range("B5").Select
+    ActiveWindow.FreezePanes = True
+    ActiveWindow.DisplayGridlines = False
+    On Error GoTo 0
 End Sub
+
