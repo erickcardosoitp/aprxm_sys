@@ -362,8 +362,7 @@ End Sub
 
 
 '=============================================================================
-' MORADORES — esquerda linhas 13-16
-' Estado atual (snapshot) — sem historico mensal no gold layer
+' MORADORES — esquerda linhas 13-16 (historico mensal filtrado por mes)
 '=============================================================================
 Private Sub WriteMoradoresBlock(ws As Worksheet, wsDados As Worksheet)
     Call DrawBlockHeader(ws, 13, C_L_LBL, C_L_VAL, "MORADORES")
@@ -372,36 +371,16 @@ Private Sub WriteMoradoresBlock(ws As Worksheet, wsDados As Worksheet)
     Dim assocId As String: assocId = GetAssocId(wsDados, aF)
     Dim t As Variant, mc As Variant, dp As Variant, g As Variant
 
-    ' Tenta usar resident_monthly (historico por mes)
-    Dim hasMes As Boolean: hasMes = Not (wsDados.Range("DL_MORADORES_MES") Is Nothing)
-    On Error Resume Next: hasMes = Not (wsDados.Range("DL_MORADORES_MES") Is Nothing): On Error GoTo 0
-
-    If hasMes Then
-        ' Dados historicos filtrados por mes
-        If assocId = "" Then
-            t  = GetSum(wsDados, "MORADORES_MES", "total",      "month", m_FilterMes)
-            mc = GetSum(wsDados, "MORADORES_MES", "members",    "month", m_FilterMes)
-            dp = GetSum(wsDados, "MORADORES_MES", "dependents", "month", m_FilterMes)
-            g  = GetSum(wsDados, "MORADORES_MES", "guests",     "month", m_FilterMes)
-        Else
-            t  = GetScalar2(wsDados, "MORADORES_MES", "total",      "month", m_FilterMes, "association_id", assocId)
-            mc = GetScalar2(wsDados, "MORADORES_MES", "members",    "month", m_FilterMes, "association_id", assocId)
-            dp = GetScalar2(wsDados, "MORADORES_MES", "dependents", "month", m_FilterMes, "association_id", assocId)
-            g  = GetScalar2(wsDados, "MORADORES_MES", "guests",     "month", m_FilterMes, "association_id", assocId)
-        End If
+    If assocId = "" Then
+        t  = GetSum(wsDados, "MORADORES_MES", "total",      "month", m_FilterMes)
+        mc = GetSum(wsDados, "MORADORES_MES", "members",    "month", m_FilterMes)
+        dp = GetSum(wsDados, "MORADORES_MES", "dependents", "month", m_FilterMes)
+        g  = GetSum(wsDados, "MORADORES_MES", "guests",     "month", m_FilterMes)
     Else
-        ' Fallback snapshot
-        If assocId = "" Then
-            t  = GetScalar(wsDados, "MORADORES_TOTAL", "total",      "", "")
-            mc = GetScalar(wsDados, "MORADORES_TOTAL", "members",    "", "")
-            dp = GetScalar(wsDados, "MORADORES_TOTAL", "dependents", "", "")
-            g  = GetScalar(wsDados, "MORADORES_TOTAL", "guests",     "", "")
-        Else
-            t  = GetScalar(wsDados, "MORADORES_GERAL", "total",      "association_id", assocId)
-            mc = GetScalar(wsDados, "MORADORES_GERAL", "members",    "association_id", assocId)
-            dp = GetScalar(wsDados, "MORADORES_GERAL", "dependents", "association_id", assocId)
-            g  = GetScalar(wsDados, "MORADORES_GERAL", "guests",     "association_id", assocId)
-        End If
+        t  = GetScalar2(wsDados, "MORADORES_MES", "total",      "month", m_FilterMes, "association_id", assocId)
+        mc = GetScalar2(wsDados, "MORADORES_MES", "members",    "month", m_FilterMes, "association_id", assocId)
+        dp = GetScalar2(wsDados, "MORADORES_MES", "dependents", "month", m_FilterMes, "association_id", assocId)
+        g  = GetScalar2(wsDados, "MORADORES_MES", "guests",     "month", m_FilterMes, "association_id", assocId)
     End If
 
     Call DrawKpiRow(ws, 14, C_L_LBL, C_L_VAL, "Total de Moradores",    t,  "n", CLR_WHITE)
