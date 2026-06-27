@@ -32,6 +32,7 @@ Private Const C_R_VAL As Long = 19   ' S
 
 Private m_FilterMes   As String
 Private m_FilterAssoc As String
+Private m_Initialized As Boolean
 
 
 '=============================================================================
@@ -62,6 +63,7 @@ Public Sub PopulateInicio()
     Call WriteOperacoesBlock(ws, wsDados)
     Call WriteAlertsBlock(ws, wsDados)
     Call WriteChartBlock(ws, wsDados)
+    m_Initialized = True
     Application.Calculation    = xlCalculationAutomatic
     Application.ScreenUpdating = True
     Exit Sub
@@ -69,6 +71,78 @@ ErrHandler:
     Application.Calculation    = xlCalculationAutomatic
     Application.ScreenUpdating = True
     MsgBox "Erro em PopulateInicio: " & Err.Description, vbCritical
+End Sub
+
+
+'=============================================================================
+' RefreshKpis — atualiza apenas valores e estilo dos filtros, sem limpar sheet
+'=============================================================================
+Private Sub RefreshKpis()
+    Dim ws      As Worksheet
+    Dim wsDados As Worksheet
+    On Error GoTo ErrKpi
+    Set ws      = ThisWorkbook.Sheets("INICIO")
+    Set wsDados = ThisWorkbook.Sheets("_DADOS")
+    Application.ScreenUpdating = False
+    Application.Calculation    = xlCalculationManual
+
+    ' Atualiza subtitulo (linha 2)
+    Call WriteHeader(ws, wsDados)
+
+    ' Atualiza estilo dos botoes de filtro sem deletar/recriar
+    Call UpdateSlicerStyles(ws)
+
+    ' Atualiza blocos de KPI (sobrescreve so as celulas de valor)
+    Call WriteFinanceiroBlock(ws, wsDados)
+    Call WriteMensalidadesBlock(ws, wsDados)
+    Call WriteMoradoresBlock(ws, wsDados)
+    Call WriteOperacoesBlock(ws, wsDados)
+    Call WriteAlertsBlock(ws, wsDados)
+
+    Application.Calculation    = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    Exit Sub
+ErrKpi:
+    Application.Calculation    = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+End Sub
+
+
+'=============================================================================
+' UpdateSlicerStyles — reestiliza shapes existentes sem recriar
+'=============================================================================
+Private Sub UpdateSlicerStyles(ws As Worksheet)
+    Dim shp As Shape
+    For Each shp In ws.Shapes
+        Dim n As String: n = shp.Name
+        If Left(n, 3) = "FP_" Then
+            Dim mes As String: mes = Mid(n, 4)
+            Dim isSel As Boolean: isSel = (mes = m_FilterMes)
+            shp.Fill.ForeColor.RGB = IIf(isSel, RGB(28, 43, 62), RGB(22, 32, 48))
+            shp.Line.ForeColor.RGB = IIf(isSel, RGB(58, 88, 128), RGB(36, 51, 72))
+            shp.Line.Weight        = IIf(isSel, 1.5, 0.5)
+            With shp.TextFrame.Characters
+                .Font.Bold  = isSel
+                .Font.Color = IIf(isSel, RGB(255, 255, 255), RGB(107, 130, 160))
+            End With
+        ElseIf Left(n, 3) = "FA_" Then
+            Dim key As String: key = Mid(n, 4)
+            Dim lbl As String
+            Select Case key
+                Case "Congonha": lbl = "Congonha"
+                Case "VazLobo":  lbl = "Vaz Lobo"
+                Case Else:       lbl = key
+            End Select
+            Dim isA As Boolean: isA = (lbl = m_FilterAssoc)
+            shp.Fill.ForeColor.RGB = IIf(isA, RGB(28, 43, 62), RGB(22, 32, 48))
+            shp.Line.ForeColor.RGB = IIf(isA, RGB(58, 88, 128), RGB(36, 51, 72))
+            shp.Line.Weight        = IIf(isA, 1.5, 0.5)
+            With shp.TextFrame.Characters
+                .Font.Bold  = isA
+                .Font.Color = IIf(isA, RGB(255, 255, 255), RGB(107, 130, 160))
+            End With
+        End If
+    Next shp
 End Sub
 
 
@@ -81,7 +155,7 @@ Public Sub ClickFilterPeriodo()
         Dim n As String: n = CStr(caller)
         If Left(n, 3) = "FP_" Then m_FilterMes = Mid(n, 4)
     End If
-    Call PopulateInicio
+    If m_Initialized Then Call RefreshKpis Else Call PopulateInicio
 End Sub
 
 Public Sub ClickFilterAssoc()
@@ -96,7 +170,7 @@ Public Sub ClickFilterAssoc()
             End Select
         End If
     End If
-    Call PopulateInicio
+    If m_Initialized Then Call RefreshKpis Else Call PopulateInicio
 End Sub
 
 
