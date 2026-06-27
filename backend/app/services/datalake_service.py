@@ -589,7 +589,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         })).reset_index()
         # Usa membros ativos como denominador correto
         if not res.empty:
-            active = res[res["status"] == "active"].groupby("association_id").size().reset_index(name="active_members")
+            active = res[(res["status"] == "active") & (res["type"] == "member")].groupby("association_id").size().reset_index(name="active_members")
             agg = agg.merge(active, on="association_id", how="left")
             agg["active_members"] = agg["active_members"].fillna(agg["paid"]).astype(int)
         else:
