@@ -815,31 +815,15 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             cs_assoc = cs[cs["association_id"] == aid] if not cs.empty else pd.DataFrame()
             tx_assoc_all = tx[tx["association_id"] == aid] if not tx.empty else pd.DataFrame()
 
+            # Saldo = receita - despesa acumulada (faturamento líquido das últimas 8 semanas)
+            # Sessões de caixa são isoladas e não refletem o saldo real da associação.
+            cutoff_saldo = pd.Timestamp.now() - pd.Timedelta(weeks=8)
             saldo_atual = 0.0
-            if not cs_assoc.empty:
-                open_sess = cs_assoc[cs_assoc["status"] == "open"]
-                if not open_sess.empty:
-                    # expected_balance é NULL para sessões abertas (só setado ao fechar).
-                    # Sempre recalcula via transações para capturar receitas/despesas correntes.
-                    sess_ids = set(open_sess["id"].astype(str).tolist())
-                    tx_sess  = tx_assoc_all[tx_assoc_all["cash_session_id"].astype(str).isin(sess_ids)] if not tx_assoc_all.empty else pd.DataFrame()
-                    opening  = float(open_sess["opening_balance"].fillna(0).sum())
-                    income   = float(tx_sess[tx_sess["type"] == "income"]["amount"].sum() or 0) if not tx_sess.empty else 0.0
-                    expense  = float(tx_sess[tx_sess["type"].isin(["expense","sangria"])]["amount"].sum() or 0) if not tx_sess.empty else 0.0
-                    saldo_atual = opening + income - expense
-                else:
-                    last_closed = cs_assoc[cs_assoc["status"].isin(["closed","conferido"])].sort_values("opened_at")
-                    if not last_closed.empty:
-                        row_lc = last_closed.iloc[-1]
-                        saldo_atual = float(row_lc.get("closing_balance") or row_lc.get("expected_balance") or 0)
-                        # Fallback via transações se closing_balance também nulo
-                        if saldo_atual == 0 and not tx_assoc_all.empty:
-                            sess_id = str(row_lc.get("id", ""))
-                            tx_sess = tx_assoc_all[tx_assoc_all["cash_session_id"].astype(str) == sess_id]
-                            opening = float(row_lc.get("opening_balance") or 0)
-                            income  = float(tx_sess[tx_sess["type"] == "income"]["amount"].sum() or 0)
-                            expense = float(tx_sess[tx_sess["type"].isin(["expense","sangria"])]["amount"].sum() or 0)
-                            saldo_atual = opening + income - expense
+            if not tx_assoc_all.empty:
+                tx_periodo = tx_assoc_all[_to_dt(tx_assoc_all["transaction_at"]) >= cutoff_saldo]
+                income_total  = float(tx_periodo[tx_periodo["type"] == "income"]["amount"].sum() or 0)
+                expense_total = float(tx_periodo[tx_periodo["type"] == "expense"]["amount"].sum() or 0)
+                saldo_atual = income_total - expense_total
 
             # Despesa media semanal (ultimas 8 semanas)
             # Exclui sangrias de repasse interno para caixinha (movimentacao interna,
