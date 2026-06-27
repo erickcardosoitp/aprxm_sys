@@ -548,10 +548,19 @@ type ScheduledTask = {
   last_run_at: string | null; last_run_status: string | null; last_run_result: string | null
 }
 
+const ASSOC_OPTIONS = [
+  { label: 'Minha associação', value: '' },
+  { label: 'Vaz Lobo', value: 'fc5e1eaf-ac28-4fda-9c10-2c9184cf7297' },
+  { label: 'Congonha', value: 'f9a29c3f-0b35-467d-82f4-4ac3b79a51b2' },
+]
+
 function TarefasAgendadasTab() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState<string | null>(null)
+  const [targetAssoc, setTargetAssoc] = useState('')
+  const { user } = useAuthStore()
+  const isSuperadmin = user?.role === 'superadmin'
 
   const load = async () => {
     setLoading(true)
@@ -573,7 +582,8 @@ function TarefasAgendadasTab() {
   const run = async (key: string) => {
     setRunning(key)
     try {
-      const res = await api.post<{ status: string; result: string }>(`/admin/scheduled-tasks/${key}/run`)
+      const params = isSuperadmin && targetAssoc ? `?association_id=${targetAssoc}` : ''
+      const res = await api.post<{ status: string; result: string }>(`/admin/scheduled-tasks/${key}/run${params}`)
       toast.success(res.data.result)
       load()
     } catch (e: any) {
@@ -585,6 +595,19 @@ function TarefasAgendadasTab() {
 
   return (
     <div className="flex flex-col gap-4">
+      {isSuperadmin && (
+        <div className="flex items-center gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
+          <span className="text-xs font-semibold text-purple-700 whitespace-nowrap">Executar para:</span>
+          <div className="flex gap-2 flex-wrap">
+            {ASSOC_OPTIONS.map(opt => (
+              <button key={opt.value} onClick={() => setTargetAssoc(opt.value)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-semibold border transition ${targetAssoc === opt.value ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-700 border-purple-300 hover:bg-purple-100'}`}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {tasks.map(task => (
         <div key={task.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <div className="flex items-start justify-between gap-4">
