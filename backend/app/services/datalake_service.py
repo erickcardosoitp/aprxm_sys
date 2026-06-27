@@ -780,6 +780,48 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             cs_open    = cs[(cs["association_id"]==aid)&(cs["status"]=="open")] if not cs.empty else pd.DataFrame()
             t_open     = tsk[(tsk["association_id"]==aid)&(~tsk["is_deleted"])&(tsk["status"]!="done")] if not tsk.empty else pd.DataFrame()
             tx_hoje    = tx[(tx["association_id"]==aid)&(tx["type"]=="income")&(tx["date"]==now.date())] if not tx.empty else pd.DataFrame()
+
+            # Tempo médio de permanência de encomendas (últimos 30 dias, entregues)
+            avg_dwell_dias = None
+            if not pkgs.empty:
+                cutoff_pkg = now - pd.Timedelta(days=30)
+                p_assoc = pkgs[(pkgs["association_id"] == aid)]
+                p_delivered = p_assoc[
+                    (p_assoc["status"] == "delivered") &
+                    (_to_dt(p_assoc["received_at"]) >= cutoff_pkg) &
+                    p_assoc["delivered_at"].notna()
+                ].copy()
+                if not p_delivered.empty:
+                    dwell = (_to_dt(p_delivered["delivered_at"]) - _to_dt(p_delivered["received_at"])).dt.total_seconds() / 86400
+                    dwell = dwell[dwell >= 0]
+                    if not dwell.empty:
+                        avg_dwell_dias = round(float(dwell.mean()), 1)
+
+            # Taxa de retenção: % de membros que pagaram em M-1 e voltaram a pagar em M
+            # reference_month é varchar '2026-06' — comparar como string
+            taxa_retencao_pct = None
+            if not mens.empty:
+                mens_assoc = mens[mens["association_id"] == aid].copy()
+                now_period   = pd.Timestamp.now()
+                mes_atual    = now_period.strftime("%Y-%m")
+                mes_anterior = (now_period - pd.DateOffset(months=1)).strftime("%Y-%m")
+                ref_col      = mens_assoc["reference_month"].astype(str).str[:7]
+                pagadores_ant = set(
+                    mens_assoc.loc[
+                        (ref_col == mes_anterior) & (mens_assoc["status"] == "paid"),
+                        "resident_id"
+                    ].astype(str)
+                )
+                if pagadores_ant:
+                    pagadores_atual = set(
+                        mens_assoc.loc[
+                            (ref_col == mes_atual) & (mens_assoc["status"] == "paid"),
+                            "resident_id"
+                        ].astype(str)
+                    )
+                    retidos = pagadores_ant & pagadores_atual
+                    taxa_retencao_pct = round(len(retidos) / len(pagadores_ant) * 100, 1)
+
             rows_kpi.append({
                 "association_id":   aid,
                 "association_name": name,
@@ -791,6 +833,8 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 "inadimplentes":    len(r_members[r_members.get("overdue_months",pd.Series(0,index=r_members.index))>0]) if not r_members.empty else 0,
                 "tarefas_abertas":  len(t_open),
                 "novos_semana":     len(r_members[_to_dt(r_members["created_at"])>=week0]) if not r_members.empty else 0,
+                "avg_dwell_dias":   avg_dwell_dias,
+                "taxa_retencao_pct":taxa_retencao_pct,
                 "snapshot_at":      now.isoformat(),
             })
         if rows_kpi:
@@ -936,7 +980,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 # ── Analytics Loader ──────────────────────────────────────────────────────────
 
 def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> int:
-    """Escreve todos os DataFrames Gold no Neon Analytics via SQLAlchemy sync."""
+    """Escreve todos os DataFrames Gold no Neon Analytics via SQLAlchemy sync.
+
+    Usa TRUNCATE+INSERT quando a tabela ja existe (evita DROP/CREATE que gera
+    DDL WAL excessivo no Neon). Na primeira execucao usa replace para criar.
+    """
     from sqlalchemy import create_engine
     engine = create_engine(settings.analytics_db_url, pool_pre_ping=True)
     total = 0
@@ -948,18 +996,27 @@ def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> int:
                 df_clean = df.copy()
                 for col in df_clean.columns:
                     dtype_str = str(df_clean[col].dtype)
-                    # Period dtype → timestamp (psycopg2 nao suporta Period)
                     if dtype_str.startswith("period["):
                         try:
                             df_clean[col] = df_clean[col].dt.to_timestamp()
                         except Exception:
                             df_clean[col] = df_clean[col].astype(str)
-                    # bool → int (evita tipo desconhecido em alguns drivers)
                     elif dtype_str == "bool":
                         df_clean[col] = df_clean[col].astype(int)
                 try:
-                    df_clean.to_sql(table_name, conn, if_exists="replace",
-                                    index=False, method="multi", chunksize=500)
+                    exists = conn.execute(text(
+                        "SELECT EXISTS (SELECT FROM pg_tables "
+                        "WHERE schemaname='public' AND tablename=:t)"
+                    ), {"t": table_name}).scalar()
+
+                    if exists:
+                        conn.execute(text(f'TRUNCATE TABLE "{table_name}"'))
+                        df_clean.to_sql(table_name, conn, if_exists="append",
+                                        index=False, method="multi", chunksize=500)
+                    else:
+                        df_clean.to_sql(table_name, conn, if_exists="replace",
+                                        index=False, method="multi", chunksize=500)
+
                     total += len(df_clean)
                     logger.info("Analytics %-35s %5d rows", table_name, len(df_clean))
                 except Exception as e:
@@ -1065,6 +1122,18 @@ async def run_full_etl(session: AsyncSession, force_full: bool = False,
         run_id = str(row[0]) if row else None
     except Exception as e:
         logger.warning("Falha ao criar etl_run: %s", e)
+
+    # Limpa logs antigos (mantém últimos 60 dias) para controlar crescimento do banco
+    try:
+        await session.execute(text(
+            "DELETE FROM etl_task_runs WHERE started_at < NOW() - INTERVAL '60 days'"
+        ))
+        await session.execute(text(
+            "DELETE FROM etl_runs WHERE started_at < NOW() - INTERVAL '60 days'"
+        ))
+        await session.commit()
+    except Exception as e:
+        logger.warning("Falha ao limpar logs antigos: %s", e)
 
     error_msg = None
     bronze_stats = silver_stats = gold_stats = {}
