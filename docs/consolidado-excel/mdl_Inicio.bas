@@ -1010,6 +1010,11 @@ Private Sub WriteChartBlock(ws As Worksheet, wsDados As Worksheet)
             .NumberFormat   = """R$ ""#,##0.0"
             .Position       = xlLabelPositionAbove
         End With
+        ' Forca formato em cada ponto individualmente
+        Dim ptFmt As Integer
+        For ptFmt = 1 To sT.Points.Count
+            sT.Points(ptFmt).DataLabel.NumberFormat = """R$ ""#,##0.0"
+        Next ptFmt
     End With
 End Sub
 
