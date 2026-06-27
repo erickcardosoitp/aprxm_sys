@@ -1009,21 +1009,18 @@ Private Sub WriteChartBlock(ws As Worksheet, wsDados As Worksheet)
         Dim sT As Series: Set sT = .SeriesCollection(1) ' Total
         sT.HasDataLabels = True
         With sT.DataLabels
-            .ShowValue           = True
-            .ShowSeriesName      = False
-            .NumberFormatLinked  = False
-            .NumberFormat        = "#,##0.0"
-            .Font.Color          = RGB(255, 255, 255)
-            .Font.Size           = 7
-            .Font.Bold           = False
-            .Position            = xlLabelPositionAbove
+            .ShowValue      = True
+            .ShowSeriesName = False
+            .Font.Color     = RGB(255, 255, 255)
+            .Font.Size      = 7
+            .Font.Bold      = False
+            .Position       = xlLabelPositionAbove
         End With
+        ' Seta texto diretamente (bypassa NumberFormat que nao aplica no pt-BR)
         Dim ptFmt As Integer
         For ptFmt = 1 To sT.Points.Count
-            With sT.Points(ptFmt).DataLabel
-                .NumberFormatLinked = False
-                .NumberFormat       = """R$ ""#,##0.0"
-            End With
+            sT.Points(ptFmt).DataLabel.Text = _
+                "R$ " & Format(totData(ptFmt - 1), "#,##0.0")
         Next ptFmt
     End With
 End Sub
