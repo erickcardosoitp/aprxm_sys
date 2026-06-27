@@ -1073,10 +1073,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> int:
     """Escreve todos os DataFrames Gold no Neon Analytics via SQLAlchemy sync.
 
-    Cada tabela roda em transação independente para que uma falha não aborte
-    as demais. Usa replace (DROP+CREATE) para lidar com mudanças de schema.
+    Cada tabela roda em transação independente. Usa TRUNCATE + INSERT para
+    evitar DROP/CREATE que gera WAL excessivo no Neon. Na primeira execução
+    (tabela inexistente), cai para replace automaticamente.
     """
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, text
     engine = create_engine(settings.analytics_db_url, pool_pre_ping=True)
     total = 0
     try:
@@ -1095,8 +1096,17 @@ def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> int:
                     df_clean[col] = df_clean[col].astype(int)
             try:
                 with engine.begin() as conn:
-                    df_clean.to_sql(table_name, conn, if_exists="replace",
-                                    index=False, method="multi", chunksize=500)
+                    exists = conn.execute(text(
+                        "SELECT 1 FROM information_schema.tables "
+                        "WHERE table_name = :t"
+                    ), {"t": table_name}).fetchone()
+                    if exists:
+                        conn.execute(text(f'TRUNCATE TABLE "{table_name}"'))
+                        df_clean.to_sql(table_name, conn, if_exists="append",
+                                        index=False, method="multi", chunksize=500)
+                    else:
+                        df_clean.to_sql(table_name, conn, if_exists="replace",
+                                        index=False, method="multi", chunksize=500)
                 total += len(df_clean)
                 logger.info("Analytics %-35s %5d rows", table_name, len(df_clean))
             except Exception as e:
