@@ -317,7 +317,7 @@ End Function
 Private Function SQL_PacotesStuck() As String
     SQL_PacotesStuck = _
         "SELECT " & _
-        "  association_id, " & _
+        "  association_id, association_name, " & _
         "  paradas_3d    AS total, " & _
         "  paradas_3d    AS stuck_3d, " & _
         "  paradas_7d, " & _

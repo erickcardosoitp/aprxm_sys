@@ -390,7 +390,13 @@ End Sub
 Private Sub WriteOperacoesBlock(ws As Worksheet, wsDados As Worksheet)
     Call DrawBlockHeader(ws, 12, 7, "PACOTES & OS", CLR_ACCENT)
 
-    Dim st As Variant: st = GetScalar(wsDados, "PACOTES_STUCK", "total",         "", "")
+    Dim stAF As String: stAF = GetFilterAssocFull()
+    Dim st As Variant
+    If stAF = "" Then
+        st = GetScalar(wsDados, "PACOTES_STUCK", "total", "", "")
+    Else
+        st = GetScalar(wsDados, "PACOTES_STUCK", "total", "association_name", stAF)
+    End If
     Dim os As Variant: os = GetScalar(wsDados, "KPI_OP",        "os_abertas",    "", "")
     Dim tf As Variant: tf = GetScalar(wsDados, "KPI_OP",        "tarefas_semana","", "")
 
@@ -408,7 +414,13 @@ Private Sub WriteAlertsBlock(ws As Worksheet, wsDados As Worksheet)
     Dim msgs(10) As String
     Dim nMsgs    As Integer: nMsgs = 0
 
-    Dim stuck As Variant: stuck = GetScalar(wsDados, "PACOTES_STUCK", "total", "", "")
+    Dim aF2 As String: aF2 = GetFilterAssocFull()
+    Dim stuck As Variant
+    If aF2 = "" Then
+        stuck = GetScalar(wsDados, "PACOTES_STUCK", "total", "", "")
+    Else
+        stuck = GetScalar(wsDados, "PACOTES_STUCK", "total", "association_name", aF2)
+    End If
     If Not IsEmpty(stuck) And CLng(stuck) > 5 Then
         msgs(nMsgs) = ChrW(9888) & "  " & stuck & " pacotes parados há mais de 3 dias"
         nMsgs = nMsgs + 1

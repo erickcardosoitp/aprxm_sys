@@ -619,7 +619,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         if not pending.empty:
             now = pd.Timestamp.now()
             pending["dias_parada"] = (now - pending["received_at"]).dt.days
-            up(pending.groupby("association_id").agg(
+            up(pending.groupby(["association_id","association_name"]).agg(
                 paradas_3d=("dias_parada", lambda x: (x>=3).sum()),
                 paradas_7d=("dias_parada", lambda x: (x>=7).sum()),
             ).reset_index(), "packages_stuck")
