@@ -23,7 +23,7 @@ Private Const CLR_MUTED    As Long = 8684928    ' RGB(128, 140, 132) muted gray
 ' ── Layout ────────────────────────────────────────────────────────────────────
 Private Const WS_PRES      As String = "PRESIDENCIA"
 Private Const TITLE_ROW    As Long = 1
-Private Const SUB_ROW      As Long = 2
+Private Const SUBTTL_ROW   As Long = 2
 Private Const FILTER_ROW   As Long = 3
 Private Const SPACER_ROW   As Long = 4
 Private Const CARDS_START  As Long = 5
@@ -105,12 +105,23 @@ Public Sub Pres_CG():  m_PresAssocId = ASSOC_CG: Call RefreshPresidencia: End Su
 ' SETUP — layout, background, header, filters
 '=============================================================================
 Private Sub ClearPresidencia(ws As Worksheet)
-    Dim co As ChartObject
-    For Each co In ws.ChartObjects: co.Delete: Next co
-    Dim sh As Shape
+    ' Deletar gráficos sem iterar com For Each (causa "subscript out of range")
+    Do While ws.ChartObjects.Count > 0
+        ws.ChartObjects(1).Delete
+    Loop
+
+    ' Coletar nomes das shapes FPA_ primeiro, depois deletar
+    Dim sh As Shape, i As Integer, n As Integer: n = 0
+    Dim toDelete(100) As String
     For Each sh In ws.Shapes
-        If Left(sh.Name, 4) = "FPA_" Then sh.Delete
+        If Left(sh.Name, 4) = "FPA_" Then
+            toDelete(n) = sh.Name: n = n + 1
+        End If
     Next sh
+    For i = 0 To n - 1
+        On Error Resume Next: ws.Shapes(toDelete(i)).Delete: On Error GoTo 0
+    Next i
+
     ws.Cells.ClearContents
     ws.Cells.ClearFormats
     ws.Cells.Interior.Color = CLR_BG
@@ -119,7 +130,7 @@ End Sub
 
 Private Sub SetupBackground(ws As Worksheet)
     ws.Tab.Color = CLR_BG
-    ws.DisplayGridlines = False
+    On Error Resume Next: ws.Application.ActiveWindow.DisplayGridlines = False: On Error GoTo 0
 
     ' Margin columns (narrow)
     ws.Columns(1).ColumnWidth = 1   ' col A left margin
@@ -134,7 +145,7 @@ Private Sub SetupBackground(ws As Worksheet)
 
     ' Row heights
     ws.Rows(TITLE_ROW).RowHeight  = 26
-    ws.Rows(SUB_ROW).RowHeight    = 14
+    ws.Rows(SUBTTL_ROW).RowHeight = 14
     ws.Rows(FILTER_ROW).RowHeight = 28
     ws.Rows(SPACER_ROW).RowHeight = 6
 
@@ -176,7 +187,7 @@ Private Sub SetupHeader(ws As Worksheet)
     End With
 
     ' Subtitle
-    With ws.Range(ws.Cells(SUB_ROW, 2), ws.Cells(SUB_ROW, 20))
+    With ws.Range(ws.Cells(SUBTTL_ROW, 2), ws.Cells(SUBTTL_ROW, 20))
         .Merge
         .Value = "Atualizado em " & Format(Now, "dd/mm/yyyy") & _
                  "  " & ChrW(183) & "  Instituto Tia Pretinha  " & _
@@ -223,12 +234,12 @@ Private Sub SetupFilterShapes(ws As Worksheet)
                   leftX + offsetX + i * (btnW + gap), btnTop, btnW, btnH)
         shp.Name = ids(i)
         shp.OnAction = macros(i)
-        shp.TextFrame2.TextRange.Characters.Text = labels(i)
-        shp.TextFrame2.TextRange.Characters.Font.Size = 7.5
-        shp.TextFrame2.TextRange.Characters.Font.Bold = msoTrue
-        shp.TextFrame2.TextRange.Characters.Font.Fill.ForeColor.RGB = CLR_WHITE
-        shp.TextFrame2.HorizontalAnchor = msoAnchorCenter
-        shp.TextFrame2.VerticalAnchor = msoAnchorMiddle
+        shp.TextFrame.Characters.Text = labels(i)
+        shp.TextFrame.Characters.Font.Size = 8
+        shp.TextFrame.Characters.Font.Bold = True
+        shp.TextFrame.Characters.Font.Color = CLR_WHITE
+        shp.TextFrame.HorizontalAlignment = xlHAlignCenter
+        shp.TextFrame.VerticalAlignment = xlVAlignCenter
         shp.Line.Weight = 0.75
 
         Dim isActive As Boolean
