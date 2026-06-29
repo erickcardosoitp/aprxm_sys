@@ -633,15 +633,17 @@ Private Function GetMonthlySeries(wsDados As Worksheet, rangeKey As String, _
             Dim dv As Double:  dv = IIf(IsNumeric(cv), CDbl(cv), 0)
 
             ' Group by month (accumulate same month — handles 2-assoc sum/avg)
-            If cnt > 0 And tmpM(cnt - 1) = mv Then
-                tmpV(cnt - 1) = tmpV(cnt - 1) + dv
-                tmpN(cnt - 1) = tmpN(cnt - 1) + 1
+            If cnt > 0 Then
+                If tmpM(cnt - 1) = mv Then
+                    tmpV(cnt - 1) = tmpV(cnt - 1) + dv
+                    tmpN(cnt - 1) = tmpN(cnt - 1) + 1
+                Else
+                    If cnt >= 500 Then Exit For
+                    tmpM(cnt) = mv: tmpV(cnt) = dv: tmpN(cnt) = 1: cnt = cnt + 1
+                End If
             Else
                 If cnt >= 500 Then Exit For
-                tmpM(cnt) = mv
-                tmpV(cnt) = dv
-                tmpN(cnt) = 1
-                cnt = cnt + 1
+                tmpM(cnt) = mv: tmpV(cnt) = dv: tmpN(cnt) = 1: cnt = cnt + 1
             End If
         End If
     Next i
