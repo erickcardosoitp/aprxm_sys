@@ -56,6 +56,9 @@ Public Sub PopulatePresidencia()
     Application.ScreenUpdating = False
     Application.Calculation    = xlCalculationManual
 
+    ' Default filter = VL na primeira carga
+    If Not m_PresInit And m_PresAssocId = "" Then m_PresAssocId = ASSOC_VL
+
     ' Full clear
     ClearPresidencia ws
 
@@ -77,7 +80,10 @@ Public Sub PopulatePresidencia()
 ErrHandler:
     Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
-    MsgBox "Erro PopulatePresidencia: " & Err.Description, vbCritical
+    Dim fErr As Integer: fErr = FreeFile
+    Open "C:\Users\gonca\AppData\Local\Temp\pres_error.txt" For Output As #fErr
+    Print #fErr, "ERR#" & Err.Number & ": " & Err.Description
+    Close #fErr
 End Sub
 
 
@@ -612,6 +618,10 @@ Private Function CalcDelta(curr As Double, prev As Double, _
     ' Positive pct means improvement for normal, worsening for inverted
     Dim isGood As Boolean: isGood = IIf(invertDelta, pct < 0, pct > 0)
 
+    If Abs(pct) > 500 Then
+        CalcDelta = ChrW(8594) & " n/d": outColor = CLR_MUTED
+        Exit Function
+    End If
     If Abs(pct) < 0.05 Then
         CalcDelta = ChrW(8594) & " 0.0%": outColor = CLR_MUTED
     ElseIf isGood Then
