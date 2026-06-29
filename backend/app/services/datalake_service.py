@@ -243,7 +243,7 @@ def _week(s: pd.Series) -> pd.Series:
 
 
 def _month(s: pd.Series) -> pd.Series:
-    return _to_dt(s).dt.to_period("M").apply(lambda x: x.start_time)
+    return _to_dt(s).dt.to_period("M").dt.to_timestamp()
 
 
 # ── BRONZE ────────────────────────────────────────────────────────────────────
