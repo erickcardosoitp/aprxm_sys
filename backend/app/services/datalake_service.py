@@ -589,6 +589,8 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     if not mens.empty:
         df = mens.copy()
         df["month"] = _month(mens["reference_month"].fillna(mens["due_date"]).fillna(mens["created_at"]))
+        now_month = pd.Timestamp.now().to_period("M").to_timestamp()
+        df = df[df["month"] <= now_month]
         agg = df.groupby(["month","association_id"]).apply(lambda g: pd.Series({
             "paid":        (g["status"]=="paid").sum(),
             "total":       len(g),
@@ -1049,7 +1051,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "recebidos":   len(g),
             "entregues":   (g["status"] == "delivered").sum(),
             "devolvidos":  (g["status"] == "returned").sum(),
-            "pendentes":   (g["status"] == "pending").sum(),
+            "pendentes":   (g["status"].isin(["received", "notified"])).sum(),
             "avg_dwell_dias": (
                 (_to_dt(g["delivered_at"]) - _to_dt(g["received_at"])).dt.total_seconds() / 86400
             ).dropna().mean().__round__(1) if (g["status"] == "delivered").any() else None,
@@ -1079,7 +1081,8 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         for aid in paid["association_id"].unique():
             aname = assoc_map.get(aid, "")
             sub = paid[paid["association_id"] == aid]
-            months_sorted = sorted(sub["month"].unique())
+            current_month = pd.Timestamp.now().strftime("%Y-%m")
+            months_sorted = [m for m in sorted(sub["month"].unique()) if m <= current_month]
             for i, m in enumerate(months_sorted[:-1]):
                 m_next = months_sorted[i + 1]
                 # só considera meses consecutivos
