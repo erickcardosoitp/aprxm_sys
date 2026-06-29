@@ -1,16 +1,16 @@
 Attribute VB_Name = "mdl_Presidencia"
 '=============================================================================
-' Aba: PRESIDENCIA — 9 KPI Cards com Sparklines
-' Layout: 3 colunas × 3 linhas, colunas A-T, zoom 150%
+' Aba: PRESIDENCIA � 9 KPI Cards com Sparklines
+' Layout: 3 colunas � 3 linhas, colunas A-T, zoom 150%
 '
-' Cards (esquerda→direita, cima→baixo):
-'   1. Receita Líquida     2. Taxa de Cobrança    3. Inadimplência
-'   4. Crescimento          5. Retenção Pagantes   6. Encomendas
+' Cards (esquerda?direita, cima?baixo):
+'   1. Receita L�quida     2. Taxa de Cobran�a    3. Inadimpl�ncia
+'   4. Crescimento          5. Reten��o Pagantes   6. Encomendas
 '   7. Tempo de Entrega     8. Tarefas no Prazo    9. Score Operadores
 '=============================================================================
 Option Explicit
 
-' ── Colors (consistent with mdl_Inicio) ─────────────────────────────────────
+' -- Colors (consistent with mdl_Inicio) -------------------------------------
 Private Const CLR_BG       As Long = 2298644    ' RGB(20, 19, 35) navy dark
 Private Const CLR_CARD     As Long = 3286830    ' RGB(46, 51, 50) card bg
 Private Const CLR_ACCENT   As Long = 11702536   ' RGB(8, 145, 178) cerulean
@@ -20,7 +20,7 @@ Private Const CLR_RED      As Long = 2498780    ' RGB(220, 38, 38)
 Private Const CLR_AMBER    As Long = 761589     ' RGB(245, 158, 11)
 Private Const CLR_MUTED    As Long = 8684928    ' RGB(128, 140, 132) muted gray
 
-' ── Layout ────────────────────────────────────────────────────────────────────
+' -- Layout --------------------------------------------------------------------
 Private Const WS_PRES      As String = "PRESIDENCIA"
 Private Const TITLE_ROW    As Long = 1
 Private Const SUBTTL_ROW   As Long = 2
@@ -30,7 +30,7 @@ Private Const CARDS_START  As Long = 5
 Private Const CARD_H       As Long = 13   ' rows per card
 Private Const CARD_GAP     As Long = 1    ' gap rows between card tiers
 Private Const CARD_W       As Integer = 6
-Private Const COL_C1       As Integer = 2   ' col B — card left positions
+Private Const COL_C1       As Integer = 2   ' col B � card left positions
 Private Const COL_C2       As Integer = 9   ' col I
 Private Const COL_C3       As Integer = 16  ' col P
 
@@ -102,10 +102,10 @@ Public Sub Pres_CG():  m_PresAssocId = ASSOC_CG: Call RefreshPresidencia: End Su
 
 
 '=============================================================================
-' SETUP — layout, background, header, filters
+' SETUP � layout, background, header, filters
 '=============================================================================
 Private Sub ClearPresidencia(ws As Worksheet)
-    ' Deletar gráficos sem iterar com For Each (causa "subscript out of range")
+    ' Deletar gr�ficos sem iterar com For Each (causa "subscript out of range")
     Do While ws.ChartObjects.Count > 0
         ws.ChartObjects(1).Delete
     Loop
@@ -137,7 +137,7 @@ Private Sub SetupBackground(ws As Worksheet)
     ws.Columns(8).ColumnWidth = 1   ' col H gap between card 1-2
     ws.Columns(15).ColumnWidth = 1  ' col O gap between card 2-3
 
-    ' Card columns: B-G (2-7), I-N (9-14), P-U (16-21) — using P-T (16-20)
+    ' Card columns: B-G (2-7), I-N (9-14), P-U (16-21) � using P-T (16-20)
     Dim c As Integer
     For c = 2 To 7:  ws.Columns(c).ColumnWidth = 10: Next c   ' card 1
     For c = 9 To 14: ws.Columns(c).ColumnWidth = 10: Next c   ' card 2
@@ -177,7 +177,7 @@ Private Sub SetupHeader(ws As Worksheet)
     ' Title
     With ws.Range(ws.Cells(TITLE_ROW, 2), ws.Cells(TITLE_ROW, 20))
         .Merge
-        .Value = "PRESIDÊNCIA  " & ChrW(8212) & "  INDICADORES EXECUTIVOS"
+        .Value = "PRESID�NCIA  " & ChrW(8212) & "  INDICADORES EXECUTIVOS"
         .Font.Name = "Calibri"
         .Font.Size = 13
         .Font.Bold = True
@@ -191,7 +191,7 @@ Private Sub SetupHeader(ws As Worksheet)
         .Merge
         .Value = "Atualizado em " & Format(Now, "dd/mm/yyyy") & _
                  "  " & ChrW(183) & "  Instituto Tia Pretinha  " & _
-                 ChrW(183) & "  Últimos 6 meses"
+                 ChrW(183) & "  �ltimos 6 meses"
         .Font.Name = "Calibri"
         .Font.Size = 8
         .Font.Color = CLR_MUTED
@@ -208,7 +208,7 @@ Private Sub SetupFilterShapes(ws As Worksheet)
     Dim gap    As Single: gap    = 6
     Dim leftX  As Single: leftX  = ws.Columns(COL_C1).Left
 
-    ' Label "ASSOCIAÇÃO"
+    ' Label "ASSOCIA��O"
     With ws.Cells(FILTER_ROW, 2)
         .Value = "FILTRO:"
         .Font.Name = "Calibri"
@@ -300,33 +300,33 @@ End Sub
 
 Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
                      cardIdx As Integer, topRow As Long, leftCol As Integer)
-    ' ── Card metadata ──────────────────────────────────────────────────────────
+    ' -- Card metadata ----------------------------------------------------------
     Dim cardTitle As String, rangeKey As String, colName As String
     Dim unitStr As String, fmtCode As String, invertDelta As Boolean
     Dim useAvg As Boolean
 
     Select Case cardIdx
         Case 0
-            cardTitle = "RECEITA LÍQUIDA":    rangeKey = "MARGEM_MES":    colName = "net"
+            cardTitle = "RECEITA L�QUIDA":    rangeKey = "MARGEM_MES":    colName = "net"
             unitStr = "R$":                    fmtCode = "currency":       invertDelta = False: useAvg = False
         Case 1
-            cardTitle = "TAXA DE COBRANÇA":   rangeKey = "TAXA_COBRANCA": colName = "pct_paid"
+            cardTitle = "TAXA DE COBRAN�A":   rangeKey = "TAXA_COBRANCA": colName = "pct_paid"
             unitStr = "% pagas":               fmtCode = "pct":            invertDelta = False: useAvg = True
         Case 2
-            cardTitle = "INADIMPLÊNCIA":       rangeKey = "TAXA_COBRANCA": colName = "pct_pendente"
+            cardTitle = "INADIMPL�NCIA":       rangeKey = "TAXA_COBRANCA": colName = "pct_pendente"
             unitStr = "% pendentes":           fmtCode = "pct":            invertDelta = True:  useAvg = True
         Case 3
             cardTitle = "CRESCIMENTO":         rangeKey = "MORADORES_MES": colName = "members"
             unitStr = "associados":            fmtCode = "integer":        invertDelta = False: useAvg = False
         Case 4
-            cardTitle = "RETENÇÃO PAGANTES":   rangeKey = "RETENCAO_MES":  colName = "taxa_retencao"
+            cardTitle = "RETEN��O PAGANTES":   rangeKey = "RETENCAO_MES":  colName = "taxa_retencao"
             unitStr = "% retidos":             fmtCode = "pct":            invertDelta = False: useAvg = True
         Case 5
             cardTitle = "ENCOMENDAS":          rangeKey = "PACOTES_MES":   colName = "recebidos"
             unitStr = "recebidas":             fmtCode = "integer":        invertDelta = False: useAvg = False
         Case 6
             cardTitle = "TEMPO DE ENTREGA":    rangeKey = "PACOTES_MES":   colName = "avg_dwell_dias"
-            unitStr = "dias médios":           fmtCode = "decimal1":       invertDelta = True:  useAvg = True
+            unitStr = "dias m�dios":           fmtCode = "decimal1":       invertDelta = True:  useAvg = True
         Case 7
             cardTitle = "TAREFAS NO PRAZO":    rangeKey = "TASKS_MES":     colName = "pct_on_time"
             unitStr = "% no prazo":            fmtCode = "pct":            invertDelta = False: useAvg = True
@@ -335,7 +335,7 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
             unitStr = "pts / 100":             fmtCode = "decimal1":       invertDelta = False: useAvg = True
     End Select
 
-    ' ── Get series data (ASC, up to 13 months) ───────────────────────────────
+    ' -- Get series data (ASC, up to 13 months) -------------------------------
     Dim series As Variant
     series = GetMonthlySeries(wsDados, rangeKey, colName, m_PresAssocId, 13, useAvg)
 
@@ -354,11 +354,11 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
     If nPts > 3  Then prev3Val  = series(nPts - 4)
     If nPts > 12 Then prev12Val = series(0)
 
-    ' ── Card background ────────────────────────────────────────────────────────
+    ' -- Card background --------------------------------------------------------
     ws.Range(ws.Cells(topRow, leftCol), ws.Cells(topRow + CARD_H - 2, leftCol + CARD_W - 1)) _
         .Interior.Color = CLR_CARD
 
-    ' ── Title label ───────────────────────────────────────────────────────────
+    ' -- Title label -----------------------------------------------------------
     With ws.Cells(topRow, leftCol)
         .Value = cardTitle
         .Font.Name = "Calibri"
@@ -370,7 +370,7 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
         .Interior.Color = CLR_CARD
     End With
 
-    ' ── Big number ────────────────────────────────────────────────────────────
+    ' -- Big number ------------------------------------------------------------
     With ws.Range(ws.Cells(topRow + 2, leftCol), ws.Cells(topRow + 2, leftCol + CARD_W - 1))
         .Merge
         .Value = FormatKpi(currVal, fmtCode)
@@ -383,7 +383,7 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
         .Interior.Color = CLR_CARD
     End With
 
-    ' ── Unit / subtitle ───────────────────────────────────────────────────────
+    ' -- Unit / subtitle -------------------------------------------------------
     With ws.Range(ws.Cells(topRow + 3, leftCol), ws.Cells(topRow + 3, leftCol + CARD_W - 1))
         .Merge
         .Value = unitStr
@@ -394,7 +394,7 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
         .Interior.Color = CLR_CARD
     End With
 
-    ' ── Sparkline ─────────────────────────────────────────────────────────────
+    ' -- Sparkline -------------------------------------------------------------
     If nPts >= 2 Then
         ' Extract last 6 points for sparkline
         Dim spkStart As Integer: spkStart = IIf(nPts > 6, nPts - 6, 0)
@@ -408,7 +408,7 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
         DrawSparkline ws, spkData, topRow + 5, leftCol, 4, CARD_W
     End If
 
-    ' ── Delta badges ──────────────────────────────────────────────────────────
+    ' -- Delta badges ----------------------------------------------------------
     Dim deltaRow As Long: deltaRow = topRow + 10
     Dim momStr As String, momClr As Long
     Dim qoqStr As String, qoqClr As Long
@@ -517,7 +517,7 @@ End Sub
 Private Function CalcDelta(curr As Double, prev As Double, _
                             invertDelta As Boolean, ByRef outColor As Long) As String
     If prev = 0 Then
-        CalcDelta = ChrW(8594) & " n/d"    ' →
+        CalcDelta = ChrW(8594) & " n/d"    ' ?
         outColor  = CLR_MUTED
         Exit Function
     End If
@@ -529,10 +529,10 @@ Private Function CalcDelta(curr As Double, prev As Double, _
     If Abs(pct) < 0.05 Then
         CalcDelta = ChrW(8594) & " 0.0%": outColor = CLR_MUTED
     ElseIf isGood Then
-        CalcDelta = ChrW(8593) & " " & Format(Abs(pct), "0.0") & "%"  ' ↑
+        CalcDelta = ChrW(8593) & " " & Format(Abs(pct), "0.0") & "%"  ' ?
         outColor  = CLR_GREEN
     Else
-        CalcDelta = ChrW(8595) & " " & Format(Abs(pct), "0.0") & "%"  ' ↓
+        CalcDelta = ChrW(8595) & " " & Format(Abs(pct), "0.0") & "%"  ' ?
         outColor  = CLR_RED
     End If
 End Function
@@ -582,11 +582,12 @@ End Function
 
 
 '=============================================================================
-' DATA HELPER — extrai série mensal do _DADOS via named range DL_rangeKey
+' DATA HELPER � extrai s�rie mensal do _DADOS via named range DL_rangeKey
 ' Retorna array Double em ordem ASC (mais antigo primeiro)
-' assocId = "" → agrega ambas as associações
-' useAvg = True → divide pelo count (para percentuais)
+' assocId = "" ? agrega ambas as associa��es
+' useAvg = True ? divide pelo count (para percentuais)
 '=============================================================================
+
 Private Function GetMonthlySeries(wsDados As Worksheet, rangeKey As String, _
                                    colName As String, assocId As String, _
                                    maxMonths As Integer, useAvg As Boolean) As Variant
@@ -632,7 +633,7 @@ Private Function GetMonthlySeries(wsDados As Worksheet, rangeKey As String, _
             Dim cv As Variant: cv = wsDados.Cells(i, colIdx).Value
             Dim dv As Double:  dv = IIf(IsNumeric(cv), CDbl(cv), 0)
 
-            ' Group by month (accumulate same month — handles 2-assoc sum/avg)
+            ' Group by month (accumulate same month � handles 2-assoc sum/avg)
             If cnt > 0 Then
                 If tmpM(cnt - 1) = mv Then
                     tmpV(cnt - 1) = tmpV(cnt - 1) + dv
@@ -658,13 +659,13 @@ Private Function GetMonthlySeries(wsDados As Worksheet, rangeKey As String, _
         Next j
     End If
 
-    ' Take up to maxMonths; reverse DESC→ASC
+    ' Take up to maxMonths; reverse DESC?ASC
     Dim take As Integer: take = IIf(cnt < maxMonths, cnt, maxMonths)
     Dim result() As Double
     ReDim result(take - 1)
     Dim m As Integer
     For m = 0 To take - 1
-        result(m) = tmpV(take - 1 - m)   ' DESC index (take-1) → ASC index 0
+        result(m) = tmpV(take - 1 - m)   ' DESC index (take-1) ? ASC index 0
     Next m
     GetMonthlySeries = result
 End Function
