@@ -1109,8 +1109,8 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             up(pd.DataFrame(rows_ret), "retention_monthly")
 
     # 25. Tarefas por mês — % concluídas no prazo
-    if not tasks.empty:
-        tk = tasks.copy()
+    if not tsk.empty:
+        tk = tsk.copy()
         tk["association_id"] = tk["association_id"].astype(str)
         tk["month"] = _month(tk["due_date"]).dt.strftime("%Y-%m")
         tk["association_name"] = tk["association_id"].map(assoc_map)
@@ -1131,7 +1131,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         up(agg_tk, "tasks_monthly")
 
     # 26. Score de performance por operador por mês
-    if not tx.empty and not tasks.empty:
+    if not tx.empty and not tsk.empty:
         # Estornos por operador por mês
         rev = tx[tx["is_reversal"] == True].copy() if "is_reversal" in tx.columns else pd.DataFrame()
         rev_agg = pd.DataFrame()
@@ -1147,7 +1147,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             rev_agg = rev.groupby(["month", "association_id", "op_name"]).size().reset_index(name="estornos")
 
         # Tarefas em atraso por operador por mês
-        tk2 = tasks.copy()
+        tk2 = tsk.copy()
         tk2["association_id"] = tk2["association_id"].astype(str)
         tk2["month"] = _month(tk2["due_date"]).dt.strftime("%Y-%m")
         tk2["done_dt"] = _to_dt(tk2["updated_at"])
