@@ -245,7 +245,7 @@ def _normalize_street(s: pd.Series) -> pd.Series:
 
 
 def _week(s: pd.Series) -> pd.Series:
-    return _to_dt(s).dt.to_period("W").apply(lambda x: x.start_time)
+    return _to_dt(s).dt.to_period("W-SAT").apply(lambda x: x.start_time)
 
 
 def _month(s: pd.Series) -> pd.Series:
@@ -546,6 +546,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         if not df.empty:
             gold_frames[name] = df
 
+    import datetime as _dt
+    _today = pd.Timestamp(_dt.date.today())
+    # Domingo da semana atual (semanas: dom-sab). Exclui semana em andamento.
+    _closed_week_cutoff = _today - pd.to_timedelta((_today.weekday() + 1) % 7, unit="D")
+
     # 1. Receita diaria / semanal / mensal
     if not tx.empty:
         def agg_tx(grp):
@@ -571,6 +576,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         df = res[res["status"] == "active"].groupby(
             ["created_week","association_id","association_name","type"]
         ).agg(novos=("id","count")).reset_index().rename(columns={"created_week":"week"})
+        df = df[df["week"] < _closed_week_cutoff]
         up(df, "member_growth_weekly")
 
     # 3. Snapshot de moradores
@@ -1223,11 +1229,6 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         mg["net"] = mg["total_income"] - mg["total_expense"]
         mg["margem_pct"] = (mg["net"] / mg["total_income"].replace(0, pd.NA) * 100).round(1)
         up(mg, "margem_mensal")
-
-    # Semanas fechadas: exclui a semana atual (em andamento)
-    import datetime as _dt
-    _today = pd.Timestamp(_dt.date.today())
-    _closed_week_cutoff = _today - pd.to_timedelta(_today.weekday(), unit="D")  # Monday of current week
 
     # 28. Receita semanal — income/expense/net por semana
     if not tx.empty:

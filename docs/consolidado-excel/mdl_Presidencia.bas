@@ -120,7 +120,7 @@ Private Sub ClearPresidencia(ws As Worksheet)
     Dim sh As Shape, i As Integer, n As Integer: n = 0
     Dim toDelete(100) As String
     For Each sh In ws.Shapes
-        If Left(sh.Name, 4) = "FPA_" Then
+        If Left(sh.Name, 4) = "FPA_" Or Left(sh.Name, 5) = "HELP_" Then
             toDelete(n) = sh.Name: n = n + 1
         End If
     Next sh
@@ -197,8 +197,8 @@ Private Sub SetupHeader(ws As Worksheet)
         .Merge
         .Value = "Atualizado em " & Format(Now, "dd/mm/yyyy hh:mm") & _
                  "  " & ChrW(183) & "  WoW ref.: semana de " & _
-                 Format(Now - Weekday(Now, vbMonday) - 7, "dd/mm") & " a " & _
-                 Format(Now - Weekday(Now, vbMonday) - 1, "dd/mm/yyyy") & _
+                 Format(Now - (Weekday(Now, vbSunday) - 1) - 7, "dd/mm") & " a " & _
+                 Format(Now - (Weekday(Now, vbSunday) - 1) - 1, "dd/mm/yyyy") & _
                  "  " & ChrW(183) & "  " & ChrW(218) & "ltimos 6 meses"
         .Font.Name = "Calibri"
         .Font.Size = 8
@@ -402,6 +402,32 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
         .HorizontalAlignment = xlLeft
         .VerticalAlignment = xlCenter
         .Interior.Color = CLR_CARD
+    End With
+
+    ' -- Help button "?" top-right of title row --------------------------------
+    Dim helpName As String: helpName = "HELP_" & cardIdx
+    On Error Resume Next: ws.Shapes(helpName).Delete: On Error GoTo 0
+    Dim helpSize As Single: helpSize = ws.Rows(topRow).Height - 3
+    Dim helpL As Single
+    Dim helpT As Single
+    helpL = ws.Cells(topRow, leftCol + CARD_W - 1).Left + _
+            ws.Cells(topRow, leftCol + CARD_W - 1).Width - helpSize - 1
+    helpT = ws.Cells(topRow, 1).Top + 1
+    Dim helpBtn As Shape
+    Set helpBtn = ws.Shapes.AddShape(msoShapeOval, helpL, helpT, helpSize, helpSize)
+    With helpBtn
+        .Name = helpName
+        .OnAction = "mdl_Presidencia.ShowCardHelp"
+        .Fill.ForeColor.RGB = RGB(70, 90, 110)
+        .Line.Visible = msoFalse
+        With .TextFrame
+            .Characters.Text = "?"
+            .Characters.Font.Size = 6
+            .Characters.Font.Bold = True
+            .Characters.Font.Color = CLR_WHITE
+            .HorizontalAlignment = xlHAlignCenter
+            .VerticalAlignment = xlVAlignCenter
+        End With
     End With
 
     ' -- Big number ------------------------------------------------------------
@@ -884,3 +910,67 @@ Private Function GetWeeklySeries(wsDados As Worksheet, rangeKey As String, _
     GetWeeklySeries = wResult
 End Function
 
+
+'=============================================================================
+' TOOLTIP "?" - Definicao dos indicadores
+'=============================================================================
+Public Sub ShowCardHelp()
+    Dim nm As String: nm = CStr(Application.Caller)
+    Dim idx As Integer: idx = CInt(Mid(nm, 6))   ' "HELP_0" -> 0
+
+    Dim ttl As String, dsc As String
+    Select Case idx
+        Case 0
+            ttl = "RECEITA L" & ChrW(205) & "QUIDA"
+            dsc = "Soma das receitas recebidas no per" & ChrW(237) & "odo " & _
+                  "(caixa, transfer" & ChrW(234) & "ncias, PIX), exclu" & ChrW(237) & _
+                  "dos estornos e cancelamentos." & Chr(10) & Chr(10) & _
+                  "Base: tabela transactions (tipo income)."
+        Case 1
+            ttl = "TAXA DE COBRAN" & ChrW(199) & "A"
+            dsc = "% de mensalistas que pagaram no m" & ChrW(234) & "s corrente " & _
+                  "em rela" & ChrW(231) & ChrW(227) & "o ao total com mensalidade ativa." & Chr(10) & Chr(10) & _
+                  "F" & ChrW(243) & "rmula: pagos / total_ativo x 100."
+        Case 2
+            ttl = "INADIMPL" & ChrW(202) & "NCIA"
+            dsc = "% de mensalistas com mensalidade em aberto ap" & ChrW(243) & _
+                  "s a data de vencimento (sem pagamento registrado)." & Chr(10) & Chr(10) & _
+                  "F" & ChrW(243) & "rmula: 100% - Taxa de Cobran" & ChrW(231) & ChrW(227) & "a."
+        Case 3
+            ttl = "CRESCIMENTO"
+            dsc = "Novos associados que ingressaram no per" & ChrW(237) & "odo." & Chr(10) & _
+                  "O gr" & ChrW(225) & "fico mostra a varia" & ChrW(231) & ChrW(227) & "o mensal de entradas." & Chr(10) & Chr(10) & _
+                  "Base: data de cria" & ChrW(231) & ChrW(227) & "o do cadastro (status ativo)."
+        Case 4
+            ttl = "RETEN" & ChrW(199) & ChrW(195) & "O PAGANTES"
+            dsc = "% de associados pagantes no m" & ChrW(234) & "s anterior " & _
+                  "que continuaram pagando no m" & ChrW(234) & "s atual." & Chr(10) & Chr(10) & _
+                  "Mede fidelidade e recorr" & ChrW(234) & "ncia de pagamento."
+        Case 5
+            ttl = "ENCOMENDAS"
+            dsc = "Total de encomendas recebidas e registradas no per" & ChrW(237) & "odo " & _
+                  "para distribui" & ChrW(231) & ChrW(227) & "o aos moradores." & Chr(10) & Chr(10) & _
+                  "Base: tabela packages (evento received)."
+        Case 6
+            ttl = "TEMPO DE ENTREGA"
+            dsc = "M" & ChrW(233) & "dia de dias entre o recebimento da encomenda " & _
+                  "e a entrega ao morador destinat" & ChrW(225) & "rio." & Chr(10) & Chr(10) & _
+                  "Menor = melhor. Meta: " & ChrW(8804) & "3 dias."
+        Case 7
+            ttl = "TAREFAS NO PRAZO"
+            dsc = "% de ordens de servi" & ChrW(231) & "o finalizadas dentro do prazo " & _
+                  "estabelecido pela equipe." & Chr(10) & Chr(10) & _
+                  "Base: daily_tasks com data de conclus" & ChrW(227) & "o vs. due_date."
+        Case 8
+            ttl = "SCORE OPERADORES"
+            dsc = "M" & ChrW(233) & "dia ponderada de desempenho dos operadores " & _
+                  "com base em tarefas conclu" & ChrW(237) & "das, prazo e qualidade." & Chr(10) & Chr(10) & _
+                  "Escala: 0-100 pontos."
+        Case Else
+            ttl = "Indicador #" & idx
+            dsc = "Defini" & ChrW(231) & ChrW(227) & "o n" & ChrW(227) & "o cadastrada."
+    End Select
+
+    MsgBox ttl & Chr(10) & String(Len(ttl), ChrW(8212)) & Chr(10) & Chr(10) & dsc, _
+           vbInformation, "Indicador"
+End Sub
