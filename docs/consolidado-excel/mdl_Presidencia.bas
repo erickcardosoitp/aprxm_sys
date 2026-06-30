@@ -183,7 +183,7 @@ Private Sub SetupHeader(ws As Worksheet)
     ' Title
     With ws.Range(ws.Cells(TITLE_ROW, 2), ws.Cells(TITLE_ROW, 20))
         .Merge
-        .Value = "PRESID?NCIA  " & ChrW(8212) & "  INDICADORES EXECUTIVOS"
+        .Value = "  APRXM    Consolidado Executivo  " & ChrW(8212) & "  Presid" & ChrW(234) & "ncia"
         .Font.Name = "Calibri"
         .Font.Size = 13
         .Font.Bold = True
@@ -195,9 +195,11 @@ Private Sub SetupHeader(ws As Worksheet)
     ' Subtitle
     With ws.Range(ws.Cells(SUBTTL_ROW, 2), ws.Cells(SUBTTL_ROW, 20))
         .Merge
-        .Value = "Atualizado em " & Format(Now, "dd/mm/yyyy") & _
-                 "  " & ChrW(183) & "  Instituto Tia Pretinha  " & _
-                 ChrW(183) & "  ?ltimos 6 meses"
+        .Value = "Atualizado em " & Format(Now, "dd/mm/yyyy hh:mm") & _
+                 "  " & ChrW(183) & "  WoW ref.: semana de " & _
+                 Format(Now - Weekday(Now, vbMonday) - 7, "dd/mm") & " a " & _
+                 Format(Now - Weekday(Now, vbMonday) - 1, "dd/mm/yyyy") & _
+                 "  " & ChrW(183) & "  " & ChrW(218) & "ltimos 6 meses"
         .Font.Name = "Calibri"
         .Font.Size = 8
         .Font.Color = CLR_MUTED
@@ -314,15 +316,15 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
 
     Select Case cardIdx
         Case 0
-            cardTitle = "RECEITA L?QUIDA":    rangeKey = "MARGEM_MES":    colName = "net"
+            cardTitle = "RECEITA L" & ChrW(205) & "QUIDA":    rangeKey = "MARGEM_MES":    colName = "net"
             unitStr = "R$":                    fmtCode = "currency":       invertDelta = False: useAvg = False
             weeklyRangeKey = "RECEITA_SEMANAL":  weeklyColName = "net"
         Case 1
-            cardTitle = "TAXA DE COBRAN?A":   rangeKey = "TAXA_COBRANCA": colName = "pct_paid"
+            cardTitle = "TAXA DE COBRAN" & ChrW(199) & "A":   rangeKey = "TAXA_COBRANCA": colName = "pct_paid"
             unitStr = "% pagas":               fmtCode = "pct":            invertDelta = False: useAvg = True
             weeklyRangeKey = "TAXA_SEMANAL":     weeklyColName = "pct_paid"
         Case 2
-            cardTitle = "INADIMPL?NCIA":       rangeKey = "TAXA_COBRANCA": colName = "pct_pendente"
+            cardTitle = "INADIMPL" & ChrW(202) & "NCIA":       rangeKey = "TAXA_COBRANCA": colName = "pct_pendente"
             unitStr = "% pendentes":           fmtCode = "pct":            invertDelta = True:  useAvg = True
             weeklyRangeKey = "TAXA_SEMANAL":     weeklyColName = "pct_pendente"
         Case 3
@@ -330,7 +332,7 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
             unitStr = "novos/m" & ChrW(234) & "s":     fmtCode = "integer":        invertDelta = False: useAvg = False
             weeklyRangeKey = "CRESCIMENTO":      weeklyColName = "novos_associados"
         Case 4
-            cardTitle = "RETEN??O PAGANTES":   rangeKey = "RETENCAO_MES":  colName = "taxa_retencao"
+            cardTitle = "RETEN" & ChrW(199) & ChrW(195) & "O PAGANTES":   rangeKey = "RETENCAO_MES":  colName = "taxa_retencao"
             unitStr = "% retidos":             fmtCode = "pct":            invertDelta = False: useAvg = True
             weeklyRangeKey = "RETENCAO_SEMANAL": weeklyColName = "taxa_retencao"
         Case 5
@@ -367,14 +369,22 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
 
     If nPts > 0  Then currVal   = series(nPts - 1)
     If nPts > 1  Then prev1Val  = series(nPts - 2)
-    If nPts > 3  Then prev3Val  = series(nPts - 4)
     If nPts > 12 Then prev12Val = series(0)
+    ' ToT: requer >= 6 meses E pelo menos 2 dos 3 meses do trimestre anterior com dados reais
+    If nPts >= 6 Then
+        Dim qNonZero As Integer: qNonZero = 0
+        Dim qi As Integer
+        For qi = 3 To 5
+            If series(nPts - 1 - qi) > 1 Then qNonZero = qNonZero + 1
+        Next qi
+        If qNonZero >= 2 Then prev3Val = series(nPts - 4)
+    End If
 
     ' CRESCIMENTO: big number = novos no mes (delta mes anterior)
     If cardIdx = 3 And nPts > 1 Then
         currVal   = series(nPts - 1) - series(nPts - 2)
         If nPts > 2 Then prev1Val  = series(nPts - 2) - series(nPts - 3) Else prev1Val = 0
-        If nPts > 4 Then prev3Val  = series(nPts - 4) - series(nPts - 5) Else prev3Val = 0
+        If nPts >= 6 Then prev3Val = series(nPts - 4) - series(nPts - 5) Else prev3Val = 0
         prev12Val = 0
     End If
 
@@ -445,7 +455,8 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
     ' -- WoW via weekly named range for all cards ------------------------------
     Dim wowCurr As Double: wowCurr = 0
     Dim wowPrev As Double: wowPrev = 0
-    If Len(weeklyRangeKey) > 0 Then
+    ' WoW: desabilitado no filtro TODAS (soma pct de associacoes = sem sentido)
+    If Len(weeklyRangeKey) > 0 And m_PresAssocId <> "" Then
         Dim wSeries As Variant
         wSeries = GetWeeklySeries(wsDados, weeklyRangeKey, weeklyColName, m_PresAssocId, 3)
         Dim wnPts As Integer: wnPts = 0
@@ -491,9 +502,9 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
     End If
 
     WriteDeltaBadge ws, topRow + 9, leftCol,     "WoW", wowStr, wowClr, wowCtx
-    WriteDeltaBadge ws, topRow + 9, leftCol + 3, "MoM", momStr, momClr, momCtx
-    WriteDeltaBadge ws, deltaRow,   leftCol,     "ToT", qoqStr, qoqClr, qoqCtx
-    WriteDeltaBadge ws, deltaRow,   leftCol + 3, "YoY", yoyStr, yoyClr, yoyCtx
+    WriteDeltaBadge ws, topRow + 9, leftCol + 3, "MoM", momStr, momClr, ""
+    WriteDeltaBadge ws, deltaRow,   leftCol,     "ToT", qoqStr, qoqClr, ""
+    WriteDeltaBadge ws, deltaRow,   leftCol + 3, "YoY", yoyStr, yoyClr, ""
 End Sub
 
 
@@ -657,9 +668,9 @@ End Function
 Private Sub WriteDeltaBadge(ws As Worksheet, r As Long, c As Integer, _
                              label As String, deltaStr As String, clr As Long, _
                              ctxStr As String)
-    ' Cel c..c+2 merged: "WoW +15,3%  (Sem. Ant.: 18 | Sem. Atual: 9)"
     Dim fullText As String
     fullText = label & " " & deltaStr
+    If Len(ctxStr) > 0 And ctxStr <> "n/d" Then fullText = fullText & "  " & ctxStr
 
     With ws.Range(ws.Cells(r, c), ws.Cells(r, c + 2))
         On Error Resume Next: .UnMerge: On Error GoTo 0
@@ -685,6 +696,7 @@ Private Function FormatKpi(val As Double, fmtCode As String) As String
                 FormatKpi = "R$ " & Format(val, "#,##0.0")
             End If
         Case "pct"
+            If val > 100 And val < 101 Then val = 100
             FormatKpi = Format(val, "0.0") & "%"
         Case "integer"
             FormatKpi = Format(val, "#,##0")
@@ -704,7 +716,7 @@ Private Function FormatKpiShort(val As Double, fmtCode As String) As String
             Else
                 FormatKpiShort = "R$" & Format(val, "#,##0")
             End If
-        Case "pct":      FormatKpiShort = Format(val, "0.1") & "%"
+        Case "pct":      If val > 100 And val < 101 Then val = 100: FormatKpiShort = Format(val, "0.1") & "%"
         Case "integer":  FormatKpiShort = Format(val, "#,##0")
         Case "decimal1": FormatKpiShort = Format(val, "0.1")
         Case Else:       FormatKpiShort = CStr(val)

@@ -1224,6 +1224,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         mg["margem_pct"] = (mg["net"] / mg["total_income"].replace(0, pd.NA) * 100).round(1)
         up(mg, "margem_mensal")
 
+    # Semanas fechadas: exclui a semana atual (em andamento)
+    import datetime as _dt
+    _today = pd.Timestamp(_dt.date.today())
+    _closed_week_cutoff = _today - pd.to_timedelta(_today.weekday(), unit="D")  # Monday of current week
+
     # 28. Receita semanal — income/expense/net por semana
     if not tx.empty:
         tx_w = tx.copy()
@@ -1231,6 +1236,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         col_at = "transaction_at" if "transaction_at" in tx_w.columns else "created_at"
         if "week" not in tx_w.columns:
             tx_w["week"] = _week(tx_w[col_at])
+        tx_w = tx_w[tx_w["week"] < _closed_week_cutoff]
         tx_w["amount_f"] = pd.to_numeric(tx_w["amount"], errors="coerce").fillna(0)
         rw = tx_w.groupby(["week", "association_id", "association_name"]).apply(lambda g: pd.Series({
             "total_income":  g.loc[g["type"] == "income",  "amount_f"].sum(),
@@ -1249,14 +1255,19 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         paid_col = next((c for c in ["paid_at", "updated_at"] if c in paid_m.columns), "updated_at")
         if not paid_m.empty:
             paid_m["week"] = _week(paid_m[paid_col])
-            paid_m["month"] = _month(paid_m["due_date"].fillna(paid_m["created_at"])).dt.strftime("%Y-%m")
+            paid_m = paid_m[paid_m["week"] < _closed_week_cutoff]
+            # Use the week's calendar month as denominator — avoids cross-month payment artifacts
+            paid_m["week_month"] = pd.to_datetime(paid_m["week"]).dt.to_period("M").dt.strftime("%Y-%m")
             wk_tax = paid_m.groupby(["week", "association_id"]).agg(
                 n_paid=("id", "count"),
-                month=("month", "first"),
+                week_month=("week_month", "first"),
             ).reset_index()
-            wk_tax = wk_tax.merge(monthly_due, on=["month", "association_id"], how="left")
+            wk_tax = wk_tax.merge(
+                monthly_due, left_on=["week_month", "association_id"],
+                right_on=["month", "association_id"], how="left"
+            )
             wk_tax["n_total_mes"] = wk_tax["n_total_mes"].fillna(wk_tax["n_paid"])
-            wk_tax["pct_paid"] = (wk_tax["n_paid"] / wk_tax["n_total_mes"].replace(0, pd.NA) * 100).round(1)
+            wk_tax["pct_paid"] = (wk_tax["n_paid"] / wk_tax["n_total_mes"].replace(0, pd.NA) * 100).round(1).clip(upper=100)
             wk_tax["pct_pendente"] = (100 - wk_tax["pct_paid"]).clip(lower=0).round(1)
             wk_tax["association_name"] = wk_tax["association_id"].map(assoc_map)
             up(wk_tax[["week", "association_id", "association_name", "n_paid", "n_total_mes", "pct_paid", "pct_pendente"]], "taxa_semanal")
@@ -1268,6 +1279,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         recv_col = "received_at" if "received_at" in p_w.columns else "created_at"
         if "week" not in p_w.columns:
             p_w["week"] = _week(p_w[recv_col])
+        p_w = p_w[p_w["week"] < _closed_week_cutoff]
         if "dwell_days" not in p_w.columns:
             p_w["dwell_days"] = (
                 pd.to_datetime(p_w.get("delivered_at"), errors="coerce") -
@@ -1287,6 +1299,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         tk_w["association_id"] = tk_w["association_id"].astype(str)
         if "week" not in tk_w.columns:
             tk_w["week"] = _week(tk_w["created_at"])
+        tk_w = tk_w[tk_w["week"] < _closed_week_cutoff]
         tk_done = tk_w[tk_w["status"] == "done"].copy()
         if not tk_done.empty:
             tk_done["done_dt"] = _to_dt(tk_done["updated_at"])
@@ -1304,6 +1317,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         tk_s["association_id"] = tk_s["association_id"].astype(str)
         if "week" not in tk_s.columns:
             tk_s["week"] = _week(tk_s["updated_at"])
+        tk_s = tk_s[tk_s["week"] < _closed_week_cutoff]
         tk_s["done_dt"] = _to_dt(tk_s["updated_at"])
         tk_s["due_dt"]  = pd.to_datetime(tk_s["due_date"], errors="coerce")
         tk_s["em_atraso"] = (tk_s["status"] == "done") & (tk_s["done_dt"] > tk_s["due_dt"])
@@ -1335,6 +1349,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         paid_col_r = next((c for c in ["paid_at", "updated_at"] if c in m_r.columns), "updated_at")
         if not m_r.empty:
             m_r["week"] = _week(m_r[paid_col_r])
+            m_r = m_r[m_r["week"] < _closed_week_cutoff]
             wk_ret = m_r.groupby(["week", "association_id"])["resident_id"].nunique().reset_index(name="membros_pagantes")
             tot_mem = res[res["status"] == "active"].groupby("association_id").size().reset_index(name="total_members")
             wk_ret = wk_ret.merge(tot_mem, on="association_id", how="left")
