@@ -1,16 +1,16 @@
 Attribute VB_Name = "mdl_DADOS"
 '=============================================================================
-' APRXM Aproxima â€” Consolidado Executivo
-' AssociaÃ§Ã£o de Moradores SapÃª-Vaz Lobo e Buriti-Congonha
+' APRXM Aproxima — Consolidado Executivo
+' Associação de Moradores Sapê-Vaz Lobo e Buriti-Congonha
 '
-' MÃ³dulo: mdl_DADOS
+' Módulo: mdl_DADOS
 ' Responsabilidade: Conectar ao Neon Analytics DB e preencher aba _DADOS
 '
 ' IMPORTANTE: Todas as queries usam aliases SQL para produzir os nomes de
-'             colunas que os mÃ³dulos VBA esperam. NÃ£o altere os aliases
-'             sem atualizar os mÃ³dulos correspondentes.
+'             colunas que os módulos VBA esperam. Não altere os aliases
+'             sem atualizar os módulos correspondentes.
 '
-' PrÃ©-requisito: driver ODBC PostgreSQL Unicode
+' Pré-requisito: driver ODBC PostgreSQL Unicode
 '   https://www.postgresql.org/ftp/odbc/versions/msi/
 '=============================================================================
 Option Explicit
@@ -19,7 +19,7 @@ Private Const SHEET_DADOS As String = "_DADOS"
 Private Const CONN_CELL    As String = "B1"
 
 '=============================================================================
-' SUB PRINCIPAL â€” executar via Alt+F8 > RefreshAllData
+' SUB PRINCIPAL — executar via Alt+F8 > RefreshAllData
 '=============================================================================
 Public Sub RefreshAllData()
     Dim wsDados As Worksheet
@@ -78,13 +78,19 @@ Public Sub RefreshAllData()
     step_ = "TASKS_MES":            Call LoadTable(conn, wsDados, "TASKS_MES",              SQL_TasksMes())
     step_ = "OP_SCORE_MES":         Call LoadTable(conn, wsDados, "OP_SCORE_MES",           SQL_OpScoreMes())
     step_ = "MARGEM_MES":           Call LoadTable(conn, wsDados, "MARGEM_MES",             SQL_MargemMes())
+    step_ = "RECEITA_SEMANAL":     Call LoadTable(conn, wsDados, "RECEITA_SEMANAL",         SQL_ReceitaSemanal())
+    step_ = "TAXA_SEMANAL":        Call LoadTable(conn, wsDados, "TAXA_SEMANAL",            SQL_TaxaSemanal())
+    step_ = "PACOTES_SEMANAL":     Call LoadTable(conn, wsDados, "PACOTES_SEMANAL",         SQL_PacotesSemanal())
+    step_ = "TAREFAS_SEMANAL":     Call LoadTable(conn, wsDados, "TAREFAS_SEMANAL",         SQL_TarefasSemanal())
+    step_ = "OP_SCORE_SEMANAL":    Call LoadTable(conn, wsDados, "OP_SCORE_SEMANAL",        SQL_OpScoreSemanal())
+    step_ = "RETENCAO_SEMANAL":    Call LoadTable(conn, wsDados, "RETENCAO_SEMANAL",        SQL_RetencaoSemanal())
     step_ = "CalcMovingAverage": Call CalcMovingAverage(wsDados)
     step_ = "StampTimestamp":    Call StampTimestamp()
 
     conn.Close
     Set conn = Nothing
 
-    ' Descomente para re-ocultar apÃ³s o refresh:
+    ' Descomente para re-ocultar após o refresh:
     ' wsDados.Visible = xlSheetVeryHidden
 
     Application.StatusBar = False
@@ -110,12 +116,12 @@ End Sub
 
 
 '=============================================================================
-' QUERIES SQL â€” cada funÃ§Ã£o retorna a query com aliases que o VBA espera
-' Regra: colunas produzidas AQUI = colunas lidas nos mÃ³dulos de aba
+' QUERIES SQL — cada função retorna a query com aliases que o VBA espera
+' Regra: colunas produzidas AQUI = colunas lidas nos módulos de aba
 '=============================================================================
 
 Private Function SQL_ReceitaDiaria() As String
-    ' Converte month/week para string ISO para comparaÃ§Ã£o no VBA
+    ' Converte month/week para string ISO para comparação no VBA
     SQL_ReceitaDiaria = _
         "SELECT " & _
         "  TO_CHAR(date,  'YYYY-MM-DD') AS date, " & _
@@ -131,9 +137,9 @@ Private Function SQL_ReceitaDiaria() As String
 End Function
 
 Private Function SQL_ReceitaOpTipo() As String
-    ' receita_por_operador_tipo sÃ³ existe apÃ³s deploy do ETL.
-    ' Enquanto nÃ£o existe, faz fallback em operator_revenue com zeros nos breakdown.
-    ' ApÃ³s deploy, trocar pelo bloco comentado abaixo.
+    ' receita_por_operador_tipo só existe após deploy do ETL.
+    ' Enquanto não existe, faz fallback em operator_revenue com zeros nos breakdown.
+    ' Após deploy, trocar pelo bloco comentado abaixo.
     Dim tblExiste As Boolean
     tblExiste = TableExists("receita_por_operador_tipo")
 
@@ -183,7 +189,7 @@ Private Function SQL_TaxaCobranca() As String
 End Function
 
 Private Function SQL_CobrancaRua() As String
-    ' cobranca_por_rua sÃ³ existe apÃ³s deploy do ETL.
+    ' cobranca_por_rua só existe após deploy do ETL.
     ' Fallback: dados vazios com estrutura correta.
     If TableExists("cobranca_por_rua") Then
         SQL_CobrancaRua = _
@@ -223,9 +229,9 @@ End Function
 
 Private Function SQL_InadimplenciaAgg() As String
     ' Agrega delinquency_report + collection_rate para produzir KPIs de mensalidades.
-    ' delinquency_report = pessoas com overdue_months > 0 (jÃ¡ vencidas).
-    ' collection_rate    = totais de cobranÃ§a por mÃªs.
-    ' Usamos o mÃªs mais recente de collection_rate para paid/total.
+    ' delinquency_report = pessoas com overdue_months > 0 (já vencidas).
+    ' collection_rate    = totais de cobrança por mês.
+    ' Usamos o mês mais recente de collection_rate para paid/total.
     SQL_InadimplenciaAgg = _
         "WITH cr AS ( SELECT association_id, " & _
         "  SUM(paid) AS pagas, SUM(total - paid) AS pendentes, " & _
@@ -339,7 +345,7 @@ Private Function SQL_PacotesStuck() As String
 End Function
 
 Private Function SQL_SlaTipo() As String
-    ' NÃ£o hÃ¡ pct_on_time no Neon. Derivamos: quanto menor avg_wait_hours, melhor o SLA.
+    ' Não há pct_on_time no Neon. Derivamos: quanto menor avg_wait_hours, melhor o SLA.
     ' Benchmark: <= 24h = 100%, 48h = 50%, >= 96h = 0%
     SQL_SlaTipo = _
         "SELECT " & _
@@ -417,7 +423,7 @@ Private Function SQL_RankColab() As String
 End Function
 
 Private Function SQL_KpiOp() As String
-    ' Colunas novas podem nao existir â€” verifica antes de incluir no SELECT
+    ' Colunas novas podem nao existir — verifica antes de incluir no SELECT
     Dim extraCols As String
     If ColumnExists("operational_kpis", "avg_dwell_dias") Then
         extraCols = ", COALESCE(avg_dwell_dias,    0) AS avg_dwell_dias" & _
@@ -475,11 +481,11 @@ End Function
 
 
 '=============================================================================
-' Queries agregadas â€” combinam ambas as associaÃ§Ãµes para KPIs do INICIO
+' Queries agregadas — combinam ambas as associações para KPIs do INICIO
 '=============================================================================
 
 Private Function SQL_ReceitaMensal() As String
-    ' SUM por mÃªs, ambas as associaÃ§Ãµes combinadas
+    ' SUM por mês, ambas as associações combinadas
     SQL_ReceitaMensal = _
         "SELECT TO_CHAR(month, 'YYYY-MM') AS month, " & _
         "  SUM(total_income)         AS total_income, " & _
@@ -493,7 +499,7 @@ Private Function SQL_ReceitaMensal() As String
 End Function
 
 Private Function SQL_MoradoresTotal() As String
-    ' SUM de moradores entre todas as associaÃ§Ãµes vÃ¡lidas
+    ' SUM de moradores entre todas as associações válidas
     SQL_MoradoresTotal = _
         "SELECT " & _
         "  SUM(total_ativos)  AS total, " & _
@@ -506,7 +512,7 @@ Private Function SQL_MoradoresTotal() As String
 End Function
 
 Private Function SQL_ReceitaMensalAssoc() As String
-    ' SUM por mÃªs + associaÃ§Ã£o â€” para filtro por associaÃ§Ã£o no INICIO
+    ' SUM por mês + associação — para filtro por associação no INICIO
     SQL_ReceitaMensalAssoc = _
         "SELECT TO_CHAR(month, 'YYYY-MM') AS month, " & _
         "  association_name, " & _
@@ -536,7 +542,7 @@ Private Function SQL_CaixaAnomalias() As String
 End Function
 
 Private Function SQL_InadimplenciaTotal() As String
-    ' InadimplÃªncia combinada das duas associaÃ§Ãµes (sem agrupamento por assoc.)
+    ' Inadimplência combinada das duas associações (sem agrupamento por assoc.)
     SQL_InadimplenciaTotal = _
         "WITH cr AS ( " & _
         "  SELECT SUM(paid) AS pagas, SUM(total - paid) AS pendentes, " & _
@@ -651,6 +657,84 @@ Private Function SQL_MargemMes() As String
         "FROM margem_mensal" & Filter() & " ORDER BY month DESC"
 End Function
 
+Private Function SQL_ReceitaSemanal() As String
+    If Not TableExists("receita_semanal") Then
+        SQL_ReceitaSemanal = "SELECT NULL::text AS week, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::float AS total_income, " & _
+            "0::float AS total_expense, 0::float AS net WHERE 1=0"
+        Exit Function
+    End If
+    SQL_ReceitaSemanal = _
+        "SELECT TO_CHAR(week, 'YYYY-MM-DD') AS week, association_id, association_name, " & _
+        "  total_income, total_expense, net " & _
+        "FROM receita_semanal" & Filter() & " ORDER BY week DESC"
+End Function
+
+Private Function SQL_TaxaSemanal() As String
+    If Not TableExists("taxa_semanal") Then
+        SQL_TaxaSemanal = "SELECT NULL::text AS week, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::int AS n_paid, " & _
+            "0::int AS n_total_mes, 0::float AS pct_paid, 0::float AS pct_pendente WHERE 1=0"
+        Exit Function
+    End If
+    SQL_TaxaSemanal = _
+        "SELECT TO_CHAR(week, 'YYYY-MM-DD') AS week, association_id, association_name, " & _
+        "  n_paid, n_total_mes, pct_paid, pct_pendente " & _
+        "FROM taxa_semanal" & Filter() & " ORDER BY week DESC"
+End Function
+
+Private Function SQL_PacotesSemanal() As String
+    If Not TableExists("pacotes_semanal") Then
+        SQL_PacotesSemanal = "SELECT NULL::text AS week, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::int AS recebidos, " & _
+            "0::int AS entregues, 0::float AS avg_dwell_dias WHERE 1=0"
+        Exit Function
+    End If
+    SQL_PacotesSemanal = _
+        "SELECT TO_CHAR(week, 'YYYY-MM-DD') AS week, association_id, association_name, " & _
+        "  recebidos, entregues, avg_dwell_dias " & _
+        "FROM pacotes_semanal" & Filter() & " ORDER BY week DESC"
+End Function
+
+Private Function SQL_TarefasSemanal() As String
+    If Not TableExists("tarefas_semanal") Then
+        SQL_TarefasSemanal = "SELECT NULL::text AS week, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::int AS total_concluidas, " & _
+            "0::int AS no_prazo, 0::float AS pct_on_time WHERE 1=0"
+        Exit Function
+    End If
+    SQL_TarefasSemanal = _
+        "SELECT TO_CHAR(week, 'YYYY-MM-DD') AS week, association_id, association_name, " & _
+        "  total_concluidas, no_prazo, pct_on_time " & _
+        "FROM tarefas_semanal" & Filter() & " ORDER BY week DESC"
+End Function
+
+Private Function SQL_OpScoreSemanal() As String
+    If Not TableExists("op_score_semanal") Then
+        SQL_OpScoreSemanal = "SELECT NULL::text AS week, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::float AS score, " & _
+            "0::int AS tarefas_atraso, 0::int AS entregas WHERE 1=0"
+        Exit Function
+    End If
+    SQL_OpScoreSemanal = _
+        "SELECT TO_CHAR(week, 'YYYY-MM-DD') AS week, association_id, association_name, " & _
+        "  score, tarefas_atraso, entregas " & _
+        "FROM op_score_semanal" & Filter() & " ORDER BY week DESC"
+End Function
+
+Private Function SQL_RetencaoSemanal() As String
+    If Not TableExists("retencao_semanal") Then
+        SQL_RetencaoSemanal = "SELECT NULL::text AS week, NULL::uuid AS association_id, " & _
+            "NULL::text AS association_name, 0::int AS membros_pagantes, " & _
+            "0::int AS total_members, 0::float AS taxa_retencao WHERE 1=0"
+        Exit Function
+    End If
+    SQL_RetencaoSemanal = _
+        "SELECT TO_CHAR(week, 'YYYY-MM-DD') AS week, association_id, association_name, " & _
+        "  membros_pagantes, total_members, taxa_retencao " & _
+        "FROM retencao_semanal" & Filter() & " ORDER BY week DESC"
+End Function
+
 
 '=============================================================================
 ' Filtro padrao: exclui associacao de teste
@@ -668,11 +752,11 @@ End Function
 ' Verifica se tabela existe no schema public
 '=============================================================================
 Private Function TableExists(tableName As String) As Boolean
-    ' Reutiliza conexÃ£o global se possÃ­vel; caso nÃ£o, retorna False por seguranÃ§a
-    ' (VBA nÃ£o suporta transaÃ§Ãµes cross-function facilmente com ADODB late-binding)
-    ' SoluÃ§Ã£o: tenta SELECT COUNT(*) e captura erro
-    ' Esta funÃ§Ã£o Ã© chamada dentro do contexto de RefreshAllData, onde conn jÃ¡ existe.
-    ' Por simplificaÃ§Ã£o, usa uma conexÃ£o separada rÃ¡pida lendo a string do _DADOS!B1
+    ' Reutiliza conexão global se possível; caso não, retorna False por segurança
+    ' (VBA não suporta transações cross-function facilmente com ADODB late-binding)
+    ' Solução: tenta SELECT COUNT(*) e captura erro
+    ' Esta função é chamada dentro do contexto de RefreshAllData, onde conn já existe.
+    ' Por simplificação, usa uma conexão separada rápida lendo a string do _DADOS!B1
     Dim ws As Worksheet
     On Error Resume Next
     Set ws = ThisWorkbook.Sheets(SHEET_DADOS)
@@ -754,7 +838,7 @@ Private Sub LoadTable(conn As Object, ws As Worksheet, rangeKey As String, sql A
     Dim lastRow As Long
     lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
 
-    ' 6. Named range DL_ (data rows only, sem header) â€” compatibilidade GetScalar
+    ' 6. Named range DL_ (data rows only, sem header) — compatibilidade GetScalar
     Dim rngName As String: rngName = "DL_" & rangeKey
     On Error Resume Next
     ThisWorkbook.Names(rngName).Delete
@@ -762,7 +846,7 @@ Private Sub LoadTable(conn As Object, ws As Worksheet, rangeKey As String, sql A
     ThisWorkbook.Names.Add Name:=rngName, _
         RefersTo:=ws.Range(ws.Cells(destRow, 1), ws.Cells(lastRow, fieldCount))
 
-    ' 7. Criar ListObject (Excel Table) â€” habilita Tabela Dinamica + Slicer nativo
+    ' 7. Criar ListObject (Excel Table) — habilita Tabela Dinamica + Slicer nativo
     On Error Resume Next
     Dim tblRange As Range
     Set tblRange = ws.Range(ws.Cells(headerRow, 1), ws.Cells(lastRow, fieldCount))
@@ -793,7 +877,7 @@ End Sub
 
 
 '=============================================================================
-' Calcula mÃ©dia mÃ³vel de 30 dias sobre daily_revenue (client-side)
+' Calcula média móvel de 30 dias sobre daily_revenue (client-side)
 '=============================================================================
 Private Sub CalcMovingAverage(ws As Worksheet)
     Dim rng     As Range
@@ -847,7 +931,7 @@ End Sub
 
 
 '=============================================================================
-' UtilitÃ¡rios
+' Utilitários
 '=============================================================================
 Private Function FindOrCreateBlock(ws As Worksheet, key As String) As Long
     Dim i As Long
@@ -874,7 +958,7 @@ Private Function GetOrCreateSheet(name As String) As Worksheet
         Set ws = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
         ws.Name = name
         ws.Visible = xlSheetVeryHidden
-        ws.Range("A1").Value = "ConexÃ£o Neon Analytics:"
+        ws.Range("A1").Value = "Conexão Neon Analytics:"
         ws.Range("A1").Font.Bold = True
         ws.Range("B1").Value = ""
         ws.Range("A1").ColumnWidth = 25

@@ -1,11 +1,11 @@
 Attribute VB_Name = "mdl_Presidencia"
 '=============================================================================
-' Aba: PRESIDENCIA — 9 KPI Cards com Sparklines
-' Layout: 3 colunas × 3 linhas, colunas A-T, zoom 150%
+' Aba: PRESIDENCIA ? 9 KPI Cards com Sparklines
+' Layout: 3 colunas ? 3 linhas, colunas A-T, zoom 150%
 '
 ' Cards (esquerda?direita, cima?baixo):
-'   1. Receita Líquida     2. Taxa de Cobrança    3. Inadimplência
-'   4. Crescimento          5. Retenção Pagantes   6. Encomendas
+'   1. Receita L?quida     2. Taxa de Cobran?a    3. Inadimpl?ncia
+'   4. Crescimento          5. Reten??o Pagantes   6. Encomendas
 '   7. Tempo de Entrega     8. Tarefas no Prazo    9. Score Operadores
 '=============================================================================
 Option Explicit
@@ -30,7 +30,7 @@ Private Const CARDS_START  As Long = 5
 Private Const CARD_H       As Long = 13   ' rows per card
 Private Const CARD_GAP     As Long = 1    ' gap rows between card tiers
 Private Const CARD_W       As Integer = 6
-Private Const COL_C1       As Integer = 2   ' col B — card left positions
+Private Const COL_C1       As Integer = 2   ' col B ? card left positions
 Private Const COL_C2       As Integer = 9   ' col I
 Private Const COL_C3       As Integer = 16  ' col P
 
@@ -108,10 +108,10 @@ Public Sub Pres_CG():  m_PresAssocId = ASSOC_CG: Call RefreshPresidencia: End Su
 
 
 '=============================================================================
-' SETUP — layout, background, header, filters
+' SETUP ? layout, background, header, filters
 '=============================================================================
 Private Sub ClearPresidencia(ws As Worksheet)
-    ' Deletar gráficos sem iterar com For Each (causa "subscript out of range")
+    ' Deletar gr?ficos sem iterar com For Each (causa "subscript out of range")
     Do While ws.ChartObjects.Count > 0
         ws.ChartObjects(1).Delete
     Loop
@@ -143,7 +143,7 @@ Private Sub SetupBackground(ws As Worksheet)
     ws.Columns(8).ColumnWidth = 1   ' col H gap between card 1-2
     ws.Columns(15).ColumnWidth = 1  ' col O gap between card 2-3
 
-    ' Card columns: B-G (2-7), I-N (9-14), P-U (16-21) — using P-T (16-20)
+    ' Card columns: B-G (2-7), I-N (9-14), P-U (16-21) ? using P-T (16-20)
     Dim c As Integer
     For c = 2 To 7:  ws.Columns(c).ColumnWidth = 10: Next c   ' card 1
     For c = 9 To 14: ws.Columns(c).ColumnWidth = 10: Next c   ' card 2
@@ -183,7 +183,7 @@ Private Sub SetupHeader(ws As Worksheet)
     ' Title
     With ws.Range(ws.Cells(TITLE_ROW, 2), ws.Cells(TITLE_ROW, 20))
         .Merge
-        .Value = "PRESIDÊNCIA  " & ChrW(8212) & "  INDICADORES EXECUTIVOS"
+        .Value = "PRESID?NCIA  " & ChrW(8212) & "  INDICADORES EXECUTIVOS"
         .Font.Name = "Calibri"
         .Font.Size = 13
         .Font.Bold = True
@@ -197,7 +197,7 @@ Private Sub SetupHeader(ws As Worksheet)
         .Merge
         .Value = "Atualizado em " & Format(Now, "dd/mm/yyyy") & _
                  "  " & ChrW(183) & "  Instituto Tia Pretinha  " & _
-                 ChrW(183) & "  Últimos 6 meses"
+                 ChrW(183) & "  ?ltimos 6 meses"
         .Font.Name = "Calibri"
         .Font.Size = 8
         .Font.Color = CLR_MUTED
@@ -214,7 +214,7 @@ Private Sub SetupFilterShapes(ws As Worksheet)
     Dim gap    As Single: gap    = 6
     Dim leftX  As Single: leftX  = ws.Columns(COL_C1).Left
 
-    ' Label "ASSOCIAÇÃO"
+    ' Label "ASSOCIA??O"
     With ws.Cells(FILTER_ROW, 2)
         .Value = "FILTRO:"
         .Font.Name = "Calibri"
@@ -310,35 +310,45 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
     Dim cardTitle As String, rangeKey As String, colName As String
     Dim unitStr As String, fmtCode As String, invertDelta As Boolean
     Dim useAvg As Boolean
+    Dim weeklyRangeKey As String, weeklyColName As String
 
     Select Case cardIdx
         Case 0
-            cardTitle = "RECEITA LÍQUIDA":    rangeKey = "MARGEM_MES":    colName = "net"
+            cardTitle = "RECEITA L?QUIDA":    rangeKey = "MARGEM_MES":    colName = "net"
             unitStr = "R$":                    fmtCode = "currency":       invertDelta = False: useAvg = False
+            weeklyRangeKey = "RECEITA_SEMANAL":  weeklyColName = "net"
         Case 1
-            cardTitle = "TAXA DE COBRANÇA":   rangeKey = "TAXA_COBRANCA": colName = "pct_paid"
+            cardTitle = "TAXA DE COBRAN?A":   rangeKey = "TAXA_COBRANCA": colName = "pct_paid"
             unitStr = "% pagas":               fmtCode = "pct":            invertDelta = False: useAvg = True
+            weeklyRangeKey = "TAXA_SEMANAL":     weeklyColName = "pct_paid"
         Case 2
-            cardTitle = "INADIMPLÊNCIA":       rangeKey = "TAXA_COBRANCA": colName = "pct_pendente"
+            cardTitle = "INADIMPL?NCIA":       rangeKey = "TAXA_COBRANCA": colName = "pct_pendente"
             unitStr = "% pendentes":           fmtCode = "pct":            invertDelta = True:  useAvg = True
+            weeklyRangeKey = "TAXA_SEMANAL":     weeklyColName = "pct_pendente"
         Case 3
             cardTitle = "CRESCIMENTO":         rangeKey = "MORADORES_MES": colName = "members"
             unitStr = "novos/m" & ChrW(234) & "s":     fmtCode = "integer":        invertDelta = False: useAvg = False
+            weeklyRangeKey = "CRESCIMENTO":      weeklyColName = "novos_associados"
         Case 4
-            cardTitle = "RETENÇÃO PAGANTES":   rangeKey = "RETENCAO_MES":  colName = "taxa_retencao"
+            cardTitle = "RETEN??O PAGANTES":   rangeKey = "RETENCAO_MES":  colName = "taxa_retencao"
             unitStr = "% retidos":             fmtCode = "pct":            invertDelta = False: useAvg = True
+            weeklyRangeKey = "RETENCAO_SEMANAL": weeklyColName = "taxa_retencao"
         Case 5
             cardTitle = "ENCOMENDAS":          rangeKey = "PACOTES_MES":   colName = "recebidos"
             unitStr = "recebidas":             fmtCode = "integer":        invertDelta = False: useAvg = False
+            weeklyRangeKey = "PACOTES_SEMANAL":  weeklyColName = "recebidos"
         Case 6
             cardTitle = "TEMPO DE ENTREGA":    rangeKey = "PACOTES_MES":   colName = "avg_dwell_dias"
-            unitStr = "dias médios":           fmtCode = "decimal1":       invertDelta = True:  useAvg = True
+            unitStr = "dias m?dios":           fmtCode = "decimal1":       invertDelta = True:  useAvg = True
+            weeklyRangeKey = "PACOTES_SEMANAL":  weeklyColName = "avg_dwell_dias"
         Case 7
             cardTitle = "TAREFAS NO PRAZO":    rangeKey = "TASKS_MES":     colName = "pct_on_time"
             unitStr = "% no prazo":            fmtCode = "pct":            invertDelta = False: useAvg = True
+            weeklyRangeKey = "TAREFAS_SEMANAL":  weeklyColName = "pct_on_time"
         Case 8
             cardTitle = "SCORE OPERADORES":    rangeKey = "OP_SCORE_MES":  colName = "score"
             unitStr = "pts / 100":             fmtCode = "decimal1":       invertDelta = False: useAvg = True
+            weeklyRangeKey = "OP_SCORE_SEMANAL": weeklyColName = "score"
     End Select
 
     ' -- Get series data (ASC, up to 13 months) -------------------------------
@@ -419,15 +429,25 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
         For k = 0 To spkLen - 1
             spkData(k) = series(spkStart + k)
         Next k
-        DrawSparkline ws, spkData, topRow + 5, leftCol, 4, CARD_W, fmtCode
+        If cardIdx = 3 And spkLen > 1 Then
+            Dim dData() As Double
+            ReDim dData(spkLen - 2)
+            Dim kd As Integer
+            For kd = 0 To spkLen - 2
+                dData(kd) = spkData(kd + 1) - spkData(kd)
+            Next kd
+            DrawSparkline ws, dData, topRow + 5, leftCol, 4, CARD_W, fmtCode
+        Else
+            DrawSparkline ws, spkData, topRow + 5, leftCol, 4, CARD_W, fmtCode
+        End If
     End If
 
-    ' -- WoW via DL_CRESCIMENTO (card 3); outros cards: n/d -----------------
+    ' -- WoW via weekly named range for all cards ------------------------------
     Dim wowCurr As Double: wowCurr = 0
     Dim wowPrev As Double: wowPrev = 0
-    If cardIdx = 3 Then
+    If Len(weeklyRangeKey) > 0 Then
         Dim wSeries As Variant
-        wSeries = GetWeeklySeries(wsDados, "CRESCIMENTO", "novos_associados", m_PresAssocId, 3)
+        wSeries = GetWeeklySeries(wsDados, weeklyRangeKey, weeklyColName, m_PresAssocId, 3)
         Dim wnPts As Integer: wnPts = 0
         If IsArray(wSeries) Then
             On Error Resume Next: wnPts = UBound(wSeries) - LBound(wSeries) + 1: On Error GoTo 0
@@ -457,7 +477,7 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
     If prev1Val = 0 Then
         momCtx = "n/d"
     Else
-        momCtx = "(Mês Ant.: " & FormatKpiShort(prev1Val, fmtCode) & " | Mês Atual: " & FormatKpiShort(currVal, fmtCode) & ")"
+        momCtx = "(M?s Ant.: " & FormatKpiShort(prev1Val, fmtCode) & " | M?s Atual: " & FormatKpiShort(currVal, fmtCode) & ")"
     End If
     If prev3Val = 0 Then
         qoqCtx = "n/d"
@@ -577,7 +597,7 @@ Private Sub DrawSparkline(ws As Worksheet, dataArr() As Double, _
         End If
     End If
 
-    ' --- Rótulos: mês + valor em todos os pontos ---
+    ' --- R?tulos: m?s + valor em todos os pontos ---
     If Not srs Is Nothing Then
         Dim mAbbr(12) As String
         mAbbr(1) = "jan": mAbbr(2) = "fev": mAbbr(3) = "mar": mAbbr(4) = "abr"
@@ -699,9 +719,9 @@ End Function
 
 
 '=============================================================================
-' DATA HELPER — extrai série mensal do _DADOS via named range DL_rangeKey
+' DATA HELPER ? extrai s?rie mensal do _DADOS via named range DL_rangeKey
 ' Retorna array Double em ordem ASC (mais antigo primeiro)
-' assocId = "" ? agrega ambas as associações
+' assocId = "" ? agrega ambas as associa??es
 ' useAvg = True ? divide pelo count (para percentuais)
 '=============================================================================
 

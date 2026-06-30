@@ -89,6 +89,12 @@ GOLD_PATHS = {
     "tasks_monthly":              ("equipe",     "tarefas_por_mes"),
     "operator_score_monthly":     ("operacional","score_operadores"),
     "margem_mensal":              ("financeiro", "margem_mensal"),
+    "receita_semanal":            ("financeiro", "receita_semanal"),
+    "taxa_semanal":               ("financeiro", "taxa_semanal"),
+    "pacotes_semanal":            ("encomendas", "pacotes_semanal"),
+    "tarefas_semanal":            ("equipe",     "tarefas_semanal"),
+    "op_score_semanal":           ("operacional","score_operadores_semanal"),
+    "retencao_semanal":           ("financeiro", "retencao_semanal"),
 }
 
 
@@ -1217,6 +1223,124 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         mg["net"] = mg["total_income"] - mg["total_expense"]
         mg["margem_pct"] = (mg["net"] / mg["total_income"].replace(0, pd.NA) * 100).round(1)
         up(mg, "margem_mensal")
+
+    # 28. Receita semanal — income/expense/net por semana
+    if not tx.empty:
+        tx_w = tx.copy()
+        tx_w["association_id"] = tx_w["association_id"].astype(str)
+        col_at = "transaction_at" if "transaction_at" in tx_w.columns else "created_at"
+        if "week" not in tx_w.columns:
+            tx_w["week"] = _week(tx_w[col_at])
+        tx_w["amount_f"] = pd.to_numeric(tx_w["amount"], errors="coerce").fillna(0)
+        rw = tx_w.groupby(["week", "association_id", "association_name"]).apply(lambda g: pd.Series({
+            "total_income":  g.loc[g["type"] == "income",  "amount_f"].sum(),
+            "total_expense": g.loc[g["type"].isin(["expense", "sangria"]), "amount_f"].sum(),
+        }), include_groups=False).reset_index()
+        rw["net"] = rw["total_income"] - rw["total_expense"]
+        up(rw, "receita_semanal")
+
+    # 29. Taxa de cobrança semanal — mensalidades pagas na semana / total do mês
+    if not mens.empty:
+        m_w = mens.copy()
+        m_w["association_id"] = m_w["association_id"].astype(str)
+        m_w["month"] = _month(m_w["due_date"].fillna(m_w["created_at"])).dt.strftime("%Y-%m")
+        monthly_due = m_w.groupby(["month", "association_id"]).size().reset_index(name="n_total_mes")
+        paid_m = m_w[m_w["status"] == "paid"].copy()
+        paid_col = next((c for c in ["paid_at", "updated_at"] if c in paid_m.columns), "updated_at")
+        if not paid_m.empty:
+            paid_m["week"] = _week(paid_m[paid_col])
+            paid_m["month"] = _month(paid_m["due_date"].fillna(paid_m["created_at"])).dt.strftime("%Y-%m")
+            wk_tax = paid_m.groupby(["week", "association_id"]).agg(
+                n_paid=("id", "count"),
+                month=("month", "first"),
+            ).reset_index()
+            wk_tax = wk_tax.merge(monthly_due, on=["month", "association_id"], how="left")
+            wk_tax["n_total_mes"] = wk_tax["n_total_mes"].fillna(wk_tax["n_paid"])
+            wk_tax["pct_paid"] = (wk_tax["n_paid"] / wk_tax["n_total_mes"].replace(0, pd.NA) * 100).round(1)
+            wk_tax["pct_pendente"] = (100 - wk_tax["pct_paid"]).clip(lower=0).round(1)
+            wk_tax["association_name"] = wk_tax["association_id"].map(assoc_map)
+            up(wk_tax[["week", "association_id", "association_name", "n_paid", "n_total_mes", "pct_paid", "pct_pendente"]], "taxa_semanal")
+
+    # 30. Pacotes semanal — recebidos, entregues, avg dwell por semana
+    if not pkgs.empty:
+        p_w = pkgs.copy()
+        p_w["association_id"] = p_w["association_id"].astype(str)
+        recv_col = "received_at" if "received_at" in p_w.columns else "created_at"
+        if "week" not in p_w.columns:
+            p_w["week"] = _week(p_w[recv_col])
+        if "dwell_days" not in p_w.columns:
+            p_w["dwell_days"] = (
+                pd.to_datetime(p_w.get("delivered_at"), errors="coerce") -
+                pd.to_datetime(p_w[recv_col], errors="coerce")
+            ).dt.days
+        pk_grp = p_w.groupby(["week", "association_id", "association_name"]).apply(lambda g: pd.Series({
+            "recebidos":      len(g),
+            "entregues":      (g["status"] == "delivered").sum(),
+            "avg_dwell_dias": round(g.loc[g["status"] == "delivered", "dwell_days"].dropna().mean(), 1)
+                              if (g["status"] == "delivered").any() else 0,
+        }), include_groups=False).reset_index()
+        up(pk_grp, "pacotes_semanal")
+
+    # 31. Tarefas semanal — concluídas no prazo por semana
+    if not tsk.empty:
+        tk_w = tsk[~tsk["is_deleted"]].copy() if "is_deleted" in tsk.columns else tsk.copy()
+        tk_w["association_id"] = tk_w["association_id"].astype(str)
+        if "week" not in tk_w.columns:
+            tk_w["week"] = _week(tk_w["created_at"])
+        tk_done = tk_w[tk_w["status"] == "done"].copy()
+        if not tk_done.empty:
+            tk_done["done_dt"] = _to_dt(tk_done["updated_at"])
+            tk_done["due_dt"]  = pd.to_datetime(tk_done["due_date"], errors="coerce")
+            tk_wk = tk_done.groupby(["week", "association_id", "association_name"]).apply(lambda g: pd.Series({
+                "total_concluidas": len(g),
+                "no_prazo":         (g["done_dt"] <= g["due_dt"]).sum(),
+                "pct_on_time":      round((g["done_dt"] <= g["due_dt"]).sum() / max(len(g), 1) * 100, 1),
+            }), include_groups=False).reset_index()
+            up(tk_wk, "tarefas_semanal")
+
+    # 32. Score operadores semanal — score agregado por associação/semana
+    if not tsk.empty:
+        tk_s = tsk[~tsk["is_deleted"]].copy() if "is_deleted" in tsk.columns else tsk.copy()
+        tk_s["association_id"] = tk_s["association_id"].astype(str)
+        if "week" not in tk_s.columns:
+            tk_s["week"] = _week(tk_s["updated_at"])
+        tk_s["done_dt"] = _to_dt(tk_s["updated_at"])
+        tk_s["due_dt"]  = pd.to_datetime(tk_s["due_date"], errors="coerce")
+        tk_s["em_atraso"] = (tk_s["status"] == "done") & (tk_s["done_dt"] > tk_s["due_dt"])
+        sc_base = tk_s.groupby(["week", "association_id"]).agg(
+            tarefas_atraso=("em_atraso", "sum"),
+        ).reset_index()
+        if not pkgs.empty and "delivered_at" in pkgs.columns:
+            dv = pkgs[pkgs["status"] == "delivered"].copy()
+            dv["association_id"] = dv["association_id"].astype(str)
+            if "week" not in dv.columns:
+                dv["week"] = _week(dv["delivered_at"])
+            dv_agg = dv.groupby(["week", "association_id"]).size().reset_index(name="entregas")
+            sc_base = sc_base.merge(dv_agg, on=["week", "association_id"], how="left")
+        else:
+            sc_base["entregas"] = 0
+        sc_base["entregas"] = sc_base["entregas"].fillna(0).astype(int)
+        sc_base["association_name"] = sc_base["association_id"].map(assoc_map)
+        sc_base["score"] = (
+            100
+            - sc_base["tarefas_atraso"] * 3
+            + (sc_base["entregas"] * 0.5).clip(upper=10)
+        ).clip(lower=0, upper=100).round(1)
+        up(sc_base[["week", "association_id", "association_name", "score", "tarefas_atraso", "entregas"]], "op_score_semanal")
+
+    # 33. Retenção semanal — % de membros com mensalidade paga na semana
+    if not mens.empty and not res.empty:
+        m_r = mens[mens["status"] == "paid"].copy()
+        m_r["association_id"] = m_r["association_id"].astype(str)
+        paid_col_r = next((c for c in ["paid_at", "updated_at"] if c in m_r.columns), "updated_at")
+        if not m_r.empty:
+            m_r["week"] = _week(m_r[paid_col_r])
+            wk_ret = m_r.groupby(["week", "association_id"])["resident_id"].nunique().reset_index(name="membros_pagantes")
+            tot_mem = res[res["status"] == "active"].groupby("association_id").size().reset_index(name="total_members")
+            wk_ret = wk_ret.merge(tot_mem, on="association_id", how="left")
+            wk_ret["taxa_retencao"] = (wk_ret["membros_pagantes"] / wk_ret["total_members"].replace(0, pd.NA) * 100).round(1)
+            wk_ret["association_name"] = wk_ret["association_id"].map(assoc_map)
+            up(wk_ret[["week", "association_id", "association_name", "membros_pagantes", "total_members", "taxa_retencao"]], "retencao_semanal")
 
     return stats, gold_frames
 
