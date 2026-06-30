@@ -302,13 +302,19 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
   // Auto-fill from resident lookup into proof fields
   useEffect(() => {
-    if (resident && incomeSubtype === 'proof_of_residence') {
+    if (incomeSubtype !== 'proof_of_residence') return
+    if (resident) {
       setProofName(resident.full_name)
       setProofCpf(resident.cpf ?? '')
       setProofCep(resident.address_cep ?? '')
       setProofStreet(resident.address_street ?? '')
       setProofNumber(resident.address_number ?? '')
       setProofComplement((resident as any).address_complement ?? '')
+      // Visitante (guest) paga R$15; associado e dependente pagam R$10
+      setAmount(resident.type === 'guest' ? '15.00' : '10.00')
+    } else {
+      // Sem cadastro = visitante = R$15
+      setAmount('15.00')
     }
   }, [resident, incomeSubtype])
 
