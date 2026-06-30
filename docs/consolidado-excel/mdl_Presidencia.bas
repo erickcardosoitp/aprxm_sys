@@ -679,13 +679,15 @@ Private Function CalcDelta(curr As Double, prev As Double, _
         CalcDelta = ChrW(8594) & " n/d": outColor = CLR_MUTED
         Exit Function
     End If
+    ' Arrow follows value direction; color follows business direction
+    Dim arrow As String: arrow = IIf(pct > 0, ChrW(8593), ChrW(8595))
     If Abs(pct) < 0.05 Then
         CalcDelta = ChrW(8594) & " 0.0%": outColor = CLR_MUTED
     ElseIf isGood Then
-        CalcDelta = ChrW(8593) & " " & Format(Abs(pct), "0.0") & "%"  ' ?
+        CalcDelta = arrow & " " & Format(Abs(pct), "0.0") & "%"
         outColor  = CLR_GREEN
     Else
-        CalcDelta = ChrW(8595) & " " & Format(Abs(pct), "0.0") & "%"  ' ?
+        CalcDelta = arrow & " " & Format(Abs(pct), "0.0") & "%"
         outColor  = CLR_RED
     End If
 End Function
