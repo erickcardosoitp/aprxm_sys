@@ -481,10 +481,10 @@ Private Sub DrawCard(ws As Worksheet, wsDados As Worksheet, _
     ' -- WoW via weekly named range for all cards ------------------------------
     Dim wowCurr As Double: wowCurr = 0
     Dim wowPrev As Double: wowPrev = 0
-    ' WoW: desabilitado no filtro TODAS (soma pct de associacoes = sem sentido)
-    If Len(weeklyRangeKey) > 0 And m_PresAssocId <> "" Then
+    ' WoW: habilitado para todos os filtros; useAvg garante media correta em TODAS para pct
+    If Len(weeklyRangeKey) > 0 Then
         Dim wSeries As Variant
-        wSeries = GetWeeklySeries(wsDados, weeklyRangeKey, weeklyColName, m_PresAssocId, 3)
+        wSeries = GetWeeklySeries(wsDados, weeklyRangeKey, weeklyColName, m_PresAssocId, 3, useAvg)
         Dim wnPts As Integer: wnPts = 0
         If IsArray(wSeries) Then
             On Error Resume Next: wnPts = UBound(wSeries) - LBound(wSeries) + 1: On Error GoTo 0
@@ -742,7 +742,9 @@ Private Function FormatKpiShort(val As Double, fmtCode As String) As String
             Else
                 FormatKpiShort = "R$" & Format(val, "#,##0")
             End If
-        Case "pct":      If val > 100 And val < 101 Then val = 100: FormatKpiShort = Format(val, "0.1") & "%"
+        Case "pct"
+            If val > 100 And val < 101 Then val = 100
+            FormatKpiShort = Format(val, "0.1") & "%"
         Case "integer":  FormatKpiShort = Format(val, "#,##0")
         Case "decimal1": FormatKpiShort = Format(val, "0.1")
         Case Else:       FormatKpiShort = CStr(val)
@@ -808,15 +810,17 @@ Private Function GetMonthlySeries(wsDados As Worksheet, rangeKey As String, _
                 Dim cv As Variant: cv = wsDados.Cells(i, colIdx).Value
                 Dim dv As Double:  dv = IIf(IsNumeric(cv), CDbl(cv), 0)
 
-                If cnt > 0 Then
-                    If tmpM(cnt - 1) = mv Then
-                        tmpV(cnt - 1) = tmpV(cnt - 1) + dv
-                        tmpN(cnt - 1) = tmpN(cnt - 1) + 1
-                    Else
-                        If cnt >= 500 Then Exit For
-                        tmpM(cnt) = mv: tmpV(cnt) = dv: tmpN(cnt) = 1: cnt = cnt + 1
+                ' Linear search: rows from diff associations may not be adjacent
+                Dim fi As Integer: fi = 0
+                Dim mFound As Boolean: mFound = False
+                For fi = 0 To cnt - 1
+                    If tmpM(fi) = mv Then
+                        tmpV(fi) = tmpV(fi) + dv
+                        tmpN(fi) = tmpN(fi) + 1
+                        mFound = True: Exit For
                     End If
-                Else
+                Next fi
+                If Not mFound Then
                     If cnt >= 500 Then Exit For
                     tmpM(cnt) = mv: tmpV(cnt) = dv: tmpN(cnt) = 1: cnt = cnt + 1
                 End If
@@ -850,7 +854,7 @@ End Function
 '=============================================================================
 Private Function GetWeeklySeries(wsDados As Worksheet, rangeKey As String, _
                                   colName As String, assocId As String, _
-                                  maxWeeks As Integer) As Variant
+                                  maxWeeks As Integer, useAvg As Boolean) As Variant
     GetWeeklySeries = Array()
 
     Dim rng As Range
@@ -872,6 +876,7 @@ Private Function GetWeeklySeries(wsDados As Worksheet, rangeKey As String, _
     If wColIdx = 0 Or wWeekIdx = 0 Then Exit Function
 
     Dim wTmpV(200) As Double, wTmpW(200) As String
+    Dim wTmpN(200) As Integer
     Dim wCnt As Integer: wCnt = 0
 
     Dim wi As Long
@@ -885,27 +890,53 @@ Private Function GetWeeklySeries(wsDados As Worksheet, rangeKey As String, _
         If wMatch Then
             Dim wCv As Variant: wCv = wsDados.Cells(wi, wColIdx).Value
             Dim wDv As Double:  wDv = IIf(IsNumeric(wCv), CDbl(wCv), 0)
-            If wCnt > 0 Then
-                If wTmpW(wCnt - 1) = wv Then
-                    wTmpV(wCnt - 1) = wTmpV(wCnt - 1) + wDv
-                Else
-                    If wCnt >= 200 Then Exit For
-                    wTmpW(wCnt) = wv: wTmpV(wCnt) = wDv: wCnt = wCnt + 1
+            ' Linear search: rows from diff associations may not be adjacent
+            Dim wFi As Integer: wFi = 0
+            Dim wFound As Boolean: wFound = False
+            For wFi = 0 To wCnt - 1
+                If wTmpW(wFi) = wv Then
+                    wTmpV(wFi) = wTmpV(wFi) + wDv
+                    wTmpN(wFi) = wTmpN(wFi) + 1
+                    wFound = True: Exit For
                 End If
-            Else
-                wTmpW(wCnt) = wv: wTmpV(wCnt) = wDv: wCnt = wCnt + 1
+            Next wFi
+            If Not wFound Then
+                If wCnt >= 200 Then Exit For
+                wTmpW(wCnt) = wv: wTmpV(wCnt) = wDv: wTmpN(wCnt) = 1: wCnt = wCnt + 1
             End If
         End If
     Next wi
 
     If wCnt = 0 Then Exit Function
 
+    ' Average pct metrics when aggregating multiple associations
+    If useAvg Then
+        Dim wai As Integer
+        For wai = 0 To wCnt - 1
+            If wTmpN(wai) > 1 Then wTmpV(wai) = wTmpV(wai) / wTmpN(wai)
+        Next wai
+    End If
+
+    ' Sort ASC by week string (bubble sort on small array)
+    Dim wsi As Integer, wsj As Integer
+    Dim wsTmp As Double, wsTmpW As String, wsTmpN As Integer
+    For wsi = 0 To wCnt - 2
+        For wsj = 0 To wCnt - 2 - wsi
+            If wTmpW(wsj) > wTmpW(wsj + 1) Then
+                wsTmp = wTmpV(wsj):  wTmpV(wsj) = wTmpV(wsj + 1): wTmpV(wsj + 1) = wsTmp
+                wsTmpW = wTmpW(wsj): wTmpW(wsj) = wTmpW(wsj + 1): wTmpW(wsj + 1) = wsTmpW
+                wsTmpN = wTmpN(wsj): wTmpN(wsj) = wTmpN(wsj + 1): wTmpN(wsj + 1) = wsTmpN
+            End If
+        Next wsj
+    Next wsi
+
+    ' Take last maxWeeks (most recent, ASC order)
     Dim wTake As Integer: wTake = IIf(wCnt < maxWeeks, wCnt, maxWeeks)
     Dim wResult() As Double
     ReDim wResult(wTake - 1)
     Dim wm As Integer
     For wm = 0 To wTake - 1
-        wResult(wm) = wTmpV(wTake - 1 - wm)
+        wResult(wm) = wTmpV(wCnt - wTake + wm)
     Next wm
     GetWeeklySeries = wResult
 End Function
