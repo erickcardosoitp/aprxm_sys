@@ -175,6 +175,7 @@ async def deliver_package(
             payer_name=body.payer_name,
             cash_session_id=body.cash_session_id,
             skip_fee=skip_fee,
+            require_own_cash_session=current.require_own_cash_session,
         )
     except CashSessionError:
         raise HTTPException(status_code=422, detail="NO_SESSION")
@@ -296,6 +297,7 @@ async def bulk_deliver_packages(
                 payment_method_id=body.payment_method_id,
                 cash_session_id=body.cash_session_id,
                 skip_fee=skip_fee,
+                require_own_cash_session=current.require_own_cash_session,
             )
             if pkg.has_delivery_fee:
                 fee_charged_residents.add(resident_key)

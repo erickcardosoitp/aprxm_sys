@@ -611,7 +611,7 @@ async def register_transaction(
         can_pick_session = current.is_conferente
         if body.cash_session_id:
             cash = await svc.get_open_session(current.association_id, session_id=body.cash_session_id)
-            if not can_pick_session and cash.opened_by != current.user_id:
+            if (not can_pick_session or current.require_own_cash_session) and cash.opened_by != current.user_id:
                 raise HTTPException(status_code=403, detail="Você não pode lançar em sessão de outro operador.")
             is_own_session = cash.opened_by == current.user_id
             if not current.is_admin and not is_own_session and cash.device_token and x_device_token and cash.device_token != x_device_token:
@@ -1274,6 +1274,8 @@ async def correct_transaction(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    if current.restrict_edit_tx:
+        raise HTTPException(status_code=403, detail="Você não tem permissão para editar lançamentos.")
     from sqlmodel import select as sq_select
     from app.models.user import User, UserRole
     admin_roles = {UserRole.admin, UserRole.admin_master, UserRole.superadmin}
@@ -1330,6 +1332,8 @@ async def reverse_transaction(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    if current.restrict_reverse_tx:
+        raise HTTPException(status_code=403, detail="Você não tem permissão para estornar lançamentos.")
     from sqlmodel import select as sq_select
     from app.models.user import User, UserRole
     admin_roles = {UserRole.admin, UserRole.admin_master, UserRole.superadmin}

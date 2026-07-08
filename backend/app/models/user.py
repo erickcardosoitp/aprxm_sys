@@ -32,6 +32,9 @@ class User(SQLModel, table=True):
     avatar_url: str | None = None
     is_active: bool = Field(default=True)
     simplifica_mode: bool = Field(default=False)
+    restrict_edit_tx: bool = Field(default=False)
+    restrict_reverse_tx: bool = Field(default=False)
+    require_own_cash_session: bool = Field(default=False)
     last_login_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

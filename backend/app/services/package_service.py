@@ -98,6 +98,7 @@ class PackageService:
         payment_method_id: UUID | None = None,
         payer_name: str | None = None,
         skip_fee: bool = False,
+        require_own_cash_session: bool = False,
     ) -> Package:
         package = await self._get_package(package_id, association_id)
 
@@ -128,7 +129,7 @@ class PackageService:
             if cash_session_id:
                 cash_session = await self._finance.get_open_session(association_id, session_id=cash_session_id)
             else:
-                cash_session = await self._finance.get_open_session(association_id, preferred_by=delivered_by, strict_owner=False)
+                cash_session = await self._finance.get_open_session(association_id, preferred_by=delivered_by, strict_owner=require_own_cash_session)
 
             # Try to find "Taxa de Entrega" category for this association
             cat_result = await self._session.execute(

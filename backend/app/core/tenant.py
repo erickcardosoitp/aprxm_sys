@@ -20,6 +20,9 @@ class CurrentUser:
         linked_association_ids: list[UUID] | None = None,
         is_office: bool = False,
         association_name: str = "",
+        restrict_edit_tx: bool = False,
+        restrict_reverse_tx: bool = False,
+        require_own_cash_session: bool = False,
     ) -> None:
         self.user_id = user_id
         self.association_id = association_id
@@ -27,6 +30,9 @@ class CurrentUser:
         self.linked_association_ids: list[UUID] = linked_association_ids or []
         self.is_office = is_office
         self.association_name = association_name
+        self.restrict_edit_tx = restrict_edit_tx
+        self.restrict_reverse_tx = restrict_reverse_tx
+        self.require_own_cash_session = require_own_cash_session
 
     @property
     def is_aggregator(self) -> bool:
@@ -73,7 +79,7 @@ async def get_current_user(
 
     user_id = UUID(payload["sub"])
     row = await session.execute(
-        text("SELECT is_active FROM users WHERE id = :uid"),
+        text("SELECT is_active, restrict_edit_tx, restrict_reverse_tx, require_own_cash_session FROM users WHERE id = :uid"),
         {"uid": user_id},
     )
     user_row = row.fetchone()
@@ -92,6 +98,9 @@ async def get_current_user(
         linked_association_ids=linked_ids,
         is_office=bool(payload.get("is_office", False)),
         association_name=payload.get("association_name", ""),
+        restrict_edit_tx=bool(user_row[1]),
+        restrict_reverse_tx=bool(user_row[2]),
+        require_own_cash_session=bool(user_row[3]),
     )
 
 

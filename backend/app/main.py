@@ -183,6 +183,11 @@ async def _run_migrations() -> None:
             "ALTER TABLE associations ADD COLUMN IF NOT EXISTS presidente_user_id UUID REFERENCES users(id)"
         ))
 
+        # users: permission flags
+        await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS restrict_edit_tx BOOLEAN NOT NULL DEFAULT FALSE"))
+        await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS restrict_reverse_tx BOOLEAN NOT NULL DEFAULT FALSE"))
+        await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS require_own_cash_session BOOLEAN NOT NULL DEFAULT FALSE"))
+
         # associations: balance_start_date para saldo unificado do caixa
         await session.execute(text(
             "ALTER TABLE associations ADD COLUMN IF NOT EXISTS balance_start_date DATE DEFAULT '2026-06-01'"
