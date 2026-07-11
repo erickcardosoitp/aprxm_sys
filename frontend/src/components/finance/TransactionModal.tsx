@@ -705,7 +705,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
           }
         }).catch((e: any) => {
           toast.error(e.response?.data?.detail ?? 'Erro ao emitir comprovante.')
-        }).finally(() => setSaving(false); submittingRef.current = false)
+        }).finally(() => { setSaving(false); submittingRef.current = false })
       }, 0)
       return
     }
