@@ -255,6 +255,38 @@ class FinanceService:
     ) -> Transaction:
         from datetime import datetime as _dt
         is_expense = tx_type == TransactionType.expense
+        is_mensalidade_income = (
+            tx_type == TransactionType.income
+            and income_subtype == IncomeSubtype.mensalidade
+            and resident_id is not None
+        )
+
+        def _month_offset(base: datetime, offset: int) -> str:
+            y, mo = base.year, base.month - offset
+            while mo <= 0:
+                mo += 12; y -= 1
+            return f"{y:04d}-{mo:02d}"
+
+        months_to_cover: list[str] = []
+        if is_mensalidade_income:
+            from app.models.mensalidade import Mensalidade, MensalidadeStatus
+            now_check = datetime.utcnow()
+            months_to_cover = (
+                sorted(set(mensalidade_months)) if mensalidade_months
+                else [_month_offset(now_check, i) for i in range(acordo_months - 1, -1, -1)]
+            )
+            existing_status = (await self._session.execute(
+                select(Mensalidade.reference_month, Mensalidade.status).where(
+                    Mensalidade.association_id == association_id,
+                    Mensalidade.resident_id == resident_id,
+                    Mensalidade.reference_month.in_(months_to_cover),
+                )
+            )).all()
+            already_paid = {row[0] for row in existing_status if row[1] == MensalidadeStatus.paid}
+            if already_paid == set(months_to_cover):
+                raise UnprocessableError(
+                    "Mensalidade já paga para o(s) mês(es) selecionado(s). Nenhum lançamento foi registrado."
+                )
 
         tx = Transaction(
             association_id=association_id,
@@ -280,22 +312,15 @@ class FinanceService:
         await self._session.flush()
 
         # Auto-create/update mensalidade record when subtype is mensalidade
-        if tx_type == TransactionType.income and income_subtype == IncomeSubtype.mensalidade and resident_id is not None:
+        claimed_months: list[str] = []
+        if is_mensalidade_income:
             from app.models.mensalidade import Mensalidade, MensalidadeStatus
-            from sqlmodel import select as sq_sel
-            from datetime import date as dt_date, datetime as dt_dt
+            from sqlmodel import select as sq_sel, update as sq_update
+            from datetime import date as dt_date
             now = datetime.utcnow()
             target_status = MensalidadeStatus.agreement if is_acordo else MensalidadeStatus.paid
-            def _month_offset(base: datetime, offset: int) -> str:
-                y, mo = base.year, base.month - offset
-                while mo <= 0:
-                    mo += 12; y -= 1
-                return f"{y:04d}-{mo:02d}"
-            # Explicit month list takes precedence over acordo_months offset
-            if mensalidade_months:
-                months_to_cover = sorted(set(mensalidade_months))
-            else:
-                months_to_cover = [_month_offset(now, i) for i in range(acordo_months - 1, -1, -1)]
+            per_month_amount = (amount / len(months_to_cover)).quantize(Decimal("0.01")) if months_to_cover else amount
+
             for ref_month in months_to_cover:
                 existing = await self._session.execute(
                     sq_sel(Mensalidade).where(
@@ -306,26 +331,49 @@ class FinanceService:
                 )
                 mens = existing.scalar_one_or_none()
                 if mens:
-                    if mens.status != MensalidadeStatus.paid:
-                        mens.status = target_status
-                        mens.paid_at = now
-                        mens.transaction_id = tx.id
-                        self._session.add(mens)
+                    # Atomic claim: only settles if another concurrent request hasn't
+                    # already marked it paid — prevents double-submit from creating
+                    # a phantom income transaction with no mensalidade behind it.
+                    claim = await self._session.execute(
+                        sq_update(Mensalidade)
+                        .where(Mensalidade.id == mens.id, Mensalidade.status != MensalidadeStatus.paid)
+                        .values(status=target_status, paid_at=now, transaction_id=tx.id)
+                    )
+                    if claim.rowcount:
+                        claimed_months.append(ref_month)
                 else:
                     yr, mo = int(ref_month[:4]), int(ref_month[5:])
                     due = dt_date(yr, mo, 10)
-                    new_mens = Mensalidade(
-                        association_id=association_id,
-                        resident_id=resident_id,
-                        reference_month=ref_month,
-                        due_date=due,
-                        amount=amount,
-                        status=target_status,
-                        paid_at=now,
-                        transaction_id=tx.id,
-                        created_by=created_by,
+                    insert_result = await self._session.execute(
+                        sa_text("""
+                            INSERT INTO mensalidades (
+                                id, association_id, resident_id, reference_month, due_date,
+                                amount, status, paid_at, transaction_id, created_by, created_at, updated_at
+                            ) VALUES (
+                                gen_random_uuid(), :aid, :rid, :ref_month, :due,
+                                :amount, :status::mensalidade_status, :paid_at, :txid, :created_by, now(), now()
+                            )
+                            ON CONFLICT (association_id, resident_id, reference_month) DO NOTHING
+                            RETURNING id
+                        """),
+                        {
+                            "aid": str(association_id), "rid": str(resident_id), "ref_month": ref_month,
+                            "due": due, "amount": str(per_month_amount), "status": target_status.value,
+                            "paid_at": now, "txid": str(tx.id), "created_by": str(created_by),
+                        },
                     )
-                    self._session.add(new_mens)
+                    if insert_result.first():
+                        claimed_months.append(ref_month)
+
+            if months_to_cover and not claimed_months:
+                # Every requested month was already settled by a concurrent request
+                # (double-click / race) — undo this transaction instead of leaving a
+                # duplicate, unlinked income entry in the caixa.
+                await self._session.delete(tx)
+                await self._session.flush()
+                raise UnprocessableError(
+                    "Mensalidade já paga para o(s) mês(es) selecionado(s). Nenhum lançamento foi registrado."
+                )
 
             if is_acordo:
                 from app.models.porta_a_porta import PortaAPortaLead

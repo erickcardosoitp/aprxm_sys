@@ -144,6 +144,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
   const [step, setStep] = useState(initialStep ?? 0)
   const [saving, setSaving] = useState(false)
+  const submittingRef = useRef(false)
 
   // Step 1
   const [txType, setTxType] = useState<'income' | 'expense'>(initialTxType ?? 'income')
@@ -451,6 +452,8 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   }
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return
+    submittingRef.current = true
     setSaving(true)
     try {
       if (isProof) {
@@ -458,7 +461,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         if (!proofIsento && !selectedSessionId) {
           const noOwn = openSessions.length > 0 && !openSessions.some(s => s.is_mine)
           if (noOwn) {
-            setSaving(false)
+            setSaving(false); submittingRef.current = false
             setShowSessionPicker(true)
             setPendingPayload({ _isProof: true })
             return
@@ -492,7 +495,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
             detail = data.detail
           }
           toast.error(detail)
-          setSaving(false)
+          setSaving(false); submittingRef.current = false
           return
         }
 
@@ -511,7 +514,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         if (barcodeCode) {
           setPendingBarcodeCode(barcodeCode)
           setBarcodeInput('')
-          setSaving(false)
+          setSaving(false); submittingRef.current = false
           setStep(3)
         } else {
           toast.success('Comprovante emitido! PDF gerado.')
@@ -522,8 +525,8 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
       }
 
       const isMensalidade = txType === 'income' && incomeSubtype === 'mensalidade'
-      if (!amount || (!isMensalidade && !description.trim())) return
-      if (txType === 'expense' && !expenseSigHas) { toast.error('Assinatura do operador é obrigatória para despesas.'); setSaving(false); return }
+      if (!amount || (!isMensalidade && !description.trim())) { setSaving(false); submittingRef.current = false; return }
+      if (txType === 'expense' && !expenseSigHas) { toast.error('Assinatura do operador é obrigatória para despesas.'); setSaving(false); submittingRef.current = false; return }
       const monthsLabel = isMensalidade && mensalidadeMonths.length > 0
         ? [...mensalidadeMonths].sort().map(ym => {
             const [y, m] = ym.split('-')
@@ -539,7 +542,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
       const a1 = isSplit ? parseFloat(amount) - a2 : parseFloat(amount)
 
       if (isSplit && (isNaN(a2) || a2 <= 0 || a1 <= 0)) {
-        toast.error('Valor inválido para pagamento dividido.'); setSaving(false); return
+        toast.error('Valor inválido para pagamento dividido.'); setSaving(false); submittingRef.current = false; return
       }
 
       const selectedPmName = paymentMethods.find(m => m.id === paymentMethodId)?.name ?? ''
@@ -582,7 +585,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         }
       } catch (e: any) {
         if (e.response?.data?.detail === 'NO_SESSION') {
-          setSaving(false)
+          setSaving(false); submittingRef.current = false
           try {
             const res = await financeService.listOpenSessionsPicker()
             if (res.data.length === 0) {
@@ -619,7 +622,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao registrar transação.')
     } finally {
-      setSaving(false)
+      setSaving(false); submittingRef.current = false
     }
   }
 
@@ -702,7 +705,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
           }
         }).catch((e: any) => {
           toast.error(e.response?.data?.detail ?? 'Erro ao emitir comprovante.')
-        }).finally(() => setSaving(false))
+        }).finally(() => setSaving(false); submittingRef.current = false)
       }, 0)
       return
     }
@@ -716,7 +719,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao registrar transação.')
     } finally {
-      setSaving(false)
+      setSaving(false); submittingRef.current = false
     }
     setPendingPayload(null)
   }
