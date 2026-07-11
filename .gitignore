@@ -2,6 +2,10 @@
 .env
 *.env
 
+# Backups locais de historico do git (nunca versionar)
+*_backup_*.bundle
+*_backup_*.zip
+
 # Python
 __pycache__/
 *.pyc
