@@ -73,7 +73,7 @@ A connection string está pré-configurada em `mdl_Main.SetupWorkbook` e copiada
 Caso precise alterar, edite diretamente a célula `_DADOS!B1` (tornar a aba visível temporariamente via VBA).
 
 ```
-Driver={PostgreSQL Unicode};Server=ep-floral-shadow-ap9n86vs.c-7.us-east-1.aws.neon.tech;Port=5432;Database=neondb;Uid=neondb_owner;Pwd=npg_M2hLclCBG1XD;SSLmode=require;
+Driver={PostgreSQL Unicode};Server=<host-do-neon>;Port=5432;Database=neondb;Uid=neondb_owner;Pwd=<senha-nao-versionar>;SSLmode=require;
 ```
 
 ---

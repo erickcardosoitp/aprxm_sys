@@ -134,7 +134,7 @@ Public Sub SetupWorkbook()
     ' Instrução
     wsDados.Range("A1").Value = "Conexão Neon Analytics:"
     wsDados.Range("A1").Font.Bold = True
-    wsDados.Range("B1").Value = "Driver={PostgreSQL Unicode};Server=ep-floral-shadow-ap9n86vs.c-7.us-east-1.aws.neon.tech;Port=5432;Database=neondb;Uid=neondb_owner;Pwd=npg_M2hLclCBG1XD;SSLmode=require;"
+    wsDados.Range("B1").Value = "Driver={PostgreSQL Unicode};Server=<host-do-neon>;Port=5432;Database=neondb;Uid=neondb_owner;Pwd=<senha-nao-versionar>;SSLmode=require;"
     wsDados.Range("A1").ColumnWidth = 25
     wsDados.Range("B1").ColumnWidth = 120
 
