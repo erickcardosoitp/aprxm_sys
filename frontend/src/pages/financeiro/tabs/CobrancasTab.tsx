@@ -270,6 +270,8 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
     if (!payPmTarget) return
     const { id, meta: residentMeta, amount: totalAmount } = payPmTarget
 
+    if (!payPmId) { toast.error('Selecione a forma de pagamento.'); return }
+
     const amount2 = splitEnabled ? parseFloat(payAmount2) : NaN
     if (splitEnabled) {
       if (isNaN(amount2) || amount2 <= 0) { toast.error('Informe o valor da 2ª forma de pagamento.'); return }
@@ -1142,7 +1144,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
 
             <div className="flex gap-2">
               <button onClick={() => setPayPmTarget(null)} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600">Cancelar</button>
-              <button onClick={confirmPayMensalidade} className="flex-1 py-2 rounded-xl bg-green-600 text-white text-sm font-medium">Confirmar</button>
+              <button onClick={confirmPayMensalidade} disabled={!payPmId} className="flex-1 py-2 rounded-xl bg-green-600 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">Confirmar</button>
             </div>
           </div>
         </div>

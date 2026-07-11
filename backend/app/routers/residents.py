@@ -28,6 +28,7 @@ class CreateResidentRequest(BaseModel):
     phone_secondary: str | None = None
 
     parking_spot: str | None = None
+    move_in_date: date | None = None
 
     address_cep: str | None = None
     address_street: str | None = None
@@ -79,6 +80,7 @@ class UpdateResidentRequest(BaseModel):
     phone_secondary: str | None = None
 
     parking_spot: str | None = None
+    move_in_date: date | None = None
 
     address_cep: str | None = None
     address_street: str | None = None

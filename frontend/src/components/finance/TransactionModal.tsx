@@ -41,11 +41,12 @@ const INCOME_SUBTYPES: { value: IncomeSubtype; label: string; icon: string }[] =
 
 const STEP_TITLES = ['Tipo', 'Dados', 'Confirmação']
 
-function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, setRegCpf, regCep, setRegCep, regProofUrl, setRegProofUrl, registerAs, setRegisterAs, registering, onRegister, onlyMember = false, onCepResolved }: {
+function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, setRegCpf, regCep, setRegCep, regMoveInDate, setRegMoveInDate, regProofUrl, setRegProofUrl, registerAs, setRegisterAs, registering, onRegister, onlyMember = false, onCepResolved }: {
   regName: string; setRegName: (v: string) => void
   regPhone: string; setRegPhone: (v: string) => void
   regCpf: string; setRegCpf: (v: string) => void
   regCep: string; setRegCep: (v: string) => void
+  regMoveInDate: string; setRegMoveInDate: (v: string) => void
   regProofUrl: string; setRegProofUrl: (v: string) => void
   registerAs: 'member' | 'guest' | null; setRegisterAs: (v: 'member' | 'guest' | null) => void
   registering: boolean; onRegister: () => void
@@ -117,6 +118,15 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
                   {cepResult.street}, {cepResult.district}
                 </p>
               )}
+            </div>
+          )}
+          {(registerAs === 'member') && (
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">Data de associação (opcional — se já morava aqui antes de cadastrar)</label>
+              <input value={regMoveInDate} onChange={e => setRegMoveInDate(e.target.value)}
+                type="date" max={new Date().toISOString().slice(0, 10)}
+                className={`w-full ${inputCls}`} />
+              <p className="text-[11px] text-gray-400 mt-1">Se não preencher, a mensalidade passa a contar a partir de hoje.</p>
             </div>
           )}
           <div>
@@ -194,6 +204,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   const [regDistrict, setRegDistrict] = useState('')
   const [regCity, setRegCity] = useState('')
   const [regStateAddr, setRegStateAddr] = useState('')
+  const [regMoveInDate, setRegMoveInDate] = useState('')
   const [regProofUrl, setRegProofUrl] = useState('')
   const [registering, setRegistering] = useState(false)
 
@@ -393,6 +404,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
         address_neighborhood: regDistrict || undefined,
         address_city: regCity || undefined,
         address_state: regStateAddr || undefined,
+        move_in_date: regMoveInDate || undefined,
         status: 'active',
         is_member_confirmed: registerAs === 'member',
         terms_accepted: false,
@@ -445,6 +457,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
       const isMensalidade = txType === 'income' && incomeSubtype === 'mensalidade'
       if (!isMensalidade && !description.trim()) return false
       if (isMensalidade && !resident) return false
+      if (isMensalidade && !paymentMethodId) return false
       if (txType === 'income' && incomeSubtype === 'delivery_fee' && !resident) return false
       return true
     }
@@ -1009,6 +1022,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                         regPhone={regPhone} setRegPhone={setRegPhone}
                         regCpf={regCpf} setRegCpf={setRegCpf}
                         regCep={regCep} setRegCep={setRegCep}
+                        regMoveInDate={regMoveInDate} setRegMoveInDate={setRegMoveInDate}
                         regProofUrl={regProofUrl} setRegProofUrl={setRegProofUrl}
                         registerAs={registerAs} setRegisterAs={setRegisterAs}
                         registering={registering} onRegister={registerResident}
@@ -1068,6 +1082,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                     regPhone={regPhone} setRegPhone={setRegPhone}
                     regCpf={regCpf} setRegCpf={setRegCpf}
                     regCep={regCep} setRegCep={setRegCep}
+                    regMoveInDate={regMoveInDate} setRegMoveInDate={setRegMoveInDate}
                     regProofUrl={regProofUrl} setRegProofUrl={setRegProofUrl}
                     registerAs={registerAs} setRegisterAs={setRegisterAs}
                     registering={registering} onRegister={registerResident}
@@ -1285,6 +1300,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                     <div className="flex flex-col gap-2">
                       <label className="block text-xs font-medium text-gray-600">
                         {splitEnabled ? '1ª forma de pagamento' : 'Forma de pagamento'}
+                        {txType === 'income' && incomeSubtype === 'mensalidade' && <span className="text-red-500"> *</span>}
                         {splitEnabled && amount && amount2Split && parseFloat(amount2Split) > 0 && (
                           <span className="ml-1 text-gray-400 font-normal">
                             (R$ {(parseFloat(amount) - parseFloat(amount2Split)).toFixed(2)})

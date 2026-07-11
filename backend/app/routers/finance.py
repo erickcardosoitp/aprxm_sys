@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -100,6 +100,12 @@ class TransactionRequest(BaseModel):
     payer_entity_id: UUID | None = None
     mensalidade_months: list[str] | None = None
     signature_url: str | None = None
+
+    @model_validator(mode="after")
+    def _require_payment_method_for_mensalidade(self):
+        if self.income_subtype == IncomeSubtype.mensalidade and self.payment_method_id is None:
+            raise ValueError("Forma de pagamento é obrigatória para mensalidade.")
+        return self
 
 
 class ConferenciaRequest(BaseModel):

@@ -370,13 +370,14 @@ class MensalidadeService:
         last_day = monthrange(year, month)[1]
 
         # active members without a mensalidade for this month, including their payment day
-        # only residents who joined on or before the reference month
+        # only residents who joined on or before the reference month —
+        # usa move_in_date (data real de associação) quando preenchido, senão cai pra created_at
         result = await self._session.execute(text("""
             SELECT r.id, r.monthly_payment_day FROM residents r
             WHERE r.association_id = :aid
               AND r.type = 'member'
               AND r.status = 'active'
-              AND to_char(r.created_at, 'YYYY-MM') <= :ref
+              AND to_char(COALESCE(r.move_in_date, r.created_at::date), 'YYYY-MM') <= :ref
               AND NOT EXISTS (
                 SELECT 1 FROM mensalidades m
                 WHERE m.resident_id = r.id

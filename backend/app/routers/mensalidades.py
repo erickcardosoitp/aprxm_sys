@@ -25,7 +25,7 @@ class CreateMensalidadeRequest(BaseModel):
 
 
 class PayMensalidadeRequest(BaseModel):
-    payment_method_id: UUID | None = None
+    payment_method_id: UUID
     auto_next: bool = True
     payment_method_id_2: UUID | None = None
     amount_2: Decimal | None = Field(default=None, gt=0)
@@ -252,7 +252,7 @@ async def advance_payment(
     import calendar
 
     resident = (await session.execute(
-        sa_text("SELECT monthly_payment_day FROM residents WHERE id = :rid AND association_id = :aid AND is_active = TRUE"),
+        sa_text("SELECT monthly_payment_day FROM residents WHERE id = :rid AND association_id = :aid AND status = 'active'"),
         {"rid": str(body.resident_id), "aid": str(current.association_id)},
     )).fetchone()
     if not resident:
@@ -382,7 +382,7 @@ async def list_by_resident(
     mensalidades = await svc.list_by_resident(current.association_id, resident_id)
     mig_rows = (await session.execute(
         text("""
-            SELECT competencia, tipo, valor_pago, data_pagamento
+            SELECT competencia, tipo, valor_pago, data_pagamento, proof_url
             FROM migration_payments
             WHERE association_id = :aid AND resident_id = :rid
             ORDER BY competencia DESC
@@ -398,7 +398,7 @@ async def list_by_resident(
             "amount": str(r[2]) if r[2] is not None else "0.00",
             "status": "paid", "paid_at": str(r[3]) if r[3] else None,
             "transaction_id": None, "notes": None,
-            "origem": "migracao", "tipo": str(r[1]),
+            "origem": "migracao", "tipo": str(r[1]), "proof_url": r[4],
         }
         for r in mig_rows
     ]
@@ -504,7 +504,7 @@ async def inadimplencia_history(
 @router.post("/{mensalidade_id}/pay", summary="Pagar mensalidade via caixa aberto")
 async def pay_mensalidade(
     mensalidade_id: UUID,
-    body: PayMensalidadeRequest = PayMensalidadeRequest(),
+    body: PayMensalidadeRequest,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -540,6 +540,7 @@ class CreateMigrationPaymentRequest(BaseModel):
     tipo: MigrationPaymentTipo = MigrationPaymentTipo.mensalidade
     valor_pago: Decimal | None = None
     data_pagamento: date | None = None
+    proof_url: str | None = None
 
 
 class BulkMigrationRequest(BaseModel):
@@ -549,6 +550,7 @@ class BulkMigrationRequest(BaseModel):
     tipo: MigrationPaymentTipo = MigrationPaymentTipo.mensalidade
     valor_pago: Decimal | None = None
     data_pagamento: date | None = None
+    proof_url: str | None = None
 
 
 @router.post("/migration", summary="Registrar histórico de migração (1 competência)")
@@ -566,6 +568,7 @@ async def create_migration_payment(
         created_by=current.user_id,
         valor_pago=body.valor_pago,
         data_pagamento=body.data_pagamento,
+        proof_url=body.proof_url,
     )
     await session.commit()
     return _fmt_mp(mp)
@@ -587,6 +590,7 @@ async def bulk_migration_payment(
         created_by=current.user_id,
         valor_pago=body.valor_pago,
         data_pagamento=body.data_pagamento,
+        proof_url=body.proof_url,
     )
     await session.commit()
     return {"created": len(created), "quitado_ate": body.quitado_ate}
@@ -667,6 +671,7 @@ def _fmt_mp(mp) -> dict:
         "origem": mp.origem,
         "valor_pago": str(mp.valor_pago) if mp.valor_pago is not None else None,
         "data_pagamento": str(mp.data_pagamento) if mp.data_pagamento else None,
+        "proof_url": mp.proof_url,
         "created_at": mp.created_at.isoformat(),
     }
 

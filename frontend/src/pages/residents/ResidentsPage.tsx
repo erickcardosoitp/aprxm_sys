@@ -6,6 +6,7 @@ import type { Resident, ResidentStatus, ResidentType } from '../../types'
 import { printCarne as printCarneUtil } from '../../utils/printCarne'
 import { maskCpf, formatCpf, formatPhone, formatCep, formatDateInput, parseDateInput } from '../../utils'
 import { useAuthStore } from '../../store/authStore'
+import { PhotoCapture } from '../../components/packages/PhotoCapture'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -713,7 +714,7 @@ interface ResidentPackage {
 
 interface MigrationEntry {
   id: string; competencia: string; tipo: string; origem: string
-  valor_pago?: string | null; data_pagamento?: string | null
+  valor_pago?: string | null; data_pagamento?: string | null; proof_url?: string | null
 }
 
 type ProfileTab = 'mensalidades' | 'inadimplencia' | 'encomendas' | 'migracao' | 'dependentes'
@@ -742,7 +743,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [dependents, setDependents] = useState<Resident[]>([])
   const [tab, setTab] = useState<ProfileTab>('mensalidades')
   const [loading, setLoading] = useState(true)
-  const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_de: '', quitado_ate: '', mode: 'single' as 'single' | 'bulk' | 'range', valor_pago: '', data_pagamento: '' })
+  const [migForm, setMigForm] = useState({ competencia: '', tipo: 'mensalidade', quitado_de: '', quitado_ate: '', mode: 'single' as 'single' | 'bulk' | 'range', valor_pago: '', data_pagamento: '', proof_url: '' })
   const [migSaving, setMigSaving] = useState(false)
   const [editingMig, setEditingMig] = useState<string | null>(null)
   const [editMigForm, setEditMigForm] = useState({ tipo: 'mensalidade', valor_pago: '', data_pagamento: '' })
@@ -843,6 +844,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           tipo: migForm.tipo,
           valor_pago: migForm.valor_pago ? parseFloat(migForm.valor_pago) : null,
           data_pagamento: migForm.data_pagamento || null,
+          proof_url: migForm.proof_url || null,
         })
         toast.success('Histórico de migração gerado!')
       } else {
@@ -853,6 +855,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
           tipo: migForm.tipo,
           valor_pago: migForm.valor_pago ? parseFloat(migForm.valor_pago) : null,
           data_pagamento: migForm.data_pagamento || null,
+          proof_url: migForm.proof_url || null,
         })
         toast.success('Registro de migração criado!')
       }
@@ -1330,6 +1333,11 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                         className="w-full border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none" />
                     </div>
                   </div>
+                  <div>
+                    <label className="text-xs text-amber-700 mb-1 block">Comprovante <span className="text-amber-500">(opcional)</span></label>
+                    <PhotoCapture label="Foto do comprovante" onCapture={e => setMigForm(f => ({ ...f, proof_url: e.url }))} />
+                    {migForm.proof_url && <p className="text-xs text-green-600 mt-1">✓ Comprovante anexado</p>}
+                  </div>
                   <button onClick={handleMigSave} disabled={migSaving}
                     className="bg-amber-600 hover:bg-amber-700 text-white py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-50">
                     {migSaving ? 'Salvando…' : 'Registrar'}
@@ -1346,6 +1354,9 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
                       <div>
                         <span className="text-sm font-medium text-gray-800">{fmtComp(mp.competencia)}</span>
                         <span className="ml-2 text-xs text-gray-400">{mp.tipo === 'mensalidade' ? 'Mensalidade' : 'Acordo'}</span>
+                        {mp.proof_url && (
+                          <a href={mp.proof_url} target="_blank" rel="noreferrer" className="ml-2 text-xs text-blue-500 underline">comprovante</a>
+                        )}
                       </div>
                       <button onClick={() => handleMigDelete(mp.competencia)}
                         className="text-gray-300 hover:text-red-500 transition ml-2">

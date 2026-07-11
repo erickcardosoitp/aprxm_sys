@@ -23,6 +23,7 @@ class MigrationPaymentService:
         created_by: UUID,
         valor_pago: Decimal | None = None,
         data_pagamento: date | None = None,
+        proof_url: str | None = None,
     ) -> MigrationPayment:
         mp = MigrationPayment(
             association_id=association_id,
@@ -32,6 +33,7 @@ class MigrationPaymentService:
             created_by=created_by,
             valor_pago=valor_pago,
             data_pagamento=data_pagamento,
+            proof_url=proof_url,
         )
         self._session.add(mp)
         try:
@@ -51,6 +53,7 @@ class MigrationPaymentService:
         quitado_de: str | None = None,
         valor_pago: Decimal | None = None,
         data_pagamento: date | None = None,
+        proof_url: str | None = None,
     ) -> list[MigrationPayment]:
         year_end, month_end = map(int, quitado_ate.split("-"))
         if quitado_de:
@@ -74,6 +77,7 @@ class MigrationPaymentService:
                     created_by=created_by,
                     valor_pago=valor_pago,
                     data_pagamento=data_pagamento,
+                    proof_url=proof_url,
                 )
                 self._session.add(mp)
                 created.append(mp)
