@@ -378,7 +378,7 @@ export function AppShell() {
         <div className="flex flex-col leading-tight min-w-0 max-w-[55vw]">
           <img src="/logo.png" alt="APRXM" className="h-6 w-auto object-contain" />
           {associationName && (
-            <span className="text-[10px] opacity-70 leading-none whitespace-nowrap overflow-hidden text-ellipsis">{associationName}</span>
+            <span className="text-xs font-semibold opacity-95 leading-tight whitespace-nowrap overflow-hidden text-ellipsis mt-0.5">{associationName}</span>
           )}
         </div>
 
@@ -502,7 +502,7 @@ export function AppShell() {
                 {initials}
               </div>
               {fullName && (
-                <span className="text-sm opacity-90 hidden sm:block truncate max-w-[120px]">{fullName.split(' ')[0]}</span>
+                <span className="text-sm font-semibold opacity-95 truncate max-w-[110px] sm:max-w-[140px]">{fullName.split(' ')[0]}</span>
               )}
               <ChevronDown className={`w-3.5 h-3.5 opacity-60 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
             </button>

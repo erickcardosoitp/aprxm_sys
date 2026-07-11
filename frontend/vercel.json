@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://backend-git-main-erickxcs-projects.vercel.app/api/:path*"
+      "destination": "https://aprxm-sys-backend.vercel.app/api/:path*"
     },
     {
       "source": "/(.*)",

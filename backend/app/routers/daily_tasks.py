@@ -624,7 +624,7 @@ async def report_pdf(
         LEFT JOIN users ua ON ua.id = so.assigned_to
         LEFT JOIN users uc ON uc.id = so.requester_user_id
         WHERE so.association_id = ANY(:aids)
-          AND so.status IN ('open', 'in_progress', 'waiting_third_party')
+          AND so.status IN ('draft', 'pending', 'in_progress')
           {os_uid_filter}
         ORDER BY user_name ASC, so.number ASC
     """), params)).fetchall()
@@ -713,14 +713,13 @@ async def report_pdf(
         "blocked":     (DANGER,  (253, 230, 233)),
     }
     OS_STATUS_LABEL = {
-        "open": "Aberta", "in_progress": "Em andamento",
-        "waiting_third_party": "Aguard. terceiro",
-        "resolved": "Resolvida", "cancelled": "Cancelada",
+        "draft": "Rascunho", "pending": "Pendente", "in_progress": "Em andamento",
+        "resolved": "Resolvida", "archived": "Arquivada", "cancelled": "Cancelada",
     }
     OS_STATUS_COLOR = {
-        "open":                (WARNING, (255, 243, 224)),
-        "in_progress":         (INFO,    (224, 239, 255)),
-        "waiting_third_party": (PURPLE,  (240, 230, 250)),
+        "draft":       (INK_MUTED, (240, 242, 247)),
+        "pending":     (WARNING,   (255, 243, 224)),
+        "in_progress": (INFO,     (224, 239, 255)),
     }
     OS_PRIORITY_LABEL = {"low": "Baixa", "medium": "Média", "high": "Alta", "critical": "Crítica"}
     OS_PRIORITY_COLOR = {

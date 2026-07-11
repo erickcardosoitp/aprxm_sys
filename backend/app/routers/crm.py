@@ -305,7 +305,8 @@ async def cron_scoring(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     auth = request.headers.get("authorization", "")
-    from app.config import settings
+    from app.config import get_settings
+    settings = get_settings()
     if auth != f"Bearer {settings.cron_secret}":
         raise HTTPException(status_code=401)
     result = await run_scoring_all(session)
@@ -568,7 +569,8 @@ async def generate_agent_link(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     _check_access(current)
-    from app.config import settings
+    from app.config import get_settings
+    settings = get_settings()
     from jose import jwt as jose_jwt
 
     resident = (await session.execute(
@@ -590,7 +592,8 @@ async def generate_agent_link(
 
 
 def _decode_agent_token(token: str) -> dict:
-    from app.config import settings
+    from app.config import get_settings
+    settings = get_settings()
     from jose import jwt as jose_jwt, JWTError
     try:
         return jose_jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
@@ -769,7 +772,8 @@ class PortalRegisterRequest(BaseModel):
 
 
 def _decode_portal_token(token: str) -> dict:
-    from app.config import settings
+    from app.config import get_settings
+    settings = get_settings()
     from jose import jwt as jose_jwt, JWTError
     try:
         payload = jose_jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
@@ -786,7 +790,8 @@ async def get_portal_token(
     current: CurrentUser = Depends(get_current_user),
 ) -> dict:
     _check_access(current)
-    from app.config import settings
+    from app.config import get_settings
+    settings = get_settings()
     from jose import jwt as jose_jwt
 
     payload = {
