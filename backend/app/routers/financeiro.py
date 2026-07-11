@@ -670,7 +670,7 @@ async def register_orphan_as_income(
             INSERT INTO transactions
                 (association_id, type, amount, description, income_subtype,
                  resident_id, payment_method_id, payer_name, created_by, transaction_at)
-            VALUES (:aid, 'income', :amount, :desc, :subtype::income_subtype,
+            VALUES (:aid, 'income', :amount, :desc, CAST(:subtype AS income_subtype),
                     :rid, :pmid, :pname, :cby, :txat)
             RETURNING id
         """),

@@ -368,10 +368,10 @@ async def list_packages(
         filters.append("p.status = :status")
         params["status"] = status.value if hasattr(status, "value") else status
     if date_from:
-        filters.append("p.received_at >= :date_from::date")
+        filters.append("p.received_at >= CAST(:date_from AS date)")
         params["date_from"] = date_from
     if date_to:
-        filters.append("p.received_at < (:date_to::date + interval '1 day')")
+        filters.append("p.received_at < (CAST(:date_to AS date) + interval '1 day')")
         params["date_to"] = date_to
     # Filtros de busca no SQL (eliminam o filtro em Python)
     if q:
@@ -759,10 +759,10 @@ async def count_packages(
         filters.append("(tracking_code ILIKE :q)")
         params["q"] = f"%{q}%"
     if date_from:
-        filters.append("received_at >= :df::date")
+        filters.append("received_at >= CAST(:df AS date)")
         params["df"] = date_from
     if date_to:
-        filters.append("received_at < (:dt::date + interval '1 day')")
+        filters.append("received_at < (CAST(:dt AS date) + interval '1 day')")
         params["dt"] = date_to
     where = " AND ".join(filters)
     result = await session.execute(sa_text(f"""

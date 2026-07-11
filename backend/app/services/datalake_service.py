@@ -1452,7 +1452,7 @@ async def _log_task(session: AsyncSession, run_id: str, task: str, status: str,
         await session.execute(text("""
             INSERT INTO etl_task_runs (run_id, task_name, status, started_at, completed_at,
                                        duration_s, rows_in, rows_out, detail)
-            VALUES (:rid, :task, :status, :started, NOW(), :dur, :ri, :ro, :det::jsonb)
+            VALUES (:rid, :task, :status, :started, NOW(), :dur, :ri, :ro, CAST(:det AS jsonb))
         """), {
             "rid": run_id, "task": task, "status": status,
             "started": started, "dur": duration,

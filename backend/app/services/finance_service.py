@@ -351,7 +351,7 @@ class FinanceService:
                                 amount, status, paid_at, transaction_id, created_by, created_at, updated_at
                             ) VALUES (
                                 gen_random_uuid(), :aid, :rid, :ref_month, :due,
-                                :amount, :status::mensalidade_status, :paid_at, :txid, :created_by, now(), now()
+                                :amount, CAST(:status AS mensalidade_status), :paid_at, :txid, :created_by, now(), now()
                             )
                             ON CONFLICT (association_id, resident_id, reference_month) DO NOTHING
                             RETURNING id

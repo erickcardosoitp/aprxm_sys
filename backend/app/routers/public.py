@@ -192,7 +192,7 @@ async def public_submit_update_request(
         raise HTTPException(404, "Morador não encontrado.")
     await session.execute(sa_text("""
         INSERT INTO resident_update_requests (association_id, resident_id, changes, notes)
-        VALUES (:aid, :rid, :changes::jsonb, :notes)
+        VALUES (:aid, :rid, CAST(:changes AS jsonb), :notes)
     """), {"aid": str(assoc.id), "rid": resident_id,
            "changes": __import__('json').dumps(body.changes, ensure_ascii=False),
            "notes": body.notes})
