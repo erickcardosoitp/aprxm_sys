@@ -45,3 +45,12 @@ backend/.env.production
 # Vercel env file com credenciais
 backend/.env.vercel
 .env.vercel
+
+# Scripts/consultas ad-hoc e dumps de debug na raiz do repo
+# (podem conter PII de moradores/associados — CPF, endereco, nome)
+# Nao afeta database/migrations/*.sql, que ficam em subpasta.
+/*.sql
+/*_result*.txt
+/err.txt
+/out.txt
+/neon_projects.json
