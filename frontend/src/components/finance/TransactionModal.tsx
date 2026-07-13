@@ -104,7 +104,7 @@ function InlineRegister({ regName, setRegName, regPhone, setRegPhone, regCpf, se
               placeholder={onlyMember ? 'Telefone *' : 'Telefone'} type="tel"
               className={inputCls} />
             <input value={regCpf} onChange={e => setRegCpf(e.target.value)}
-              placeholder={onlyMember ? 'CPF *' : 'CPF'} inputMode="numeric"
+              placeholder="CPF" inputMode="numeric"
               className={inputCls} />
           </div>
           {(registerAs === 'member') && (
@@ -389,7 +389,6 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
     if (!regName.trim()) { toast.error('Nome é obrigatório.'); return }
     if (incomeSubtype === 'mensalidade') {
       if (!regPhone.trim()) { toast.error('Telefone é obrigatório.'); return }
-      if (!regCpf.trim()) { toast.error('CPF é obrigatório.'); return }
       if (!regCep.trim()) { toast.error('CEP é obrigatório.'); return }
     }
     setRegistering(true)

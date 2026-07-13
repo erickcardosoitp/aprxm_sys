@@ -254,7 +254,11 @@ function ResidentForm({ initial, onSave, onCancel }: {
 
   const handleSubmit = async () => {
     if (!form.full_name.trim()) { toast.error('Nome é obrigatório.'); setStep(0); return }
-    if (!isGuest && !form.lgpd_accepted) { toast.error('Aceite o termo LGPD para continuar.'); return }
+    if (!isGuest) {
+      if (!form.phone_primary?.trim()) { toast.error('Telefone é obrigatório para associado.'); return }
+      if (!form.address_cep?.trim()) { toast.error('CEP é obrigatório para associado.'); return }
+      if (!form.lgpd_accepted) { toast.error('Aceite o termo LGPD para continuar.'); return }
+    }
     setSaving(true)
     try {
       await onSave(form)
@@ -407,7 +411,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
                 <Select label="Raça/Cor" value={form.race} onChange={(v) => set('race', v)} options={RACE_OPTIONS} />
                 <Select label="Escolaridade" value={form.education_level} onChange={(v) => set('education_level', v)} options={EDU_OPTIONS} />
               </div>
-              <Input label="Telefone principal" value={form.phone_primary} onChange={(v) => set('phone_primary', formatPhone(v))} placeholder="(21) 99999-9999" />
+              <Input label="Telefone principal *" value={form.phone_primary} onChange={(v) => set('phone_primary', formatPhone(v))} placeholder="(21) 99999-9999" />
               <Input label="Telefone secundário" value={form.phone_secondary} onChange={(v) => set('phone_secondary', formatPhone(v))} placeholder="(21) 99999-9999" />
               <Input label="E-mail" value={form.email} onChange={(v) => set('email', v)} type="email" placeholder="email@exemplo.com" />
             </>
@@ -417,7 +421,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
           {!isGuest && step === 1 && (
             <>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">CEP</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">CEP *</label>
                 <div className="flex gap-2">
                   <input value={form.address_cep}
                     onChange={(e) => set('address_cep', formatCep(e.target.value))}

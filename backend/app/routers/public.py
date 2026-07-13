@@ -22,7 +22,7 @@ class PublicRegisterRequest(BaseModel):
     phone_secondary: str | None = None
     email: str | None = None
     date_of_birth: date | None = None
-    address_cep: str | None = None
+    address_cep: str
     address_street: str | None = None
     address_number: str | None = None
     address_complement: str | None = None

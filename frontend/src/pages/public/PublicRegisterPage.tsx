@@ -94,13 +94,14 @@ export default function PublicRegisterPage() {
   const handleSubmit = async () => {
     if (!form.full_name.trim()) { toast.error('Nome é obrigatório.'); return }
     if (!form.phone_primary.trim()) { toast.error('Telefone é obrigatório.'); return }
+    if (!form.address_cep.trim()) { toast.error('CEP é obrigatório.'); return }
     setSaving(true)
     try {
       await axios.post(`${API}/public/associations/${slug}/residents`, {
         ...form,
         cpf: form.cpf ? form.cpf.replace(/\D/g, '') : null,
         date_of_birth: form.date_of_birth || null,
-        address_cep: form.address_cep || null,
+        address_cep: form.address_cep,
         address_street: form.address_street || null,
         address_number: form.address_number || null,
         address_complement: form.address_complement || null,
@@ -189,7 +190,7 @@ export default function PublicRegisterPage() {
           {/* Endereço */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              CEP {cepLoading && <span className="text-gray-400 font-normal">buscando…</span>}
+              CEP <span className="text-red-500">*</span> {cepLoading && <span className="text-gray-400 font-normal">buscando…</span>}
             </label>
             <input
               value={form.address_cep}

@@ -28,7 +28,6 @@ class CreateResidentRequest(BaseModel):
     phone_secondary: str | None = None
 
     parking_spot: str | None = None
-    move_in_date: date | None = None
 
     address_cep: str | None = None
     address_street: str | None = None
@@ -80,7 +79,6 @@ class UpdateResidentRequest(BaseModel):
     phone_secondary: str | None = None
 
     parking_spot: str | None = None
-    move_in_date: date | None = None
 
     address_cep: str | None = None
     address_street: str | None = None
@@ -199,6 +197,13 @@ async def create_resident(
     # Normalize name — title case
     if body.full_name:
         body = body.model_copy(update={"full_name": body.full_name.strip().title()})
+
+    # Associado (member) exige CEP e telefone — CPF passou a ser opcional
+    if body.type == ResidentType.member:
+        if not body.address_cep or not body.address_cep.strip():
+            raise HTTPException(status_code=422, detail="CEP é obrigatório para associado.")
+        if not body.phone_primary or not body.phone_primary.strip():
+            raise HTTPException(status_code=422, detail="Telefone é obrigatório para associado.")
 
     # Validate CPF uniqueness
     if body.cpf:
@@ -550,6 +555,16 @@ async def update_resident(
             data["cpf"] = cpf_clean
         else:
             data["cpf"] = None
+
+    # Associado (member) exige CEP e telefone — CPF passou a ser opcional
+    final_type = data.get("type", resident.type)
+    if final_type == ResidentType.member:
+        final_cep = data.get("address_cep", resident.address_cep)
+        final_phone = data.get("phone_primary", resident.phone_primary)
+        if not final_cep or not final_cep.strip():
+            raise HTTPException(status_code=422, detail="CEP é obrigatório para associado.")
+        if not final_phone or not final_phone.strip():
+            raise HTTPException(status_code=422, detail="Telefone é obrigatório para associado.")
 
     old_type = resident.type
     for key, value in data.items():

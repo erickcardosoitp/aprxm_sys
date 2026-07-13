@@ -188,12 +188,13 @@ export default function AgentPortalPage() {
 
   const handleRegister = async () => {
     if (!form.full_name.trim()) { toast.error('Nome obrigatório'); return }
-    if (!form.cpf.trim()) { toast.error('CPF obrigatório'); return }
+    if (!form.phone_primary.trim()) { toast.error('Telefone obrigatório'); return }
+    if (!form.address_cep.trim()) { toast.error('CEP obrigatório'); return }
     setSubmitting(true)
     try {
       const r = await axios.post(`${API}/crm/public/portal/register?token=${encodeURIComponent(token)}`, {
         ...form,
-        cpf: form.cpf.replace(/\D/g, ''),
+        cpf: form.cpf.trim() ? form.cpf.replace(/\D/g, '') : undefined,
       })
       setNewMember(r.data)
       setNewPayMethod(r.data.payment_methods?.[0]?.id ?? '')
@@ -451,19 +452,19 @@ export default function AgentPortalPage() {
                   className={inputCls} placeholder="Nome completo" />
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">CPF *</label>
+                <label className="text-xs text-gray-500 mb-1 block">CPF</label>
                 <input value={form.cpf}
                   onChange={e => setForm(f => ({ ...f, cpf: formatCPF(e.target.value) }))}
                   className={inputCls} placeholder="000.000.000-00" inputMode="numeric" />
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Telefone</label>
+                <label className="text-xs text-gray-500 mb-1 block">Telefone *</label>
                 <input value={form.phone_primary} onChange={e => setForm(f => ({ ...f, phone_primary: e.target.value }))}
                   className={inputCls} placeholder="(00) 00000-0000" inputMode="tel" />
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-1 block">CEP</label>
+                  <label className="text-xs text-gray-500 mb-1 block">CEP *</label>
                   <input value={form.address_cep}
                     onChange={e => { setForm(f => ({ ...f, address_cep: e.target.value })); fetchCEP(e.target.value) }}
                     className={inputCls} placeholder="00000-000" inputMode="numeric" />

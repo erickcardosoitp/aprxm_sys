@@ -1089,6 +1089,8 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   // Upgrade guest to member modal
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [upgradeCpf, setUpgradeCpf] = useState('')
+  const [upgradePhone, setUpgradePhone] = useState('')
+  const [upgradeCep, setUpgradeCep] = useState('')
   const [upgradeLoading, setUpgradeLoading] = useState(false)
   // Reassign package to existing resident
   const [reassignSearch, setReassignSearch] = useState('')
@@ -1174,17 +1176,19 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
 
   const handleUpgradeToMember = async () => {
     if (!deliveryTarget?.resident_id) return
-    if (!upgradeCpf.trim()) { toast.error('CPF obrigatório para associado.'); return }
+    if (!upgradePhone.trim()) { toast.error('Telefone obrigatório para associado.'); return }
+    if (!upgradeCep.trim()) { toast.error('CEP obrigatório para associado.'); return }
     setUpgradeLoading(true)
     try {
       await api.put(`/residents/${deliveryTarget.resident_id}`, {
-        type: 'member', cpf: upgradeCpf.trim(), status: 'active',
+        type: 'member', cpf: upgradeCpf.trim() || undefined,
+        phone_primary: upgradePhone.trim(), address_cep: upgradeCep.trim(), status: 'active',
         is_member_confirmed: true, terms_accepted: true, lgpd_accepted: true,
       })
       toast.success('Morador cadastrado como associado! Taxa isenta nesta entrega.')
       setUpgradedResidentInfo({ id: deliveryTarget.resident_id!, name: deliveryTarget.resident_name ?? '' })
       setDeliveryTarget(prev => prev ? { ...prev, resident_type: 'member', has_delivery_fee: false } : prev)
-      setShowUpgrade(false); setUpgradeCpf('')
+      setShowUpgrade(false); setUpgradeCpf(''); setUpgradePhone(''); setUpgradeCep('')
       loadPackages()
     } catch (e: any) {
       toast.error(apiErr(e, 'Erro ao atualizar cadastro.'))
@@ -1491,20 +1495,24 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   // Upgrade guest → member (receive flow)
   const [rxUpgradeTarget, setRxUpgradeTarget] = useState<Resident | null>(null)
   const [rxUpgradeCpf, setRxUpgradeCpf] = useState('')
+  const [rxUpgradePhone, setRxUpgradePhone] = useState('')
+  const [rxUpgradeCep, setRxUpgradeCep] = useState('')
   const [rxUpgradeLoading, setRxUpgradeLoading] = useState(false)
 
   const handleRxUpgrade = async () => {
     if (!rxUpgradeTarget) return
-    if (!rxUpgradeCpf.trim()) { toast.error('CPF obrigatório.'); return }
+    if (!rxUpgradePhone.trim()) { toast.error('Telefone obrigatório.'); return }
+    if (!rxUpgradeCep.trim()) { toast.error('CEP obrigatório.'); return }
     setRxUpgradeLoading(true)
     try {
       const res = await api.put<Resident>(`/residents/${rxUpgradeTarget.id}`, {
-        type: 'member', cpf: rxUpgradeCpf.trim(), status: 'active',
+        type: 'member', cpf: rxUpgradeCpf.trim() || undefined,
+        phone_primary: rxUpgradePhone.trim(), address_cep: rxUpgradeCep.trim(), status: 'active',
         is_member_confirmed: true, terms_accepted: true, lgpd_accepted: true,
       })
       toast.success('Cadastro atualizado para Associado!')
       const updated = res.data
-      setRxUpgradeTarget(null); setRxUpgradeCpf('')
+      setRxUpgradeTarget(null); setRxUpgradeCpf(''); setRxUpgradePhone(''); setRxUpgradeCep('')
       // if in single receive, update selectedRecipient
       if (selectedRecipient?.id === updated.id) setSelectedRecipient(updated)
       // if in bulk receive, set pending with updated resident
@@ -2981,7 +2989,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                       <p className="text-xs text-amber-800 font-medium">
                         Não associado — <strong>taxa de R$ 2,50</strong> será cobrada automaticamente na entrega.
                       </p>
-                      <button onClick={() => { setRxUpgradeTarget(selectedRecipient); setRxUpgradeCpf('') }}
+                      <button onClick={() => { setRxUpgradeTarget(selectedRecipient); setRxUpgradeCpf(''); setRxUpgradePhone(selectedRecipient?.phone_primary ?? ''); setRxUpgradeCep(selectedRecipient?.address_cep ?? '') }}
                         className="text-xs text-[#26619c] underline mt-0.5">
                         É associado? Atualizar cadastro agora
                       </button>
@@ -3401,10 +3409,14 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                     ) : (
                       <div className="flex flex-col gap-2">
                         <p className="text-xs font-medium text-green-700">Ao confirmar, o morador vira associado e a taxa é isenta nesta entrega.</p>
+                        <input value={upgradePhone} onChange={e => setUpgradePhone(e.target.value)}
+                          className={inputCls} placeholder="Telefone do associado *" />
+                        <input value={upgradeCep} onChange={e => setUpgradeCep(e.target.value)}
+                          className={inputCls} placeholder="CEP do associado *" inputMode="numeric" />
                         <input value={upgradeCpf} onChange={e => setUpgradeCpf(e.target.value)}
-                          className={inputCls} placeholder="CPF do associado *" />
+                          className={inputCls} placeholder="CPF (opcional)" />
                         <div className="flex gap-2">
-                          <button onClick={() => { setShowUpgrade(false); setUpgradeCpf('') }}
+                          <button onClick={() => { setShowUpgrade(false); setUpgradeCpf(''); setUpgradePhone(''); setUpgradeCep('') }}
                             className="flex-1 border border-gray-300 text-gray-600 py-1.5 rounded-lg text-xs">Cancelar</button>
                           <button onClick={handleUpgradeToMember} disabled={upgradeLoading}
                             className="flex-1 bg-green-600 text-white py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50">
@@ -4205,7 +4217,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                                   <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">R$2,50</span>
                                   <button
                                     type="button"
-                                    onClick={e => { e.stopPropagation(); setRxUpgradeTarget(r); setRxUpgradeCpf('') }}
+                                    onClick={e => { e.stopPropagation(); setRxUpgradeTarget(r); setRxUpgradeCpf(''); setRxUpgradePhone(r?.phone_primary ?? ''); setRxUpgradeCep(r?.address_cep ?? '') }}
                                     className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full hover:bg-blue-200"
                                   >→ Assoc.</button>
                                 </>
@@ -4438,15 +4450,25 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
               <p className="text-sm text-gray-500 mt-1">{rxUpgradeTarget.full_name}</p>
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">CPF <span className="text-red-500">*</span></label>
+              <label className="block text-xs text-gray-600 mb-1">Telefone <span className="text-red-500">*</span></label>
+              <input value={rxUpgradePhone} onChange={e => setRxUpgradePhone(e.target.value)}
+                className={inputCls} placeholder="(00) 00000-0000" autoFocus />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">CEP <span className="text-red-500">*</span></label>
+              <input value={rxUpgradeCep} onChange={e => setRxUpgradeCep(e.target.value)}
+                className={inputCls} placeholder="00000-000" inputMode="numeric" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">CPF <span className="text-gray-400">(opcional)</span></label>
               <input value={rxUpgradeCpf} onChange={e => setRxUpgradeCpf(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleRxUpgrade() }}
-                className={inputCls} placeholder="000.000.000-00" autoFocus />
+                className={inputCls} placeholder="000.000.000-00" />
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { setRxUpgradeTarget(null); setRxUpgradeCpf('') }}
+              <button onClick={() => { setRxUpgradeTarget(null); setRxUpgradeCpf(''); setRxUpgradePhone(''); setRxUpgradeCep('') }}
                 className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-sm">Cancelar</button>
-              <button onClick={handleRxUpgrade} disabled={rxUpgradeLoading || !rxUpgradeCpf.trim()}
+              <button onClick={handleRxUpgrade} disabled={rxUpgradeLoading || !rxUpgradePhone.trim() || !rxUpgradeCep.trim()}
                 className="flex-1 bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
                 {rxUpgradeLoading ? 'Salvando…' : 'Confirmar'}
               </button>
