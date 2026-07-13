@@ -11,8 +11,11 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.app_env == "development",
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    # Cada instancia serverless da Vercel mantem seu proprio pool - um pool grande
+    # aqui multiplica por N instancias concorrentes e estoura o limite de conexoes
+    # do Neon. O pooling de verdade e feito pelo PgBouncer do Neon por tras.
+    pool_size=3,
+    max_overflow=7,
     # Neon: SSL required + PgBouncer pooler requires prepared statements disabled
     connect_args={"ssl": "require", "statement_cache_size": 0},
 )

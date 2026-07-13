@@ -488,6 +488,7 @@ VACUUM_TABLES = [
     "daily_tasks",
     "finance_transactions",
     "bank_statements",
+    "api_request_logs",
 ]
 
 
@@ -606,6 +607,10 @@ async def run_vacuum(request: Request) -> dict:
     # VACUUM must run outside a transaction — use AUTOCOMMIT isolation
     async with engine.connect() as conn:
         await conn.execution_options(isolation_level="AUTOCOMMIT")
+        try:
+            await conn.execute(text("DELETE FROM api_request_logs WHERE created_at < NOW() - INTERVAL '7 days'"))
+        except Exception:
+            pass
         for table in VACUUM_TABLES:
             try:
                 await conn.execute(text(f"VACUUM ANALYZE {table}"))

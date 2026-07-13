@@ -52,7 +52,7 @@ async def login(
     email, _, assoc_str = form.username.partition("::")
     assoc_id = UUID(assoc_str) if assoc_str else None
     svc = AuthService(session)
-    token = await svc.authenticate(email, form.password, assoc_id)
+    token, _user, _aid = await svc.authenticate(email, form.password, assoc_id)
     return TokenResponse(access_token=token)
 
 
@@ -65,25 +65,23 @@ async def login_json(
 ) -> TokenResponse:
     from sqlalchemy import text as _t
     svc = AuthService(session)
-    access_token = await svc.authenticate(body.email, body.password, body.association_id, body.remember_me)
+    access_token, user, primary_assoc_id = await svc.authenticate(
+        body.email, body.password, body.association_id, body.remember_me
+    )
 
-    # Busca user para gerar refresh token
-    user = (await session.execute(
-        select(User).where(User.email == body.email, User.is_active == True)  # noqa: E712
-    )).scalars().first()
+    # Usa o MESMO usuário e a MESMA associação que geraram o access_token —
+    # nunca reconsultar por e-mail aqui, senão o refresh token pode ficar
+    # amarrado a uma linha diferente da que autenticou (quando o e-mail
+    # tem mais de uma linha, uma por associação).
+    raw, hashed = generate_refresh_token()
+    expires = datetime.now(UTC) + timedelta(days=_settings.refresh_token_expire_days)
+    await session.execute(_t("""
+        INSERT INTO refresh_tokens (user_id, association_id, token_hash, expires_at)
+        VALUES (:uid, :aid, :hash, :exp)
+    """), {"uid": str(user.id), "aid": str(primary_assoc_id), "hash": hashed, "exp": expires})
+    await session.commit()
 
-    refresh_raw: str | None = None
-    if user:
-        raw, hashed = generate_refresh_token()
-        expires = datetime.now(UTC) + timedelta(days=_settings.refresh_token_expire_days)
-        await session.execute(_t("""
-            INSERT INTO refresh_tokens (user_id, association_id, token_hash, expires_at)
-            VALUES (:uid, :aid, :hash, :exp)
-        """), {"uid": str(user.id), "aid": str(user.association_id), "hash": hashed, "exp": expires})
-        await session.commit()
-        refresh_raw = raw
-
-    return TokenResponse(access_token=access_token, refresh_token=refresh_raw)
+    return TokenResponse(access_token=access_token, refresh_token=raw)
 
 
 @router.post("/refresh", response_model=TokenResponse, summary="Renovar access token")

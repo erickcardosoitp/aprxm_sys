@@ -14,9 +14,11 @@ class AuthService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def authenticate(self, email: str, password: str, association_id: UUID | None = None, remember_me: bool = False) -> str:
-        # Busca por email + associação quando disponível, fallback global
-        stmt = select(User).where(User.email == email, User.is_active == True)  # noqa: E712
+    async def authenticate(self, email: str, password: str, association_id: UUID | None = None, remember_me: bool = False) -> tuple[str, User, UUID]:
+        # Busca por email + associação quando disponível, fallback global.
+        # Ordena por created_at para ter resultado determinístico quando o mesmo
+        # e-mail tem mais de uma linha (uma por associação).
+        stmt = select(User).where(User.email == email, User.is_active == True).order_by(User.created_at)  # noqa: E712
         if association_id:
             scoped = (await self._session.execute(
                 stmt.where(User.association_id == association_id)
@@ -75,11 +77,12 @@ class AuthService:
             is_office        = bool(ar[1]) if ar else False
             linked_ids       = []
 
-        return create_access_token(
+        token = create_access_token(
             user.id, primary_assoc_id, primary_role, user.full_name, linked_ids, association_name,
             expire_days=30 if remember_me else None,
             is_office=is_office,
         )
+        return token, user, primary_assoc_id
 
     async def create_user(
         self,

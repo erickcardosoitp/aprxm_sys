@@ -1,3 +1,4 @@
+import asyncio
 import time
 import traceback
 from contextlib import asynccontextmanager
@@ -1031,6 +1032,20 @@ def _extract_user_id_from_request(request: Request) -> str | None:
         return None
 
 
+async def _log_request(path: str, method: str, status_code: int, duration_ms: int, user_id: str | None) -> None:
+    try:
+        from app.database import AsyncSessionLocal
+        from sqlalchemy import text as _t
+        async with AsyncSessionLocal() as s:
+            await s.execute(_t(
+                "INSERT INTO api_request_logs (path, method, status_code, duration_ms, user_id)"
+                " VALUES (:p, :m, :s, :d, :u)"
+            ), {"p": path, "m": method, "s": status_code, "d": duration_ms, "u": user_id})
+            await s.commit()
+    except Exception:
+        pass
+
+
 @app.middleware("http")
 async def request_timing_middleware(request: Request, call_next):
     start = time.monotonic()
@@ -1038,22 +1053,9 @@ async def request_timing_middleware(request: Request, call_next):
     duration_ms = int((time.monotonic() - start) * 1000)
     path = request.url.path
     if path not in _SKIP_LOG and not path.startswith("/api/v1/ti/"):
-        try:
-            user_id = _extract_user_id_from_request(request)
-            from app.database import AsyncSessionLocal
-            from sqlalchemy import text as _t
-            async with AsyncSessionLocal() as s:
-                await s.execute(_t(
-                    "INSERT INTO api_request_logs (path, method, status_code, duration_ms, user_id)"
-                    " VALUES (:p, :m, :s, :d, :u)"
-                ), {"p": path, "m": request.method, "s": response.status_code, "d": duration_ms, "u": user_id})
-                await s.commit()
-                import random
-                if random.random() < 0.002:
-                    await s.execute(_t("DELETE FROM api_request_logs WHERE created_at < NOW() - INTERVAL '7 days'"))
-                    await s.commit()
-        except Exception:
-            pass
+        user_id = _extract_user_id_from_request(request)
+        # Fire-and-forget: não bloquear a resposta esperando o INSERT do log.
+        asyncio.create_task(_log_request(path, request.method, response.status_code, duration_ms, user_id))
     return response
 
 
