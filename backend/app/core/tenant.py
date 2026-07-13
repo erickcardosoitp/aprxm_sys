@@ -23,6 +23,7 @@ class CurrentUser:
         restrict_edit_tx: bool = False,
         restrict_reverse_tx: bool = False,
         require_own_cash_session: bool = False,
+        empresa_id: UUID | None = None,
     ) -> None:
         self.user_id = user_id
         self.association_id = association_id
@@ -33,6 +34,7 @@ class CurrentUser:
         self.restrict_edit_tx = restrict_edit_tx
         self.restrict_reverse_tx = restrict_reverse_tx
         self.require_own_cash_session = require_own_cash_session
+        self.empresa_id = empresa_id
 
     @property
     def is_aggregator(self) -> bool:
@@ -63,6 +65,16 @@ class CurrentUser:
     def is_superadmin(self) -> bool:
         return self.role == "superadmin"
 
+    @property
+    def is_platform_admin(self) -> bool:
+        """Superadmin da plataforma (dono do SaaS) — cross-empresa."""
+        return self.role == "superadmin"
+
+    @property
+    def is_empresa_admin(self) -> bool:
+        """Admin da empresa (cliente) — escopado à própria empresa via empresa_id."""
+        return self.role in ("admin_master", "superadmin")
+
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -79,7 +91,10 @@ async def get_current_user(
 
     user_id = UUID(payload["sub"])
     row = await session.execute(
-        text("SELECT is_active, restrict_edit_tx, restrict_reverse_tx, require_own_cash_session FROM users WHERE id = :uid"),
+        text(
+            "SELECT is_active, restrict_edit_tx, restrict_reverse_tx, "
+            "require_own_cash_session, token_version FROM users WHERE id = :uid"
+        ),
         {"uid": user_id},
     )
     user_row = row.fetchone()
@@ -90,7 +105,20 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Revogacao em tempo real: token antigo sem claim 'tv' vale 0, que casa
+    # com o DEFAULT 0 da coluna - ninguem e deslogado por isso sozinho.
+    # Ao incrementar token_version (troca de senha, role, desativacao etc),
+    # tokens ja emitidos passam a divergir e sao rejeitados imediatamente.
+    tv_claim = int(payload.get("tv", 0))
+    if tv_claim != int(user_row[4]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão expirada. Faça login novamente.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     linked_ids = [UUID(i) for i in payload.get("linked_association_ids", [])]
+    empresa_id_claim = payload.get("empresa_id")
     return CurrentUser(
         user_id=user_id,
         association_id=UUID(payload["association_id"]),
@@ -101,6 +129,7 @@ async def get_current_user(
         restrict_edit_tx=bool(user_row[1]),
         restrict_reverse_tx=bool(user_row[2]),
         require_own_cash_session=bool(user_row[3]),
+        empresa_id=UUID(empresa_id_claim) if empresa_id_claim else None,
     )
 
 
@@ -126,3 +155,36 @@ async def require_diretoria(current: CurrentUser = Depends(get_current_user)) ->
     if not current.is_diretoria:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de Diretoria Adjunta ou superior necessária.")
     return current
+
+
+async def require_platform_admin(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Superadmin da plataforma (dono do SaaS) - cross-empresa. Gerencia empresas."""
+    if not current.is_platform_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de superadmin da plataforma necessária.")
+    return current
+
+
+async def require_empresa_admin(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Admin da empresa (cliente) - admin_master ou superadmin, escopado a current.empresa_id."""
+    if not current.is_empresa_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de admin da empresa necessária.")
+    return current
+
+
+async def require_office_context(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Modulos Financeiro/Admin/TI so operam a partir da unidade Escritorio.
+    Superadmin de plataforma sempre passa (acesso irrestrito de suporte)."""
+    if not current.is_office and not current.is_platform_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este módulo só está disponível operando a partir do Escritório.",
+        )
+    return current
+
+
+def assert_same_empresa(current: CurrentUser, target_empresa_id: UUID | None) -> None:
+    """Superadmin de plataforma passa livre. admin_master so mexe na propria empresa."""
+    if current.is_platform_admin:
+        return
+    if target_empresa_id is None or current.empresa_id != target_empresa_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem acesso a essa empresa.")

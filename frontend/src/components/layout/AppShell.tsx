@@ -329,8 +329,13 @@ export function AppShell() {
       setMenuOpen(false)
       navigate('/')
       toast.success(`Ambiente: ${payload.association_name}`)
-    } catch {
-      toast.error('Erro ao trocar de ambiente.')
+    } catch (e: any) {
+      if (e?.response?.status === 409) {
+        toast.error('Troca entre empresas diferentes exige novo login. Saindo…', { duration: 3000 })
+        setTimeout(() => { clearAuth(); navigate('/login') }, 1500)
+      } else {
+        toast.error('Erro ao trocar de ambiente.')
+      }
     } finally {
       setSwitching(null)
     }

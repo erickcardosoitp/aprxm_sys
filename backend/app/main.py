@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 4
 
 
 async def _run_migrations() -> None:
@@ -155,6 +155,15 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (3, 'v3: RFM scoring — risk_score, rfm_segment, risk_updated_at') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            # v4: token_version — revogacao de acesso em tempo real
+            await session.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (4, 'v4: users.token_version — revogacao de acesso em tempo real') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()
@@ -834,6 +843,9 @@ async def _run_migrations() -> None:
                         DELETE FROM push_subscriptions WHERE user_id = loser;
                         DELETE FROM user_association_roles WHERE user_id = loser;
                         DELETE FROM users WHERE id = loser;
+                        -- merge muda escopo de acesso do winner (herda membership do loser) -
+                        -- incrementa token_version pra invalidar tokens antigos dele
+                        UPDATE users SET token_version = token_version + 1 WHERE id = winner;
                     END LOOP;
                 END LOOP;
             END $$;

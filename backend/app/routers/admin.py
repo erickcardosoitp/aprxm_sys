@@ -83,6 +83,12 @@ async def create_user(
             text("INSERT INTO user_association_roles (user_id, association_id, role) VALUES (:uid, :aid, :role)"),
             {"uid": str(existing.id), "aid": str(current.association_id), "role": body.role},
         )
+        # linked_association_ids/empresa_id vivem no token - incrementa tv
+        # pra novo acesso aparecer sem esperar o token expirar
+        await session.execute(
+            text("UPDATE users SET token_version = token_version + 1 WHERE id = :uid"),
+            {"uid": str(existing.id)},
+        )
         await session.execute(
             text("INSERT INTO audit_log (association_id,user_id,action,entity,entity_id,detail) VALUES (:a,:u,'add_membership','user',:eid,:d)"),
             {"a": str(current.association_id), "u": str(current.user_id), "eid": str(existing.id), "d": f"{existing.full_name} ({body.role})"},
@@ -138,12 +144,24 @@ async def update_user(
         user.full_name = body.full_name
     if body.phone is not None:
         user.phone = body.phone
-    if body.role is not None:
+    _needs_revoke = False
+    if body.role is not None and body.role != user.role:
         user.role = body.role
-    if body.is_active is not None:
+        _needs_revoke = True
+    if body.is_active is not None and body.is_active != user.is_active:
         user.is_active = body.is_active
+        _needs_revoke = True
     if body.password:
         user.hashed_password = hash_password(body.password)
+        _needs_revoke = True
+    if _needs_revoke:
+        # role/is_active/senha vivem no token (ou no proprio guard de is_active) -
+        # incrementa tv e derruba sessoes ja abertas na hora
+        user.token_version = (user.token_version or 0) + 1
+        await session.execute(
+            text("UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = :uid"),
+            {"uid": str(user_id)},
+        )
     from datetime import datetime
     user.updated_at = datetime.utcnow()
     session.add(user)
@@ -259,7 +277,12 @@ async def deactivate_user(
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
     user.is_active = False
+    user.token_version = (user.token_version or 0) + 1
     session.add(user)
+    await session.execute(
+        text("UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = :uid"),
+        {"uid": str(user_id)},
+    )
     return {"id": str(user.id), "is_active": False}
 
 

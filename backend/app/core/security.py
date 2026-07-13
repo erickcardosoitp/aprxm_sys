@@ -39,6 +39,8 @@ def create_access_token(
     association_name: str = "",
     expire_days: int | None = None,
     is_office: bool = False,
+    token_version: int = 0,
+    empresa_id: UUID | str | None = None,
 ) -> str:
     if expire_days:
         expire = datetime.now(UTC) + timedelta(days=expire_days)
@@ -52,6 +54,8 @@ def create_access_token(
         "linked_association_ids": linked_association_ids or [],
         "association_name": association_name,
         "is_office": is_office,
+        "tv": int(token_version),
+        "empresa_id": str(empresa_id) if empresa_id else None,
         "exp": expire,
         "iat": datetime.now(UTC),
     }

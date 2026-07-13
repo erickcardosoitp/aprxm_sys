@@ -35,6 +35,7 @@ class User(SQLModel, table=True):
     restrict_edit_tx: bool = Field(default=False)
     restrict_reverse_tx: bool = Field(default=False)
     require_own_cash_session: bool = Field(default=False)
+    token_version: int = Field(default=0)
     last_login_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

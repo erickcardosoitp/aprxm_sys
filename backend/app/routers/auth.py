@@ -93,9 +93,17 @@ async def refresh_token(
 ) -> TokenResponse:
     from sqlalchemy import text as _t
     token_hash = hash_refresh_token(body.refresh_token)
-    row = (await session.execute(_t("""
+    _empresa_col_exists = (await session.execute(_t(
+        "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='associations' AND column_name='empresa_id'"
+    ))).scalar()
+    empresa_subselect = (
+        "(SELECT a.empresa_id FROM associations a WHERE a.id = rt.association_id)"
+        if _empresa_col_exists else "NULL"
+    )
+    row = (await session.execute(_t(f"""
         SELECT rt.id, rt.user_id, rt.association_id, rt.expires_at,
-               u.full_name, u.role, u.is_active
+               u.full_name, u.role, u.is_active, u.token_version,
+               {empresa_subselect}
         FROM refresh_tokens rt
         JOIN users u ON u.id = rt.user_id
         WHERE rt.token_hash = :hash AND rt.revoked = FALSE
@@ -113,9 +121,11 @@ async def refresh_token(
         "UPDATE refresh_tokens SET revoked = TRUE WHERE id = :id"
     ), {"id": str(row[0])})
 
-    # Emite novo access token
+    # Emite novo access token (carimba token_version/empresa_id atuais,
+    # senao um refresh contornaria a revogacao em tempo real)
     access_token = create_access_token(
         row[1], row[2], row[5], row[4],
+        token_version=row[7], empresa_id=row[8],
     )
 
     # Emite novo refresh token (rotação)
@@ -201,9 +211,14 @@ async def change_password(
         raise HTTPException(status_code=400, detail="Senha atual incorreta.")
 
     user.hashed_password = hash_password(body.new_password)
+    user.token_version = (user.token_version or 0) + 1
     session.add(user)
+    from sqlalchemy import text as _t2
+    await session.execute(_t2(
+        "UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = :uid"
+    ), {"uid": str(user.id)})
     await session.commit()
-    return {"detail": "Senha alterada com sucesso."}
+    return {"detail": "Senha alterada com sucesso. Faça login novamente."}
 
 
 class SwitchAssociationRequest(BaseModel):
@@ -262,9 +277,14 @@ async def switch_association(
     if not current_user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
+    _empresa_col_exists = (await session.execute(sa_text(
+        "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='associations' AND column_name='empresa_id'"
+    ))).scalar()
+    empresa_select = ", a.empresa_id" if _empresa_col_exists else ", NULL as empresa_id"
+
     # Verifica acesso via user_association_roles (modelo global)
-    target_row = (await session.execute(sa_text("""
-        SELECT uar.role, a.name, a.is_office
+    target_row = (await session.execute(sa_text(f"""
+        SELECT uar.role, a.name, a.is_office{empresa_select}
         FROM user_association_roles uar
         JOIN associations a ON a.id = uar.association_id
         WHERE uar.user_id = :uid AND uar.association_id = :aid
@@ -274,24 +294,40 @@ async def switch_association(
     if not target_row:
         raise HTTPException(status_code=403, detail="Sem acesso a este ambiente.")
 
+    target_empresa_id = target_row[3]
+
+    # Um token = uma empresa: troca entre empresas diferentes exige novo login
+    # completo (com senha), nao so switch-association. NULL de qualquer lado
+    # = comportamento legado (permite a troca, pre-backfill de empresa_id).
+    if current.empresa_id is not None and target_empresa_id is not None and current.empresa_id != target_empresa_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Troca entre empresas diferentes exige novo login completo.",
+        )
+
     from datetime import datetime as dt
     current_user.last_login_at = dt.utcnow()
     session.add(current_user)
 
-    # Todas as outras associações do usuário
-    other_rows = (await session.execute(sa_text("""
-        SELECT uar.association_id FROM user_association_roles uar
+    # Todas as outras associações do usuário (mesma empresa da alvo, quando aplicavel)
+    other_rows = (await session.execute(sa_text(f"""
+        SELECT uar.association_id{empresa_select} FROM user_association_roles uar
         JOIN associations a ON a.id = uar.association_id
         WHERE uar.user_id = :uid AND uar.association_id != :aid
           AND uar.is_active = TRUE AND a.is_active = TRUE
     """), {"uid": str(current.user_id), "aid": str(body.association_id)})).fetchall()
-    linked_ids = [str(r[0]) for r in other_rows]
+    linked_ids = [
+        str(r[0]) for r in other_rows
+        if target_empresa_id is None or r[1] == target_empresa_id
+    ]
 
     from app.core.security import create_access_token
     token = create_access_token(
         current_user.id, body.association_id, target_row[0],
         current_user.full_name, linked_ids, target_row[1],
         is_office=bool(target_row[2]) if target_row[2] is not None else False,
+        token_version=current_user.token_version,
+        empresa_id=target_empresa_id,
     )
     return TokenResponse(access_token=token)
 
