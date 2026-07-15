@@ -1,4 +1,5 @@
 import json
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends
@@ -102,15 +103,19 @@ async def _session_status(aid: str, session: AsyncSession) -> dict:
     return {"status": row[0], "opened_at": str(row[1]), "balance": float(row[2] or 0)}
 
 
-async def _delinquent(aid: str, session: AsyncSession) -> list[dict]:
-    r = await session.execute(text("""
-        SELECT r.full_name, m.reference_month, m.amount, m.due_date
-        FROM mensalidades m
-        JOIN residents r ON r.id = m.resident_id
-        WHERE m.association_id = :aid AND m.status = 'pending' AND m.due_date < CURRENT_DATE
-        ORDER BY m.due_date LIMIT 20
-    """), {"aid": aid})
-    return [{"name": x[0], "month": x[1], "amount": float(x[2]), "due": str(x[3])} for x in r.fetchall()]
+async def _delinquent(aid: str, session: AsyncSession) -> dict:
+    # Reaproveita a mesma regra oficial do endpoint /mensalidades/delinquent
+    # (carência configurável, exclui migration_payments, exige member+active) —
+    # evita ser mais uma versão divergente do cálculo de inadimplência.
+    from app.services.mensalidade_service import MensalidadeService
+
+    rows = await MensalidadeService(session).list_delinquent(UUID(aid))
+    items = [
+        {"name": r["resident_name"], "month": r["reference_month"], "amount": float(r["amount"]), "due": r["due_date"]}
+        for r in rows[:20]
+    ]
+    total_amount = sum(float(r["amount"]) for r in rows)
+    return {"total_inadimplentes": len(rows), "total_valor_em_aberto": round(total_amount, 2), "items": items}
 
 
 async def _search_residents(aid: str, q: str, session: AsyncSession) -> list[dict]:
@@ -124,26 +129,44 @@ async def _search_residents(aid: str, q: str, session: AsyncSession) -> list[dic
     return [{"name": x[0], "cpf": x[1], "phone": x[2], "status": x[3]} for x in r.fetchall()]
 
 
-async def _pending_mensalidades(aid: str, name: str, session: AsyncSession) -> list[dict]:
-    r = await session.execute(text("""
+async def _pending_mensalidades(aid: str, name: str, session: AsyncSession) -> dict:
+    params = {"aid": aid, "name": name, "nameq": f"%{name}%"}
+    where = """
+        m.association_id = :aid AND m.status = 'pending'
+        AND (:name = '' OR unaccent(lower(r.full_name)) LIKE unaccent(lower(:nameq)))
+    """
+    count_r = await session.execute(text(f"""
+        SELECT COUNT(*), COALESCE(SUM(m.amount), 0)
+        FROM mensalidades m JOIN residents r ON r.id = m.resident_id
+        WHERE {where}
+    """), params)
+    total, total_amount = count_r.fetchone()
+
+    r = await session.execute(text(f"""
         SELECT r.full_name, m.reference_month, m.amount, m.due_date
-        FROM mensalidades m
-        JOIN residents r ON r.id = m.resident_id
-        WHERE m.association_id = :aid AND m.status = 'pending'
-          AND (:name = '' OR unaccent(lower(r.full_name)) LIKE unaccent(lower(:nameq)))
+        FROM mensalidades m JOIN residents r ON r.id = m.resident_id
+        WHERE {where}
         ORDER BY m.due_date LIMIT 15
-    """), {"aid": aid, "name": name, "nameq": f"%{name}%"})
-    return [{"name": x[0], "month": x[1], "amount": float(x[2]), "due": str(x[3])} for x in r.fetchall()]
+    """), params)
+    items = [{"name": x[0], "month": x[1], "amount": float(x[2]), "due": str(x[3])} for x in r.fetchall()]
+    return {"total_pendentes": int(total), "total_valor_pendente": round(float(total_amount), 2), "items": items}
 
 
-async def _service_orders(aid: str, session: AsyncSession) -> list[dict]:
+async def _service_orders(aid: str, session: AsyncSession) -> dict:
+    count_r = await session.execute(text("""
+        SELECT COUNT(*) FROM service_orders
+        WHERE association_id = :aid AND status NOT IN ('resolved','cancelled','archived')
+    """), {"aid": aid})
+    total = int(count_r.scalar_one())
+
     r = await session.execute(text("""
         SELECT number, title, status, priority, created_at
         FROM service_orders
         WHERE association_id = :aid AND status NOT IN ('resolved','cancelled','archived')
         ORDER BY created_at DESC LIMIT 10
     """), {"aid": aid})
-    return [{"number": x[0], "title": x[1], "status": x[2], "priority": x[3]} for x in r.fetchall()]
+    items = [{"number": x[0], "title": x[1], "status": x[2], "priority": x[3]} for x in r.fetchall()]
+    return {"total_abertas": total, "items": items}
 
 
 def _packages_where(nome: str, recebida_por: str, so_hoje: bool, params: dict) -> list[str]:
@@ -226,7 +249,7 @@ async def _resident_count(aid: str, session: AsyncSession) -> dict:
 async def _so_count(aid: str, session: AsyncSession) -> dict:
     r = await session.execute(text("""
         SELECT
-            COUNT(*) FILTER (WHERE status IN ('open','in_progress','pending')),
+            COUNT(*) FILTER (WHERE status IN ('draft','pending','in_progress')),
             COUNT(*) FILTER (WHERE status='resolved' AND updated_at::date = CURRENT_DATE),
             COUNT(*)
         FROM service_orders WHERE association_id = :aid
@@ -357,13 +380,13 @@ async def _run_tool(name: str, args: dict, aid: str, session: AsyncSession):
     if name == "session_status":
         return await _session_status(aid, session)
     if name == "list_delinquent":
-        return {"items": await _delinquent(aid, session)}
+        return await _delinquent(aid, session)
     if name == "search_resident":
         return {"items": await _search_residents(aid, args.get("q", ""), session)}
     if name == "list_pending_mensalidades":
-        return {"items": await _pending_mensalidades(aid, args.get("name", ""), session)}
+        return await _pending_mensalidades(aid, args.get("name", ""), session)
     if name == "list_service_orders":
-        return {"items": await _service_orders(aid, session)}
+        return await _service_orders(aid, session)
     if name == "list_packages":
         return await _packages(
             aid, session,
@@ -457,13 +480,13 @@ async def agent_chat(
         return ChatResponse(reply=reply, data=d)
 
     if intent == "list_delinquent":
-        items = await _delinquent(aid, session)
-        if not items:
-            reply = "Nenhum inadimplente no momento."
-        else:
-            total = sum(i["amount"] for i in items)
-            reply = f"{len(items)} inadimplente(s). Total em aberto: R$ {total:,.2f}."
-        return ChatResponse(reply=reply, data={"items": items})
+        result = await _delinquent(aid, session)
+        total = result["total_inadimplentes"]
+        reply = (
+            f"{total} inadimplente(s). Total em aberto: R$ {result['total_valor_em_aberto']:,.2f}."
+            if total else "Nenhum inadimplente no momento."
+        )
+        return ChatResponse(reply=reply, data=result)
 
     if intent == "search_resident":
         q = params.get("q", "")
@@ -478,18 +501,19 @@ async def agent_chat(
 
     if intent == "list_pending_mensalidades":
         name = params.get("name", "")
-        items = await _pending_mensalidades(aid, name, session)
-        if not items:
-            reply = "Nenhuma mensalidade pendente encontrada."
-        else:
-            total = sum(i["amount"] for i in items)
-            reply = f"{len(items)} mensalidade(s) pendente(s). Total: R$ {total:,.2f}."
-        return ChatResponse(reply=reply, data={"items": items})
+        result = await _pending_mensalidades(aid, name, session)
+        total = result["total_pendentes"]
+        reply = (
+            f"{total} mensalidade(s) pendente(s). Total: R$ {result['total_valor_pendente']:,.2f}."
+            if total else "Nenhuma mensalidade pendente encontrada."
+        )
+        return ChatResponse(reply=reply, data=result)
 
     if intent == "list_service_orders":
-        items = await _service_orders(aid, session)
-        reply = f"{len(items)} OS aberta(s)." if items else "Nenhuma OS aberta."
-        return ChatResponse(reply=reply, data={"items": items})
+        result = await _service_orders(aid, session)
+        total = result["total_abertas"]
+        reply = f"{total} OS aberta(s)." if total else "Nenhuma OS aberta."
+        return ChatResponse(reply=reply, data=result)
 
     if intent == "list_packages":
         result = await _packages(aid, session)
