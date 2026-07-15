@@ -4,7 +4,8 @@ import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, D
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
-import { useAuthStore } from '../../store/authStore'
+import { useAuthMe, useMyPermissions } from '../../hooks/useSharedData'
+import { useAuthStore, type Permissions } from '../../store/authStore'
 import type { UserRole } from '../../types'
 import LoadingScreen from '../ui/LoadingScreen'
 
@@ -120,17 +121,15 @@ export function AppShell() {
     }
   }, [])
 
+  const { data: permissionsData } = useMyPermissions<Permissions>({ enabled: !!role && !isSuperAdmin })
   useEffect(() => {
-    if (!role || isSuperAdmin) return
-    api.get('/admin/my-permissions').then(r => setPermissions(r.data)).catch(() => {})
-  }, [role])
+    if (permissionsData) setPermissions(permissionsData)
+  }, [permissionsData])
 
+  const { data: meData } = useAuthMe({ enabled: !!role })
   useEffect(() => {
-    if (!role) return
-    api.get<{ simplifica_mode: boolean; simplifica_enabled: boolean }>('/auth/me')
-      .then(r => setSimplificaPrefs(r.data.simplifica_mode, r.data.simplifica_enabled))
-      .catch(() => {})
-  }, [role])
+    if (meData) setSimplificaPrefs(meData.simplifica_mode, meData.simplifica_enabled)
+  }, [meData])
 
   const handleSimplificaToggle = async () => {
     if (!confirm('Mudar para o Modo Simplifica?')) return
@@ -174,18 +173,6 @@ export function AppShell() {
     localStorage.setItem('chatLastRead', now)
     chatLastReadRef.current = now
   }, [isOnChat])
-
-  useEffect(() => {
-    if (!role) return
-    const warm = () => {
-      api.get('/health').catch(() => {})
-      api.get('/residents/search?q=_warm').catch(() => {})
-      api.get('/packages/counts').catch(() => {})
-    }
-    warm()
-    const id = setInterval(warm, 9 * 60_000)
-    return () => clearInterval(id)
-  }, [role])
 
   const openNotifs = async () => {
     setNotifOpen(true)

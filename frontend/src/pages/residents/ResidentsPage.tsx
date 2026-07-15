@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus, FileText, AlertCircle, Printer, Merge } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
+import { useAssociationSettings, useDelinquentResidents } from '../../hooks/useSharedData'
 import type { Resident, ResidentStatus, ResidentType } from '../../types'
 import { printCarne as printCarneUtil } from '../../utils/printCarne'
 import { maskCpf, formatCpf, formatPhone, formatCep, formatDateInput, parseDateInput } from '../../utils'
@@ -752,7 +753,8 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [editingMig, setEditingMig] = useState<string | null>(null)
   const [editMigForm, setEditMigForm] = useState({ tipo: 'mensalidade', valor_pago: '', data_pagamento: '' })
   const [editMigSaving, setEditMigSaving] = useState(false)
-  const [assocName, setAssocName] = useState('')
+  const { data: assocSettings } = useAssociationSettings<{ name?: string }>()
+  const assocName = assocSettings?.name ?? 'Associação'
   const loggedFullName = useAuthStore(s => s.fullName) ?? ''
   const [carneOperator, setCarneOperator] = useState('')
   const [carnePeriodModal, setCarnePeriodModal] = useState(false)
@@ -764,9 +766,6 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
     if (loggedFullName && !carneOperator) setCarneOperator(loggedFullName)
   }, [loggedFullName])
 
-  useEffect(() => {
-    api.get<{ name?: string }>('/settings/association').then(r => setAssocName(r.data.name ?? 'Associação')).catch(() => {})
-  }, [])
 
   // ── Convert guest → member/dependent ──
   const [showConvert, setShowConvert] = useState(false)
@@ -1405,7 +1404,11 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
   const [filterStatus, setFilterStatus] = useState<ResidentStatus | ''>('')
   const [filterDelinquent, setFilterDelinquent] = useState(false)
   const [hideInactive, setHideInactive] = useState(true)
-  const [delinquentIds, setDelinquentIds] = useState<Set<string>>(new Set())
+  const { data: delinquentList = [] } = useDelinquentResidents<{ resident_id?: string; id?: string }[]>()
+  const delinquentIds = useMemo(
+    () => new Set(delinquentList.map(d => d.resident_id ?? d.id ?? '')),
+    [delinquentList],
+  )
   const [search, setSearch] = useState('')
   const [counts, setCounts] = useState({ associados: 0, dependentes: 0, visitantes: 0 })
   const [kpis, setKpis] = useState({ sem_cep: 0, sem_telefone: 0, sem_cpf: 0, inadimplentes: 0 })
@@ -1482,13 +1485,6 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
     await load(true, next)
   }
 
-  const loadDelinquents = async () => {
-    try {
-      const res = await api.get<{ resident_id: string }[]>('/mensalidades/delinquent')
-      setDelinquentIds(new Set(res.data.map((d: any) => d.resident_id ?? d.id)))
-    } catch { /* silent */ }
-  }
-
   const loadCounts = async () => {
     try {
       const [members, deps, guests] = await Promise.all([
@@ -1512,18 +1508,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
   useEffect(() => {
     if (cadastrarMode) { setShowForm(true); return }
     if (consultarMode) { setShowPickerConsultar(true); return }
-    if (inadimplentesMode) {
-      setShowPickerInadimplentes(true)
-      api.get<{ resident_id: string }[]>('/mensalidades/delinquent')
-        .then(async r => {
-          const ids = r.data.map((d: any) => d.resident_id ?? d.id)
-          if (ids.length === 0) { setInadimplentesData([]); return }
-          const res = await api.get<Resident[]>('/residents', { params: { status: 'active' } })
-          setInadimplentesData(res.data.filter(r => ids.includes(r.id)))
-        })
-        .catch(() => {})
-      return
-    }
+    if (inadimplentesMode) { setShowPickerInadimplentes(true); return }
     if (mapaMode) {
       setShowPickerMapa(true)
       api.get<Resident[]>('/residents', { params: { status: 'active', type: 'member' } })
@@ -1532,6 +1517,14 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
       return
     }
   }, [])
+
+  useEffect(() => {
+    if (!inadimplentesMode) return
+    if (delinquentIds.size === 0) { setInadimplentesData([]); return }
+    api.get<Resident[]>('/residents', { params: { status: 'active' } })
+      .then(res => setInadimplentesData(res.data.filter(r => delinquentIds.has(r.id))))
+      .catch(() => {})
+  }, [inadimplentesMode, delinquentIds])
 
   const anySimplificaModalOpen = showForm || !!profileResident
     || showPickerConsultar || showPickerInadimplentes || showPickerMapa
@@ -1548,7 +1541,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
     ).then(r => setKpis(r.data)).catch(() => {})
   }
 
-  useEffect(() => { loadDelinquents(); loadCounts(); loadKpis('associados') }, [])
+  useEffect(() => { loadCounts(); loadKpis('associados') }, [])
   // eslint-disable-next-line react-hooks/exhaustive-deps
 
   const isSearching = search.trim().length >= 2

@@ -3,6 +3,7 @@ import { ChevronLeft, RefreshCw } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import api from '../../../services/api'
+import { useDelinquentResidents } from '../../../hooks/useSharedData'
 import { SECTOR_COLORS } from '../theme'
 import type { Resident } from '../../../types'
 
@@ -186,6 +187,7 @@ export function MapaMoradores({ onClose }: Props) {
   const [filter, setFilter] = useState<MapFilter>('todos')
   const [selected, setSelected] = useState<CepGroup | null>(null)
   const [sheetFilter, setSheetFilter] = useState<MapFilter>('todos')
+  const { refetch: refetchDelinquent } = useDelinquentResidents<{ resident_id?: string; id?: string }[]>()
 
   const load = async () => {
     setLoading(true)
@@ -193,14 +195,14 @@ export function MapaMoradores({ onClose }: Props) {
     setGroups([])
 
     try {
-      // Carrega residentes e inadimplentes em paralelo
+      // Carrega residentes e inadimplentes (cache compartilhado) em paralelo
       const [residentsRes, delinqRes] = await Promise.all([
         api.get<Resident[]>('/residents', { params: { status: 'active' } }),
-        api.get<{ resident_id: string }[]>('/mensalidades/delinquent').catch(() => ({ data: [] })),
+        refetchDelinquent(),
       ])
 
       const allResidents = residentsRes.data
-      const dIds = new Set(delinqRes.data.map((d: any) => d.resident_id ?? d.id))
+      const dIds = new Set((delinqRes.data ?? []).map((d: any) => d.resident_id ?? d.id))
       setDelinquentIds(dIds)
 
       // Agrupa por CEP

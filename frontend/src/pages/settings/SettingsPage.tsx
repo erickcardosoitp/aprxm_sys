@@ -5,6 +5,8 @@ import { uploadService } from '../../services/upload'
 import toast from 'react-hot-toast'
 import { settingsService } from '../../services/settings'
 import api from '../../services/api'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAssociationSettings, useFinanceCategories, usePaymentMethods } from '../../hooks/useSharedData'
 import { useAuthStore } from '../../store/authStore'
 import type { AssociationSettings } from '../../types'
 import DeviceCredentials from '../../components/profile/DeviceCredentials'
@@ -139,7 +141,10 @@ export default function SettingsPage() {
   // ── Association state ──
   const [assoc, setAssoc] = useState<AssociationData>({})
   const [assocForm, setAssocForm] = useState<AssociationData>({})
-  const [loadingAssoc, setLoadingAssoc] = useState(false)
+  const { data: assocData, isLoading: loadingAssoc } = useAssociationSettings<AssociationData>({ enabled: canSeeAssociation })
+  useEffect(() => {
+    if (assocData) { setAssoc(assocData); setAssocForm(assocData) }
+  }, [assocData])
   const [savingAssoc, setSavingAssoc] = useState(false)
   const [users, setUsers] = useState<{ id: string; full_name: string; role: string }[]>([])
 
@@ -160,8 +165,9 @@ export default function SettingsPage() {
   type FinCat = { id: string; name: string; type: string; color?: string }
   type FinPM = { id: string; name: string }
   type SangriaDest = { id: string; name: string }
-  const [finCats, setFinCats] = useState<FinCat[]>([])
-  const [finPMs, setFinPMs] = useState<FinPM[]>([])
+  const queryClient = useQueryClient()
+  const { data: finCats = [] } = useFinanceCategories<FinCat[]>()
+  const { data: finPMs = [] } = usePaymentMethods<FinPM[]>()
   const [sangriaDests, setSangriaDests] = useState<SangriaDest[]>([])
   const [newCatName, setNewCatName] = useState('')
   const [newCatType, setNewCatType] = useState<'income' | 'expense'>('expense')
@@ -198,8 +204,6 @@ export default function SettingsPage() {
       }
     }
     loadCadastros()
-    api.get<FinCat[]>('/finance/categories').then(r => setFinCats(r.data)).catch(() => {})
-    api.get<FinPM[]>('/finance/payment-methods').then(r => setFinPMs(r.data)).catch(() => {})
     api.get<SangriaDest[]>('/finance/sangria-destinations').then(r => setSangriaDests(r.data)).catch(() => {})
     api.get('/carriers').then(r => setCarriers(r.data)).catch(() => {})
     api.get('/carriers/deliverers').then(r => setDeliverers(r.data)).catch(() => {})
@@ -254,7 +258,8 @@ export default function SettingsPage() {
     if (!newCatName.trim()) return
     try {
       const r = await api.post<FinCat>('/finance/categories', { name: newCatName.trim(), type: newCatType })
-      setFinCats(p => [...p, r.data])
+      queryClient.setQueryData<FinCat[]>(['finance', 'categories', 'all'], p => [...(p ?? []), r.data])
+      queryClient.invalidateQueries({ queryKey: ['finance', 'categories'] })
       setNewCatName('')
       toast.success('Categoria criada.')
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
@@ -263,7 +268,8 @@ export default function SettingsPage() {
   const handleDeleteFinCat = async (id: string) => {
     try {
       await api.delete(`/finance/categories/${id}`)
-      setFinCats(p => p.filter(c => c.id !== id))
+      queryClient.setQueryData<FinCat[]>(['finance', 'categories', 'all'], p => (p ?? []).filter(c => c.id !== id))
+      queryClient.invalidateQueries({ queryKey: ['finance', 'categories'] })
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
   }
 
@@ -271,7 +277,7 @@ export default function SettingsPage() {
     if (!newPMName.trim()) return
     try {
       const r = await api.post<FinPM>('/finance/payment-methods', { name: newPMName.trim() })
-      setFinPMs(p => [...p, r.data])
+      queryClient.setQueryData<FinPM[]>(['finance', 'payment-methods'], p => [...(p ?? []), r.data])
       setNewPMName('')
       toast.success('Método criado.')
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
@@ -280,7 +286,7 @@ export default function SettingsPage() {
   const handleDeletePM = async (id: string) => {
     try {
       await api.delete(`/finance/payment-methods/${id}`)
-      setFinPMs(p => p.filter(m => m.id !== id))
+      queryClient.setQueryData<FinPM[]>(['finance', 'payment-methods'], p => (p ?? []).filter(m => m.id !== id))
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro.') }
   }
 
@@ -401,26 +407,11 @@ export default function SettingsPage() {
 
   useEffect(() => { load() }, [])
 
-  // ── Load Association data + users ──
+  // ── Load users ──
   useEffect(() => {
     if (!canSeeAssociation) return
-    const loadAssoc = async () => {
-      setLoadingAssoc(true)
-      try {
-        const [assocRes, usersRes] = await Promise.all([
-          api.get<AssociationData>('/settings/association'),
-          api.get<{ id: string; full_name: string; role: string }[]>('/admin/users'),
-        ])
-        setAssoc(assocRes.data)
-        setAssocForm(assocRes.data)
-        setUsers(usersRes.data)
-      } catch {
-        // ignore silently
-      } finally {
-        setLoadingAssoc(false)
-      }
-    }
-    loadAssoc()
+    api.get<{ id: string; full_name: string; role: string }[]>('/admin/users')
+      .then(r => setUsers(r.data)).catch(() => {})
   }, [canSeeAssociation])
 
   // ── Save Caixa settings ──
@@ -476,6 +467,7 @@ export default function SettingsPage() {
         slug: assocForm.slug,
       })
       const fresh = await api.get<AssociationData>('/settings/association')
+      queryClient.setQueryData(['settings', 'association'], fresh.data)
       setAssoc(fresh.data)
       setAssocForm(fresh.data)
       toast.success('Dados da associação salvos!')

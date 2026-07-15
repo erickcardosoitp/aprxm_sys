@@ -34,7 +34,7 @@ async def upload_file(
         return JSONResponse(status_code=400, content={"detail": "Arquivo muito grande (máx. 10 MB)."})
 
     svc = StorageService(str(current.association_id))
-    url = svc.upload(file_bytes, file.filename or "upload.jpg", folder)
+    url = await svc.upload(file_bytes, file.filename or "upload.jpg", folder)
     return JSONResponse({"url": url})
 
 
@@ -54,7 +54,7 @@ async def upload_base64(
         return JSONResponse(status_code=400, content={"detail": "Imagem muito grande."})
 
     svc = StorageService(str(current.association_id))
-    url = svc.upload_base64(data_url, folder)
+    url = await svc.upload_base64(data_url, folder)
     return JSONResponse({"url": url})
 
 
@@ -71,5 +71,5 @@ async def upload_audio(
     if len(file_bytes) > MAX_AUDIO_BYTES:
         return JSONResponse(status_code=400, content={"detail": "Áudio muito grande (máx. 5 MB)."})
     svc = StorageService(str(current.association_id))
-    url = svc.upload(file_bytes, file.filename or f"audio_{current.user_id}.webm", folder)
+    url = await svc.upload(file_bytes, file.filename or f"audio_{current.user_id}.webm", folder)
     return JSONResponse({"url": url})

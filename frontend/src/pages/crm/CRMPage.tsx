@@ -9,6 +9,7 @@ import {
 import api from '../../services/api'
 import { uploadService } from '../../services/upload'
 import toast from 'react-hot-toast'
+import { usePaymentMethods } from '../../hooks/useSharedData'
 import { useAuthStore } from '../../store/authStore'
 
 // ── Agentes types ─────────────────────────────────────────────────────────────
@@ -117,11 +118,7 @@ export default function CRMPage() {
   const isAdmin = ['admin', 'admin_master', 'superadmin', 'diretoria'].includes(role ?? '')
 
   const [tab, setTab] = useState<Tab>('associados')
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
-
-  useEffect(() => {
-    api.get<PaymentMethod[]>('/finance/payment-methods').then(r => setPaymentMethods(r.data)).catch(() => {})
-  }, [])
+  const { data: paymentMethods = [] } = usePaymentMethods<PaymentMethod[]>()
 
   // ── Associados ────────────────────────────────────────────────────────────
   const [members, setMembers] = useState<CRMMember[]>([])

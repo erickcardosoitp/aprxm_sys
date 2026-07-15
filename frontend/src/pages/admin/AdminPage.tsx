@@ -3,6 +3,8 @@ import { ShieldCheck, Plus, X, Pencil, UserX, UserCheck, Upload, FileText, Packa
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { uploadService } from '../../services/upload'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAssociationSettings } from '../../hooks/useSharedData'
 import type { User, UserRole } from '../../types'
 import { useAuthStore } from '../../store/authStore'
 
@@ -164,7 +166,8 @@ interface AssocConfig {
 
 function ComprovanteTab() {
   const [config, setConfig] = useState<AssocConfig>({ proof_stock: 0 })
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const { data: assocData, isLoading: loading } = useAssociationSettings<AssocConfig>()
   const [saving, setSaving] = useState(false)
   const [stockQty, setStockQty] = useState('')
   const [updatingStock, setUpdatingStock] = useState(false)
@@ -177,12 +180,11 @@ function ComprovanteTab() {
   const [communityName, setCommunityName] = useState('')
 
   useEffect(() => {
-    api.get<AssocConfig>('/settings/association').then(r => {
-      setConfig(r.data)
-      setPresidentName(r.data.president_name ?? '')
-      setCommunityName(r.data.community_name ?? '')
-    }).catch(() => toast.error('Erro ao carregar configurações.')).finally(() => setLoading(false))
-  }, [])
+    if (!assocData) return
+    setConfig(assocData)
+    setPresidentName(assocData.president_name ?? '')
+    setCommunityName(assocData.community_name ?? '')
+  }, [assocData])
 
   const uploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
@@ -191,6 +193,7 @@ function ComprovanteTab() {
       const url = await uploadService.uploadFile(file, 'assoc-logos')
       await api.put('/settings/association', { assoc_logo_url: url })
       setConfig(c => ({ ...c, assoc_logo_url: url }))
+      queryClient.setQueryData<AssocConfig>(['settings', 'association'], c => c && ({ ...c, assoc_logo_url: url }))
       toast.success('Logo salvo!')
     } catch { toast.error('Erro ao enviar logo.') } finally { setUploadingLogo(false) }
   }
@@ -202,6 +205,7 @@ function ComprovanteTab() {
       const url = await uploadService.uploadFile(file, 'signatures')
       await api.put('/settings/association', { president_signature_url: url })
       setConfig(c => ({ ...c, president_signature_url: url }))
+      queryClient.setQueryData<AssocConfig>(['settings', 'association'], c => c && ({ ...c, president_signature_url: url }))
       toast.success('Assinatura salva!')
     } catch { toast.error('Erro ao enviar assinatura.') } finally { setUploadingSig(false) }
   }
@@ -211,6 +215,7 @@ function ComprovanteTab() {
     try {
       await api.put('/settings/association', { president_name: presidentName, community_name: communityName })
       setConfig(c => ({ ...c, president_name: presidentName, community_name: communityName }))
+      queryClient.setQueryData<AssocConfig>(['settings', 'association'], c => c && ({ ...c, president_name: presidentName, community_name: communityName }))
       toast.success('Configurações salvas!')
     } catch { toast.error('Erro ao salvar.') } finally { setSaving(false) }
   }
@@ -222,6 +227,7 @@ function ComprovanteTab() {
     try {
       await api.put('/settings/proof-stock', { quantity: qty })
       setConfig(c => ({ ...c, proof_stock: qty }))
+      queryClient.setQueryData<AssocConfig>(['settings', 'association'], c => c && ({ ...c, proof_stock: qty }))
       setStockQty('')
       toast.success('Estoque atualizado!')
     } catch { toast.error('Erro ao atualizar estoque.') } finally { setUpdatingStock(false) }

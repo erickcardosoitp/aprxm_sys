@@ -3,6 +3,7 @@ import { X, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle,
          Calculator, ClipboardList, Award, Eye, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
+import { usePaymentMethods } from '../../hooks/useSharedData'
 import { SignaturePad } from '../packages/SignaturePad'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
   const [editPw, setEditPw] = useState('')
   const [editForm, setEditForm] = useState({ amount: '', description: '', payment_method_id: '' })
   const [editingSaving, setEditingSaving] = useState(false)
-  const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
+  const { data: paymentMethods = [] } = usePaymentMethods()
 
   // Step 2 — Quebra
   const [conferidoPor, setConferidoPor] = useState('')
@@ -81,10 +82,6 @@ export function CaixaConferenciaModal({ session, txs: initialTxs, conferentes, o
   // Step 3 — Assinar
   const [assinatura, setAssinatura] = useState<{ url: string } | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
-
-  useEffect(() => {
-    api.get('/finance/payment-methods').then(r => setPaymentMethods(r.data)).catch(() => {})
-  }, [])
 
   const canNext = () => {
     if (step === 0) return dinInput !== '' && pixInput !== ''

@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DebouncedInput, { type DebouncedInputHandle } from '../../components/ui/DebouncedInput'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -14,7 +14,9 @@ import type { ReceiveHistoryEntry } from '../../services/packages'
 import { financeService } from '../../services/finance'
 import { maskCpf } from '../../utils'
 import { uploadService } from '../../services/upload'
+import { useQueryClient } from '@tanstack/react-query'
 import api from '../../services/api'
+import { useAssociationProfile, useDelinquentResidents, usePaymentMethods } from '../../hooks/useSharedData'
 import { useAuthStore } from '../../store/authStore'
 import type { Package, Resident } from '../../types'
 
@@ -741,6 +743,7 @@ interface PackagesPageProps {
 
 export default function PackagesPage({ modalMode = false, retiradaMode = false, devolucaoMode = false, consultarMode = false, minhasMode = false, onModalClosed }: PackagesPageProps) {
   const { fullName, role, associationId, associationName } = useAuthStore()
+  const queryClient = useQueryClient()
   const isAdmin = role === 'admin' || role === 'superadmin'
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin'
   const navigate = useNavigate()
@@ -765,7 +768,11 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const [minhasHistory, setMinhasHistory] = useState<ReceiveHistoryEntry[]>([])
   const [minhasDelivered, setMinhasDelivered] = useState<Package[]>([])
   const [minhasTab, setMinhasTab] = useState<'recebidas' | 'entregues'>('recebidas')
-  const [delinquentIds, setDelinquentIds] = useState<Set<string>>(new Set())
+  const { data: delinquentList = [] } = useDelinquentResidents<{ resident_id?: string; id?: string }[]>()
+  const delinquentIds = useMemo(
+    () => new Set(delinquentList.map(d => d.resident_id ?? d.id ?? '')),
+    [delinquentList],
+  )
   const [loading, setLoading] = useState(false)
   const [packagesLoading, setPackagesLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('received')
@@ -784,12 +791,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({})
   const [photoPreviewUrls, setPhotoPreviewUrls] = useState<{ url: string; label?: string }[] | null>(null)
   const [waDropdownPkgId, setWaDropdownPkgId] = useState<string | null>(null)
-  const [assocProfile, setAssocProfile] = useState<{ name: string; address: string | null } | null>(null)
-
-  useEffect(() => {
-    api.get<{ name: string; address: string | null }>('/admin/association-profile')
-      .then(r => setAssocProfile(r.data)).catch(() => {})
-  }, [])
+  const { data: assocProfile } = useAssociationProfile()
 
   useEffect(() => {
     if (!waDropdownPkgId) return
@@ -1072,7 +1074,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const [pickerPhone, setPickerPhone] = useState('')
   const [deliveryPaymentMethodId, setDeliveryPaymentMethodId] = useState('')
   const [deliveryPixPayerName, setDeliveryPixPayerName] = useState('')
-  const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
+  const { data: paymentMethods = [] } = usePaymentMethods()
   const [deliverySessionPicker, setDeliverySessionPicker] = useState<{ id: string; opened_by_name: string; opening_balance: string }[] | null>(null)
   type DeliverPayload = Parameters<typeof packageService.deliver>[1]
   const [pendingDeliveryPayload, setPendingDeliveryPayload] = useState<DeliverPayload | null>(null)
@@ -1163,11 +1165,8 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
       toast.success('Mensalidade regularizada! Taxa de entrega removida.')
       setShowPayMenModal(false)
       setPayMenId(null); setPayMenInfo(null)
-      const [delinqRes, checkRes] = await Promise.all([
-        api.get<{ resident_id: string }[]>('/mensalidades/delinquent').catch(() => ({ data: [] })),
-        api.get<any>(`/packages/${deliveryTarget.id}/delivery-check`).catch(() => ({ data: null })),
-      ])
-      setDelinquentIds(new Set((delinqRes.data as any[]).map((d: any) => d.resident_id ?? d.id)))
+      queryClient.invalidateQueries({ queryKey: ['mensalidades', 'delinquent'] })
+      const checkRes = await api.get<any>(`/packages/${deliveryTarget.id}/delivery-check`).catch(() => ({ data: null }))
       if (checkRes.data) setDeliveryCheck(checkRes.data)
     } catch (e: any) {
       toast.error(e.response?.data?.detail ?? 'Erro ao registrar pagamento.')
@@ -1194,10 +1193,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
       toast.error(apiErr(e, 'Erro ao atualizar cadastro.'))
     } finally { setUpgradeLoading(false) }
   }
-
-  useEffect(() => {
-    api.get<{ id: string; name: string }[]>('/finance/payment-methods').then(r => setPaymentMethods(r.data)).catch(() => {})
-  }, [])
 
   // Receive history
   const [receiveHistory, setReceiveHistory] = useState<ReceiveHistoryEntry[]>([])
@@ -1625,11 +1620,6 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
     return () => clearTimeout(t)
   }, [filterStatus, filterQ, filterDateFrom, filterDateTo, modalMode])
 
-  useEffect(() => {
-    api.get<{ resident_id: string }[]>('/mensalidades/delinquent')
-      .then(r => setDelinquentIds(new Set(r.data.map((d: any) => d.resident_id ?? d.id))))
-      .catch(() => {})
-  }, [])
   useEffect(() => { if (showReceive && step === 'recipient') barcodeRef.current?.focus() }, [showReceive, step])
   useEffect(() => { if (showBulkReceive && bulkRxStep === 'add') setTimeout(() => brxBarcodeRef.current?.focus(), 200) }, [showBulkReceive, bulkRxStep])
   const anyModeModalOpen = showReceiveMode || showReceive || showBulkReceive

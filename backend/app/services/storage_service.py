@@ -1,3 +1,4 @@
+import asyncio
 import mimetypes
 import uuid
 from pathlib import Path
@@ -38,7 +39,7 @@ class StorageService:
         self._assoc = association_id
         self._bucket = settings.supabase_storage_bucket
 
-    def upload(self, file_bytes: bytes, filename: str, folder: str) -> str:
+    async def upload(self, file_bytes: bytes, filename: str, folder: str) -> str:
         """Upload raw bytes and return the public URL."""
         client = _get_client()
         ext = Path(filename).suffix or ".bin"
@@ -53,9 +54,9 @@ class StorageService:
             )
             return client.storage.from_(self._bucket).get_public_url(storage_path)
 
-        return supabase_cb.call_sync(_do_upload)
+        return await asyncio.to_thread(supabase_cb.call_sync, _do_upload)
 
-    def upload_base64(self, data_url: str, folder: str) -> str:
+    async def upload_base64(self, data_url: str, folder: str) -> str:
         """
         Upload a base64 data URL (e.g. from canvas signature).
         Format: data:image/png;base64,<base64data>
@@ -65,7 +66,7 @@ class StorageService:
         header, _, b64 = data_url.partition(",")
         ext = ".png" if "png" in header else ".jpg"
         file_bytes = base64.b64decode(b64)
-        return self.upload(file_bytes, f"upload{ext}", folder)
+        return await self.upload(file_bytes, f"upload{ext}", folder)
 
     def delete(self, public_url: str) -> None:
         """Remove a file given its public URL."""

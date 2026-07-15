@@ -7,6 +7,7 @@ const TransactionModal = lazy(() => import('../../components/finance/Transaction
 import api from '../../services/api'
 import { financeService } from '../../services/finance'
 import { settingsService } from '../../services/settings'
+import { useFinanceCategories, usePaymentMethods } from '../../hooks/useSharedData'
 import { useAuthStore } from '../../store/authStore'
 import type { AssociationSettings, CashSession, CashSessionSummary, Transaction } from '../../types'
 
@@ -70,7 +71,7 @@ function SessionDetailModal({
   const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
   const isAdminRole = role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
   const [transactions, setTransactions] = useState<SessionTx[]>([])
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([])
+  const { data: paymentMethods = [] } = usePaymentMethods<PaymentMethodOption[]>()
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editingTx, setEditingTx] = useState(false)
@@ -133,12 +134,8 @@ function SessionDetailModal({
   const loadTx = async () => {
     setLoading(true)
     try {
-      const [txRes, pmRes] = await Promise.all([
-        api.get<SessionTx[]>(`/finance/sessions/${session.id}/transactions`),
-        api.get<PaymentMethodOption[]>('/finance/payment-methods'),
-      ])
+      const txRes = await api.get<SessionTx[]>(`/finance/sessions/${session.id}/transactions`)
       setTransactions(txRes.data)
-      setPaymentMethods(pmRes.data)
       const initial: Record<string, { payment_method_id: string; observacao: string }> = {}
       txRes.data.forEach(tx => {
         initial[tx.id] = { payment_method_id: tx.payment_method_id ?? '', observacao: tx.observacao ?? '' }
@@ -493,8 +490,8 @@ const [showOfflineExpense, setShowOfflineExpense] = useState(false)
   const [offlineType, setOfflineType] = useState<'expense' | 'income'>('expense')
   const [offlinePaymentStatus, setOfflinePaymentStatus] = useState<'paid' | 'pending'>('paid')
   const [offlineForm, setOfflineForm] = useState({ description: '', amount: '', category_id: '' })
-  const [offlineCategories, setOfflineCategories] = useState<{ id: string; name: string }[]>([])
-  const [offlinePayMethods, setOfflinePayMethods] = useState<{ id: string; name: string }[]>([])
+  const { data: offlineCategories = [] } = useFinanceCategories<{ id: string; name: string }[]>('expense')
+  const { data: offlinePayMethods = [] } = usePaymentMethods<{ id: string; name: string }[]>()
   const [offlineResidentQuery, setOfflineResidentQuery] = useState('')
   const [offlineResidentResults, setOfflineResidentResults] = useState<{ id: string; full_name: string; cpf?: string; phone_primary?: string }[]>([])
   const [offlineResident, setOfflineResident] = useState<{ id: string; full_name: string } | null>(null)
@@ -654,10 +651,6 @@ const loadSessions = async () => {
 
   useEffect(() => {
     loadSession()
-    api.get<{ id: string; name: string }[]>('/finance/categories', { params: { type: 'expense' } })
-      .then(r => setOfflineCategories(r.data)).catch(() => {})
-    api.get<{ id: string; name: string }[]>('/finance/payment-methods')
-      .then(r => setOfflinePayMethods(r.data)).catch(() => {})
   }, [])
   useEffect(() => { loadTransactions() }, [session?.id, viewedSessionId])
   useEffect(() => { if (tab === 'sessoes') loadSessions() }, [tab])

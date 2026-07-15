@@ -138,7 +138,7 @@ async def public_upload(
         raise HTTPException(400, "Arquivo muito grande (máx. 10 MB).")
 
     svc = StorageService(str(assoc.id))
-    url = svc.upload(file_bytes, file.filename or "comprovante.jpg", folder)
+    url = await svc.upload(file_bytes, file.filename or "comprovante.jpg", folder)
     return JSONResponse({"url": url})
 
 

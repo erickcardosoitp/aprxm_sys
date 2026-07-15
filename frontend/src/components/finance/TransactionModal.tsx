@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import api from '../../services/api'
 import { financeService } from '../../services/finance'
 import { settingsService } from '../../services/settings'
+import { useAssociationSettings, useFinanceCategories, usePaymentMethods } from '../../hooks/useSharedData'
 import { packageService } from '../../services/packages'
 import { useAuthStore } from '../../store/authStore'
 import { PhotoCapture } from '../packages/PhotoCapture'
@@ -162,12 +163,12 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
   // Settings
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
-  const [assocInfo, setAssocInfo] = useState<{ association_name?: string; assoc_logo_url?: string } | null>(null)
+  const { data: assocInfo } = useAssociationSettings<{ association_name?: string; assoc_logo_url?: string }>()
 
   // Step 2 — shared
-  const [categories, setCategories] = useState<TransactionCategory[]>([])
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
-  const [methodsLoading, setMethodsLoading] = useState(true)
+  const { data: categories = [], isLoading: categoriesLoading } = useFinanceCategories<TransactionCategory[]>(txType)
+  const { data: paymentMethods = [], isLoading: paymentMethodsLoading } = usePaymentMethods<PaymentMethod[]>()
+  const methodsLoading = categoriesLoading || paymentMethodsLoading
   const [categoryId, setCategoryId] = useState('')
   const [paymentMethodId, setPaymentMethodId] = useState('')
   const [splitEnabled, setSplitEnabled] = useState(false)
@@ -248,7 +249,6 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
   useEffect(() => {
     settingsService.get().then(r => setSettings(r.data)).catch(() => {})
-    api.get<{ association_name?: string; assoc_logo_url?: string }>('/settings/association').then(r => setAssocInfo(r.data)).catch(() => {})
     financeService.listOpenSessionsPicker().then(r => {
       setOpenSessions(r.data as any)
       const mine = r.data.find(s => s.is_mine)
@@ -258,23 +258,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   }, [])
 
   useEffect(() => {
-    setMethodsLoading(true)
-    const load = async () => {
-      try {
-        const [cats, methods] = await Promise.all([
-          api.get<TransactionCategory[]>('/finance/categories', { params: { type: txType } }),
-          api.get<PaymentMethod[]>('/finance/payment-methods'),
-        ])
-        setCategories(cats.data)
-        setPaymentMethods(methods.data)
-        setCategoryId('')
-      } catch {
-        // ignore
-      } finally {
-        setMethodsLoading(false)
-      }
-    }
-    load()
+    setCategoryId('')
   }, [txType])
 
   // Auto-fill amount from settings when mensalidade is selected

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import api from '../../../services/api'
+import { useAssociationSettings, usePaymentMethods } from '../../../hooks/useSharedData'
 import type { Conferente, PaymentMethod } from '../types/financeiro'
 
 interface FinanceiroContextValue {
@@ -18,20 +19,15 @@ interface FinanceiroContextValue {
 const FinanceiroContext = createContext<FinanceiroContextValue | null>(null)
 
 export function FinanceiroProvider({ children }: { children: ReactNode }) {
-  const [assocName, setAssocName] = useState('')
   const [carneOperator, setCarneOperator] = useState('')
   const [openSession, setOpenSession] = useState<{ id: string } | null | undefined>(undefined)
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [operadores, setOperadores] = useState<Conferente[]>([])
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const { data: assocSettings } = useAssociationSettings<{ association_name?: string }>()
+  const assocName = assocSettings?.association_name ?? ''
+  const { data: paymentMethods = [] } = usePaymentMethods<PaymentMethod[]>()
 
   useEffect(() => {
-    api.get<{ association_name?: string }>('/settings/association')
-      .then(r => setAssocName(r.data.association_name ?? ''))
-      .catch(() => {})
-    api.get<PaymentMethod[]>('/finance/payment-methods')
-      .then(r => setPaymentMethods(r.data))
-      .catch(() => {})
     loadOpenSession()
     loadConferentes()
   }, [])

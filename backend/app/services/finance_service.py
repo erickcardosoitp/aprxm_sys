@@ -785,11 +785,12 @@ class FinanceService:
             raise UnprocessableError(f"Falha ao baixar logo ({results[0]}). Verifique a URL no Admin.")
         logo_bytes = results[0]
 
-        # Generate barcode image
-        barcode_bytes = self._build_barcode_image(barcode_code)
+        # Generate barcode image (CPU-bound — off the event loop)
+        barcode_bytes = await asyncio.to_thread(self._build_barcode_image, barcode_code)
 
-        # Generate PDF
-        pdf_bytes = self._build_proof_pdf(
+        # Generate PDF (CPU-bound — off the event loop)
+        pdf_bytes = await asyncio.to_thread(
+            self._build_proof_pdf,
             resident_name=resident_name,
             resident_cpf=resident_cpf,
             resident_neighborhood=resident_neighborhood,
