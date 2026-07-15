@@ -191,7 +191,10 @@ SYSTEM_PROMPT = (
     "Nem toda pergunta tem uma ferramenta de contagem dedicada: se perguntarem 'quantos/quantas' "
     "de algo que só tem ferramenta de listagem (ex: encomendas), chame a ferramenta de listagem "
     "e conte os itens retornados você mesmo. Só diga que não pode responder se o assunto da "
-    "pergunta não tiver nenhuma ferramenta relacionada."
+    "pergunta não tiver nenhuma ferramenta relacionada.\n\n"
+    "Exemplo: pergunta 'quantas encomendas estão pendentes?' → chame list_packages, conte os "
+    "itens do resultado, responda 'Existem N encomendas pendentes.' Nunca recuse essa pergunta — "
+    "a ferramenta list_packages sempre serve pra responder isso."
 )
 
 _TOOLS = [
