@@ -146,18 +146,28 @@ async def _service_orders(aid: str, session: AsyncSession) -> list[dict]:
     return [{"number": x[0], "title": x[1], "status": x[2], "priority": x[3]} for x in r.fetchall()]
 
 
-async def _packages(aid: str, session: AsyncSession, nome: str = "", so_hoje: bool = False) -> dict:
-    where = ["p.association_id = :aid", "p.status IN ('received','notified')"]
-    params: dict = {"aid": aid}
+def _packages_where(nome: str, recebida_por: str, so_hoje: bool, params: dict) -> list[str]:
+    where = ["p.association_id = :aid"]
     if nome:
         where.append("unaccent(lower(r.full_name)) LIKE unaccent(lower(:nome))")
         params["nome"] = f"%{nome}%"
+    if recebida_por:
+        where.append("unaccent(lower(u.full_name)) LIKE unaccent(lower(:recebida_por))")
+        params["recebida_por"] = f"%{recebida_por}%"
     if so_hoje:
         where.append("p.received_at::date = CURRENT_DATE")
+    return where
+
+
+async def _packages(aid: str, session: AsyncSession, nome: str = "", recebida_por: str = "", so_hoje: bool = False) -> dict:
+    params: dict = {"aid": aid}
+    where = _packages_where(nome, recebida_por, so_hoje, params) + ["p.status IN ('received','notified')"]
     where_sql = " AND ".join(where)
 
     count_r = await session.execute(text(f"""
-        SELECT COUNT(*) FROM packages p LEFT JOIN residents r ON r.id = p.resident_id
+        SELECT COUNT(*) FROM packages p
+        LEFT JOIN residents r ON r.id = p.resident_id
+        LEFT JOIN users u ON u.id = p.received_by
         WHERE {where_sql}
     """), params)
     total = int(count_r.scalar_one())
@@ -165,7 +175,9 @@ async def _packages(aid: str, session: AsyncSession, nome: str = "", so_hoje: bo
     r = await session.execute(text(f"""
         SELECT COALESCE(r.full_name, p.resident_name, 'Não identificado') AS name,
                p.carrier_name
-        FROM packages p LEFT JOIN residents r ON r.id = p.resident_id
+        FROM packages p
+        LEFT JOIN residents r ON r.id = p.resident_id
+        LEFT JOIN users u ON u.id = p.received_by
         WHERE {where_sql}
         ORDER BY p.received_at DESC LIMIT 10
     """), params)
@@ -173,16 +185,15 @@ async def _packages(aid: str, session: AsyncSession, nome: str = "", so_hoje: bo
     return {"total_pendentes_de_retirada": total, "items": items}
 
 
-async def _packages_received_today(aid: str, session: AsyncSession, nome: str = "") -> dict:
-    where = ["p.association_id = :aid", "p.received_at::date = CURRENT_DATE"]
+async def _packages_received_today(aid: str, session: AsyncSession, nome: str = "", recebida_por: str = "") -> dict:
     params: dict = {"aid": aid}
-    if nome:
-        where.append("unaccent(lower(r.full_name)) LIKE unaccent(lower(:nome))")
-        params["nome"] = f"%{nome}%"
+    where = _packages_where(nome, recebida_por, True, params)
     where_sql = " AND ".join(where)
 
     count_r = await session.execute(text(f"""
-        SELECT COUNT(*) FROM packages p LEFT JOIN residents r ON r.id = p.resident_id
+        SELECT COUNT(*) FROM packages p
+        LEFT JOIN residents r ON r.id = p.resident_id
+        LEFT JOIN users u ON u.id = p.received_by
         WHERE {where_sql}
     """), params)
     total = int(count_r.scalar_one())
@@ -190,7 +201,9 @@ async def _packages_received_today(aid: str, session: AsyncSession, nome: str = 
     r = await session.execute(text(f"""
         SELECT COALESCE(r.full_name, p.resident_name, 'Não identificado') AS name,
                p.carrier_name, p.status
-        FROM packages p LEFT JOIN residents r ON r.id = p.resident_id
+        FROM packages p
+        LEFT JOIN residents r ON r.id = p.resident_id
+        LEFT JOIN users u ON u.id = p.received_by
         WHERE {where_sql}
         ORDER BY p.received_at DESC LIMIT 20
     """), params)
@@ -276,12 +289,17 @@ _TOOLS = [
         "name": "list_packages",
         "description": (
             "Lista encomendas ainda PENDENTES de retirada pelo morador (nunca inclui "
-            "'delivered'). Não filtra por data — 'so_hoje' controla isso à parte."
+            "'delivered'). Não filtra por data — 'so_hoje' controla isso à parte. "
+            "'nome' filtra pelo morador DESTINATÁRIO; 'recebida_por' filtra pelo "
+            "FUNCIONÁRIO/PORTEIRO que deu entrada na encomenda — são pessoas diferentes, "
+            "não confunda 'encomenda da Fulana' (destinatária) com 'recebida pela Fulana' "
+            "(funcionária que registrou)."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "nome": {"type": "string", "description": "Nome do morador destinatário, pra filtrar (opcional, vazio = todos)"},
+                "nome": {"type": "string", "description": "Nome do morador DESTINATÁRIO, pra filtrar (opcional, vazio = todos)"},
+                "recebida_por": {"type": "string", "description": "Nome do FUNCIONÁRIO/PORTEIRO que registrou a entrada (opcional, vazio = todos)"},
                 "so_hoje": {"type": "boolean", "description": "true = só encomendas que chegaram hoje; false = qualquer data"},
             },
             "required": [],
@@ -292,12 +310,15 @@ _TOOLS = [
         "description": (
             "Conta/lista encomendas que DERAM ENTRADA hoje na portaria (received_at = hoje), "
             "não importa se já foram retiradas ou não. Use pra perguntas tipo 'quantas "
-            "encomendas chegaram/foram recebidas hoje', diferente de 'quantas estão pendentes'."
+            "encomendas chegaram/foram recebidas hoje', diferente de 'quantas estão pendentes'. "
+            "'nome' filtra pelo morador DESTINATÁRIO; 'recebida_por' filtra pelo FUNCIONÁRIO "
+            "que registrou a entrada — não confunda os dois."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "nome": {"type": "string", "description": "Nome do morador destinatário, pra filtrar (opcional, vazio = todos)"},
+                "nome": {"type": "string", "description": "Nome do morador DESTINATÁRIO, pra filtrar (opcional, vazio = todos)"},
+                "recebida_por": {"type": "string", "description": "Nome do FUNCIONÁRIO/PORTEIRO que registrou a entrada (opcional, vazio = todos)"},
             },
             "required": [],
         },
@@ -344,9 +365,18 @@ async def _run_tool(name: str, args: dict, aid: str, session: AsyncSession):
     if name == "list_service_orders":
         return {"items": await _service_orders(aid, session)}
     if name == "list_packages":
-        return await _packages(aid, session, nome=args.get("nome", ""), so_hoje=args.get("so_hoje", False))
+        return await _packages(
+            aid, session,
+            nome=args.get("nome", ""),
+            recebida_por=args.get("recebida_por", ""),
+            so_hoje=args.get("so_hoje", False),
+        )
     if name == "packages_received_today":
-        return await _packages_received_today(aid, session, nome=args.get("nome", ""))
+        return await _packages_received_today(
+            aid, session,
+            nome=args.get("nome", ""),
+            recebida_por=args.get("recebida_por", ""),
+        )
     if name == "resident_count":
         return await _resident_count(aid, session)
     if name == "so_count":
