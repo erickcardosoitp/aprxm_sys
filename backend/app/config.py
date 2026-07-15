@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Cron
     cron_secret: str = ""
 
+    # Groq — LLM tool-use (Simplifica agent)
+    groq_api_key: str = ""
+
     # Cloudflare R2 — Data Lake
     r2_account_id: str = ""
     r2_access_key_id: str = ""

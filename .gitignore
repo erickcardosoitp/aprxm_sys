@@ -54,3 +54,4 @@ backend/.env.vercel
 /err.txt
 /out.txt
 /neon_projects.json
+.env*

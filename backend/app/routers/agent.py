@@ -1,12 +1,18 @@
+import json
+
+import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
+from app.core.resilience import http_cb
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
 
 router = APIRouter(prefix="/agent", tags=["Simplifica"])
+settings = get_settings()
 
 
 class ChatRequest(BaseModel):
@@ -174,6 +180,144 @@ async def _so_count(aid: str, session: AsyncSession) -> dict:
     return {"abertas": int(row[0]), "resolvidas_hoje": int(row[1]), "total": int(row[2])}
 
 
+# ── Groq tool-use ─────────────────────────────────────────────────────────────
+
+GROQ_MODEL = "llama-3.3-70b-versatile"
+
+SYSTEM_PROMPT = (
+    "Você é o assistente de dados do Simplifica, um ERP de associação de moradores. "
+    "Responda em português, de forma direta e curta (1-3 frases). Use as ferramentas "
+    "disponíveis para consultar dados reais antes de responder — nunca invente números. "
+    "Se a pergunta não corresponder a nenhuma ferramenta, diga que não pode responder isso."
+)
+
+_TOOLS = [
+    {"type": "function", "function": {
+        "name": "financial_summary",
+        "description": "Resumo financeiro do dia atual: total de entradas, saídas e número de lançamentos.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "session_status",
+        "description": "Status da sessão de caixa mais recente (aberta ou fechada) e saldo inicial.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "list_delinquent",
+        "description": "Lista moradores inadimplentes (mensalidade vencida e não paga).",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "search_resident",
+        "description": "Busca um morador/associado pelo nome, CPF ou telefone.",
+        "parameters": {
+            "type": "object",
+            "properties": {"q": {"type": "string", "description": "Nome, CPF ou telefone a buscar"}},
+            "required": ["q"],
+        },
+    }},
+    {"type": "function", "function": {
+        "name": "list_pending_mensalidades",
+        "description": "Lista mensalidades pendentes, opcionalmente filtradas por nome do morador.",
+        "parameters": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "Nome do morador (vazio = todos)"}},
+            "required": [],
+        },
+    }},
+    {"type": "function", "function": {
+        "name": "list_service_orders",
+        "description": "Lista ordens de serviço (OS) em aberto ou em andamento.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "list_packages",
+        "description": "Lista encomendas aguardando retirada ou notificadas.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "resident_count",
+        "description": "Contagem total de moradores: associados ativos, total de membros e visitantes.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+    {"type": "function", "function": {
+        "name": "so_count",
+        "description": "Contagem de ordens de serviço: abertas, resolvidas hoje e total histórico.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    }},
+]
+
+
+async def _call_groq(payload: dict) -> dict:
+    async def _do() -> dict:
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                json=payload,
+            )
+        if r.status_code != 200:
+            raise ValueError(f"Groq HTTP {r.status_code}: {r.text[:300]}")
+        return r.json()
+
+    return await http_cb.call_async(_do)
+
+
+async def _run_tool(name: str, args: dict, aid: str, session: AsyncSession):
+    if name == "financial_summary":
+        return await _financial_summary(aid, session)
+    if name == "session_status":
+        return await _session_status(aid, session)
+    if name == "list_delinquent":
+        return {"items": await _delinquent(aid, session)}
+    if name == "search_resident":
+        return {"items": await _search_residents(aid, args.get("q", ""), session)}
+    if name == "list_pending_mensalidades":
+        return {"items": await _pending_mensalidades(aid, args.get("name", ""), session)}
+    if name == "list_service_orders":
+        return {"items": await _service_orders(aid, session)}
+    if name == "list_packages":
+        return {"items": await _packages(aid, session)}
+    if name == "resident_count":
+        return await _resident_count(aid, session)
+    if name == "so_count":
+        return await _so_count(aid, session)
+    return {"error": f"ferramenta desconhecida: {name}"}
+
+
+async def _agent_chat_groq(message: str, aid: str, session: AsyncSession) -> ChatResponse:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": message},
+    ]
+    resp = await _call_groq({
+        "model": GROQ_MODEL, "messages": messages,
+        "tools": _TOOLS, "tool_choice": "auto", "temperature": 0.2,
+    })
+    choice = resp["choices"][0]["message"]
+    tool_calls = choice.get("tool_calls") or []
+
+    if not tool_calls:
+        return ChatResponse(reply=choice.get("content") or "Não entendi a pergunta.")
+
+    messages.append(choice)
+    collected_data: dict = {}
+    for tc in tool_calls:
+        name = tc["function"]["name"]
+        args = json.loads(tc["function"].get("arguments") or "{}")
+        result = await _run_tool(name, args, aid, session)
+        collected_data = result
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tc["id"],
+            "content": json.dumps(result, default=str, ensure_ascii=False),
+        })
+
+    final = await _call_groq({"model": GROQ_MODEL, "messages": messages, "temperature": 0.2})
+    reply = final["choices"][0]["message"].get("content") or "Consulta realizada."
+    return ChatResponse(reply=reply, data=collected_data)
+
+
 # ── Main endpoint ─────────────────────────────────────────────────────────────
 
 @router.post("/chat", summary="Simplifica — agente de consulta")
@@ -183,6 +327,13 @@ async def agent_chat(
     session: AsyncSession = Depends(get_session),
 ) -> ChatResponse:
     aid = str(current.association_id)
+
+    if settings.groq_api_key:
+        try:
+            return await _agent_chat_groq(body.message, aid, session)
+        except Exception:
+            pass  # fallback pro classificador por regex abaixo
+
     intent, params = _classify(body.message)
 
     if intent == "financial_summary":
