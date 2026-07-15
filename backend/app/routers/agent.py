@@ -146,14 +146,56 @@ async def _service_orders(aid: str, session: AsyncSession) -> list[dict]:
     return [{"number": x[0], "title": x[1], "status": x[2], "priority": x[3]} for x in r.fetchall()]
 
 
-async def _packages(aid: str, session: AsyncSession) -> list[dict]:
-    r = await session.execute(text("""
-        SELECT resident_name, carrier_name, status, received_at
-        FROM packages
-        WHERE association_id = :aid AND status IN ('received','notified')
-        ORDER BY received_at DESC LIMIT 10
-    """), {"aid": aid})
-    return [{"name": x[0], "carrier": x[1], "situacao": "aguardando_retirada"} for x in r.fetchall()]
+async def _packages(aid: str, session: AsyncSession, nome: str = "", so_hoje: bool = False) -> dict:
+    where = ["p.association_id = :aid", "p.status IN ('received','notified')"]
+    params: dict = {"aid": aid}
+    if nome:
+        where.append("unaccent(lower(r.full_name)) LIKE unaccent(lower(:nome))")
+        params["nome"] = f"%{nome}%"
+    if so_hoje:
+        where.append("p.received_at::date = CURRENT_DATE")
+    where_sql = " AND ".join(where)
+
+    count_r = await session.execute(text(f"""
+        SELECT COUNT(*) FROM packages p LEFT JOIN residents r ON r.id = p.resident_id
+        WHERE {where_sql}
+    """), params)
+    total = int(count_r.scalar_one())
+
+    r = await session.execute(text(f"""
+        SELECT COALESCE(r.full_name, p.resident_name, 'Não identificado') AS name,
+               p.carrier_name
+        FROM packages p LEFT JOIN residents r ON r.id = p.resident_id
+        WHERE {where_sql}
+        ORDER BY p.received_at DESC LIMIT 10
+    """), params)
+    items = [{"name": x[0], "carrier": x[1], "situacao": "aguardando_retirada"} for x in r.fetchall()]
+    return {"total_pendentes_de_retirada": total, "items": items}
+
+
+async def _packages_received_today(aid: str, session: AsyncSession, nome: str = "") -> dict:
+    where = ["p.association_id = :aid", "p.received_at::date = CURRENT_DATE"]
+    params: dict = {"aid": aid}
+    if nome:
+        where.append("unaccent(lower(r.full_name)) LIKE unaccent(lower(:nome))")
+        params["nome"] = f"%{nome}%"
+    where_sql = " AND ".join(where)
+
+    count_r = await session.execute(text(f"""
+        SELECT COUNT(*) FROM packages p LEFT JOIN residents r ON r.id = p.resident_id
+        WHERE {where_sql}
+    """), params)
+    total = int(count_r.scalar_one())
+
+    r = await session.execute(text(f"""
+        SELECT COALESCE(r.full_name, p.resident_name, 'Não identificado') AS name,
+               p.carrier_name, p.status
+        FROM packages p LEFT JOIN residents r ON r.id = p.resident_id
+        WHERE {where_sql}
+        ORDER BY p.received_at DESC LIMIT 20
+    """), params)
+    items = [{"name": x[0], "carrier": x[1], "status_atual": x[2]} for x in r.fetchall()]
+    return {"total_recebidas_hoje": total, "items": items}
 
 
 async def _resident_count(aid: str, session: AsyncSession) -> dict:
@@ -233,12 +275,32 @@ _TOOLS = [
     {"type": "function", "function": {
         "name": "list_packages",
         "description": (
-            "Lista encomendas ainda PENDENTES de retirada pelo morador. Todo item retornado "
-            "aqui conta como pendente, incluindo status 'received' (chegou na portaria, "
-            "ainda não foi retirada) e 'notified' (morador avisado, ainda não retirou). "
-            "Encomendas já entregues (status 'delivered') nunca aparecem nessa lista."
+            "Lista encomendas ainda PENDENTES de retirada pelo morador (nunca inclui "
+            "'delivered'). Não filtra por data — 'so_hoje' controla isso à parte."
         ),
-        "parameters": {"type": "object", "properties": {}, "required": []},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "nome": {"type": "string", "description": "Nome do morador destinatário, pra filtrar (opcional, vazio = todos)"},
+                "so_hoje": {"type": "boolean", "description": "true = só encomendas que chegaram hoje; false = qualquer data"},
+            },
+            "required": [],
+        },
+    }},
+    {"type": "function", "function": {
+        "name": "packages_received_today",
+        "description": (
+            "Conta/lista encomendas que DERAM ENTRADA hoje na portaria (received_at = hoje), "
+            "não importa se já foram retiradas ou não. Use pra perguntas tipo 'quantas "
+            "encomendas chegaram/foram recebidas hoje', diferente de 'quantas estão pendentes'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "nome": {"type": "string", "description": "Nome do morador destinatário, pra filtrar (opcional, vazio = todos)"},
+            },
+            "required": [],
+        },
     }},
     {"type": "function", "function": {
         "name": "resident_count",
@@ -282,8 +344,9 @@ async def _run_tool(name: str, args: dict, aid: str, session: AsyncSession):
     if name == "list_service_orders":
         return {"items": await _service_orders(aid, session)}
     if name == "list_packages":
-        items = await _packages(aid, session)
-        return {"total_pendentes_de_retirada": len(items), "items": items}
+        return await _packages(aid, session, nome=args.get("nome", ""), so_hoje=args.get("so_hoje", False))
+    if name == "packages_received_today":
+        return await _packages_received_today(aid, session, nome=args.get("nome", ""))
     if name == "resident_count":
         return await _resident_count(aid, session)
     if name == "so_count":
@@ -399,9 +462,10 @@ async def agent_chat(
         return ChatResponse(reply=reply, data={"items": items})
 
     if intent == "list_packages":
-        items = await _packages(aid, session)
-        reply = f"{len(items)} encomenda(s) aguardando retirada." if items else "Nenhuma encomenda pendente."
-        return ChatResponse(reply=reply, data={"items": items})
+        result = await _packages(aid, session)
+        total = result["total_pendentes_de_retirada"]
+        reply = f"{total} encomenda(s) aguardando retirada." if total else "Nenhuma encomenda pendente."
+        return ChatResponse(reply=reply, data=result)
 
     if intent == "resident_count":
         d = await _resident_count(aid, session)
