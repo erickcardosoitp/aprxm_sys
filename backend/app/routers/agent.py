@@ -153,7 +153,7 @@ async def _packages(aid: str, session: AsyncSession) -> list[dict]:
         WHERE association_id = :aid AND status IN ('received','notified')
         ORDER BY received_at DESC LIMIT 10
     """), {"aid": aid})
-    return [{"name": x[0], "carrier": x[1], "status": x[2]} for x in r.fetchall()]
+    return [{"name": x[0], "carrier": x[1], "situacao": "aguardando_retirada"} for x in r.fetchall()]
 
 
 async def _resident_count(aid: str, session: AsyncSession) -> dict:
@@ -185,16 +185,10 @@ async def _so_count(aid: str, session: AsyncSession) -> dict:
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = (
-    "Você é o assistente de dados do Simplifica, um ERP de associação de moradores. "
-    "Responda em português, de forma direta e curta (1-3 frases). Use as ferramentas "
-    "disponíveis para consultar dados reais antes de responder — nunca invente números. "
-    "Nem toda pergunta tem uma ferramenta de contagem dedicada: se perguntarem 'quantos/quantas' "
-    "de algo que só tem ferramenta de listagem (ex: encomendas), chame a ferramenta de listagem "
-    "e conte os itens retornados você mesmo. Só diga que não pode responder se o assunto da "
-    "pergunta não tiver nenhuma ferramenta relacionada.\n\n"
-    "Exemplo: pergunta 'quantas encomendas estão pendentes?' → chame list_packages, conte os "
-    "itens do resultado, responda 'Existem N encomendas pendentes.' Nunca recuse essa pergunta — "
-    "a ferramenta list_packages sempre serve pra responder isso."
+    "Você é o assistente de dados do Simplifica, ERP de associação de moradores. "
+    "Responda em português, direto, 1-3 frases. Baseie toda resposta numérica no "
+    "retorno literal das ferramentas — nunca invente ou reinterprete um número. "
+    "Recuse só quando o assunto não tiver ferramenta correspondente."
 )
 
 _TOOLS = [
@@ -288,7 +282,8 @@ async def _run_tool(name: str, args: dict, aid: str, session: AsyncSession):
     if name == "list_service_orders":
         return {"items": await _service_orders(aid, session)}
     if name == "list_packages":
-        return {"items": await _packages(aid, session)}
+        items = await _packages(aid, session)
+        return {"total_pendentes_de_retirada": len(items), "items": items}
     if name == "resident_count":
         return await _resident_count(aid, session)
     if name == "so_count":
