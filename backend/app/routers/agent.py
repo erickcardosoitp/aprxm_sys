@@ -235,7 +235,12 @@ _TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "list_packages",
-        "description": "Lista encomendas aguardando retirada ou notificadas.",
+        "description": (
+            "Lista encomendas ainda PENDENTES de retirada pelo morador. Todo item retornado "
+            "aqui conta como pendente, incluindo status 'received' (chegou na portaria, "
+            "ainda não foi retirada) e 'notified' (morador avisado, ainda não retirou). "
+            "Encomendas já entregues (status 'delivered') nunca aparecem nessa lista."
+        ),
         "parameters": {"type": "object", "properties": {}, "required": []},
     }},
     {"type": "function", "function": {
