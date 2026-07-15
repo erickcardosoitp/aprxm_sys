@@ -93,7 +93,7 @@ async def _financial_summary(aid: str, session: AsyncSession) -> dict:
 
 async def _session_status(aid: str, session: AsyncSession) -> dict:
     r = await session.execute(text("""
-        SELECT status, opened_at, open_balance FROM cash_sessions
+        SELECT status, opened_at, opening_balance FROM cash_sessions
         WHERE association_id = :aid ORDER BY opened_at DESC LIMIT 1
     """), {"aid": aid})
     row = r.fetchone()
