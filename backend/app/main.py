@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 async def _run_migrations() -> None:
@@ -164,6 +164,71 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (4, 'v4: users.token_version — revogacao de acesso em tempo real') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            # v5: governanca empresa/ESC — 100% aditivo (nada no codigo atual depende disso ainda)
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS empresas (
+                    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    name                    VARCHAR(255) NOT NULL,
+                    slug                    VARCHAR(100) UNIQUE NOT NULL,
+                    financeiro_centralizado BOOLEAN NOT NULL DEFAULT FALSE,
+                    plan_name               VARCHAR(50) NOT NULL DEFAULT 'basic',
+                    is_active               BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+            await session.execute(text(
+                "ALTER TABLE associations ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_associations_empresa ON associations(empresa_id)"
+            ))
+            await session.execute(text(
+                "ALTER TABLE users ALTER COLUMN association_id DROP NOT NULL"
+            ))
+            await session.execute(text(
+                "ALTER TABLE role_permissions ALTER COLUMN association_id DROP NOT NULL"
+            ))
+            await session.execute(text(
+                "ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+            ))
+            await session.execute(text(
+                "ALTER TABLE audit_log ALTER COLUMN association_id DROP NOT NULL"
+            ))
+            await session.execute(text(
+                "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+            ))
+            await session.execute(text("""
+                DO $$ BEGIN
+                    CREATE TYPE provisioning_run_type AS ENUM ('create_empresa', 'create_associacao');
+                EXCEPTION WHEN duplicate_object THEN NULL;
+                END $$
+            """))
+            await session.execute(text("""
+                DO $$ BEGIN
+                    CREATE TYPE provisioning_run_status AS ENUM ('running', 'success', 'failed');
+                EXCEPTION WHEN duplicate_object THEN NULL;
+                END $$
+            """))
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS provisioning_runs (
+                    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    empresa_id   UUID REFERENCES empresas(id),
+                    run_type     provisioning_run_type NOT NULL,
+                    status       provisioning_run_status NOT NULL DEFAULT 'running',
+                    payload      JSONB NOT NULL,
+                    steps        JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    error_detail TEXT,
+                    started_by   UUID NOT NULL REFERENCES users(id),
+                    started_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    finished_at  TIMESTAMPTZ
+                )
+            """))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (5, 'v5: governanca empresa/ESC — empresas, provisioning_runs, empresa_id (aditivo)') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()
@@ -986,6 +1051,71 @@ async def _run_migrations() -> None:
         await session.execute(text(
             "INSERT INTO schema_migrations (version, description) "
             "VALUES (3, 'v3: RFM scoring — risk_score, rfm_segment, risk_updated_at') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        # v5: governanca empresa/ESC — 100% aditivo (mesmo bloco do ramo _is_existing_db)
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS empresas (
+                id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                name                    VARCHAR(255) NOT NULL,
+                slug                    VARCHAR(100) UNIQUE NOT NULL,
+                financeiro_centralizado BOOLEAN NOT NULL DEFAULT FALSE,
+                plan_name               VARCHAR(50) NOT NULL DEFAULT 'basic',
+                is_active               BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "ALTER TABLE associations ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+        ))
+        await session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_associations_empresa ON associations(empresa_id)"
+        ))
+        await session.execute(text(
+            "ALTER TABLE users ALTER COLUMN association_id DROP NOT NULL"
+        ))
+        await session.execute(text(
+            "ALTER TABLE role_permissions ALTER COLUMN association_id DROP NOT NULL"
+        ))
+        await session.execute(text(
+            "ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+        ))
+        await session.execute(text(
+            "ALTER TABLE audit_log ALTER COLUMN association_id DROP NOT NULL"
+        ))
+        await session.execute(text(
+            "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+        ))
+        await session.execute(text("""
+            DO $$ BEGIN
+                CREATE TYPE provisioning_run_type AS ENUM ('create_empresa', 'create_associacao');
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+        await session.execute(text("""
+            DO $$ BEGIN
+                CREATE TYPE provisioning_run_status AS ENUM ('running', 'success', 'failed');
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS provisioning_runs (
+                id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                empresa_id   UUID REFERENCES empresas(id),
+                run_type     provisioning_run_type NOT NULL,
+                status       provisioning_run_status NOT NULL DEFAULT 'running',
+                payload      JSONB NOT NULL,
+                steps        JSONB NOT NULL DEFAULT '[]'::jsonb,
+                error_detail TEXT,
+                started_by   UUID NOT NULL REFERENCES users(id),
+                started_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                finished_at  TIMESTAMPTZ
+            )
+        """))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (5, 'v5: governanca empresa/ESC — empresas, provisioning_runs, empresa_id (aditivo)') "
             "ON CONFLICT DO NOTHING"
         ))
         await session.commit()

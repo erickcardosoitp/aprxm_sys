@@ -7,6 +7,8 @@ from app.config import get_settings
 
 settings = get_settings()
 
+_IS_NEON = "neon.tech" in settings.database_url
+
 engine = create_async_engine(
     settings.database_url,
     echo=settings.app_env == "development",
@@ -16,8 +18,9 @@ engine = create_async_engine(
     # do Neon. O pooling de verdade e feito pelo PgBouncer do Neon por tras.
     pool_size=3,
     max_overflow=7,
-    # Neon: SSL required + PgBouncer pooler requires prepared statements disabled
-    connect_args={"ssl": "require", "statement_cache_size": 0},
+    # Neon: SSL required + PgBouncer pooler requires prepared statements disabled.
+    # Fora do Neon (ex: Postgres local de teste), ssl fica a cargo do servidor.
+    connect_args={"ssl": "require", "statement_cache_size": 0} if _IS_NEON else {"statement_cache_size": 0},
 )
 
 AsyncSessionLocal = async_sessionmaker(
