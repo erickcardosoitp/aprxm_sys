@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 
 async def _run_migrations() -> None:
@@ -229,6 +229,56 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (5, 'v5: governanca empresa/ESC — empresas, provisioning_runs, empresa_id (aditivo)') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            # v6: governanca empresa/ESC — migration de dados (coexistencia com is_office)
+            # Cria a empresa real, faz backfill de empresa_id em Vaz Lobo/Congonha e promove
+            # os usuarios do Escritorio a admin_master. NAO remove is_office/linked_association_slugs
+            # (isso so acontece na Fase 7, depois de validado em producao).
+            await session.execute(text("""
+                DO $$
+                DECLARE
+                    v_empresa_id UUID;
+                    v_escritorio_id UUID;
+                    v_anchor_assoc_id UUID;
+                    v_migrated_ids UUID[];
+                BEGIN
+                    INSERT INTO empresas (name, slug, financeiro_centralizado, plan_name)
+                    VALUES ('SAPE - Vaz Lobo / Buriti / Congonha', 'sape-vazlobo-congonha', TRUE, 'enterprise')
+                    ON CONFLICT (slug) DO NOTHING;
+
+                    SELECT id INTO v_empresa_id FROM empresas WHERE slug = 'sape-vazlobo-congonha';
+
+                    UPDATE associations SET empresa_id = v_empresa_id
+                    WHERE slug IN ('vaz-lobo', 'congonha') AND empresa_id IS NULL;
+
+                    SELECT id INTO v_escritorio_id FROM associations WHERE slug = 'escritorio' AND is_office = TRUE;
+                    SELECT id INTO v_anchor_assoc_id FROM associations WHERE slug = 'vaz-lobo';
+
+                    IF v_escritorio_id IS NOT NULL AND v_anchor_assoc_id IS NOT NULL THEN
+                        SELECT ARRAY_AGG(id) INTO v_migrated_ids
+                        FROM users WHERE association_id = v_escritorio_id AND is_active = TRUE;
+
+                        IF v_migrated_ids IS NOT NULL THEN
+                            UPDATE users
+                            SET role = 'admin_master', association_id = NULL, token_version = token_version + 1
+                            WHERE id = ANY(v_migrated_ids);
+
+                            INSERT INTO user_association_roles (user_id, association_id, role, is_active)
+                            SELECT uid, v_anchor_assoc_id, 'admin_master', TRUE
+                            FROM unnest(v_migrated_ids) AS uid
+                            ON CONFLICT (user_id, association_id) DO UPDATE
+                                SET role = 'admin_master', is_active = TRUE;
+
+                            DELETE FROM user_association_roles
+                            WHERE association_id = v_escritorio_id AND user_id = ANY(v_migrated_ids);
+                        END IF;
+                    END IF;
+                END $$
+            """))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (6, 'v6: governanca empresa/ESC — dados: empresa real, backfill, admin_master') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()
@@ -1116,6 +1166,54 @@ async def _run_migrations() -> None:
         await session.execute(text(
             "INSERT INTO schema_migrations (version, description) "
             "VALUES (5, 'v5: governanca empresa/ESC — empresas, provisioning_runs, empresa_id (aditivo)') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        # v6: mesmo bloco de dados do ramo _is_existing_db (no-op se nao houver
+        # associations vaz-lobo/congonha/escritorio seedadas nesta DB)
+        await session.execute(text("""
+            DO $$
+            DECLARE
+                v_empresa_id UUID;
+                v_escritorio_id UUID;
+                v_anchor_assoc_id UUID;
+                v_migrated_ids UUID[];
+            BEGIN
+                INSERT INTO empresas (name, slug, financeiro_centralizado, plan_name)
+                VALUES ('SAPE - Vaz Lobo / Buriti / Congonha', 'sape-vazlobo-congonha', TRUE, 'enterprise')
+                ON CONFLICT (slug) DO NOTHING;
+
+                SELECT id INTO v_empresa_id FROM empresas WHERE slug = 'sape-vazlobo-congonha';
+
+                UPDATE associations SET empresa_id = v_empresa_id
+                WHERE slug IN ('vaz-lobo', 'congonha') AND empresa_id IS NULL;
+
+                SELECT id INTO v_escritorio_id FROM associations WHERE slug = 'escritorio' AND is_office = TRUE;
+                SELECT id INTO v_anchor_assoc_id FROM associations WHERE slug = 'vaz-lobo';
+
+                IF v_escritorio_id IS NOT NULL AND v_anchor_assoc_id IS NOT NULL THEN
+                    SELECT ARRAY_AGG(id) INTO v_migrated_ids
+                    FROM users WHERE association_id = v_escritorio_id AND is_active = TRUE;
+
+                    IF v_migrated_ids IS NOT NULL THEN
+                        UPDATE users
+                        SET role = 'admin_master', association_id = NULL, token_version = token_version + 1
+                        WHERE id = ANY(v_migrated_ids);
+
+                        INSERT INTO user_association_roles (user_id, association_id, role, is_active)
+                        SELECT uid, v_anchor_assoc_id, 'admin_master', TRUE
+                        FROM unnest(v_migrated_ids) AS uid
+                        ON CONFLICT (user_id, association_id) DO UPDATE
+                            SET role = 'admin_master', is_active = TRUE;
+
+                        DELETE FROM user_association_roles
+                        WHERE association_id = v_escritorio_id AND user_id = ANY(v_migrated_ids);
+                    END IF;
+                END IF;
+            END $$
+        """))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (6, 'v6: governanca empresa/ESC — dados: empresa real, backfill, admin_master') "
             "ON CONFLICT DO NOTHING"
         ))
         await session.commit()

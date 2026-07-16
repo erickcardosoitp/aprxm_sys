@@ -32,7 +32,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(
     subject: UUID,
-    association_id: UUID,
+    association_id: UUID | None,
     role: str,
     full_name: str = "",
     linked_association_ids: list[str] | None = None,
@@ -48,7 +48,7 @@ def create_access_token(
         expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {
         "sub": str(subject),
-        "association_id": str(association_id),
+        "association_id": str(association_id) if association_id else None,
         "role": role,
         "full_name": full_name,
         "linked_association_ids": linked_association_ids or [],

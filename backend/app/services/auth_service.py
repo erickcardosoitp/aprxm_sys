@@ -57,7 +57,12 @@ class AuthService:
                         WHEN 'conselho' THEN 5 WHEN 'conferente' THEN 6
                         ELSE 7 END,
                     uar.created_at
-            """), {"uid": str(user.id), "preferred": str(association_id) if association_id else str(user.association_id)})
+            """), {
+                "uid": str(user.id),
+                "preferred": str(association_id) if association_id else (
+                    str(user.association_id) if user.association_id else None
+                ),
+            })
             memberships = memberships_result.fetchall()
         else:
             memberships = []
@@ -75,7 +80,7 @@ class AuthService:
                 str(m[0]) for m in memberships[1:]
                 if primary_empresa_id is None or m[4] == primary_empresa_id
             ]
-        else:
+        elif user.association_id is not None:
             # Fallback para usuários que ainda não passaram pela migração
             assoc_row = await self._session.execute(
                 text(f"SELECT name, is_office{empresa_select} FROM associations WHERE id = :id"),
@@ -87,6 +92,17 @@ class AuthService:
             association_name = ar[0] if ar else ""
             is_office        = bool(ar[1]) if ar else False
             primary_empresa_id = ar[2] if ar else None
+            linked_ids       = []
+        else:
+            # Usuario empresa-wide (admin_master/superadmin) sem membership em
+            # user_association_roles e sem association_id — nao deveria acontecer
+            # (provisionamento sempre cria a membership), mas evita 500 em vez de
+            # travar o login.
+            primary_assoc_id = None
+            primary_role     = user.role.value
+            association_name = ""
+            is_office        = False
+            primary_empresa_id = None
             linked_ids       = []
 
         token = create_access_token(

@@ -15,7 +15,7 @@ class CurrentUser:
     def __init__(
         self,
         user_id: UUID,
-        association_id: UUID,
+        association_id: UUID | None,
         role: str,
         linked_association_ids: list[UUID] | None = None,
         is_office: bool = False,
@@ -42,8 +42,8 @@ class CurrentUser:
 
     def scoped_ids(self, slug_filter: str | None = None) -> list[UUID]:
         """Returns all association IDs accessible to this user (primary + linked)."""
-        ids = [self.association_id] + [i for i in self.linked_association_ids if i != self.association_id]
-        return ids
+        base = [self.association_id] if self.association_id else []
+        return base + [i for i in self.linked_association_ids if i != self.association_id]
 
     @property
     def is_admin_master(self) -> bool:
@@ -119,9 +119,10 @@ async def get_current_user(
 
     linked_ids = [UUID(i) for i in payload.get("linked_association_ids", [])]
     empresa_id_claim = payload.get("empresa_id")
+    association_id_claim = payload.get("association_id")
     return CurrentUser(
         user_id=user_id,
-        association_id=UUID(payload["association_id"]),
+        association_id=UUID(association_id_claim) if association_id_claim else None,
         role=payload["role"],
         linked_association_ids=linked_ids,
         is_office=bool(payload.get("is_office", False)),
