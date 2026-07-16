@@ -41,7 +41,7 @@ Substitui o hook dinâmico atual (`_empresa_col_exists` em `auth.py`) por uma co
 
 ### ESC não é uma linha em `associations`
 
-O ambiente "Escritório" deixa de existir como tenant fictício (`is_office=true`). Passa a ser um **escopo de acesso**: usuários com role de empresa (`admin_empresa`) enxergam a visão consolidada computada por `WHERE empresa_id = X` sobre as associações reais, sem necessidade de uma linha extra.
+O ambiente "Escritório" deixa de existir como tenant fictício (`is_office=true`). Passa a ser um **escopo de acesso**: usuários `admin_master`/`superadmin` enxergam a visão consolidada computada por `WHERE empresa_id = X` sobre as associações reais, sem necessidade de uma linha extra.
 
 Consequência: `is_office`, `inventory_day_of_month` (a nível de association) e `linked_association_slugs` ficam obsoletos e são removidos após a migração dos dados (Seção 5). O conceito de inventário do Escritório (spec `2026-05-03-escritorio-design.md`) precisa ser adaptado para operar em nível de empresa — ajuste tratado como tarefa própria no plano de implementação, não redesenhado aqui.
 
@@ -66,14 +66,25 @@ Permite depurar e potencialmente reprocessar uma criação que falhou no meio do
 
 ## Seção 2 — RBAC
 
-Dois níveis, sem intermediário:
+O enum `user_role` já reserva `superadmin` e `admin_master` — não existiam guards ativos usando esses papéis, mas `backend/app/core/tenant.py` já tem o esqueleto pronto (`require_platform_admin`, `require_empresa_admin`, `assert_same_empresa`, `is_platform_admin`, `is_empresa_admin`), nunca plugado em nenhum router. Este projeto conecta esse esqueleto em vez de recriar do zero.
+
+Três níveis:
 
 | Nível | Escopo | Observação |
 |---|---|---|
-| `admin_empresa` | Toda associação da empresa | Novo — gerencia usuários, cria associações, vê financeiro consolidado |
+| `superadmin` | Toda a plataforma, cross-empresa | Bootstrap-only — só um superadmin existente pode criar outro (`require_platform_admin`). Sem fluxo de auto-criação/self-service. |
+| `admin_master` | Toda associação da empresa (`empresa_id`) | Opera tudo — gerencia usuários, cria associações, financeiro consolidado. Guard `require_empresa_admin` já existe. |
 | Roles atuais (`admin`, `conferente`, `diretoria`, `conselho`, etc.) | 1 associação | Sem mudança de comportamento |
 
-Criação/exclusão de usuário em cascata: desativar uma associação faz **soft delete em cascata** — `is_active=false` na associação e em todo usuário vinculado só a ela (usuários que também pertencem a outra associação ativa não são afetados).
+### `users.association_id` deixa de ser sempre obrigatório
+
+Hoje é `NOT NULL`. Usuários `admin_master`/`superadmin` não ficam presos a 1 associação — acesso vem de `empresa_id` + `role`, não de `association_id`. Migration: `ALTER TABLE users ALTER COLUMN association_id DROP NOT NULL`, com constraint de aplicação (não de banco): `association_id` obrigatório apenas quando `role` não é `superadmin`/`admin_master`.
+
+### `role_permissions` e `audit_log` ganham `empresa_id`
+
+Hoje ambas têm `association_id NOT NULL` — não existe onde registrar permissão ou ação em nível de empresa (ex: `admin_master` configurando algo cross-associação). Migration: `association_id` vira nullable nas duas tabelas, adiciona `empresa_id UUID FK → empresas` (nullable). Uma linha é ou escopada a 1 associação, ou a 1 empresa — nunca as duas.
+
+Criação/exclusão de usuário em cascata: desativar uma associação faz **soft delete em cascata** — `is_active=false` na associação e em todo usuário local vinculado só a ela (usuários `admin_master`/`superadmin`, sem `association_id`, não são afetados).
 
 ---
 
@@ -81,13 +92,15 @@ Criação/exclusão de usuário em cascata: desativar uma associação faz **sof
 
 ### Form 1 — Criar Empresa
 
-Campos: nome da empresa, slug, admin inicial (nome, sobrenome, email, cargo — texto livre, sem afetar permissão), `financeiro_centralizado` (toggle, default off).
+Campos: nome da empresa, slug, admin inicial (nome, sobrenome, email, cargo — texto livre, sem afetar permissão), `financeiro_centralizado` (toggle, default off). Admin criado com `role=admin_master`, `association_id=NULL` (ver Seção 2).
 
 Senha do admin: gerada pelo sistema, armazenada com hash (`passlib[bcrypt]`, mesmo padrão já usado), **enviada por email** via `email_service.py` existente. Sem exibição em tela.
 
 ### Form 2 — Criar Associação (dentro da empresa)
 
 Campos base (`associations`) **+ campos essenciais de `association_settings` direto no wizard**: nome da comunidade, valor padrão de mensalidade, dia de vencimento, saldo inicial de caixa, dia de inventário, nome do presidente. A associação nasce configurada, não apenas com defaults genéricos.
+
+Campos de `association_settings` sem UI dedicada no form (`access_groups`, `cadastros`) mantêm os defaults já existentes no banco (`'{}'::jsonb`) — não bloqueiam a criação.
 
 Itens secundários (logo, assinatura do presidente, ajustes finos) ficam num **checklist complementar** exibido no primeiro acesso do admin da associação — não bloqueiam a criação.
 
@@ -116,7 +129,7 @@ Nova migration:
 
 1. Cria empresa real `SAPE-VAZLOBO_BURITI-CONGONHA`
 2. Seta `associations.empresa_id` para Vaz Lobo e Congonha apontando pra essa empresa
-3. Usuários hoje vinculados à linha `is_office=true` (Escritório) migram para role `admin_empresa` na empresa nova
+3. Usuários hoje vinculados à linha `is_office=true` (Escritório) migram para role `admin_master` na empresa nova, com `association_id = NULL`
 4. Remove a linha `is_office=true` de `associations` e a coluna `linked_association_slugs`
 5. Preserva histórico: nenhuma transação, morador ou dado operacional de Vaz Lobo/Congonha é tocado — só o nível de agregação muda
 
@@ -125,12 +138,15 @@ Nova migration:
 ## Dependências Técnicas
 
 - Migration: tabela `empresas`
-- Migration: `associations.empresa_id` (FK NOT NULL) + remoção de `is_office`/`linked_association_slugs`
+- Migration: `associations.empresa_id` (FK NOT NULL)
+- Migration: `users.association_id` — `DROP NOT NULL`
+- Migration: `role_permissions` e `audit_log` — `association_id` vira nullable, adiciona `empresa_id` (nullable) FK
 - Migration: tabela `provisioning_runs`
-- Migration: dados — criar empresa real, migrar Vaz Lobo/Congonha/usuários do Escritório
-- Backend: `EmpresaService` (criar empresa + admin + provisionamento)
+- Migration: dados — criar empresa real, migrar Vaz Lobo/Congonha/usuários do Escritório, remover `is_office`/`linked_association_slugs`
+- Backend: limpeza de `is_office` nos 6 pontos que hoje o referenciam (`auth.py`, `auth_service.py`, `tenant.py`, `security.py`, `geral.py`, `association.py`)
+- Backend: `EmpresaService` (criar empresa + admin_master + provisionamento)
 - Backend: `AssociationProvisioningService` (criar associação + settings + defaults financeiros + admin)
-- Backend: guard de escopo por empresa (substitui `OfficeReadOnlyGuard`)
+- Backend: conectar guards já existentes e não utilizados em `tenant.py` (`require_platform_admin`, `require_empresa_admin`, `assert_same_empresa`) aos novos endpoints, em vez de criar guards novos
 - Backend: reuso de `email_service.py` para envio de senha gerada
 - Frontend: wizard "Criar Empresa" (form 1)
 - Frontend: wizard "Criar Associação" (form 2, com campos de `association_settings`)
