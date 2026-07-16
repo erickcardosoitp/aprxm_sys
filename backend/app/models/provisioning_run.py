@@ -34,6 +34,6 @@ class ProvisioningRun(SQLModel, table=True):
     payload: dict = Field(sa_column=Column(JSONB, nullable=False))
     steps: list = Field(default_factory=list, sa_column=Column(JSONB, nullable=False))
     error_detail: str | None = None
-    started_by: UUID = Field(foreign_key="users.id")
+    started_by: UUID = Field(foreign_key="painel_admins.id")
     started_at: datetime = Field(default_factory=datetime.utcnow)
     finished_at: datetime | None = None

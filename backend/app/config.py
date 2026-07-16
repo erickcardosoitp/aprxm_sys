@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 120
     refresh_token_expire_days: int = 7
 
+    # Painel de Governanca (painel-aprxm) — auth isolada do app operacional,
+    # de proposito: nao compartilha secret nem usuarios com o sistema principal.
+    painel_secret_key: str = ""
+    painel_access_token_expire_minutes: int = 120
+
     # CORS
     allowed_origins: str = "http://localhost:5173"
 

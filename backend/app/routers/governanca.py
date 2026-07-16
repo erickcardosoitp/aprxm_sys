@@ -1,6 +1,8 @@
 """
 Router /governanca — provisionamento no-code de empresas e associações
-(ambiente ESC). Ver docs/superpowers/specs/2026-07-15-governanca-empresa-esc-design.md
+(ambiente ESC). Protegido pela auth isolada do painel (painel_admins),
+não pelo JWT do app operacional. Ver
+docs/superpowers/specs/2026-07-15-governanca-empresa-esc-design.md
 """
 from datetime import datetime
 from decimal import Decimal
@@ -12,8 +14,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.exceptions import ForbiddenError, NotFoundError
-from app.core.tenant import CurrentUser, assert_same_empresa, get_current_user, require_empresa_admin, require_platform_admin
+from app.core.exceptions import NotFoundError
+from app.core.painel_auth import PainelCurrentAdmin, require_painel_admin
 from app.database import get_session
 from app.models.association import Association
 from app.models.empresa import Empresa
@@ -88,7 +90,7 @@ class ProvisioningRunResponse(BaseModel):
 @router.post("/empresas", response_model=EmpresaResponse, summary="Criar empresa (Form 1)")
 async def create_empresa(
     body: CreateEmpresaRequest,
-    current: CurrentUser = Depends(require_platform_admin),
+    current: PainelCurrentAdmin = Depends(require_painel_admin),
     session: AsyncSession = Depends(get_session),
 ) -> EmpresaResponse:
     svc = EmpresaService(session)
@@ -96,23 +98,17 @@ async def create_empresa(
         name=body.name, slug=body.slug,
         admin_first_name=body.admin_first_name, admin_last_name=body.admin_last_name,
         admin_email=body.admin_email, admin_cargo=body.admin_cargo,
-        financeiro_centralizado=body.financeiro_centralizado, started_by=current.user_id,
+        financeiro_centralizado=body.financeiro_centralizado, started_by=current.admin_id,
     )
     return EmpresaResponse.from_model(empresa)
 
 
 @router.get("/empresas", response_model=list[EmpresaResponse], summary="Listar empresas")
 async def list_empresas(
-    current: CurrentUser = Depends(get_current_user),
+    current: PainelCurrentAdmin = Depends(require_painel_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[EmpresaResponse]:
-    if current.is_platform_admin:
-        stmt = select(Empresa)
-    elif current.is_empresa_admin and current.empresa_id:
-        stmt = select(Empresa).where(Empresa.id == current.empresa_id)
-    else:
-        raise ForbiddenError("Sem acesso a empresas.")
-    rows = (await session.execute(stmt.order_by(Empresa.name))).scalars().all()
+    rows = (await session.execute(select(Empresa).order_by(Empresa.name))).scalars().all()
     return [EmpresaResponse.from_model(e) for e in rows]
 
 
@@ -120,17 +116,16 @@ async def list_empresas(
 async def create_associacao(
     empresa_id: UUID,
     body: CreateAssociacaoRequest,
-    current: CurrentUser = Depends(require_empresa_admin),
+    current: PainelCurrentAdmin = Depends(require_painel_admin),
     session: AsyncSession = Depends(get_session),
 ) -> AssociacaoResponse:
-    assert_same_empresa(current, empresa_id)
     svc = AssociationProvisioningService(session)
     assoc, _admin = await svc.create_associacao(
         empresa_id=empresa_id, name=body.name, slug=body.slug, community_name=body.community_name,
         default_mensalidade_amount=body.default_mensalidade_amount, default_cash_balance=body.default_cash_balance,
         inventory_day_of_month=body.inventory_day_of_month, president_name=body.president_name,
         admin_first_name=body.admin_first_name, admin_last_name=body.admin_last_name,
-        admin_email=body.admin_email, admin_cargo=body.admin_cargo, started_by=current.user_id,
+        admin_email=body.admin_email, admin_cargo=body.admin_cargo, started_by=current.admin_id,
     )
     return AssociacaoResponse(id=assoc.id, name=assoc.name, slug=assoc.slug, empresa_id=assoc.empresa_id)
 
@@ -138,13 +133,12 @@ async def create_associacao(
 @router.patch("/associacoes/{association_id}/desativar", summary="Desativar associação (soft delete em cascata)")
 async def deactivate_associacao(
     association_id: UUID,
-    current: CurrentUser = Depends(require_empresa_admin),
+    current: PainelCurrentAdmin = Depends(require_painel_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     assoc = (await session.execute(select(Association).where(Association.id == association_id))).scalar_one_or_none()
     if not assoc:
         raise NotFoundError("Associação")
-    assert_same_empresa(current, assoc.empresa_id)
 
     assoc.is_active = False
     session.add(assoc)
@@ -173,28 +167,20 @@ async def deactivate_associacao(
 
 @router.get("/provisioning-runs", response_model=list[ProvisioningRunResponse], summary="Listar execuções de provisionamento")
 async def list_provisioning_runs(
-    current: CurrentUser = Depends(get_current_user),
+    current: PainelCurrentAdmin = Depends(require_painel_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[ProvisioningRunResponse]:
-    if current.is_platform_admin:
-        stmt = select(ProvisioningRun)
-    elif current.is_empresa_admin and current.empresa_id:
-        stmt = select(ProvisioningRun).where(ProvisioningRun.empresa_id == current.empresa_id)
-    else:
-        raise ForbiddenError("Sem acesso a execuções de provisionamento.")
-    rows = (await session.execute(stmt.order_by(ProvisioningRun.started_at.desc()))).scalars().all()
+    rows = (await session.execute(select(ProvisioningRun).order_by(ProvisioningRun.started_at.desc()))).scalars().all()
     return [ProvisioningRunResponse.from_model(r) for r in rows]
 
 
 @router.get("/provisioning-runs/{run_id}", response_model=ProvisioningRunResponse, summary="Detalhe de uma execução de provisionamento")
 async def get_provisioning_run(
     run_id: UUID,
-    current: CurrentUser = Depends(get_current_user),
+    current: PainelCurrentAdmin = Depends(require_painel_admin),
     session: AsyncSession = Depends(get_session),
 ) -> ProvisioningRunResponse:
     run = (await session.execute(select(ProvisioningRun).where(ProvisioningRun.id == run_id))).scalar_one_or_none()
     if not run:
         raise NotFoundError("Execução de provisionamento")
-    if not current.is_platform_admin:
-        assert_same_empresa(current, run.empresa_id)
     return ProvisioningRunResponse.from_model(run)

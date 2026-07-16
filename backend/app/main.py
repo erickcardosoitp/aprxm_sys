@@ -12,7 +12,7 @@ from app.core.limiter import limiter
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, finance, financeiro, geral, governanca, mensalidades, notifications, packages, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
+from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, finance, financeiro, geral, governanca, mensalidades, notifications, packages, painel_auth, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 
 
 async def _run_migrations() -> None:
@@ -279,6 +279,31 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (6, 'v6: governanca empresa/ESC — dados: empresa real, backfill, admin_master') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            # v7: painel-aprxm — auth isolada do app operacional (sistema de
+            # provisionamento, uso exclusivo do dono da plataforma).
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS painel_admins (
+                    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    email           VARCHAR(255) UNIQUE NOT NULL,
+                    hashed_password TEXT NOT NULL,
+                    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+            # provisioning_runs.started_by passa a referenciar painel_admins,
+            # nao users — tabela ainda vazia em producao, troca de FK sem risco.
+            await session.execute(text(
+                "ALTER TABLE provisioning_runs DROP CONSTRAINT IF EXISTS provisioning_runs_started_by_fkey"
+            ))
+            await session.execute(text(
+                "ALTER TABLE provisioning_runs ADD CONSTRAINT provisioning_runs_started_by_fkey "
+                "FOREIGN KEY (started_by) REFERENCES painel_admins(id)"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (7, 'v7: painel-aprxm — tabela painel_admins, provisioning_runs.started_by -> painel_admins') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()
@@ -1216,6 +1241,27 @@ async def _run_migrations() -> None:
             "VALUES (6, 'v6: governanca empresa/ESC — dados: empresa real, backfill, admin_master') "
             "ON CONFLICT DO NOTHING"
         ))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS painel_admins (
+                id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                email           VARCHAR(255) UNIQUE NOT NULL,
+                hashed_password TEXT NOT NULL,
+                is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await session.execute(text(
+            "ALTER TABLE provisioning_runs DROP CONSTRAINT IF EXISTS provisioning_runs_started_by_fkey"
+        ))
+        await session.execute(text(
+            "ALTER TABLE provisioning_runs ADD CONSTRAINT provisioning_runs_started_by_fkey "
+            "FOREIGN KEY (started_by) REFERENCES painel_admins(id)"
+        ))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (7, 'v7: painel-aprxm — tabela painel_admins, provisioning_runs.started_by -> painel_admins') "
+            "ON CONFLICT DO NOTHING"
+        ))
         await session.commit()
 
 
@@ -1337,6 +1383,7 @@ app.include_router(datalake.router, prefix=PREFIX)
 app.include_router(ti.router, prefix=PREFIX)
 app.include_router(crm.router, prefix=PREFIX)
 app.include_router(governanca.router, prefix=PREFIX)
+app.include_router(painel_auth.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])
