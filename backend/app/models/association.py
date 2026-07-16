@@ -22,6 +22,7 @@ class Association(SQLModel, table=True):
     email: str | None = Field(default=None, max_length=255)
     logo_url: str | None = None
     presidente_user_id: UUID | None = Field(default=None, foreign_key="users.id")
+    empresa_id: UUID | None = Field(default=None, foreign_key="empresas.id", index=True)
     is_active: bool = Field(default=True)
     is_office: bool = Field(default=False)
     inventory_day_of_month: int = Field(default=1)
