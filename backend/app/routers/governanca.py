@@ -9,7 +9,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -31,7 +31,7 @@ class CreateEmpresaRequest(BaseModel):
     slug: str
     admin_first_name: str
     admin_last_name: str
-    admin_email: EmailStr
+    admin_email: str
     admin_cargo: str
     financeiro_centralizado: bool = False
 
@@ -58,7 +58,7 @@ class CreateAssociacaoRequest(BaseModel):
     president_name: str | None = None
     admin_first_name: str
     admin_last_name: str
-    admin_email: EmailStr
+    admin_email: str
     admin_cargo: str
 
 
