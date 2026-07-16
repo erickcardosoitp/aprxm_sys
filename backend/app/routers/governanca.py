@@ -67,6 +67,7 @@ class AssociacaoResponse(BaseModel):
     name: str
     slug: str
     empresa_id: UUID
+    is_active: bool = True
 
 
 class ProvisioningRunResponse(BaseModel):
@@ -112,6 +113,18 @@ async def list_empresas(
     return [EmpresaResponse.from_model(e) for e in rows]
 
 
+@router.get("/empresas/{empresa_id}/associacoes", response_model=list[AssociacaoResponse], summary="Listar associações de uma empresa")
+async def list_associacoes(
+    empresa_id: UUID,
+    current: PainelCurrentAdmin = Depends(require_painel_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[AssociacaoResponse]:
+    rows = (await session.execute(
+        select(Association).where(Association.empresa_id == empresa_id).order_by(Association.name)
+    )).scalars().all()
+    return [AssociacaoResponse(id=a.id, name=a.name, slug=a.slug, empresa_id=a.empresa_id, is_active=a.is_active) for a in rows]
+
+
 @router.post("/empresas/{empresa_id}/associacoes", response_model=AssociacaoResponse, summary="Criar associação (Form 2)")
 async def create_associacao(
     empresa_id: UUID,
@@ -127,7 +140,7 @@ async def create_associacao(
         admin_first_name=body.admin_first_name, admin_last_name=body.admin_last_name,
         admin_email=body.admin_email, admin_cargo=body.admin_cargo, started_by=current.admin_id,
     )
-    return AssociacaoResponse(id=assoc.id, name=assoc.name, slug=assoc.slug, empresa_id=assoc.empresa_id)
+    return AssociacaoResponse(id=assoc.id, name=assoc.name, slug=assoc.slug, empresa_id=assoc.empresa_id, is_active=assoc.is_active)
 
 
 @router.patch("/associacoes/{association_id}/desativar", summary="Desativar associação (soft delete em cascata)")
