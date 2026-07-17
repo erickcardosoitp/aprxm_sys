@@ -38,7 +38,6 @@ def create_access_token(
     linked_association_ids: list[str] | None = None,
     association_name: str = "",
     expire_days: int | None = None,
-    is_office: bool = False,
     token_version: int = 0,
     empresa_id: UUID | str | None = None,
 ) -> str:
@@ -53,7 +52,6 @@ def create_access_token(
         "full_name": full_name,
         "linked_association_ids": linked_association_ids or [],
         "association_name": association_name,
-        "is_office": is_office,
         "tv": int(token_version),
         "empresa_id": str(empresa_id) if empresa_id else None,
         "exp": expire,

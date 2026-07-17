@@ -93,17 +93,10 @@ async def refresh_token(
 ) -> TokenResponse:
     from sqlalchemy import text as _t
     token_hash = hash_refresh_token(body.refresh_token)
-    _empresa_col_exists = (await session.execute(_t(
-        "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='associations' AND column_name='empresa_id'"
-    ))).scalar()
-    empresa_subselect = (
-        "(SELECT a.empresa_id FROM associations a WHERE a.id = rt.association_id)"
-        if _empresa_col_exists else "NULL"
-    )
-    row = (await session.execute(_t(f"""
+    row = (await session.execute(_t("""
         SELECT rt.id, rt.user_id, rt.association_id, rt.expires_at,
                u.full_name, u.role, u.is_active, u.token_version,
-               {empresa_subselect}
+               (SELECT a.empresa_id FROM associations a WHERE a.id = rt.association_id)
         FROM refresh_tokens rt
         JOIN users u ON u.id = rt.user_id
         WHERE rt.token_hash = :hash AND rt.revoked = FALSE
@@ -277,14 +270,9 @@ async def switch_association(
     if not current_user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
-    _empresa_col_exists = (await session.execute(sa_text(
-        "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='associations' AND column_name='empresa_id'"
-    ))).scalar()
-    empresa_select = ", a.empresa_id" if _empresa_col_exists else ", NULL as empresa_id"
-
     # Verifica acesso via user_association_roles (modelo global)
-    target_row = (await session.execute(sa_text(f"""
-        SELECT uar.role, a.name, a.is_office{empresa_select}
+    target_row = (await session.execute(sa_text("""
+        SELECT uar.role, a.name, a.empresa_id
         FROM user_association_roles uar
         JOIN associations a ON a.id = uar.association_id
         WHERE uar.user_id = :uid AND uar.association_id = :aid
@@ -294,7 +282,7 @@ async def switch_association(
     if not target_row:
         raise HTTPException(status_code=403, detail="Sem acesso a este ambiente.")
 
-    target_empresa_id = target_row[3]
+    target_empresa_id = target_row[2]
 
     # Um token = uma empresa: troca entre empresas diferentes exige novo login
     # completo (com senha), nao so switch-association. NULL de qualquer lado
@@ -310,8 +298,8 @@ async def switch_association(
     session.add(current_user)
 
     # Todas as outras associações do usuário (mesma empresa da alvo, quando aplicavel)
-    other_rows = (await session.execute(sa_text(f"""
-        SELECT uar.association_id{empresa_select} FROM user_association_roles uar
+    other_rows = (await session.execute(sa_text("""
+        SELECT uar.association_id, a.empresa_id FROM user_association_roles uar
         JOIN associations a ON a.id = uar.association_id
         WHERE uar.user_id = :uid AND uar.association_id != :aid
           AND uar.is_active = TRUE AND a.is_active = TRUE
@@ -325,7 +313,6 @@ async def switch_association(
     token = create_access_token(
         current_user.id, body.association_id, target_row[0],
         current_user.full_name, linked_ids, target_row[1],
-        is_office=bool(target_row[2]) if target_row[2] is not None else False,
         token_version=current_user.token_version,
         empresa_id=target_empresa_id,
     )

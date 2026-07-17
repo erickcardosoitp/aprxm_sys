@@ -38,14 +38,9 @@ class AuthService:
         _uar_exists = (await self._session.execute(
             text("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='user_association_roles'")
         )).scalar()
-        # Guard: coluna empresa_id pode nao existir ainda (Fase 2 nao migrada)
-        _empresa_col_exists = (await self._session.execute(
-            text("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='associations' AND column_name='empresa_id'")
-        )).scalar()
-        empresa_select = ", a.empresa_id" if _empresa_col_exists else ", NULL as empresa_id"
         if _uar_exists:
-            memberships_result = await self._session.execute(text(f"""
-                SELECT uar.association_id, uar.role, a.name, a.is_office{empresa_select}
+            memberships_result = await self._session.execute(text("""
+                SELECT uar.association_id, uar.role, a.name, a.empresa_id
                 FROM user_association_roles uar
                 JOIN associations a ON a.id = uar.association_id
                 WHERE uar.user_id = :uid AND uar.is_active = TRUE AND a.is_active = TRUE
@@ -72,26 +67,23 @@ class AuthService:
             primary_assoc_id   = primary[0]
             primary_role       = primary[1]
             association_name   = primary[2]
-            is_office: bool    = bool(primary[3]) if primary[3] is not None else False
-            primary_empresa_id = primary[4]
+            primary_empresa_id = primary[3]
             # Um token = uma empresa: linked so com a mesma empresa da primaria.
-            # Quando empresa_id ainda e NULL (pre-backfill), nao filtra (legado).
             linked_ids = [
                 str(m[0]) for m in memberships[1:]
-                if primary_empresa_id is None or m[4] == primary_empresa_id
+                if m[3] == primary_empresa_id
             ]
         elif user.association_id is not None:
             # Fallback para usuários que ainda não passaram pela migração
             assoc_row = await self._session.execute(
-                text(f"SELECT name, is_office{empresa_select} FROM associations WHERE id = :id"),
+                text("SELECT name, empresa_id FROM associations WHERE id = :id"),
                 {"id": str(user.association_id)},
             )
             ar = assoc_row.fetchone()
             primary_assoc_id = user.association_id
             primary_role     = user.role.value
             association_name = ar[0] if ar else ""
-            is_office        = bool(ar[1]) if ar else False
-            primary_empresa_id = ar[2] if ar else None
+            primary_empresa_id = ar[1] if ar else None
             linked_ids       = []
         else:
             # Usuario empresa-wide (admin_master/superadmin) sem membership em
@@ -101,14 +93,12 @@ class AuthService:
             primary_assoc_id = None
             primary_role     = user.role.value
             association_name = ""
-            is_office        = False
             primary_empresa_id = None
             linked_ids       = []
 
         token = create_access_token(
             user.id, primary_assoc_id, primary_role, user.full_name, linked_ids, association_name,
             expire_days=30 if remember_me else None,
-            is_office=is_office,
             token_version=user.token_version,
             empresa_id=primary_empresa_id,
         )

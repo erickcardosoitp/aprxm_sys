@@ -18,7 +18,6 @@ class CurrentUser:
         association_id: UUID | None,
         role: str,
         linked_association_ids: list[UUID] | None = None,
-        is_office: bool = False,
         association_name: str = "",
         restrict_edit_tx: bool = False,
         restrict_reverse_tx: bool = False,
@@ -29,7 +28,6 @@ class CurrentUser:
         self.association_id = association_id
         self.role = role
         self.linked_association_ids: list[UUID] = linked_association_ids or []
-        self.is_office = is_office
         self.association_name = association_name
         self.restrict_edit_tx = restrict_edit_tx
         self.restrict_reverse_tx = restrict_reverse_tx
@@ -125,7 +123,6 @@ async def get_current_user(
         association_id=UUID(association_id_claim) if association_id_claim else None,
         role=payload["role"],
         linked_association_ids=linked_ids,
-        is_office=bool(payload.get("is_office", False)),
         association_name=payload.get("association_name", ""),
         restrict_edit_tx=bool(user_row[1]),
         restrict_reverse_tx=bool(user_row[2]),
@@ -169,17 +166,6 @@ async def require_empresa_admin(current: CurrentUser = Depends(get_current_user)
     """Admin da empresa (cliente) - admin_master ou superadmin, escopado a current.empresa_id."""
     if not current.is_empresa_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de admin da empresa necessária.")
-    return current
-
-
-async def require_office_context(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    """Modulos Financeiro/Admin/TI so operam a partir da unidade Escritorio.
-    Superadmin de plataforma sempre passa (acesso irrestrito de suporte)."""
-    if not current.is_office and not current.is_platform_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este módulo só está disponível operando a partir do Escritório.",
-        )
     return current
 
 

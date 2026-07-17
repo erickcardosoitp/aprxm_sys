@@ -22,13 +22,11 @@ class Association(SQLModel, table=True):
     email: str | None = Field(default=None, max_length=255)
     logo_url: str | None = None
     presidente_user_id: UUID | None = Field(default=None, foreign_key="users.id")
-    empresa_id: UUID | None = Field(default=None, foreign_key="empresas.id", index=True)
+    empresa_id: UUID = Field(foreign_key="empresas.id", index=True)
     is_active: bool = Field(default=True)
-    is_office: bool = Field(default=False)
     inventory_day_of_month: int = Field(default=1)
     plan_name: str = Field(default="basic", max_length=50)
     plan_expires_at: datetime | None = None
-    # linked_association_slugs: TEXT[] — acessado via SQL raw (evita bug asyncpg+ARRAY)
     simplifica_enabled: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -2,7 +2,6 @@
 Router /geral — painel consolidado read-only para associações agregadoras.
 Requer: current.is_aggregator == True (linked_association_ids no JWT).
 Permite filtro opcional por assoc_slug (ex: 'vaz-lobo', 'congonha', ou omitir para tudo).
-Escritório (is_office=True): única operação de escrita permitida é o inventário financeiro.
 """
 from datetime import date, datetime, timezone
 from uuid import UUID
