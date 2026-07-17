@@ -252,26 +252,32 @@ async def _run_migrations() -> None:
                     UPDATE associations SET empresa_id = v_empresa_id
                     WHERE slug IN ('vaz-lobo', 'congonha') AND empresa_id IS NULL;
 
-                    SELECT id INTO v_escritorio_id FROM associations WHERE slug = 'escritorio' AND is_office = TRUE;
-                    SELECT id INTO v_anchor_assoc_id FROM associations WHERE slug = 'vaz-lobo';
+                    -- Migracao dos usuarios do Escritorio depende de is_office (removida
+                    -- na v8). So roda se a coluna existir; assim o replay do v6 em DBs ja
+                    -- migradas (producao) e no-op e nao quebra o cold start (replay-safe).
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'associations' AND column_name = 'is_office') THEN
+                        SELECT id INTO v_escritorio_id FROM associations WHERE slug = 'escritorio' AND is_office = TRUE;
+                        SELECT id INTO v_anchor_assoc_id FROM associations WHERE slug = 'vaz-lobo';
 
-                    IF v_escritorio_id IS NOT NULL AND v_anchor_assoc_id IS NOT NULL THEN
-                        SELECT ARRAY_AGG(id) INTO v_migrated_ids
-                        FROM users WHERE association_id = v_escritorio_id AND is_active = TRUE;
+                        IF v_escritorio_id IS NOT NULL AND v_anchor_assoc_id IS NOT NULL THEN
+                            SELECT ARRAY_AGG(id) INTO v_migrated_ids
+                            FROM users WHERE association_id = v_escritorio_id AND is_active = TRUE;
 
-                        IF v_migrated_ids IS NOT NULL THEN
-                            UPDATE users
-                            SET role = 'admin_master', association_id = NULL, token_version = token_version + 1
-                            WHERE id = ANY(v_migrated_ids);
+                            IF v_migrated_ids IS NOT NULL THEN
+                                UPDATE users
+                                SET role = 'admin_master', association_id = NULL, token_version = token_version + 1
+                                WHERE id = ANY(v_migrated_ids);
 
-                            INSERT INTO user_association_roles (user_id, association_id, role, is_active)
-                            SELECT uid, v_anchor_assoc_id, 'admin_master', TRUE
-                            FROM unnest(v_migrated_ids) AS uid
-                            ON CONFLICT (user_id, association_id) DO UPDATE
-                                SET role = 'admin_master', is_active = TRUE;
+                                INSERT INTO user_association_roles (user_id, association_id, role, is_active)
+                                SELECT uid, v_anchor_assoc_id, 'admin_master', TRUE
+                                FROM unnest(v_migrated_ids) AS uid
+                                ON CONFLICT (user_id, association_id) DO UPDATE
+                                    SET role = 'admin_master', is_active = TRUE;
 
-                            DELETE FROM user_association_roles
-                            WHERE association_id = v_escritorio_id AND user_id = ANY(v_migrated_ids);
+                                DELETE FROM user_association_roles
+                                WHERE association_id = v_escritorio_id AND user_id = ANY(v_migrated_ids);
+                            END IF;
                         END IF;
                     END IF;
                 END $$
@@ -1295,26 +1301,32 @@ async def _run_migrations() -> None:
                 UPDATE associations SET empresa_id = v_empresa_id
                 WHERE slug IN ('vaz-lobo', 'congonha') AND empresa_id IS NULL;
 
-                SELECT id INTO v_escritorio_id FROM associations WHERE slug = 'escritorio' AND is_office = TRUE;
-                SELECT id INTO v_anchor_assoc_id FROM associations WHERE slug = 'vaz-lobo';
+                -- Migracao dos usuarios do Escritorio depende de is_office (removida
+                -- na v8). So roda se a coluna existir; assim o replay do v6 em DBs ja
+                -- migradas (producao) e no-op e nao quebra o cold start (replay-safe).
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'associations' AND column_name = 'is_office') THEN
+                    SELECT id INTO v_escritorio_id FROM associations WHERE slug = 'escritorio' AND is_office = TRUE;
+                    SELECT id INTO v_anchor_assoc_id FROM associations WHERE slug = 'vaz-lobo';
 
-                IF v_escritorio_id IS NOT NULL AND v_anchor_assoc_id IS NOT NULL THEN
-                    SELECT ARRAY_AGG(id) INTO v_migrated_ids
-                    FROM users WHERE association_id = v_escritorio_id AND is_active = TRUE;
+                    IF v_escritorio_id IS NOT NULL AND v_anchor_assoc_id IS NOT NULL THEN
+                        SELECT ARRAY_AGG(id) INTO v_migrated_ids
+                        FROM users WHERE association_id = v_escritorio_id AND is_active = TRUE;
 
-                    IF v_migrated_ids IS NOT NULL THEN
-                        UPDATE users
-                        SET role = 'admin_master', association_id = NULL, token_version = token_version + 1
-                        WHERE id = ANY(v_migrated_ids);
+                        IF v_migrated_ids IS NOT NULL THEN
+                            UPDATE users
+                            SET role = 'admin_master', association_id = NULL, token_version = token_version + 1
+                            WHERE id = ANY(v_migrated_ids);
 
-                        INSERT INTO user_association_roles (user_id, association_id, role, is_active)
-                        SELECT uid, v_anchor_assoc_id, 'admin_master', TRUE
-                        FROM unnest(v_migrated_ids) AS uid
-                        ON CONFLICT (user_id, association_id) DO UPDATE
-                            SET role = 'admin_master', is_active = TRUE;
+                            INSERT INTO user_association_roles (user_id, association_id, role, is_active)
+                            SELECT uid, v_anchor_assoc_id, 'admin_master', TRUE
+                            FROM unnest(v_migrated_ids) AS uid
+                            ON CONFLICT (user_id, association_id) DO UPDATE
+                                SET role = 'admin_master', is_active = TRUE;
 
-                        DELETE FROM user_association_roles
-                        WHERE association_id = v_escritorio_id AND user_id = ANY(v_migrated_ids);
+                            DELETE FROM user_association_roles
+                            WHERE association_id = v_escritorio_id AND user_id = ANY(v_migrated_ids);
+                        END IF;
                     END IF;
                 END IF;
             END $$
