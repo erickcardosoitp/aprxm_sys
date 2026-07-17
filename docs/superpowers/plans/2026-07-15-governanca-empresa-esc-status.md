@@ -46,24 +46,23 @@
 ### Incidente durante a Fase 5 (resolvido)
 O deploy inicial da Fase 5 derrubou o backend inteiro por ~15-20 minutos: o campo de e-mail usava `EmailStr` (Pydantic), que depende do pacote `email-validator` — ausente do `requirements.txt` de produção. Isso quebrava a importação do app inteiro (500 em todos os endpoints). Corrigido trocando por texto simples; o app voltou ao normal. Se quiser validação de formato de e-mail de volta, é só adicionar `email-validator` ao `requirements.txt` num commit calmo.
 
+### Fase 6 — Validação em produção (checklist técnico OK)
+Checklist técnico rodou limpo em 2026-07-16: zero erros 5xx no dia (~4.900 req), JWT com `empresa_id` correto para admin_master e operador, `audit_log`/`role_permissions` sem corrupção. Login/refresh/switch inalterados.
+
+### Fase 7 — Remoção do modelo antigo (no ar, 2026-07-16)
+- **7a** (código): `is_office` removido dos 6 arquivos + hook `_empresa_col_exists` removido. Deploy limpo.
+- **7c** (schema, migration v8): `is_office` e `linked_association_slugs` removidas, `associations.empresa_id` agora `NOT NULL`.
+- **Decisão de execução**: as associações legadas sem `empresa_id` (escritorio inativo, teste QA) foram **vinculadas à empresa SAPE, não deletadas** — descobriu-se que a `teste` tinha ~209 mensalidades reais e outros registros com `created_by` apontando pra seus usuários (FKs NO ACTION), então deletar corromperia dado real.
+- **O guard de segurança funcionou**: a v8 abortou 2x (associação órfã) sem derrubar a produção, até a estratégia ser corrigida. Rodou em sessão própria com rollback.
+- Verificado pós-deploy: 4 associações preservadas e vinculadas à SAPE, 1161 mensalidades e 25 usuários intactos, app saudável.
+
 ### O que NÃO mudou (sem risco)
 - Vaz Lobo e Congonha continuam operando normalmente, sem interrupção de uso
-- `is_office` e `linked_association_slugs` continuam existindo (removidos só na Fase 7)
 - `users.admin_master`/`superadmin` controlam acesso operacional dentro do app principal — sem relação com o painel-aprxm
 
 ---
 
 ## Pendente
-
-### Fase 6 — Validação em produção
-Janela de observação (dias) confirmando que Vaz Lobo/Congonha operam bem no modelo novo convivendo com o código antigo, antes de autorizar a remoção definitiva (Fase 7).
-
-### Fase 7 — Remoção do modelo antigo (destrutivo)
-- Remover `is_office` dos 6 arquivos que ainda o referenciam
-- Remover o hook temporário `_empresa_col_exists`
-- Tornar `associations.empresa_id` obrigatório (`NOT NULL`)
-- Apagar a linha fantasma do Escritório e a coluna `linked_association_slugs`
-- Único passo destrutivo do projeto — só acontece depois da Fase 6 validada, com backup antes
 
 ### Fase 8 — Reconectar o ESC operacional
 - Painel `/geral` (visão consolidada) hoje depende de múltiplas linhas em `user_association_roles` — precisa migrar para usar `empresa_id`
