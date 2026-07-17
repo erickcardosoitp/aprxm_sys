@@ -56,7 +56,7 @@ Checklist técnico rodou limpo em 2026-07-16: zero erros 5xx no dia (~4.900 req)
 - **O guard de segurança funcionou**: a v8 abortou 2x (associação órfã) sem derrubar a produção, até a estratégia ser corrigida. Rodou em sessão própria com rollback.
 - Verificado pós-deploy: 4 associações preservadas e vinculadas à SAPE, 1161 mensalidades e 25 usuários intactos, app saudável.
 
-### Fase 8a — users.empresa_id (COMMITADO LOCAL, NÃO DEPLOYADO)
+### Fase 8a — users.empresa_id (NO AR em produção, 2026-07-16)
 Diretriz do usuário: **todo usuário ligado a uma empresa, gerido no ESC, atribuído a uma associação**. A 8a implementa a fundação disso.
 
 Gap que motivou: `EmpresaService` criava o `admin_master` com `association_id=NULL` e **sem vínculo com a empresa no banco** (a tabela `users` não tinha `empresa_id`). No login ele saía com `empresa_id=None` e escopo vazio — o provisionamento pelo painel produzia um `admin_master` inútil. O `/geral` também só via associações via membership manual.
@@ -70,7 +70,14 @@ Implementado (2 commits locais — `f45e8c6`... na verdade após a Fase 7; ver `
 
 Validado e2e local: painel cria empresa → `admin_master` nasce com `empresa_id` → login OK → cria associação → aparece no `/geral` do admin_master. Login de usuário comum inalterado.
 
-**⚠️ NÃO deployado.** Está commitado só localmente. Antes do push: criar snapshot novo no Neon (a v9 é aditiva mas backfila os 25 usuários). É 1 `git push`, migration roda no cold start.
+**No ar em produção (2026-07-16).** Migration v9 aplicada; verificado no DB: `schema_migrations`=9, `users.empresa_id` criada, **25/25 usuários com empresa_id (0 NULL)**, health 200, login (rejeição de credencial) limpo. O deploy exigiu correção de um outage — ver incidente abaixo.
+
+### Incidente durante a Fase 8a (resolvido) — replay de migration bateu em coluna dropada
+O 1º push da 8a **derrubou toda a produção** (`FUNCTION_INVOCATION_FAILED` em todos os endpoints, `/health` incluso). Causa raiz: as migrations não têm guard por versão — quando `applied < _SCHEMA_VERSION`, a rotina **reexecuta todos os blocos v5→v9** confiando só na idempotência do SQL. O bloco **v6** (Fase 2) fazia `SELECT ... FROM associations WHERE slug='escritorio' AND is_office = TRUE`, mas `is_office` foi **dropada na v8 (Fase 7c)**. Enquanto `applied(8) >= _SCHEMA_VERSION(8)` o early-return protegia o bloco; bumpar pra v9 fez `applied(8) < 9`, o v6 rodou de novo, `UndefinedColumnError` abortou o lifespan (v5/v6/v7 não têm try/except, só v8/v9 têm) → app inteiro morreu.
+
+Resposta: produção restaurada em ~1s via `vercel promote` do deploy v8 anterior (rollback de alias, sem rebuild). Fix: guardar a migração dos usuários do Escritório com `IF EXISTS (information_schema … is_office)` nos dois ramos — no-op em DBs já migradas, comportamento idêntico onde a coluna ainda existe. Validado com dry-run `BEGIN/ROLLBACK` contra o schema real de produção antes do 2º push. O 2º deploy subiu limpo, sem outage. Commit do fix: `1b5f8d6`.
+
+**⚠️ Dívida técnica exposta (follow-up):** os blocos v5/v6/v7 não são envelopados em try/except (só v8/v9 são), então uma falha neles derruba o cold start — viola o princípio "migração nunca derruba o app" que o próprio código declara. Além disso, qualquer bloco antigo que referencie um objeto dropado por um bloco posterior vai quebrar no próximo bump de versão. Recomendado: envelopar v5/v6/v7 em try/except (padrão v8/v9) e/ou guardar cada bloco por versão (`IF applied < N`).
 
 ### O que NÃO mudou (sem risco)
 - Vaz Lobo e Congonha continuam operando normalmente, sem interrupção de uso
@@ -79,9 +86,6 @@ Validado e2e local: painel cria empresa → `admin_master` nasce com `empresa_id
 ---
 
 ## Pendente
-
-### Fase 8a — push pra produção
-Commitado local, falta subir. Passo a passo: (1) criar snapshot no Neon; (2) `git push origin main`; (3) confirmar `schema_migrations` = 9 e login OK.
 
 ### Fase 8c — Módulo ADMIN dentro do ESC (PRECISA DE DESIGN)
 UI de gestão centralizada pro `admin_master` no app principal. O usuário disse que é o que o admin_master vai usar, mas **o conteúdo não foi definido** (gestão de usuários? config? financeiro consolidado?). Fazer brainstorm/design antes de codar.
@@ -105,4 +109,4 @@ Endpoints de inventário em `geral.py` ainda ancoram em `current.association_id`
 - Neon PITR: janela de 6h de restore point-in-time
 
 ## Estado do schema (produção)
-`schema_migrations` em **v8** (produção). A **v9 sobe junto com o push da 8a**. Sequência: v5 (empresas/provisioning_runs), v6 (dados/backfill), v7 (painel_admins), v8 (remove is_office/linked, empresa_id NOT NULL), v9 (users.empresa_id — pendente).
+`schema_migrations` em **v9** (produção, desde 2026-07-16). Sequência: v5 (empresas/provisioning_runs), v6 (dados/backfill), v7 (painel_admins), v8 (remove is_office/linked, empresa_id NOT NULL), v9 (users.empresa_id + backfill dos 25 usuários).
