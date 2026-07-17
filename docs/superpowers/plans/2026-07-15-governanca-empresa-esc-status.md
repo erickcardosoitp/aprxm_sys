@@ -56,6 +56,22 @@ Checklist técnico rodou limpo em 2026-07-16: zero erros 5xx no dia (~4.900 req)
 - **O guard de segurança funcionou**: a v8 abortou 2x (associação órfã) sem derrubar a produção, até a estratégia ser corrigida. Rodou em sessão própria com rollback.
 - Verificado pós-deploy: 4 associações preservadas e vinculadas à SAPE, 1161 mensalidades e 25 usuários intactos, app saudável.
 
+### Fase 8a — users.empresa_id (COMMITADO LOCAL, NÃO DEPLOYADO)
+Diretriz do usuário: **todo usuário ligado a uma empresa, gerido no ESC, atribuído a uma associação**. A 8a implementa a fundação disso.
+
+Gap que motivou: `EmpresaService` criava o `admin_master` com `association_id=NULL` e **sem vínculo com a empresa no banco** (a tabela `users` não tinha `empresa_id`). No login ele saía com `empresa_id=None` e escopo vazio — o provisionamento pelo painel produzia um `admin_master` inútil. O `/geral` também só via associações via membership manual.
+
+Implementado (2 commits locais — `f45e8c6`... na verdade após a Fase 7; ver `git log`):
+- **Migration v9** (aditiva): `users.empresa_id` + backfill de todos os usuários (via `association_id` direto e via memberships para os empresa-wide)
+- **User model**: campo `empresa_id`
+- **EmpresaService / AssociationProvisioningService**: passam a setar `empresa_id` nos usuários criados
+- **auth_service**: `admin_master`/`superadmin` com `empresa_id` enxergam **todas** as associações da empresa (escopo derivado de `empresa_id`, não de membership) — associações novas aparecem automaticamente
+- **geral.py**: `/geral` aceita admin de empresa (não só aggregator 2+), e escopo usa `scoped_ids()` (primária + vinculadas)
+
+Validado e2e local: painel cria empresa → `admin_master` nasce com `empresa_id` → login OK → cria associação → aparece no `/geral` do admin_master. Login de usuário comum inalterado.
+
+**⚠️ NÃO deployado.** Está commitado só localmente. Antes do push: criar snapshot novo no Neon (a v9 é aditiva mas backfila os 25 usuários). É 1 `git push`, migration roda no cold start.
+
 ### O que NÃO mudou (sem risco)
 - Vaz Lobo e Congonha continuam operando normalmente, sem interrupção de uso
 - `users.admin_master`/`superadmin` controlam acesso operacional dentro do app principal — sem relação com o painel-aprxm
@@ -64,13 +80,29 @@ Checklist técnico rodou limpo em 2026-07-16: zero erros 5xx no dia (~4.900 req)
 
 ## Pendente
 
-### Fase 8 — Reconectar o ESC operacional
-- Painel `/geral` (visão consolidada) hoje depende de múltiplas linhas em `user_association_roles` — precisa migrar para usar `empresa_id`
-- Módulo ADMIN dentro do ESC no app principal, para `admin_master` gerenciar operacional (financeiro centralizado, usuários etc.)
-- Reancorar o inventário financeiro do Escritório (spec `2026-05-03`) de `is_office` para `empresa_id`
-- Remodelar como as permissões são concedidas hoje (mencionado pelo usuário, ainda não detalhado)
+### Fase 8a — push pra produção
+Commitado local, falta subir. Passo a passo: (1) criar snapshot no Neon; (2) `git push origin main`; (3) confirmar `schema_migrations` = 9 e login OK.
+
+### Fase 8c — Módulo ADMIN dentro do ESC (PRECISA DE DESIGN)
+UI de gestão centralizada pro `admin_master` no app principal. O usuário disse que é o que o admin_master vai usar, mas **o conteúdo não foi definido** (gestão de usuários? config? financeiro consolidado?). Fazer brainstorm/design antes de codar.
+
+### Fase 8d — Remodelar permissões (PRECISA DE DESIGN)
+A diretriz "todo usuário ligado à empresa, gerido no ESC, atribuído a uma associação" reformula o modelo de permissões. Detalhes não desenhados — precisa de brainstorm antes de implementar.
+
+### Fase 8b — Reancorar inventário (menor, backend)
+Endpoints de inventário em `geral.py` ainda ancoram em `current.association_id` e exigem `is_conferente` (que não inclui `admin_master`). Reancorar para nível empresa. Não urgente (inventário pode nem estar em uso).
 
 ### Outros itens levantados na conversa
 - Adicionar `email-validator` ao `requirements.txt`, se quiser validação de formato de e-mail de volta
 - App offline (APK/EXE) + painel de sincronização local — definido desde o início como projeto futuro separado
 - Remodelagem completa do módulo financeiro do frontend — mencionada pelo usuário para depois desta base de governança
+
+---
+
+## Backups disponíveis (rede de segurança)
+- Dumps locais completos: `backup-aprxm-20260716-2138.dump` e `backup-aprxm-PRE-7c-20260716-2144.dump` (protegidos por `.gitignore`, formato custom — restaurar via `pg_restore`)
+- Snapshot manual no Neon (criado antes da Fase 7)
+- Neon PITR: janela de 6h de restore point-in-time
+
+## Estado do schema (produção)
+`schema_migrations` em **v8** (produção). A **v9 sobe junto com o push da 8a**. Sequência: v5 (empresas/provisioning_runs), v6 (dados/backfill), v7 (painel_admins), v8 (remove is_office/linked, empresa_id NOT NULL), v9 (users.empresa_id — pendente).
