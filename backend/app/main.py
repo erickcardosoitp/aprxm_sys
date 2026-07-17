@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 
 
 async def _run_migrations() -> None:
@@ -307,6 +307,47 @@ async def _run_migrations() -> None:
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()
+
+            # v8: Fase 7c — remocao definitiva do modelo is_office/linked_association_slugs.
+            # DESTRUTIVO. So roda apos a Fase 6 (janela de observacao) validada em producao.
+            # Sessao/transacao propria: se o guard disparar (associacao ativa sem
+            # empresa_id) ou qualquer statement falhar, faz rollback e SEGUE COM A APP
+            # NO AR na v7 — nunca deixa uma excecao de migracao derrubar o cold start
+            # (essa e a mesma classe de bug do incidente do EmailStr).
+            try:
+                await session.execute(text("""
+                    DO $$
+                    DECLARE
+                        v_orphans INTEGER;
+                    BEGIN
+                        SELECT COUNT(*) INTO v_orphans FROM associations
+                        WHERE empresa_id IS NULL AND is_active = TRUE
+                          AND (is_office IS NULL OR is_office = FALSE);
+                        IF v_orphans > 0 THEN
+                            RAISE EXCEPTION 'Fase 7c abortada: % associacao(oes) ativa(s) sem empresa_id', v_orphans;
+                        END IF;
+                    END $$
+                """))
+                await session.execute(text(
+                    "DELETE FROM associations WHERE slug='escritorio' AND is_office = TRUE"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE associations ALTER COLUMN empresa_id SET NOT NULL"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE associations DROP COLUMN IF EXISTS is_office"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE associations DROP COLUMN IF EXISTS linked_association_slugs"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (8, 'v8: Fase 7c — remove is_office/linked_association_slugs, empresa_id NOT NULL') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
             return
 
         await session.execute(text("""
@@ -1263,6 +1304,44 @@ async def _run_migrations() -> None:
             "ON CONFLICT DO NOTHING"
         ))
         await session.commit()
+
+        # v8: mesmo bloco destrutivo do ramo _is_existing_db (Fase 7c) — sessao
+        # propria, guard aborta com rollback sem derrubar a app (ver comentario
+        # equivalente acima).
+        try:
+            await session.execute(text("""
+                DO $$
+                DECLARE
+                    v_orphans INTEGER;
+                BEGIN
+                    SELECT COUNT(*) INTO v_orphans FROM associations
+                    WHERE empresa_id IS NULL AND is_active = TRUE
+                      AND (is_office IS NULL OR is_office = FALSE);
+                    IF v_orphans > 0 THEN
+                        RAISE EXCEPTION 'Fase 7c abortada: % associacao(oes) ativa(s) sem empresa_id', v_orphans;
+                    END IF;
+                END $$
+            """))
+            await session.execute(text(
+                "DELETE FROM associations WHERE slug='escritorio' AND is_office = TRUE"
+            ))
+            await session.execute(text(
+                "ALTER TABLE associations ALTER COLUMN empresa_id SET NOT NULL"
+            ))
+            await session.execute(text(
+                "ALTER TABLE associations DROP COLUMN IF EXISTS is_office"
+            ))
+            await session.execute(text(
+                "ALTER TABLE associations DROP COLUMN IF EXISTS linked_association_slugs"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (8, 'v8: Fase 7c — remove is_office/linked_association_slugs, empresa_id NOT NULL') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
 
 
 app = FastAPI(
