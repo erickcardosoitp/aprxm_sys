@@ -18,7 +18,9 @@ router = APIRouter(prefix="/geral", tags=["Geral"])
 
 
 def _require_aggregator(current: CurrentUser) -> CurrentUser:
-    if not current.is_aggregator:
+    # Admin de empresa (admin_master/superadmin) sempre tem visao consolidada,
+    # mesmo com 1 associacao. Demais: precisam ser aggregator (linked > 0).
+    if not (current.is_aggregator or current.is_empresa_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso exclusivo para contas do painel Geral.",
@@ -33,7 +35,8 @@ def _require_inventory_role(current: CurrentUser) -> CurrentUser:
 
 
 def _resolve_ids(current: CurrentUser, assoc_ids: list[str] | None) -> list[UUID]:
-    authorized = set(current.linked_association_ids)
+    # Escopo completo do usuario: associacao primaria + vinculadas (todas da empresa).
+    authorized = set(current.scoped_ids())
     if not assoc_ids:
         return list(authorized)
     requested = {UUID(i) for i in assoc_ids}
@@ -270,7 +273,7 @@ async def sync_panel(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     _require_aggregator(current)
-    ids_str = [str(i) for i in current.linked_association_ids]
+    ids_str = [str(i) for i in current.scoped_ids()]
 
     rows = (await session.execute(text("""
         SELECT
@@ -444,7 +447,7 @@ async def create_inventory_draft(
         return {"id": str(existing[0]), "status": existing[1], "created": False}
 
     # Bloqueia se houver sessões abertas em qualquer associação vinculada
-    ids_str = [str(i) for i in current.linked_association_ids]
+    ids_str = [str(i) for i in current.scoped_ids()]
     open_sessions = await _open_sessions(session, ids_str)
     if open_sessions:
         detail = "Existem sessões de caixa abertas: " + ", ".join(
@@ -488,7 +491,7 @@ async def update_inventory_draft(
     justification = body.justification if body.justification is not None else row[3]
     total = pix + cash
 
-    ids_str = [str(i) for i in current.linked_association_ids]
+    ids_str = [str(i) for i in current.scoped_ids()]
     expected = await _expected_total(session, ids_str)
     difference = total - expected
 
@@ -541,14 +544,14 @@ async def conclude_inventory(
     pix = float(body.pix_counted)
     cash = float(body.cash_counted)
     total = pix + cash
-    ids_str = [str(i) for i in current.linked_association_ids]
+    ids_str = [str(i) for i in current.scoped_ids()]
     expected = await _expected_total(session, ids_str)
     difference = total - expected
     now = datetime.now(timezone.utc)
 
-    # Valida que attributed_association_id pertence às associações vinculadas
+    # Valida que attributed_association_id pertence ao escopo do usuario
     if body.attributed_association_id:
-        if body.attributed_association_id not in current.linked_association_ids:
+        if body.attributed_association_id not in current.scoped_ids():
             raise HTTPException(status_code=400, detail="Associação atribuída não vinculada ao Escritório.")
 
     await session.execute(text("""

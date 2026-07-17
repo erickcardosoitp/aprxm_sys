@@ -62,7 +62,28 @@ class AuthService:
         else:
             memberships = []
 
-        if memberships:
+        # Usuarios empresa-wide (admin_master/superadmin) enxergam TODAS as
+        # associacoes da empresa — escopo derivado de users.empresa_id, nao de
+        # memberships manuais. Assim associacoes novas aparecem automaticamente.
+        is_empresa_wide = user.role.value in ("admin_master", "superadmin") and user.empresa_id is not None
+
+        if is_empresa_wide:
+            emp_assocs = (await self._session.execute(text("""
+                SELECT id, name FROM associations
+                WHERE empresa_id = :eid AND is_active = TRUE
+                ORDER BY name
+            """), {"eid": str(user.empresa_id)})).fetchall()
+            primary_empresa_id = user.empresa_id
+            primary_role       = user.role.value
+            if emp_assocs:
+                primary_assoc_id = emp_assocs[0][0]
+                association_name = emp_assocs[0][1]
+                linked_ids       = [str(r[0]) for r in emp_assocs[1:]]
+            else:
+                primary_assoc_id = None
+                association_name = ""
+                linked_ids       = []
+        elif memberships:
             primary = memberships[0]
             primary_assoc_id   = primary[0]
             primary_role       = primary[1]
@@ -83,17 +104,14 @@ class AuthService:
             primary_assoc_id = user.association_id
             primary_role     = user.role.value
             association_name = ar[0] if ar else ""
-            primary_empresa_id = ar[1] if ar else None
+            primary_empresa_id = ar[1] if ar else user.empresa_id
             linked_ids       = []
         else:
-            # Usuario empresa-wide (admin_master/superadmin) sem membership em
-            # user_association_roles e sem association_id — nao deveria acontecer
-            # (provisionamento sempre cria a membership), mas evita 500 em vez de
-            # travar o login.
+            # Sem membership, sem association_id — usa empresa_id do usuario se houver.
             primary_assoc_id = None
             primary_role     = user.role.value
             association_name = ""
-            primary_empresa_id = None
+            primary_empresa_id = user.empresa_id
             linked_ids       = []
 
         token = create_access_token(

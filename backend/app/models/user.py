@@ -23,6 +23,9 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+    # Todo usuario pertence a uma empresa (Fase 8). Nullable no schema durante a
+    # transicao/backfill; preenchido no provisionamento e no backfill v9.
+    empresa_id: UUID | None = Field(default=None, foreign_key="empresas.id", index=True)
     # Nullable so admin_master/superadmin (escopo de empresa, sem associacao-ancora
     # obrigatoria) possam existir. Usuarios locais sempre tem association_id.
     association_id: UUID | None = Field(default=None, foreign_key="associations.id", index=True)

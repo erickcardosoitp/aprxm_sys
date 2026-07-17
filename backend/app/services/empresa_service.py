@@ -72,6 +72,7 @@ class EmpresaService:
 
             senha_gerada = secrets.token_urlsafe(12)
             admin = User(
+                empresa_id=empresa.id,
                 association_id=None,
                 full_name=f"{admin_first_name} {admin_last_name}".strip(),
                 email=admin_email,

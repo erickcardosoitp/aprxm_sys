@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 8
+_SCHEMA_VERSION = 9
 
 
 async def _run_migrations() -> None:
@@ -345,6 +345,46 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (8, 'v8: Fase 7c — remove is_office/linked_association_slugs, empresa_id NOT NULL') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v9: Fase 8 — users.empresa_id (todo usuario ligado a uma empresa).
+            # Aditivo: coluna nullable + backfill a partir da empresa da associacao
+            # do usuario (via users.association_id ou, para empresa-wide sem
+            # association_id, via suas memberships em user_association_roles).
+            try:
+                await session.execute(text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_users_empresa ON users(empresa_id)"
+                ))
+                # backfill via association_id direto
+                await session.execute(text("""
+                    UPDATE users u
+                    SET empresa_id = a.empresa_id
+                    FROM associations a
+                    WHERE u.association_id = a.id AND u.empresa_id IS NULL AND a.empresa_id IS NOT NULL
+                """))
+                # backfill via memberships (usuarios empresa-wide, association_id NULL)
+                await session.execute(text("""
+                    UPDATE users u
+                    SET empresa_id = sub.empresa_id
+                    FROM (
+                        SELECT uar.user_id, MIN(a.empresa_id::text)::uuid AS empresa_id
+                        FROM user_association_roles uar
+                        JOIN associations a ON a.id = uar.association_id
+                        WHERE a.empresa_id IS NOT NULL
+                        GROUP BY uar.user_id
+                    ) sub
+                    WHERE u.id = sub.user_id AND u.empresa_id IS NULL
+                """))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (9, 'v9: Fase 8 — users.empresa_id + backfill') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -1339,6 +1379,41 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (8, 'v8: Fase 7c — remove is_office/linked_association_slugs, empresa_id NOT NULL') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v9: users.empresa_id (mesmo bloco do ramo _is_existing_db)
+        try:
+            await session.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_users_empresa ON users(empresa_id)"
+            ))
+            await session.execute(text("""
+                UPDATE users u
+                SET empresa_id = a.empresa_id
+                FROM associations a
+                WHERE u.association_id = a.id AND u.empresa_id IS NULL AND a.empresa_id IS NOT NULL
+            """))
+            await session.execute(text("""
+                UPDATE users u
+                SET empresa_id = sub.empresa_id
+                FROM (
+                    SELECT uar.user_id, MIN(a.empresa_id::text)::uuid AS empresa_id
+                    FROM user_association_roles uar
+                    JOIN associations a ON a.id = uar.association_id
+                    WHERE a.empresa_id IS NOT NULL
+                    GROUP BY uar.user_id
+                ) sub
+                WHERE u.id = sub.user_id AND u.empresa_id IS NULL
+            """))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (9, 'v9: Fase 8 — users.empresa_id + backfill') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()
