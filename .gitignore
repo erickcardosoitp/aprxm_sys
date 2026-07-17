@@ -55,3 +55,6 @@ backend/.env.vercel
 /out.txt
 /neon_projects.json
 .env*
+
+# Backups de banco (dados sensiveis - nunca commitar)
+*.dump

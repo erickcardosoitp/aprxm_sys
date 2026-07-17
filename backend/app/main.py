@@ -308,29 +308,31 @@ async def _run_migrations() -> None:
             ))
             await session.commit()
 
-            # v8: Fase 7c — remocao definitiva do modelo is_office/linked_association_slugs.
-            # DESTRUTIVO. So roda apos a Fase 6 (janela de observacao) validada em producao.
-            # Sessao/transacao propria: se o guard disparar (associacao ativa sem
-            # empresa_id) ou qualquer statement falhar, faz rollback e SEGUE COM A APP
-            # NO AR na v7 — nunca deixa uma excecao de migracao derrubar o cold start
-            # (essa e a mesma classe de bug do incidente do EmailStr).
+            # v8: Fase 7c — remocao definitiva do modelo is_office/linked_association_slugs
+            # + empresa_id NOT NULL. Associacoes legadas sem empresa_id (ex: escritorio
+            # inativo, teste QA) sao VINCULADAS a empresa SAPE — nao deletadas, pois tem
+            # dados reais entrelacados (created_by de mensalidades/transacoes etc.).
+            # O SET NOT NULL cobre TODAS as linhas (ativas ou nao), por isso o backfill
+            # precede o guard e cobre qualquer NULL. Sessao/transacao propria: qualquer
+            # falha faz rollback e SEGUE COM A APP NO AR na v7 (mesma protecao do
+            # incidente do EmailStr — migracao nunca derruba o cold start).
             try:
+                await session.execute(text("""
+                    UPDATE associations
+                    SET empresa_id = (SELECT id FROM empresas WHERE slug='sape-vazlobo-congonha')
+                    WHERE empresa_id IS NULL
+                """))
                 await session.execute(text("""
                     DO $$
                     DECLARE
-                        v_orphans INTEGER;
+                        v_nulls INTEGER;
                     BEGIN
-                        SELECT COUNT(*) INTO v_orphans FROM associations
-                        WHERE empresa_id IS NULL AND is_active = TRUE
-                          AND (is_office IS NULL OR is_office = FALSE);
-                        IF v_orphans > 0 THEN
-                            RAISE EXCEPTION 'Fase 7c abortada: % associacao(oes) ativa(s) sem empresa_id', v_orphans;
+                        SELECT COUNT(*) INTO v_nulls FROM associations WHERE empresa_id IS NULL;
+                        IF v_nulls > 0 THEN
+                            RAISE EXCEPTION 'Fase 7c abortada: % associacao(oes) sem empresa_id apos backfill', v_nulls;
                         END IF;
                     END $$
                 """))
-                await session.execute(text(
-                    "DELETE FROM associations WHERE slug='escritorio' AND is_office = TRUE"
-                ))
                 await session.execute(text(
                     "ALTER TABLE associations ALTER COLUMN empresa_id SET NOT NULL"
                 ))
@@ -1305,26 +1307,26 @@ async def _run_migrations() -> None:
         ))
         await session.commit()
 
-        # v8: mesmo bloco destrutivo do ramo _is_existing_db (Fase 7c) — sessao
-        # propria, guard aborta com rollback sem derrubar a app (ver comentario
-        # equivalente acima).
+        # v8: mesmo bloco do ramo _is_existing_db (Fase 7c) — backfill de empresa_id
+        # das associacoes legadas para a SAPE, depois SET NOT NULL + drop das colunas
+        # antigas. Sessao propria: falha faz rollback sem derrubar a app.
         try:
+            await session.execute(text("""
+                UPDATE associations
+                SET empresa_id = (SELECT id FROM empresas WHERE slug='sape-vazlobo-congonha')
+                WHERE empresa_id IS NULL
+            """))
             await session.execute(text("""
                 DO $$
                 DECLARE
-                    v_orphans INTEGER;
+                    v_nulls INTEGER;
                 BEGIN
-                    SELECT COUNT(*) INTO v_orphans FROM associations
-                    WHERE empresa_id IS NULL AND is_active = TRUE
-                      AND (is_office IS NULL OR is_office = FALSE);
-                    IF v_orphans > 0 THEN
-                        RAISE EXCEPTION 'Fase 7c abortada: % associacao(oes) ativa(s) sem empresa_id', v_orphans;
+                    SELECT COUNT(*) INTO v_nulls FROM associations WHERE empresa_id IS NULL;
+                    IF v_nulls > 0 THEN
+                        RAISE EXCEPTION 'Fase 7c abortada: % associacao(oes) sem empresa_id apos backfill', v_nulls;
                     END IF;
                 END $$
             """))
-            await session.execute(text(
-                "DELETE FROM associations WHERE slug='escritorio' AND is_office = TRUE"
-            ))
             await session.execute(text(
                 "ALTER TABLE associations ALTER COLUMN empresa_id SET NOT NULL"
             ))
