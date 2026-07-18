@@ -85,7 +85,32 @@ Resposta: produção restaurada em ~1s via `vercel promote` do deploy v8 anterio
 
 ---
 
+### Fase 8e — Fix: usuário empresa-wide invisível/pulado em 4 pontos (NO AR, 2026-07-18)
+Achado ao investigar 2 relatos reais: "caixas sumiram pro Felipe" (investigação não concluiu causa — dado e lógica de login conferidos corretos, ver histórico da conversa) e "usuário do Felipe não aparece nem em Vaz Lobo nem em Congonha" (confirmado, bug real).
+
+Causa: Fase 2/8a deram a `admin_master`/`superadmin` acesso via `empresa_id` (com `users.association_id = NULL`), mas 6 pontos do código ainda filtravam `users.association_id` direto contra uma única associação — invisíveis pra esse modelo. Corrigidos os 4 onde é bug de verdade:
+- `admin.py` `list_users` — Felipe não aparecia em nenhuma lista de usuários.
+- `mensalidades.py` `cron-generate` — **achado mais sério**: Congonha não tem nenhum admin/superadmin com `association_id` próprio, então a geração mensal automática de mensalidade estava sendo **pulada pra Congonha inteira** (`if not admin_id: continue`). Confirmado contra produção antes/depois do fix.
+- `daily_tasks.py` `list_group_users`, `public.py` (created_by de residente via cadastro público) — mesmo padrão, corrigidos por consistência.
+
+Deixados de fora (semântica diferente, não é o mesmo bug): `porta_a_porta.py` `public_users` (lista agentes comissionados, não faz sentido incluir admin ali) e `superadmin.py` `list_organizations` (headcount de membros dedicados — incluir empresa-wide infla a métrica sem agregar informação).
+
+Cuidado tomado: `ORDER BY (association_id = a.id) DESC` quebrava com `NULL` (Postgres ordena `NULL` primeiro em `DESC`) — corrigido com `(expr) IS TRUE` antes do `DESC`. Validado contra produção: Vaz Lobo mantém seu admin dedicado na preferência, Congonha cai no fallback, sem regressão.
+
+**Deploy sem migration** (só código), verificado saudável (10/10 health durante rollout). Commit `d058070`.
+
+**Ponto em aberto:** "caixas sumiram pro Felipe" não foi confirmado/resolvido — dado e lógica de resolução de token no login conferem certos. Pode ser bug de frontend não investigado, sessão desatualizada, ou outra causa ainda não identificada. Investigar se o sintoma persistir.
+
+---
+
 ## Pendente
+
+### Specs escritos, aguardando implementação
+- `docs/superpowers/specs/2026-07-16-catalogo-produtos-esc-design.md` — catálogo de produtos (mensalidade/taxa de entrega/comprovante de residência unificados, com estoque pro comprovante). Aprovado, não implementado.
+- `docs/superpowers/specs/2026-07-17-esc-associacao-login-design.md` — ESC vira linha real em `associations` (`id = empresa_id`), login respeita último acesso (`last_association_id`), fix do seletor de troca, remapeamento de usuários reais. Aprovado, não implementado. **Enquanto não implementado, `association_id` de admin_master/superadmin nunca é igual a `empresa_id`** — qualquer lógica de frontend que dependa dessa igualdade (ex.: `isEsc()`) fica sempre falsa.
+
+### Frontend: casca visual do ESC (LOCAL, não commitada)
+Sidebar + paleta verde (invertida com o azul das unidades) + tipografia IBM Plex, 3 páginas placeholder (Cadastros/Administração/Financeiro) em `frontend/src/pages/esc/`. Guard `RequireEsc` e branch em `AppShell.tsx`/`authStore.ts` já escritos. **Não commitado, só local** — e não há como vê-lo funcionando de verdade até o spec ESC-associação acima ser implementado (não existe hoje nenhum usuário cujo `association_id == empresa_id`).
 
 ### Fase 8c — Módulo ADMIN dentro do ESC (PRECISA DE DESIGN)
 UI de gestão centralizada pro `admin_master` no app principal. O usuário disse que é o que o admin_master vai usar, mas **o conteúdo não foi definido** (gestão de usuários? config? financeiro consolidado?). Fazer brainstorm/design antes de codar.
