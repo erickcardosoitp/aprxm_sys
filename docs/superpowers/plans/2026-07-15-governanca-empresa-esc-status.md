@@ -108,15 +108,22 @@ Cuidado tomado: `ORDER BY (association_id = a.id) DESC` quebrava com `NULL` (Pos
 ### Specs escritos, aguardando implementação
 - `docs/superpowers/specs/2026-07-16-catalogo-produtos-esc-design.md` — catálogo de produtos (mensalidade/taxa de entrega/comprovante de residência unificados, com estoque pro comprovante). Aprovado, não implementado.
 - `docs/superpowers/specs/2026-07-17-esc-associacao-login-design.md` — ESC vira linha real em `associations` (`id = empresa_id`), login respeita último acesso (`last_association_id`), fix do seletor de troca, remapeamento de usuários reais. Aprovado, não implementado. **Enquanto não implementado, `association_id` de admin_master/superadmin nunca é igual a `empresa_id`** — qualquer lógica de frontend que dependa dessa igualdade (ex.: `isEsc()`) fica sempre falsa.
+- `docs/superpowers/specs/2026-07-18-centralizacao-administrativa-esc-design.md` — análise de analista de negócio: categoria de transação + forma de pagamento, gestão de usuário, permissões e auditoria saem da associação e vão pro ESC; central de avisos nova. Aprovado, não implementado. Fecha o design da Fase 8d (permissões) e dá conteúdo concreto pra Fase 8c (módulo Administração).
 
-### Frontend: casca visual do ESC (LOCAL, não commitada)
-Sidebar + paleta verde (invertida com o azul das unidades) + tipografia IBM Plex, 3 páginas placeholder (Cadastros/Administração/Financeiro) em `frontend/src/pages/esc/`. Guard `RequireEsc` e branch em `AppShell.tsx`/`authStore.ts` já escritos. **Não commitado, só local** — e não há como vê-lo funcionando de verdade até o spec ESC-associação acima ser implementado (não existe hoje nenhum usuário cujo `association_id == empresa_id`).
+### Frontend: 7 módulos do ESC + 15 endpoints reais (LOCAL, não commitado, testado ponta a ponta)
+Sidebar com os 7 módulos do esboço original (Cadastros, Moradores, Financeiro, Administração, Sincronização, TI, Acervo), cada um com abas internas onde há múltiplos pontos a gerenciar. Paleta redesenhada (cinza-azulado neutro, verde só como indicador de aba ativa — não preenchimento) após feedback de que o visual inicial "parecia IA", não corporativo. Tabela densa com busca, não card.
 
-### Fase 8c — Módulo ADMIN dentro do ESC (PRECISA DE DESIGN)
-UI de gestão centralizada pro `admin_master` no app principal. O usuário disse que é o que o admin_master vai usar, mas **o conteúdo não foi definido** (gestão de usuários? config? financeiro consolidado?). Fazer brainstorm/design antes de codar.
+Backend: router novo `backend/app/routers/esc.py`, 15 endpoints (`GET /esc/...`) escopados por `empresa_id`, guardados por `require_empresa_admin` (já existente). Puxam dado real: associações, usuários, grupos de acesso, encomendas, ordens de serviço, estoque de comprovante, associados/visitantes/dependentes, movimentações, sangrias, sessões conferidas, permissões, infra. Placeholder limpo (mesma tabela, "módulo ainda não implementado") pra Produtos, DRE, Fluxo de Caixa, Relatórios, Conciliação Pix, Plano de Metas, Monitor de Sincronização, Data Analytics, Banco de Dados, Fotos/Vídeos, Posts Website.
 
-### Fase 8d — Remodelar permissões (PRECISA DE DESIGN)
-A diretriz "todo usuário ligado à empresa, gerido no ESC, atribuído a uma associação" reformula o modelo de permissões. Detalhes não desenhados — precisa de brainstorm antes de implementar.
+**Ambiente de teste local montado nesta sessão** (reaproveitável): Postgres local (`aprxm_local`, restaurado do dump `backup-aprxm-PRE-7c-20260716-2144.dump`), backend rodando na porta **9001** (a 9000 travou em nível de kernel do Windows — socket órfão que sobrevive ao processo, contornado trocando de porta), `vite.config.ts` com proxy configurável via `VITE_BACKEND_PORT`. Login real de teste: `erickcardoso@institutotiapretinha.org` / `local123` (senha só no banco local, não afeta produção). Mock `?mockesc=1&real=1` na URL loga de verdade e força `isEsc()`, contornando o spec de 17/07 ainda não implementado.
+
+**Nada disso está commitado** — tudo local, aguardando aprovação antes de subir pro repo/produção.
+
+### Fase 8c — Módulo ADMIN/Administração dentro do ESC (DESIGN FECHADO, ver specs acima)
+Conteúdo definido: os 7 módulos do esboço original + os itens do spec de 18/07 (permissões, auditoria, avisos) dentro de Administração. Estrutura já prototipada localmente (ver acima). Falta: formulários de escrita (criar/editar) e subir pra produção.
+
+### Fase 8d — Remodelar permissões (DESIGN FECHADO, ver spec 2026-07-18)
+Fechado no item 4 do spec de 18/07: `role_permissions`/`access_groups` migram de por-associação pra por-empresa (template único, `empresa_id` preenchido = regra vale pra toda unidade). Falta implementar.
 
 ### Fase 8b — Reancorar inventário (menor, backend)
 Endpoints de inventário em `geral.py` ainda ancoram em `current.association_id` e exigem `is_conferente` (que não inclui `admin_master`). Reancorar para nível empresa. Não urgente (inventário pode nem estar em uso).
