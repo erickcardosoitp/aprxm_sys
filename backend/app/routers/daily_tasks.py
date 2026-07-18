@@ -89,10 +89,12 @@ async def list_group_users(
         rows = (await session.execute(text("""
             SELECT u.id, u.full_name, u.role, a.name AS assoc_name
             FROM users u
-            JOIN associations a ON a.id = u.association_id
-            WHERE u.association_id = :aid AND u.is_active = true
+            LEFT JOIN associations a ON a.id = u.association_id
+            WHERE (u.association_id = :aid
+                   OR (u.empresa_id = :eid AND u.association_id IS NULL AND u.role IN ('admin_master', 'superadmin')))
+              AND u.is_active = true
             ORDER BY u.full_name
-        """), {"aid": str(current.association_id)})).fetchall()
+        """), {"aid": str(current.association_id), "eid": str(current.empresa_id) if current.empresa_id else None})).fetchall()
     return [{"id": str(r[0]), "full_name": r[1], "role": r[2], "assoc_name": r[3]} for r in rows]
 
 

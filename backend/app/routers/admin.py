@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -51,7 +51,20 @@ async def list_users(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    stmt = select(User).where(User.association_id == current.association_id)
+    # Usuarios empresa-wide (admin_master/superadmin sem association_id fixo,
+    # Fase 8a) tem acesso a toda associacao da empresa via escopo dinamico —
+    # sem isso, ficam invisiveis em qualquer lista (association_id NULL nunca
+    # bate com nenhum :aid).
+    stmt = select(User).where(
+        or_(
+            User.association_id == current.association_id,
+            and_(
+                User.empresa_id == current.empresa_id,
+                User.association_id.is_(None),
+                User.role.in_(["admin_master", "superadmin"]),
+            ),
+        )
+    )
     if active_only:
         stmt = stmt.where(User.is_active == True)
     stmt = stmt.order_by(User.full_name)

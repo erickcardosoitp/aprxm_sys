@@ -78,8 +78,13 @@ async def public_register_resident(
     # Use first admin user as created_by placeholder
     from sqlalchemy import text
     uid_row = await session.execute(
-        text("SELECT id FROM users WHERE association_id = :aid LIMIT 1"),
-        {"aid": str(assoc.id)},
+        text("""
+            SELECT id FROM users
+            WHERE association_id = :aid
+               OR (empresa_id = :eid AND association_id IS NULL)
+            LIMIT 1
+        """),
+        {"aid": str(assoc.id), "eid": str(assoc.empresa_id) if assoc.empresa_id else None},
     )
     uid = uid_row.scalar()
     if not uid:

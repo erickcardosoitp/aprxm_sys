@@ -102,9 +102,13 @@ async def cron_generate(
         SELECT a.id,
                COALESCE(s.default_mensalidade_amount, 0),
                COALESCE(s.default_due_day, 10),
-               (SELECT u.id FROM users u WHERE u.association_id = a.id
-                AND u.role IN ('admin','admin_master','superadmin')
-                AND u.is_active = TRUE LIMIT 1)
+               (SELECT u.id FROM users u
+                WHERE (u.association_id = a.id
+                       OR (u.empresa_id = a.empresa_id AND u.association_id IS NULL))
+                  AND u.role IN ('admin','admin_master','superadmin')
+                  AND u.is_active = TRUE
+                ORDER BY ((u.association_id = a.id) IS TRUE) DESC
+                LIMIT 1)
         FROM associations a
         LEFT JOIN association_settings s ON s.association_id = a.id
         WHERE a.is_active = TRUE
