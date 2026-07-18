@@ -350,6 +350,73 @@ Bump `_SCHEMA_VERSION` → 7; documentar em `database/migrations/029_remove_offi
 
 **Rollback:** aditivo primeiro (colunas nullable) → reversível como as demais fases.
 
+**⚠️ Revisitar à luz da Fase 9:** esta fase foi desenhada em 2026-07-15, antes de decidir que o ESC vira uma linha real em `associations` (Fase 9). Se isso for implementado primeiro, o inventário pode simplesmente reancorar em `association_id` = linha ESC (reaproveitando código que já existe pra associação normal) em vez de precisar de um caminho `empresa_id` paralelo. Avaliar quando esta fase for abordada — pode ficar mais simples do que o desenho original acima.
+
+---
+
+## FASE 9 — ESC como associação real (login por estação, não por cargo)
+
+**Spec-fonte:** `docs/superpowers/specs/2026-07-17-esc-associacao-login-design.md`
+**Status:** aprovado, não implementado. **Bloqueante** — nenhuma tela do ESC (Fase 10/11 abaixo) fica visível em produção pra usuário real até esta fase subir, porque `isEsc()` no frontend depende de `association_id == empresa_id`, e essa igualdade só existe depois desta fase.
+
+**Objetivo:** ESC deixa de ser um estado implícito (`association_id = NULL` em admin_master) e vira uma linha física em `associations`, com `id = empresa_id` (sem coluna nova — a própria igualdade identifica). Login passa a respeitar a última unidade usada (`last_association_id`), não ordem alfabética. Escopo amplo passa a ser por **estação** (`association_id == empresa_id`), não por cargo hardcoded — libera `conselho`/`diretoria` no ESC sem precisar virar `admin_master`.
+
+**Onde implementar:**
+- Migration aditiva: seed da linha ESC por empresa (SAPE agora, `empresa_service.py` para toda empresa nova) + `users.last_association_id UUID REFERENCES associations(id)`.
+- `auth_service.py`: trocar `is_empresa_wide = role in (...)` por `association_id == empresa_id`; usar `last_association_id` como primário quando válido.
+- `routers/auth.py` `switch_association`: aceitar destino por escopo de empresa (hoje só aceita `user_association_roles` explícito); gravar `last_association_id` após troca.
+- Remapeamento de usuário real (Erick/Felipe/Gabriela/Gabriella/Célia/Raphael/Vinícius/Carla → ESC; Danielly → Congonha; desativar usuários de teste) — dado, não schema, ver spec Seção 3.
+
+**Arquivos tocados:** `backend/app/main.py` (migration), `backend/app/services/auth_service.py`, `backend/app/routers/auth.py`, `backend/app/core/tenant.py`, `backend/app/services/empresa_service.py`.
+
+**Critério de pronto:** ver Seção 5 do spec-fonte.
+
+**Rollback:** aditivo (linha nova + coluna nova); reverter lógica de `is_empresa_wide` é só código, reversível via redeploy.
+
+---
+
+## FASE 10 — Catálogo de Produtos
+
+**Spec-fonte:** `docs/superpowers/specs/2026-07-16-catalogo-produtos-esc-design.md`
+**Status:** aprovado, não implementado. **Independente da Fase 9** — schema e endpoints não dependem de ESC ser linha real, só de `empresa_id` (já existe desde a Fase 1/8a). Pode ser implementada em paralelo.
+
+**Objetivo:** unifica mensalidade, taxa de entrega e comprovante de residência (hoje 3 mecanismos de preço espalhados, nenhum "produto" de verdade) num cadastro só (`products`), gerido pelo ESC. Corrige de quebra um gap de segurança (preço do comprovante hoje vem do frontend sem validação).
+
+**Onde implementar:** migration aditiva (`products`, `product_associations`, `product_stock_movements`, `mensalidades.product_id`, `transactions.product_id` — ver spec Seção 3). Wiring dos services (`mensalidade_service.py`, `package_service.py`, `finance_service.py`) fica pra sub-etapa posterior dentro desta fase (ver Seção 4 do spec — consumidores mapeados).
+
+**Arquivos tocados:** `backend/app/main.py` (migration), `backend/app/services/{mensalidade_service,package_service,finance_service}.py`, `backend/app/routers/{mensalidades,admin,finance}.py` (wiring, sub-etapa).
+
+**Critério de pronto:** ver Seção 6 do spec-fonte.
+
+**Rollback:** 100% aditivo, tabelas novas inertes até o wiring ligar os pontos.
+
+---
+
+## FASE 11 — Centralização Administrativa no ESC
+
+**Spec-fonte:** `docs/superpowers/specs/2026-07-18-centralizacao-administrativa-esc-design.md`
+**Status:** aprovado, não implementado. **Backend independente da Fase 9** (endpoints já rodam contra `require_empresa_admin`, testados localmente); **frontend depende da Fase 9** (as 7 telas do ESC só ficam visíveis em produção depois que `isEsc()` for real).
+
+**Objetivo:** 5 itens que hoje vivem por associação e deveriam viver por empresa — categoria de transação + forma de pagamento (pré-requisito pro financeiro centralizado, senão o DRE consolidado sai com categoria inconsistente entre unidades), gestão de usuário (criar/editar/desativar no ESC, não mais preso a 1 associação), permissões/grupos de acesso (template único da empresa — fecha a Fase 8d que estava pendente de design), auditoria centralizada, central de avisos (broadcast).
+
+**Onde implementar:** migration aditiva (5 colunas `empresa_id` novas — ver spec Seções 2-6). Endpoints novos em `backend/app/routers/esc.py` (router já criado e testado localmente nesta sessão, com 15 endpoints de leitura — falta os de escrita desta fase: criar/editar usuário, editar permissão, criar aviso).
+
+**Arquivos tocados:** `backend/app/main.py` (migration), `backend/app/routers/esc.py` (já existe, expandir), `frontend/src/pages/esc/*` (já existe local, expandir com formulários).
+
+**Critério de pronto:** ver Seção 8 do spec-fonte.
+
+**Rollback:** 100% aditivo.
+
+---
+
+## Gaps identificados (revisão de 2026-07-18)
+
+1. **Financeiro centralizado de verdade ainda não tem spec.** Todas as 3 fases novas (9, 10, 11) mencionam "financeiro centralizado" como motivação ou dependência, mas nenhuma desenha COMO o DRE consolidado, fluxo de caixa e relatórios vão funcionar de fato — isso ficou explicitamente fora de escopo em todas. **É a maior peça faltante agora.**
+2. **Migração de dado legado** de `transaction_categories`/`payment_methods`/`role_permissions` (hoje por associação) pro modelo novo (por empresa) — decidido ficar pra quando o financeiro centralizado for implementado (item 1), mas ninguém desenhou o COMO ainda (reconciliar nomes duplicados/divergentes entre Vaz Lobo e Congonha, por exemplo).
+3. **Ambiente de teste local** (Postgres local + backend porta 9001 + dump restaurado) foi montado ad hoc nesta sessão, sem documentação permanente — vale um `docs/dev-setup-local.md` se for reaproveitado com frequência.
+4. **Mock de frontend (`?mockesc=1`) e `vite.config.ts` com `VITE_BACKEND_PORT`** são temporários — precisam ser removidos/revertidos quando a Fase 9 subir de verdade (`isEsc()` deixa de precisar de mock).
+5. **Fase 8 (inventário) precisa reavaliação** à luz da Fase 9 — provável simplificação, não desenhado ainda (nota já adicionada acima).
+
 ---
 
 ## Resumo de sequenciamento e dependências
@@ -365,7 +432,11 @@ Bump `_SCHEMA_VERSION` → 7; documentar em `database/migrations/029_remove_offi
 | 7a | Remoção código is_office | 6 | código | Reversível |
 | 7b | Verificação | 7a | — | — |
 | 7c | Remoção schema | 7b (+ backfill Fase 8 se houver inventário) | migration v7 | **Sim** |
-| 8 | Inventário → empresa | 1; backfill antes de 7c | migration + código | Aditivo primeiro |
+| 8 | Inventário → empresa | 1; revisitar à luz da 9 | migration + código | Aditivo primeiro |
+| 8e | Fix acesso empresa-wide | 1,3 | código | Não — **NO AR** |
+| 9 | ESC como associação real | 1,8e | migration + código | Não — **bloqueante da 10/11 em produção** |
+| 10 | Catálogo de Produtos | 1 | migration + código | Não — independente, paralelo à 9 |
+| 11 | Centralização Administrativa | 1,8e; frontend depende de 9 | migration + código | Não — backend independente, frontend depende da 9 |
 
 **Regra de ouro reforçada:** nenhuma migration destrutiva (7c) roda antes que o código que dependia do estado antigo tenha saído de produção **e** sido observado estável (Fase 6 + 7b). Cada bloco de schema é aditivo no deploy que o introduz.
 
@@ -374,6 +445,8 @@ Bump `_SCHEMA_VERSION` → 7; documentar em `database/migrations/029_remove_offi
 ### Arquivos críticos para a implementação
 - `backend/app/main.py` (função `_run_migrations`, `_SCHEMA_VERSION` — onde toda migration realmente roda)
 - `backend/app/core/tenant.py` (guards e `CurrentUser` a reaproveitar/limpar)
-- `backend/app/services/auth_service.py` e `backend/app/routers/auth.py` (hook `_empresa_col_exists` + emissão de token a migrar)
+- `backend/app/services/auth_service.py` e `backend/app/routers/auth.py` (hook `_empresa_col_exists` + emissão de token a migrar; Fase 9 mexe de novo aqui)
 - `backend/app/core/security.py` (claims JWT `empresa_id`/`is_office`)
-- `backend/app/routers/governanca.py` + `backend/app/services/empresa_service.py` + `backend/app/services/association_provisioning_service.py` (a criar — núcleo do provisionamento)
+- `backend/app/routers/governanca.py` + `backend/app/services/empresa_service.py` + `backend/app/services/association_provisioning_service.py` (provisionamento — Fase 9 adiciona seed da linha ESC aqui)
+- `backend/app/routers/esc.py` (criado na Fase 11, 15 endpoints de leitura já testados localmente; escrita ainda falta)
+- `frontend/src/pages/esc/*`, `frontend/src/components/layout/AppShell.tsx`, `frontend/src/store/authStore.ts` (casca do ESC — 7 módulos, `isEsc()` — local, não commitado)
