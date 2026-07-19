@@ -3,6 +3,7 @@ import EscModulePage from './EscModulePage'
 import EscDataTable from './EscDataTable'
 import EscEmptySection from './EscEmptySection'
 import { PermissoesSection, AvisosSection } from './AdminSections'
+import InventarioEncomendasSection from './InventarioEncomendasSection'
 import { escService } from '../../services/esc'
 
 export default function AdministracaoPage() {
@@ -13,6 +14,7 @@ export default function AdministracaoPage() {
       icon={ShieldCheck}
       sections={[
         { key: 'permissoes', label: 'Permissões', content: <PermissoesSection /> },
+        { key: 'inventario-encomendas', label: 'Inventário de Encomendas', content: <InventarioEncomendasSection /> },
         { key: 'avisos', label: 'Avisos', content: <AvisosSection /> },
         {
           key: 'auditoria', label: 'Auditoria',

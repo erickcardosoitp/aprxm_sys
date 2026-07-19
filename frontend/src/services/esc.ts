@@ -37,4 +37,9 @@ export const escService = {
   auditoria: (limit = 200) => api.get(`/esc/administracao/auditoria?limit=${limit}`),
   enviarAviso: (title: string, body: string) => api.post('/esc/administracao/avisos', { title, body }),
   listAvisos: () => api.get('/esc/administracao/avisos'),
+
+  inventarioEncomendas: () => api.get('/esc/administracao/inventario-encomendas'),
+  gerarInventarioEncomendas: (association_id: string, reference_at: string) =>
+    api.post('/esc/administracao/inventario-encomendas', { association_id, reference_at }),
+  detalheInventarioEncomendas: (id: string) => api.get(`/esc/administracao/inventario-encomendas/${id}`),
 }

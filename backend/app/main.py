@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 11
+_SCHEMA_VERSION = 12
 
 
 async def _run_migrations() -> None:
@@ -463,6 +463,30 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (11, 'v11: Fase 11 — centralizacao admin (categoria/forma/access_groups/notifications empresa_id)') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v12: inventário de encomendas — snapshot pontual das encomendas
+            # fisicamente na associacao (a entregar) num dia/hora de referencia.
+            try:
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS package_inventories (
+                        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        empresa_id     UUID NOT NULL REFERENCES empresas(id),
+                        association_id UUID NOT NULL REFERENCES associations(id),
+                        reference_at   TIMESTAMPTZ NOT NULL,
+                        total          INTEGER NOT NULL DEFAULT 0,
+                        items          JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        created_by     UUID REFERENCES users(id),
+                        created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (12, 'v12: inventario de encomendas (package_inventories)') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -1554,6 +1578,29 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (11, 'v11: Fase 11 — centralizacao admin (categoria/forma/access_groups/notifications empresa_id)') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v12: inventário de encomendas — mesmo bloco do ramo _is_existing_db
+        try:
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS package_inventories (
+                    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    empresa_id     UUID NOT NULL REFERENCES empresas(id),
+                    association_id UUID NOT NULL REFERENCES associations(id),
+                    reference_at   TIMESTAMPTZ NOT NULL,
+                    total          INTEGER NOT NULL DEFAULT 0,
+                    items          JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    created_by     UUID REFERENCES users(id),
+                    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (12, 'v12: inventario de encomendas (package_inventories)') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()

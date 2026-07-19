@@ -594,3 +594,81 @@ async def list_avisos(
         GROUP BY title, body ORDER BY enviado_em DESC LIMIT 100
     """), {"eid": str(current.empresa_id)})).fetchall()
     return [{"title": r[0], "body": r[1], "enviado_em": str(r[2]), "destinatarios": r[3]} for r in rows]
+
+
+# ── Inventário de encomendas (snapshot pontual) ───────────────────────────
+
+class InventarioEncomendaRequest(BaseModel):
+    association_id: UUID
+    reference_at: str  # ISO datetime (dia + hora escolhidos)
+
+
+@router.post("/administracao/inventario-encomendas", summary="Gerar inventário de encomendas (snapshot)")
+async def gerar_inventario_encomendas(
+    body: InventarioEncomendaRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
+    from datetime import datetime as _dt
+    try:
+        ref = _dt.fromisoformat(body.reference_at)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Data/hora inválida.")
+    # Encomendas fisicamente na associacao no momento de referencia: recebidas
+    # ate o ref e ainda nao entregues nem devolvidas ate o ref.
+    rows = (await session.execute(text("""
+        SELECT p.id, p.sender_name, p.carrier_name, p.object_type, p.tracking_code,
+               p.received_at, r.full_name AS morador
+        FROM packages p
+        LEFT JOIN residents r ON r.id = p.resident_id
+        WHERE p.association_id = :aid
+          AND p.received_at <= :ref
+          AND (p.delivered_at IS NULL OR p.delivered_at > :ref)
+          AND (p.returned_at IS NULL OR p.returned_at > :ref)
+        ORDER BY p.received_at
+    """), {"aid": str(body.association_id), "ref": ref})).fetchall()
+    items = [{"id": str(r[0]), "sender_name": r[1], "carrier_name": r[2], "object_type": r[3],
+              "tracking_code": r[4], "received_at": str(r[5]), "morador": r[6]} for r in rows]
+    import json as _json
+    row = (await session.execute(text("""
+        INSERT INTO package_inventories (id, empresa_id, association_id, reference_at, total, items, created_by)
+        VALUES (gen_random_uuid(), :eid, :aid, :ref, :total, CAST(:items AS jsonb), :uid)
+        RETURNING id
+    """), {"eid": str(current.empresa_id), "aid": str(body.association_id), "ref": ref,
+           "total": len(items), "items": _json.dumps(items), "uid": str(current.user_id)})).fetchone()
+    await session.commit()
+    return {"id": str(row[0]), "total": len(items), "ok": True}
+
+
+@router.get("/administracao/inventario-encomendas", summary="Histórico de inventários de encomendas")
+async def list_inventario_encomendas(
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    rows = (await session.execute(text("""
+        SELECT pi.id, a.name AS unidade, pi.reference_at, pi.total, pi.created_at, u.full_name AS por
+        FROM package_inventories pi
+        JOIN associations a ON a.id = pi.association_id
+        LEFT JOIN users u ON u.id = pi.created_by
+        WHERE pi.empresa_id = :eid
+        ORDER BY pi.created_at DESC LIMIT 200
+    """), {"eid": str(current.empresa_id)})).fetchall()
+    return [{"id": str(r[0]), "unidade": r[1], "reference_at": str(r[2]), "total": r[3],
+             "created_at": str(r[4]), "por": r[5]} for r in rows]
+
+
+@router.get("/administracao/inventario-encomendas/{inv_id}", summary="Detalhe (itens) do inventário")
+async def detalhe_inventario_encomendas(
+    inv_id: UUID,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    row = (await session.execute(text("""
+        SELECT pi.items, pi.total, pi.reference_at, a.name
+        FROM package_inventories pi JOIN associations a ON a.id = pi.association_id
+        WHERE pi.id = :id AND pi.empresa_id = :eid
+    """), {"id": str(inv_id), "eid": str(current.empresa_id)})).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Inventário não encontrado.")
+    return {"items": row[0], "total": row[1], "reference_at": str(row[2]), "unidade": row[3]}
