@@ -20,4 +20,21 @@ export const escService = {
   estoque: () => api.get('/esc/administracao/estoque'),
 
   infra: () => api.get('/esc/ti/infra'),
+
+  // ── escrita (Fase 11) ──
+  criarUsuario: (body: any) => api.post('/esc/cadastros/usuarios', body),
+  editarUsuario: (id: string, body: any) => api.put(`/esc/cadastros/usuarios/${id}`, body),
+  desativarUsuario: (id: string) => api.delete(`/esc/cadastros/usuarios/${id}`),
+  excluirUsuario: (id: string) => api.delete(`/esc/cadastros/usuarios/${id}/permanente`),
+
+  categorias: () => api.get('/esc/cadastros/categorias'),
+  criarCategoria: (body: any) => api.post('/esc/cadastros/categorias', body),
+  formasPagamento: () => api.get('/esc/cadastros/formas-pagamento'),
+  criarForma: (body: any) => api.post('/esc/cadastros/formas-pagamento', body),
+
+  getAccessGroups: () => api.get('/esc/administracao/access-groups'),
+  putAccessGroups: (access_groups: any) => api.put('/esc/administracao/access-groups', { access_groups }),
+  auditoria: (limit = 200) => api.get(`/esc/administracao/auditoria?limit=${limit}`),
+  enviarAviso: (title: string, body: string) => api.post('/esc/administracao/avisos', { title, body }),
+  listAvisos: () => api.get('/esc/administracao/avisos'),
 }

@@ -2,6 +2,8 @@ import { FolderKanban } from 'lucide-react'
 import EscModulePage from './EscModulePage'
 import EscDataTable from './EscDataTable'
 import EscEmptySection from './EscEmptySection'
+import UsuariosSection from './UsuariosSection'
+import { CategoriasSection, FormasPagamentoSection } from './CadastroFinanceiroSections'
 import { escService } from '../../services/esc'
 
 export default function CadastrosPage() {
@@ -16,6 +18,7 @@ export default function CadastrosPage() {
           content: <EscDataTable
             fetchFn={escService.associacoes}
             searchKeys={['name', 'slug']}
+            statusFilter
             columns={[
               { key: 'name', label: 'Nome' },
               { key: 'slug', label: 'Slug' },
@@ -26,23 +29,14 @@ export default function CadastrosPage() {
         },
         {
           key: 'usuarios', label: 'Usuários',
-          content: <EscDataTable
-            fetchFn={escService.usuarios}
-            searchKeys={['full_name', 'email']}
-            columns={[
-              { key: 'full_name', label: 'Nome' },
-              { key: 'email', label: 'E-mail' },
-              { key: 'role', label: 'Cargo' },
-              { key: 'unidade', label: 'Unidade' },
-              { key: 'is_active', label: 'Ativo', render: (r) => (r.is_active ? 'Sim' : 'Não') },
-            ]}
-          />,
+          content: <UsuariosSection />,
         },
         {
           key: 'grupos', label: 'Grupos de Usuários',
           content: <EscDataTable
             fetchFn={escService.gruposUsuarios}
             searchKeys={['unidade', 'grupo']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'grupo', label: 'Cargo' }]}
             columns={[
               { key: 'unidade', label: 'Unidade' },
               { key: 'grupo', label: 'Cargo' },
@@ -55,6 +49,7 @@ export default function CadastrosPage() {
           content: <EscDataTable
             fetchFn={escService.encomendas}
             searchKeys={['sender_name', 'carrier_name']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'status', label: 'Status' }]}
             columns={[
               { key: 'sender_name', label: 'Remetente' },
               { key: 'carrier_name', label: 'Transportadora' },
@@ -69,6 +64,7 @@ export default function CadastrosPage() {
           content: <EscDataTable
             fetchFn={escService.ordensServico}
             searchKeys={['title']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'priority', label: 'Prioridade' }]}
             columns={[
               { key: 'number', label: 'Nº' },
               { key: 'title', label: 'Título' },
@@ -88,6 +84,14 @@ export default function CadastrosPage() {
               { key: 'estoque', label: 'Estoque atual' },
             ]}
           />,
+        },
+        {
+          key: 'categorias', label: 'Categorias',
+          content: <CategoriasSection />,
+        },
+        {
+          key: 'formas', label: 'Formas de Pagamento',
+          content: <FormasPagamentoSection />,
         },
         {
           key: 'produtos', label: 'Produtos',

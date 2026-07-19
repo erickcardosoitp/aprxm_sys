@@ -15,13 +15,20 @@ interface EscDataTableProps {
   columns: Column[]
   fetchFn: () => Promise<AxiosResponse<any[]>>
   searchKeys?: string[]
+  toolbarAction?: React.ReactNode
+  rowActions?: (row: any) => React.ReactNode
+  reloadKey?: number
+  statusFilter?: boolean  // filtro Ativos/Inativos/Todos (usa row.is_active), padrão Ativos
+  filterKeys?: { key: string; label: string }[]  // filtros por coluna (opções auto-derivadas dos dados)
 }
 
-export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTableProps) {
+export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarAction, rowActions, reloadKey, statusFilter, filterKeys }: EscDataTableProps) {
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [query, setQuery] = useState('')
+  const [status, setStatus] = useState<'ativos' | 'inativos' | 'todos'>('ativos')
+  const [colFilters, setColFilters] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let alive = true
@@ -32,13 +39,32 @@ export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTa
       .catch(() => { if (alive) setError(true) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-  }, [fetchFn])
+  }, [fetchFn, reloadKey])
+
+  // opções distintas por filtro, derivadas dos dados carregados
+  const filterOptions = useMemo(() => {
+    const m: Record<string, string[]> = {}
+    for (const f of filterKeys ?? []) {
+      m[f.key] = [...new Set(rows.map((r) => r[f.key]).filter((v) => v != null && v !== ''))].map(String).sort()
+    }
+    return m
+  }, [rows, filterKeys])
 
   const filtered = useMemo(() => {
-    if (!query.trim() || !searchKeys?.length) return rows
-    const q = query.toLowerCase()
-    return rows.filter((r) => searchKeys.some((k) => String(r[k] ?? '').toLowerCase().includes(q)))
-  }, [rows, query, searchKeys])
+    let out = rows
+    if (statusFilter && status !== 'todos') {
+      const want = status === 'ativos'
+      out = out.filter((r) => !!r.is_active === want)
+    }
+    for (const [k, v] of Object.entries(colFilters)) {
+      if (v) out = out.filter((r) => String(r[k] ?? '') === v)
+    }
+    if (query.trim() && searchKeys?.length) {
+      const q = query.toLowerCase()
+      out = out.filter((r) => searchKeys.some((k) => String(r[k] ?? '').toLowerCase().includes(q)))
+    }
+    return out
+  }, [rows, query, searchKeys, statusFilter, status, colFilters])
 
   return (
     <div className="flex flex-col h-full">
@@ -55,9 +81,34 @@ export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTa
             style={{ borderColor: BORDER }}
           />
         </div>
+        {statusFilter && (
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as 'ativos' | 'inativos' | 'todos')}
+            className="text-sm border px-2 py-1.5"
+            style={{ borderColor: BORDER, color: TEXT_MUTED }}
+          >
+            <option value="ativos">Ativos</option>
+            <option value="inativos">Inativos</option>
+            <option value="todos">Todos</option>
+          </select>
+        )}
+        {(filterKeys ?? []).map((f) => (
+          <select
+            key={f.key}
+            value={colFilters[f.key] ?? ''}
+            onChange={(e) => setColFilters((c) => ({ ...c, [f.key]: e.target.value }))}
+            className="text-sm border px-2 py-1.5"
+            style={{ borderColor: BORDER, color: TEXT_MUTED }}
+          >
+            <option value="">{f.label}: todos</option>
+            {(filterOptions[f.key] ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        ))}
         <span className="text-xs" style={{ color: TEXT_MUTED }}>
           {loading ? 'carregando…' : `${filtered.length} registro(s)`}
         </span>
+        {toolbarAction && <div className="ml-auto">{toolbarAction}</div>}
       </div>
 
       <div className="flex-1 overflow-auto px-6 py-2">
@@ -69,6 +120,7 @@ export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTa
                   {col.label}
                 </th>
               ))}
+              {rowActions && <th className="py-2 pr-4"></th>}
             </tr>
           </thead>
           <tbody>
@@ -93,6 +145,7 @@ export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTa
                     {col.render ? col.render(row) : String(row[col.key] ?? '—')}
                   </td>
                 ))}
+                {rowActions && <td className="py-2 pr-4 whitespace-nowrap text-right">{rowActions(row)}</td>}
               </tr>
             ))}
           </tbody>

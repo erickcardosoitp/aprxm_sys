@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 10
+_SCHEMA_VERSION = 11
 
 
 async def _run_migrations() -> None:
@@ -426,6 +426,43 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (10, 'v10: Fase 9 — linha ESC (id=empresa_id) + last_association_id + remap empresa-wide') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v11: Fase 11 — centralizacao administrativa no ESC. Aditivo: categoria
+            # de transacao e forma de pagamento passam a poder ser da empresa
+            # (empresa_id preenchido = compartilhada por todas as unidades);
+            # empresas.access_groups (template unico de permissao); notifications
+            # ganha empresa_id (marca broadcast). role_permissions.empresa_id e
+            # audit_log.empresa_id ja existem desde a v5.
+            try:
+                await session.execute(text(
+                    "ALTER TABLE transaction_categories ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+                ))
+                # afrouxa association_id (aditivo): categoria/forma de nivel empresa
+                # tem association_id NULL + empresa_id preenchido. Retrocompativel —
+                # o codigo atual sempre insere association_id.
+                await session.execute(text(
+                    "ALTER TABLE transaction_categories ALTER COLUMN association_id DROP NOT NULL"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE payment_methods ALTER COLUMN association_id DROP NOT NULL"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE empresas ADD COLUMN IF NOT EXISTS access_groups JSONB NOT NULL DEFAULT '{}'::jsonb"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (11, 'v11: Fase 11 — centralizacao admin (categoria/forma/access_groups/notifications empresa_id)') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -1488,6 +1525,35 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (10, 'v10: Fase 9 — linha ESC (id=empresa_id) + last_association_id + remap empresa-wide') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v11: Fase 11 — mesmo bloco do ramo _is_existing_db (centralizacao admin)
+        try:
+            await session.execute(text(
+                "ALTER TABLE transaction_categories ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+            ))
+            await session.execute(text(
+                "ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+            ))
+            await session.execute(text(
+                "ALTER TABLE transaction_categories ALTER COLUMN association_id DROP NOT NULL"
+            ))
+            await session.execute(text(
+                "ALTER TABLE payment_methods ALTER COLUMN association_id DROP NOT NULL"
+            ))
+            await session.execute(text(
+                "ALTER TABLE empresas ADD COLUMN IF NOT EXISTS access_groups JSONB NOT NULL DEFAULT '{}'::jsonb"
+            ))
+            await session.execute(text(
+                "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES empresas(id)"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (11, 'v11: Fase 11 — centralizacao admin (categoria/forma/access_groups/notifications empresa_id)') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()
