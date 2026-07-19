@@ -70,6 +70,13 @@ const LogsPage          = lazyWithReload(() => import('./pages/logs/LogsPage'))
 const TIPage            = lazyWithReload(() => import('./pages/ti/TIPage'))
 const ChatPage          = lazyWithReload(() => import('./pages/chat/ChatPage'))
 const HelpPage          = lazyWithReload(() => import('./pages/help/HelpPage'))
+const EscCadastrosPage      = lazyWithReload(() => import('./pages/esc/CadastrosPage'))
+const EscMoradoresPage      = lazyWithReload(() => import('./pages/esc/MoradoresPage'))
+const EscAdministracaoPage  = lazyWithReload(() => import('./pages/esc/AdministracaoPage'))
+const EscFinanceiroPage     = lazyWithReload(() => import('./pages/esc/EscFinanceiroPage'))
+const EscSincronizacaoPage  = lazyWithReload(() => import('./pages/esc/SincronizacaoPage'))
+const EscTIPage             = lazyWithReload(() => import('./pages/esc/EscTIPage'))
+const EscAcervoPage         = lazyWithReload(() => import('./pages/esc/AcervoPage'))
 
 function PageLoader() {
   return (
@@ -101,7 +108,9 @@ function RedirectByRole() {
   const isOffice         = useAuthStore((s) => s.isOffice)
   const simplificaMode   = useAuthStore((s) => s.simplificaMode)
   const simplificaEnabled = useAuthStore((s) => s.simplificaEnabled)
+  const isEsc = useAuthStore((s) => s.isEsc())
   // Sem auto-redirect ao simplifica — acesso apenas pelo botão mobile
+  if (isEsc) return <Navigate to="/esc/cadastros" replace />
   if (isOffice) return <Navigate to="/geral" replace />
   if (role === 'agente') return <Navigate to="/financeiro" replace />
   if (role === 'operator' || role === 'viewer') return <Navigate to="/finance" replace />
@@ -123,6 +132,12 @@ function RequireAggregator({ children }: { children: React.ReactNode }) {
 function RequireNotOffice({ children }: { children: React.ReactNode }) {
   const isOffice = useAuthStore((s) => s.isOffice)
   if (isOffice) return <Navigate to="/geral" replace />
+  return <>{children}</>
+}
+
+function RequireEsc({ children }: { children: React.ReactNode }) {
+  const isEsc = useAuthStore((s) => s.isEsc())
+  if (!isEsc) return <Navigate to="/overview" replace />
   return <>{children}</>
 }
 
@@ -165,6 +180,13 @@ export default function App() {
           <Route path="financeiro"     element={<RequireNotOffice><RequireModule module="settings"><Suspense fallback={<PageLoader />}><FinanceiroPage /></Suspense></RequireModule></RequireNotOffice>} />
           <Route path="reports"        element={<RequireNotOffice><Suspense fallback={<PageLoader />}><ReportsPage /></Suspense></RequireNotOffice>} />
           <Route path="geral"          element={<RequireAggregator><Suspense fallback={<PageLoader />}><GeralPage /></Suspense></RequireAggregator>} />
+          <Route path="esc/cadastros"      element={<RequireEsc><Suspense fallback={<PageLoader />}><EscCadastrosPage /></Suspense></RequireEsc>} />
+          <Route path="esc/moradores"      element={<RequireEsc><Suspense fallback={<PageLoader />}><EscMoradoresPage /></Suspense></RequireEsc>} />
+          <Route path="esc/administracao"  element={<RequireEsc><Suspense fallback={<PageLoader />}><EscAdministracaoPage /></Suspense></RequireEsc>} />
+          <Route path="esc/financeiro"     element={<RequireEsc><Suspense fallback={<PageLoader />}><EscFinanceiroPage /></Suspense></RequireEsc>} />
+          <Route path="esc/sincronizacao"  element={<RequireEsc><Suspense fallback={<PageLoader />}><EscSincronizacaoPage /></Suspense></RequireEsc>} />
+          <Route path="esc/ti"             element={<RequireEsc><Suspense fallback={<PageLoader />}><EscTIPage /></Suspense></RequireEsc>} />
+          <Route path="esc/acervo"         element={<RequireEsc><Suspense fallback={<PageLoader />}><EscAcervoPage /></Suspense></RequireEsc>} />
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><LogsPage /></Suspense></RequireAdmin></RequireNotOffice>} />
           <Route path="ti"             element={<RequireAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireAdmin>} />
           <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />
