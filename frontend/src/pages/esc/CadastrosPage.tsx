@@ -36,6 +36,7 @@ export default function CadastrosPage() {
           content: <EscDataTable
             fetchFn={escService.gruposUsuarios}
             searchKeys={['unidade', 'grupo']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'grupo', label: 'Cargo' }]}
             columns={[
               { key: 'unidade', label: 'Unidade' },
               { key: 'grupo', label: 'Cargo' },
@@ -48,6 +49,7 @@ export default function CadastrosPage() {
           content: <EscDataTable
             fetchFn={escService.encomendas}
             searchKeys={['sender_name', 'carrier_name']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'status', label: 'Status' }]}
             columns={[
               { key: 'sender_name', label: 'Remetente' },
               { key: 'carrier_name', label: 'Transportadora' },
@@ -62,6 +64,7 @@ export default function CadastrosPage() {
           content: <EscDataTable
             fetchFn={escService.ordensServico}
             searchKeys={['title']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'priority', label: 'Prioridade' }]}
             columns={[
               { key: 'number', label: 'Nº' },
               { key: 'title', label: 'Título' },

@@ -19,6 +19,7 @@ export default function AdministracaoPage() {
           content: <EscDataTable
             fetchFn={() => escService.auditoria(200)}
             searchKeys={['action', 'user', 'unidade']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'action', label: 'Ação' }]}
             columns={[
               { key: 'created_at', label: 'Data' },
               { key: 'user', label: 'Usuário' },

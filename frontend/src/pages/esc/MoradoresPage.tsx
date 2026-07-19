@@ -9,6 +9,7 @@ const residentColumns = [
   { key: 'unidade', label: 'Unidade' },
   { key: 'status', label: 'Status' },
 ]
+const residentFilters = [{ key: 'unidade', label: 'Unidade' }, { key: 'status', label: 'Status' }]
 
 export default function MoradoresPage() {
   return (
@@ -17,9 +18,9 @@ export default function MoradoresPage() {
       description="Associados, visitantes e dependentes — todas as unidades da empresa."
       icon={Users}
       sections={[
-        { key: 'associados', label: 'Associados', content: <EscDataTable fetchFn={escService.associados} searchKeys={['full_name', 'cpf']} columns={residentColumns} /> },
-        { key: 'visitantes', label: 'Visitantes', content: <EscDataTable fetchFn={escService.visitantes} searchKeys={['full_name', 'cpf']} columns={residentColumns} /> },
-        { key: 'dependentes', label: 'Dependentes', content: <EscDataTable fetchFn={escService.dependentes} searchKeys={['full_name', 'cpf']} columns={residentColumns} /> },
+        { key: 'associados', label: 'Associados', content: <EscDataTable fetchFn={escService.associados} searchKeys={['full_name', 'cpf']} filterKeys={residentFilters} columns={residentColumns} /> },
+        { key: 'visitantes', label: 'Visitantes', content: <EscDataTable fetchFn={escService.visitantes} searchKeys={['full_name', 'cpf']} filterKeys={residentFilters} columns={residentColumns} /> },
+        { key: 'dependentes', label: 'Dependentes', content: <EscDataTable fetchFn={escService.dependentes} searchKeys={['full_name', 'cpf']} filterKeys={residentFilters} columns={residentColumns} /> },
       ]}
     />
   )

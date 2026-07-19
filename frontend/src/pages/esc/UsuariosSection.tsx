@@ -80,6 +80,7 @@ export default function UsuariosSection() {
         searchKeys={['full_name', 'email']}
         reloadKey={reloadKey}
         statusFilter
+        filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'role', label: 'Cargo' }]}
         toolbarAction={
           <EscButton onClick={openNew}><span className="inline-flex items-center gap-1"><Plus className="w-4 h-4" />Novo usuário</span></EscButton>
         }

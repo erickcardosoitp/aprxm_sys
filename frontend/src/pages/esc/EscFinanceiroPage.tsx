@@ -16,6 +16,7 @@ export default function EscFinanceiroPage() {
           content: <EscDataTable
             fetchFn={escService.movimentacoes}
             searchKeys={['description', 'unidade']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'type', label: 'Tipo' }]}
             columns={[
               { key: 'type', label: 'Tipo' },
               { key: 'description', label: 'Descrição' },
@@ -30,6 +31,7 @@ export default function EscFinanceiroPage() {
           content: <EscDataTable
             fetchFn={escService.sessoesConferidas}
             searchKeys={['unidade']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'status', label: 'Status' }]}
             columns={[
               { key: 'unidade', label: 'Unidade' },
               { key: 'opening_balance', label: 'Saldo Abertura', render: (r) => `R$ ${r.opening_balance}` },
@@ -44,6 +46,7 @@ export default function EscFinanceiroPage() {
           content: <EscDataTable
             fetchFn={escService.sangrias}
             searchKeys={['unidade', 'reason']}
+            filterKeys={[{ key: 'unidade', label: 'Unidade' }]}
             columns={[
               { key: 'unidade', label: 'Unidade' },
               { key: 'amount', label: 'Valor', render: (r) => `R$ ${r.amount}` },
