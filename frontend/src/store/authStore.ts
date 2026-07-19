@@ -11,15 +11,17 @@ interface AuthStore extends AuthState {
   rememberDevice: boolean
   permissions: Permissions | null
   isOffice: boolean
+  empresaId: string | null
   simplificaMode: boolean
   simplificaEnabled: boolean
-  setAuth: (token: string, userId: string, associationId: string, role: UserRole, fullName: string, linkedAssociationIds?: string[], associationName?: string, rememberDevice?: boolean, isOffice?: boolean) => void
+  setAuth: (token: string, userId: string, associationId: string, role: UserRole, fullName: string, linkedAssociationIds?: string[], associationName?: string, rememberDevice?: boolean, isOffice?: boolean, empresaId?: string | null) => void
   clearAuth: () => void
   setPermissions: (p: Permissions) => void
   setSimplificaPrefs: (mode: boolean, enabled: boolean) => void
   setSimplificaMode: (mode: boolean) => void
   isAuthenticated: () => boolean
   isAggregator: () => boolean
+  isEsc: () => boolean
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -35,16 +37,17 @@ export const useAuthStore = create<AuthStore>()(
       rememberDevice: false,
       permissions: null,
       isOffice: false,
+      empresaId: null,
       simplificaMode: false,
       simplificaEnabled: false,
 
-      setAuth: (token, userId, associationId, role, fullName, linkedAssociationIds = [], associationName = '', rememberDevice = false, isOffice = false) => {
-        set({ token, userId, associationId, role, fullName, linkedAssociationIds, associationName, rememberDevice, permissions: null, isOffice })
+      setAuth: (token, userId, associationId, role, fullName, linkedAssociationIds = [], associationName = '', rememberDevice = false, isOffice = false, empresaId = null) => {
+        set({ token, userId, associationId, role, fullName, linkedAssociationIds, associationName, rememberDevice, permissions: null, isOffice, empresaId })
       },
 
       clearAuth: () => {
         localStorage.removeItem('aprxm-auth')
-        set({ token: null, userId: null, associationId: null, role: null, fullName: null, linkedAssociationIds: [], associationName: '', rememberDevice: false, permissions: null, isOffice: false, simplificaMode: false, simplificaEnabled: false })
+        set({ token: null, userId: null, associationId: null, role: null, fullName: null, linkedAssociationIds: [], associationName: '', rememberDevice: false, permissions: null, isOffice: false, empresaId: null, simplificaMode: false, simplificaEnabled: false })
       },
 
       setPermissions: (permissions) => set({ permissions }),
@@ -53,6 +56,10 @@ export const useAuthStore = create<AuthStore>()(
 
       isAuthenticated: () => !!get().token,
       isAggregator: () => (get().linkedAssociationIds?.length ?? 0) > 0,
+      isEsc: () => {
+        const s = get()
+        return !!s.associationId && !!s.empresaId && s.associationId === s.empresaId
+      },
     }),
     {
       name: 'aprxm-auth',

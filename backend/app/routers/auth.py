@@ -157,6 +157,22 @@ async def associations_for_email(
     Checks both users.association_id (legacy) and user_association_roles.
     """
     from sqlalchemy import text as _t
+
+    # Empresa-wide (estacionado no ESC): seletor mostra ESC + todas as unidades
+    # ativas da empresa, derivadas de empresa_id.
+    wide = (await session.execute(_t("""
+        SELECT a.id, a.name, a.slug, u.role::text
+        FROM users u
+        JOIN associations a ON a.empresa_id = u.empresa_id
+        WHERE u.email = :email AND u.is_active = TRUE AND a.is_active = TRUE
+          AND u.empresa_id IS NOT NULL
+          AND (u.association_id = u.empresa_id
+               OR (u.association_id IS NULL AND u.role::text IN ('admin_master','superadmin')))
+        ORDER BY (a.id = u.empresa_id) DESC, a.name
+    """), {"email": email})).fetchall()
+    if wide:
+        return [{"id": str(r[0]), "name": r[1], "slug": r[2], "role": r[3]} for r in wide]
+
     rows = (await session.execute(_t("""
         SELECT DISTINCT a.id, a.name, a.slug, uar.role
         FROM users u
@@ -224,6 +240,22 @@ async def my_associations(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     from sqlalchemy import text as _t
+
+    # Empresa-wide (estacionado no ESC): lista ESC + todas as unidades ativas da
+    # empresa, derivadas de empresa_id — nao de user_association_roles.
+    _u = (await session.execute(select(User).where(User.id == current.user_id))).scalar_one_or_none()
+    if _u and _u.empresa_id is not None and (
+        _u.association_id == _u.empresa_id
+        or (_u.association_id is None and _u.role.value in ("admin_master", "superadmin"))
+    ):
+        wide = (await session.execute(_t("""
+            SELECT id, name, slug FROM associations
+            WHERE empresa_id = :eid AND is_active = TRUE
+            ORDER BY (id = :eid) DESC, name
+        """), {"eid": str(_u.empresa_id)})).fetchall()
+        return [{"id": str(r[0]), "name": r[1], "slug": r[2], "role": _u.role.value,
+                 "current": str(r[0]) == str(current.association_id)} for r in wide]
+
     rows = (await session.execute(_t("""
         SELECT a.id, a.name, a.slug, uar.role
         FROM user_association_roles uar
@@ -270,49 +302,71 @@ async def switch_association(
     if not current_user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
-    # Verifica acesso via user_association_roles (modelo global)
-    target_row = (await session.execute(sa_text("""
-        SELECT uar.role, a.name, a.empresa_id
-        FROM user_association_roles uar
-        JOIN associations a ON a.id = uar.association_id
-        WHERE uar.user_id = :uid AND uar.association_id = :aid
-          AND uar.is_active = TRUE AND a.is_active = TRUE
-    """), {"uid": str(current.user_id), "aid": str(body.association_id)})).fetchone()
+    # Empresa-wide (estacionado na linha ESC: association_id == empresa_id, ou
+    # legado admin_master/superadmin sem association_id): pode trocar para
+    # qualquer associacao ativa da propria empresa, sem precisar de linha
+    # explicita em user_association_roles.
+    is_wide = current_user.empresa_id is not None and (
+        current_user.association_id == current_user.empresa_id
+        or (current_user.association_id is None and current_user.role.value in ("admin_master", "superadmin"))
+    )
 
-    if not target_row:
-        raise HTTPException(status_code=403, detail="Sem acesso a este ambiente.")
+    if is_wide:
+        target_row = (await session.execute(sa_text("""
+            SELECT a.name, a.empresa_id FROM associations a
+            WHERE a.id = :aid AND a.empresa_id = :eid AND a.is_active = TRUE
+        """), {"aid": str(body.association_id), "eid": str(current_user.empresa_id)})).fetchone()
+        if not target_row:
+            raise HTTPException(status_code=403, detail="Sem acesso a este ambiente.")
+        target_name, target_empresa_id, target_role = target_row[0], target_row[1], current_user.role.value
+        other_rows = (await session.execute(sa_text("""
+            SELECT id FROM associations
+            WHERE empresa_id = :eid AND is_active = TRUE AND id != :aid
+        """), {"eid": str(current_user.empresa_id), "aid": str(body.association_id)})).fetchall()
+        linked_ids = [str(r[0]) for r in other_rows]
+    else:
+        # Usuario local: acesso via user_association_roles (modelo global)
+        target_row = (await session.execute(sa_text("""
+            SELECT uar.role, a.name, a.empresa_id
+            FROM user_association_roles uar
+            JOIN associations a ON a.id = uar.association_id
+            WHERE uar.user_id = :uid AND uar.association_id = :aid
+              AND uar.is_active = TRUE AND a.is_active = TRUE
+        """), {"uid": str(current.user_id), "aid": str(body.association_id)})).fetchone()
+        if not target_row:
+            raise HTTPException(status_code=403, detail="Sem acesso a este ambiente.")
+        target_role, target_name, target_empresa_id = target_row[0], target_row[1], target_row[2]
 
-    target_empresa_id = target_row[2]
+        # Um token = uma empresa: troca entre empresas diferentes exige novo login
+        # completo (com senha), nao so switch-association. NULL de qualquer lado
+        # = comportamento legado (permite a troca, pre-backfill de empresa_id).
+        if current.empresa_id is not None and target_empresa_id is not None and current.empresa_id != target_empresa_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Troca entre empresas diferentes exige novo login completo.",
+            )
 
-    # Um token = uma empresa: troca entre empresas diferentes exige novo login
-    # completo (com senha), nao so switch-association. NULL de qualquer lado
-    # = comportamento legado (permite a troca, pre-backfill de empresa_id).
-    if current.empresa_id is not None and target_empresa_id is not None and current.empresa_id != target_empresa_id:
-        raise HTTPException(
-            status_code=409,
-            detail="Troca entre empresas diferentes exige novo login completo.",
-        )
+        other_rows = (await session.execute(sa_text("""
+            SELECT uar.association_id, a.empresa_id FROM user_association_roles uar
+            JOIN associations a ON a.id = uar.association_id
+            WHERE uar.user_id = :uid AND uar.association_id != :aid
+              AND uar.is_active = TRUE AND a.is_active = TRUE
+        """), {"uid": str(current.user_id), "aid": str(body.association_id)})).fetchall()
+        linked_ids = [
+            str(r[0]) for r in other_rows
+            if target_empresa_id is None or r[1] == target_empresa_id
+        ]
 
     from datetime import datetime as dt
     current_user.last_login_at = dt.utcnow()
+    current_user.last_association_id = body.association_id
     session.add(current_user)
-
-    # Todas as outras associações do usuário (mesma empresa da alvo, quando aplicavel)
-    other_rows = (await session.execute(sa_text("""
-        SELECT uar.association_id, a.empresa_id FROM user_association_roles uar
-        JOIN associations a ON a.id = uar.association_id
-        WHERE uar.user_id = :uid AND uar.association_id != :aid
-          AND uar.is_active = TRUE AND a.is_active = TRUE
-    """), {"uid": str(current.user_id), "aid": str(body.association_id)})).fetchall()
-    linked_ids = [
-        str(r[0]) for r in other_rows
-        if target_empresa_id is None or r[1] == target_empresa_id
-    ]
+    await session.commit()
 
     from app.core.security import create_access_token
     token = create_access_token(
-        current_user.id, body.association_id, target_row[0],
-        current_user.full_name, linked_ids, target_row[1],
+        current_user.id, body.association_id, target_role,
+        current_user.full_name, linked_ids, target_name,
         token_version=current_user.token_version,
         empresa_id=target_empresa_id,
     )

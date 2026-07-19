@@ -153,8 +153,8 @@ export default function LoginPage() {
       })
 
       const token = res.data.access_token
-      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean }>(token)
-      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess, payload.is_office ?? false)
+      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean; empresa_id?: string }>(token)
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess, payload.is_office ?? false, payload.empresa_id ?? null)
       if (rememberAccess) {
         saveRecent({ email, associationId: payload.association_id, associationName: payload.association_name || selectedOrg.name || '', role: payload.role })
         setRecentLogins(loadRecent())
@@ -187,8 +187,8 @@ export default function LoginPage() {
         const { saveRefreshToken } = await import('../services/api')
         saveRefreshToken(res.data.refresh_token)
       }
-      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean }>(token)
-      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess, payload.is_office ?? false)
+      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean; empresa_id?: string }>(token)
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', rememberAccess, payload.is_office ?? false, payload.empresa_id ?? null)
       if (rememberAccess) {
         saveRecent({
           email,

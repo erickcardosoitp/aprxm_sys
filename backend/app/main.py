@@ -12,7 +12,7 @@ from app.core.limiter import limiter
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, finance, financeiro, geral, governanca, mensalidades, notifications, packages, painel_auth, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
+from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, notifications, packages, painel_auth, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 9
+_SCHEMA_VERSION = 10
 
 
 async def _run_migrations() -> None:
@@ -391,6 +391,41 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (9, 'v9: Fase 8 — users.empresa_id + backfill') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v10: Fase 9 — ESC como associacao real (id = empresa_id) + landing
+            # por ultima unidade usada. Aditivo: coluna nullable + linha ESC por
+            # empresa (idempotente) + remap generico e seguro de empresa-wide sem
+            # associacao-ancora para a linha ESC. Remap por-pessoa (roles/unidades
+            # especificas) NAO entra aqui — e feito por script revisado a parte.
+            try:
+                await session.execute(text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_association_id UUID REFERENCES associations(id)"
+                ))
+                # linha ESC por empresa: id = empresa_id (a propria igualdade
+                # identifica o Escritorio, sem coluna extra). slug unico global.
+                await session.execute(text("""
+                    INSERT INTO associations (id, empresa_id, name, slug, is_active)
+                    SELECT e.id, e.id, 'Escritório', e.slug || '-escritorio', TRUE
+                    FROM empresas e
+                    ON CONFLICT (id) DO NOTHING
+                """))
+                # empresa-wide sem associacao-ancora (admin_master/superadmin com
+                # association_id NULL) passa a ficar estacionado na linha ESC.
+                await session.execute(text("""
+                    UPDATE users
+                    SET association_id = empresa_id
+                    WHERE empresa_id IS NOT NULL
+                      AND association_id IS NULL
+                      AND role IN ('admin_master', 'superadmin')
+                """))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (10, 'v10: Fase 9 — linha ESC (id=empresa_id) + last_association_id + remap empresa-wide') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -1432,6 +1467,33 @@ async def _run_migrations() -> None:
         except Exception:
             await session.rollback()
 
+        # v10: Fase 9 — mesmo bloco do ramo _is_existing_db (linha ESC + last_association_id)
+        try:
+            await session.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_association_id UUID REFERENCES associations(id)"
+            ))
+            await session.execute(text("""
+                INSERT INTO associations (id, empresa_id, name, slug, is_active)
+                SELECT e.id, e.id, 'Escritório', e.slug || '-escritorio', TRUE
+                FROM empresas e
+                ON CONFLICT (id) DO NOTHING
+            """))
+            await session.execute(text("""
+                UPDATE users
+                SET association_id = empresa_id
+                WHERE empresa_id IS NOT NULL
+                  AND association_id IS NULL
+                  AND role IN ('admin_master', 'superadmin')
+            """))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (10, 'v10: Fase 9 — linha ESC (id=empresa_id) + last_association_id + remap empresa-wide') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -1551,6 +1613,7 @@ app.include_router(datalake.router, prefix=PREFIX)
 app.include_router(ti.router, prefix=PREFIX)
 app.include_router(crm.router, prefix=PREFIX)
 app.include_router(governanca.router, prefix=PREFIX)
+app.include_router(esc.router, prefix=PREFIX)
 app.include_router(painel_auth.router, prefix=PREFIX)
 
 

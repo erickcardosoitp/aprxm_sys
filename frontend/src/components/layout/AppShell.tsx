@@ -1,6 +1,6 @@
 import { type ComponentType, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, HelpCircle, LogOut, MessageSquare, Package, Palette, RotateCcw, Settings, ShieldCheck, TrendingUp, UserCheck, Users } from 'lucide-react'
+import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, FolderKanban, HelpCircle, Image, LogOut, MessageSquare, Package, Palette, RefreshCw, RotateCcw, Settings, ShieldCheck, TrendingUp, UserCheck, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
@@ -34,6 +34,23 @@ const MODULE_NAV: { module: string; item: NavItem }[] = [
   { module: 'service_orders', item: { to: '/service-orders', label: 'Ordens',     icon: FileText } },
   { module: 'residents',      item: { to: '/residents',      label: 'Moradores',  icon: Users } },
 ]
+
+const ESC_NAV: NavItem[] = [
+  { to: '/esc/cadastros',      label: 'Cadastros',       icon: FolderKanban },
+  { to: '/esc/moradores',      label: 'Moradores',       icon: Users },
+  { to: '/esc/financeiro',     label: 'Financeiro',      icon: TrendingUp },
+  { to: '/esc/administracao',  label: 'Administração',   icon: ShieldCheck },
+  { to: '/esc/sincronizacao',  label: 'Sincronização',   icon: RefreshCw },
+  { to: '/esc/ti',             label: 'TI',              icon: Activity },
+  { to: '/esc/acervo',         label: 'Acervo',          icon: Image },
+]
+// Paleta ESC: contida/quase monocromatica (referencia SAP Fiori/ERP corporativo).
+// Cor forte SO como indicador de estado (item ativo, botao de acao) —
+// nunca preenchendo fundo de menu/header inteiro.
+const ESC_ACCENT       = '#16a34a'   // indicador de ativo, botao primario — uso pontual
+const ESC_SIDEBAR_BG   = '#f8fafc'   // slate-50 — quase branco, nao colorido
+const ESC_SIDEBAR_TEXT = '#475569'   // slate-600
+const ESC_BORDER       = '#e2e8f0'   // slate-200
 
 const REPORTS_NAV    = { to: '/reports',    label: 'Relatórios', icon: Download }
 const ADMIN_NAV      = { to: '/admin',      label: 'Admin',  icon: ShieldCheck }
@@ -77,6 +94,7 @@ export function AppShell() {
   const [pushDismissed, setPushDismissed] = useState(() => localStorage.getItem('push-dismissed') === '1')
 
   const isOffice           = useAuthStore((s) => s.isOffice)
+  const isEsc              = useAuthStore((s) => s.isEsc())
   const simplificaEnabled  = useAuthStore((s) => s.simplificaEnabled)
   const setSimplificaPrefs = useAuthStore((s) => s.setSimplificaPrefs)
   const setSimplificaMode  = useAuthStore((s) => s.setSimplificaMode)
@@ -109,12 +127,12 @@ export function AppShell() {
     const storedToken = useAuthStore.getState().token
     if (storedToken && !useAuthStore.getState().associationName) {
       try {
-        const payload = jwtDecode<{ sub: string; association_id: string; role: string; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean }>(storedToken)
+        const payload = jwtDecode<{ sub: string; association_id: string; role: string; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean; empresa_id?: string }>(storedToken)
         if (payload.association_name) {
           useAuthStore.getState().setAuth(
             storedToken, payload.sub, payload.association_id, payload.role as UserRole,
             payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name,
-            false, payload.is_office ?? false,
+            false, payload.is_office ?? false, payload.empresa_id ?? null,
           )
         }
       } catch { /* token inválido */ }
@@ -310,9 +328,9 @@ export function AppShell() {
     try {
       const res = await api.post<{ access_token: string }>('/auth/switch-association', { association_id: assocId })
       const token = res.data.access_token
-      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean }>(token)
+      const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean; empresa_id?: string }>(token)
       const prevRemember = useAuthStore.getState().rememberDevice
-      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', prevRemember, payload.is_office ?? false)
+      setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', prevRemember, payload.is_office ?? false, payload.empresa_id ?? null)
       setMenuOpen(false)
       navigate('/')
       toast.success(`Ambiente: ${payload.association_name}`)
@@ -339,7 +357,7 @@ export function AppShell() {
   }, [menuOpen])
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className={isEsc ? "h-screen flex flex-col bg-gray-50 overflow-hidden" : "min-h-screen flex flex-col bg-gray-50"}>
       {simplificaLoading && (
         <LoadingScreen message="Carregando Simplifica..." color={themeColor} />
       )}
@@ -550,12 +568,50 @@ export function AppShell() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: isMonitoring ? '0' : 'calc(72px + env(safe-area-inset-bottom))' }}>
-        <Outlet />
-      </main>
+      {isEsc ? (
+        <div className="flex-1 flex overflow-hidden" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          <aside
+            className="w-56 shrink-0 flex flex-col border-r"
+            style={{ backgroundColor: ESC_SIDEBAR_BG, borderColor: ESC_BORDER }}
+          >
+            <div
+              className="px-4 py-4 text-xs font-semibold uppercase tracking-wide border-b"
+              style={{ color: ESC_SIDEBAR_TEXT, borderColor: ESC_BORDER }}
+            >
+              Escritório
+            </div>
+            <nav className="flex-1 py-2 flex flex-col">
+              {ESC_NAV.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-4 py-2.5 text-sm font-medium border-l-[3px] transition-colors ${
+                      isActive ? 'bg-white' : 'border-transparent hover:bg-slate-100'
+                    }`
+                  }
+                  style={({ isActive }) => ({
+                    borderLeftColor: isActive ? ESC_ACCENT : 'transparent',
+                    color: isActive ? '#0f172a' : ESC_SIDEBAR_TEXT,
+                  })}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {label}
+                </NavLink>
+              ))}
+            </nav>
+          </aside>
+          <main className="flex-1 overflow-y-auto bg-white">
+            <Outlet />
+          </main>
+        </div>
+      ) : (
+        <main className="flex-1 overflow-y-auto" style={{ paddingBottom: isMonitoring ? '0' : 'calc(72px + env(safe-area-inset-bottom))' }}>
+          <Outlet />
+        </main>
+      )}
 
-
-      {!isMonitoring && <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
+      {!isEsc && !isMonitoring && <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
         <div className="flex justify-center overflow-x-auto scrollbar-none px-2 gap-3 sm:gap-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
           {navItems.map(({ to, label, icon: Icon, end }) => (

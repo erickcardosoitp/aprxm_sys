@@ -29,6 +29,9 @@ class User(SQLModel, table=True):
     # Nullable so admin_master/superadmin (escopo de empresa, sem associacao-ancora
     # obrigatoria) possam existir. Usuarios locais sempre tem association_id.
     association_id: UUID | None = Field(default=None, foreign_key="associations.id", index=True)
+    # Ultima unidade usada (login/switch). Empresa-wide (ESC) abre nela em vez
+    # da primeira alfabetica. Fase 9.
+    last_association_id: UUID | None = Field(default=None, foreign_key="associations.id")
     full_name: str = Field(max_length=255)
     email: str = Field(max_length=255, index=True)
     phone: str | None = Field(default=None, max_length=20)

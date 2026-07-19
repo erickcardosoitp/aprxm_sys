@@ -62,23 +62,46 @@ class AuthService:
         else:
             memberships = []
 
-        # Usuarios empresa-wide (admin_master/superadmin) enxergam TODAS as
-        # associacoes da empresa — escopo derivado de users.empresa_id, nao de
-        # memberships manuais. Assim associacoes novas aparecem automaticamente.
-        is_empresa_wide = user.role.value in ("admin_master", "superadmin") and user.empresa_id is not None
+        # Empresa-wide = usuario estacionado na linha Escritorio (Fase 9):
+        # users.association_id == users.empresa_id. Qualquer cargo estacionado no
+        # ESC enxerga TODAS as associacoes da empresa. Fallback defensivo: durante
+        # a transicao, admin_master/superadmin ainda sem association_id (nao
+        # remapeados) continuam empresa-wide.
+        is_esc_station = (
+            user.empresa_id is not None
+            and user.association_id is not None
+            and user.association_id == user.empresa_id
+        )
+        is_legacy_wide = (
+            user.empresa_id is not None
+            and user.association_id is None
+            and user.role.value in ("admin_master", "superadmin")
+        )
+        is_empresa_wide = is_esc_station or is_legacy_wide
 
         if is_empresa_wide:
+            # Inclui a propria linha ESC (id = empresa_id), ordenada primeiro.
             emp_assocs = (await self._session.execute(text("""
                 SELECT id, name FROM associations
                 WHERE empresa_id = :eid AND is_active = TRUE
-                ORDER BY name
+                ORDER BY (id = :eid) DESC, name
             """), {"eid": str(user.empresa_id)})).fetchall()
             primary_empresa_id = user.empresa_id
             primary_role       = user.role.value
-            if emp_assocs:
-                primary_assoc_id = emp_assocs[0][0]
-                association_name = emp_assocs[0][1]
-                linked_ids       = [str(r[0]) for r in emp_assocs[1:]]
+            names = {r[0]: r[1] for r in emp_assocs}
+            # Landing: associacao pedida no login > ultima usada > linha ESC (1a).
+            landing = None
+            if association_id and association_id in names:
+                landing = association_id
+            elif user.last_association_id and user.last_association_id in names:
+                landing = user.last_association_id
+            elif emp_assocs:
+                landing = emp_assocs[0][0]
+            if landing is not None:
+                primary_assoc_id = landing
+                association_name = names[landing]
+                linked_ids       = [str(i) for i in names if i != landing]
+                user.last_association_id = landing
             else:
                 primary_assoc_id = None
                 association_name = ""
