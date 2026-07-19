@@ -70,13 +70,6 @@ api.interceptors.response.use(
     }
 
     if (err.response?.status === 401) {
-      // Mock local do ESC (?mockesc=1, ver main.tsx) usa um token fake que o
-      // backend sempre rejeita — sem essa saida, a 1a chamada de API em
-      // background derruba a sessao mock e redireciona pro login.
-      if (import.meta.env.DEV && useAuthStore.getState().token === 'mock-token') {
-        return Promise.reject(err)
-      }
-
       const originalReq = err.config
       // Não tenta refresh se já é a chamada de refresh (evita loop)
       if (originalReq?.url?.includes('/auth/refresh') || originalReq?._retried) {

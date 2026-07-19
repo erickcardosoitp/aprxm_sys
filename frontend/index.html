@@ -14,29 +14,6 @@
         root.style.setProperty('--brand-rgb',r+', '+g+', '+b);
       })()
     </script>
-    <script>
-      // Mock local do ESC (?mockesc=1) — TEMPORARIO, so testado em dev local.
-      // Roda antes de qualquer modulo JS (inclusive antes do zustand persist
-      // hidratar), escrevendo direto no localStorage (que o getItem custom do
-      // authStore prioriza sobre sessionStorage) — assim vence qualquer sessao
-      // real salva de teste anterior, sem corrida de timing.
-      (function(){
-        if (window.location.hostname !== 'localhost') return;
-        if (!/[?&]mockesc=1\b/.test(window.location.search)) return;
-        var FAKE_ID = '00000000-0000-0000-0000-000000000000';
-        var payload = JSON.stringify({
-          state: {
-            token: 'mock-token', userId: 'mock-user-id', associationId: FAKE_ID,
-            role: 'admin_master', fullName: 'ESC Demo', linkedAssociationIds: [],
-            associationName: 'Escritório', rememberDevice: false, permissions: null,
-            isOffice: false, empresaId: FAKE_ID, simplificaMode: false, simplificaEnabled: false
-          },
-          version: 0
-        });
-        localStorage.setItem('aprxm-auth', payload);
-        sessionStorage.removeItem('aprxm-auth');
-      })()
-    </script>
 
     <!-- PWA / Mobile -->
     <meta name="theme-color" content="#1a1a2e" />
