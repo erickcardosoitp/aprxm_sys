@@ -103,6 +103,29 @@ Cuidado tomado: `ORDER BY (association_id = a.id) DESC` quebrava com `NULL` (Pos
 
 ---
 
+## Fase 9 — ESC como associação real (NO AR em produção, 2026-07-19)
+
+Deploy mais arriscado do projeto (mexe em login + acesso de gente real). Feito com rigor: validado 100% local (banco de teste restaurado do dump) → dry-run da v10 contra o banco real de produção (transação revertida) → backup completo dos 25 usuários → deploy coordenado (backend v10 + frontend ESC juntos) → validação → remap dos usuários.
+
+**Schema v10** (aditivo, no ar): `users.last_association_id` + linha ESC por empresa (`id = empresa_id`, sem coluna extra — a igualdade identifica o Escritório). Deploy sem outage (health 200 durante todo o rollout).
+
+**Comportamento novo:** empresa-wide = por estação (`association_id == empresa_id`), não mais role hardcoded — libera conselho/diretoria no ESC. Login respeita última unidade usada (`last_association_id`). `switch_association` aceita qualquer unidade da própria empresa. `empresa_service` cria empresa nova já com linha ESC + admin estacionado nela.
+
+**Remap dos 25 usuários (produção, transação atômica, backup antes):**
+- ESC (8): Erick (superadmin), Felipe (admin_master), Carla/Vinícius (diretoria), Gabriela/Gabriella/Célia celiapx/Raphael (conselho)
+- Congonha (2): Danielly (movida de Vaz Lobo), Fernanda
+- Vaz Lobo (4): Hanyelle, Hosana, Monique, Paulo Victor
+- Desativados (11): 5 usuários Teste QA + Conferente Congonha teste + 5 contas velhas/duplicadas já inativas
+- `token_version` bumpado nos remapeados → **forçou re-login** (tokens antigos tinham association_id/role velhos). Os usuários do ESC precisam logar de novo pra entrar no ambiente novo.
+
+**Validado em produção:** seletor de Erick e Felipe lista ESC+Congonha+Vaz Lobo; login path íntegro (403 limpo); 0 usuário ativo com association_id NULL órfão; health estável.
+
+**Commit:** merge `ef4eef0` na main. Branch `fase-9-esc-associacao` mergeada (pode apagar). Backup dos usuários salvo na sessão (sem senhas). Mocks de dev removidos antes do merge.
+
+**Sobrou pra próxima:** a Fase 11 (escrita — criar/editar usuário, permissões, avisos) e formulários ainda não existem; o ESC hoje é leitura (15 endpoints) + as telas placeholder. O painel /geral antigo ainda coexiste.
+
+---
+
 ## Pendente
 
 ### Sequência recomendada (decidida em 2026-07-19, ver plano-mestre)
