@@ -70,10 +70,20 @@ class EmpresaService:
             await self._session.flush()
             run.steps = [*run.steps, {"step": "empresa_criada", "at": datetime.utcnow().isoformat(), "empresa_id": str(empresa.id)}]
 
+            # Linha ESC da empresa (id = empresa_id) — Fase 9. O admin_master
+            # nasce estacionado nela (association_id = empresa_id), ja empresa-wide.
+            from sqlalchemy import text as _t
+            await self._session.execute(_t("""
+                INSERT INTO associations (id, empresa_id, name, slug, is_active)
+                VALUES (:eid, :eid, 'Escritório', :slug || '-escritorio', TRUE)
+                ON CONFLICT (id) DO NOTHING
+            """), {"eid": str(empresa.id), "slug": slug})
+            run.steps = [*run.steps, {"step": "esc_criado", "at": datetime.utcnow().isoformat()}]
+
             senha_gerada = secrets.token_urlsafe(12)
             admin = User(
                 empresa_id=empresa.id,
-                association_id=None,
+                association_id=empresa.id,
                 full_name=f"{admin_first_name} {admin_last_name}".strip(),
                 email=admin_email,
                 hashed_password=hash_password(senha_gerada),
