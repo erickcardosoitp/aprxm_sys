@@ -25,6 +25,7 @@ export const escService = {
   criarUsuario: (body: any) => api.post('/esc/cadastros/usuarios', body),
   editarUsuario: (id: string, body: any) => api.put(`/esc/cadastros/usuarios/${id}`, body),
   desativarUsuario: (id: string) => api.delete(`/esc/cadastros/usuarios/${id}`),
+  excluirUsuario: (id: string) => api.delete(`/esc/cadastros/usuarios/${id}/permanente`),
 
   categorias: () => api.get('/esc/cadastros/categorias'),
   criarCategoria: (body: any) => api.post('/esc/cadastros/categorias', body),

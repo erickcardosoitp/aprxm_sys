@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Pencil, Ban, Plus } from 'lucide-react'
+import { Pencil, Ban, Plus, Trash2 } from 'lucide-react'
 import EscDataTable from './EscDataTable'
 import { EscModal, EscField, EscButton, escInputCls, escInputStyle } from './EscFormKit'
 import { escService } from '../../services/esc'
@@ -65,12 +65,21 @@ export default function UsuariosSection() {
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao desativar.') }
   }
 
+  const remove = async (u: UserRow) => {
+    if (!confirm(`Excluir DEFINITIVAMENTE ${u.full_name}? Só é possível se não houver movimentação.`)) return
+    try {
+      await escService.excluirUsuario(u.id)
+      toast.success('Usuário excluído.'); setReloadKey((k) => k + 1)
+    } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao excluir.') }
+  }
+
   return (
     <>
       <EscDataTable
         fetchFn={escService.usuarios}
         searchKeys={['full_name', 'email']}
         reloadKey={reloadKey}
+        statusFilter
         toolbarAction={
           <EscButton onClick={openNew}><span className="inline-flex items-center gap-1"><Plus className="w-4 h-4" />Novo usuário</span></EscButton>
         }
@@ -84,7 +93,8 @@ export default function UsuariosSection() {
         rowActions={(r: UserRow) => (
           <div className="inline-flex gap-2 justify-end">
             <button onClick={() => openEdit(r)} className="text-slate-500 hover:text-slate-800" title="Editar"><Pencil className="w-4 h-4" /></button>
-            {r.is_active && <button onClick={() => deactivate(r)} className="text-red-500 hover:text-red-700" title="Desativar"><Ban className="w-4 h-4" /></button>}
+            {r.is_active && <button onClick={() => deactivate(r)} className="text-amber-600 hover:text-amber-700" title="Desativar"><Ban className="w-4 h-4" /></button>}
+            <button onClick={() => remove(r)} className="text-red-500 hover:text-red-700" title="Excluir (sem movimentação)"><Trash2 className="w-4 h-4" /></button>
           </div>
         )}
       />

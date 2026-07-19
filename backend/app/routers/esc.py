@@ -381,6 +381,49 @@ async def desativar_usuario(
     return {"ok": True}
 
 
+# tabelas de "movimentacao" que impedem exclusao definitiva
+_ACTIVITY = [
+    ("transactions", "created_by"), ("cash_sessions", "opened_by"),
+    ("packages", "received_by"), ("service_orders", "created_by"),
+    ("mensalidades", "created_by"),
+]
+
+
+@router.delete("/cadastros/usuarios/{user_id}/permanente", summary="Excluir usuário sem movimentação (ESC)")
+async def excluir_usuario(
+    user_id: UUID,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if str(user_id) == str(current.user_id):
+        raise HTTPException(status_code=400, detail="Você não pode excluir a si mesmo.")
+    alvo = (await session.execute(text(
+        "SELECT empresa_id FROM users WHERE id = :id"
+    ), {"id": str(user_id)})).fetchone()
+    if not alvo or str(alvo[0]) != str(current.empresa_id):
+        raise HTTPException(status_code=404, detail="Usuário não encontrado na sua empresa.")
+
+    # movimentacao => nao pode excluir, so desativar
+    for tbl, col in _ACTIVITY:
+        n = (await session.execute(text(
+            f"SELECT 1 FROM {tbl} WHERE {col} = :id LIMIT 1"
+        ), {"id": str(user_id)})).scalar()
+        if n:
+            raise HTTPException(status_code=409, detail="Usuário possui movimentação — use Desativar em vez de Excluir.")
+
+    # remove vinculos incidentais e o usuario; FK residual (ex.: auditoria) aborta com 409
+    try:
+        await session.execute(text("DELETE FROM refresh_tokens WHERE user_id = :id"), {"id": str(user_id)})
+        await session.execute(text("DELETE FROM user_association_roles WHERE user_id = :id"), {"id": str(user_id)})
+        await session.execute(text("DELETE FROM users WHERE id = :id AND empresa_id = :eid"),
+                              {"id": str(user_id), "eid": str(current.empresa_id)})
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Usuário possui registros vinculados — use Desativar.")
+    return {"ok": True}
+
+
 # ── Categoria de transacao + forma de pagamento (nivel empresa) ───────────
 
 class CategoriaRequest(BaseModel):
@@ -455,6 +498,18 @@ class AccessGroupsRequest(BaseModel):
     access_groups: dict
 
 
+# Template padrao exibido quando a empresa ainda nao configurou permissoes
+# (empresas.access_groups vazio). O admin ve um ponto de partida e salva.
+_DEFAULT_ACCESS_GROUPS = {
+    "operator":          {"residents": ["view"], "packages": ["view", "create"], "service_orders": ["view"], "finance": ["view", "create"], "admin": [], "settings": []},
+    "conferente":        {"residents": ["view", "create", "edit"], "packages": ["view", "create", "edit"], "service_orders": ["view", "create", "edit"], "finance": ["view", "create", "edit"], "admin": [], "settings": ["view"]},
+    "diretoria_adjunta": {"residents": ["view"], "packages": ["view"], "service_orders": ["view", "create", "edit"], "finance": ["view"], "admin": [], "settings": []},
+    "diretoria":         {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": ["view"], "admin": ["view"], "settings": ["view"]},
+    "conselho":          {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": ["view"], "admin": ["view"], "settings": ["view"]},
+    "admin":             {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "edit"]},
+}
+
+
 @router.get("/administracao/access-groups", summary="Grupos de acesso (template da empresa)")
 async def get_access_groups(
     current: CurrentUser = Depends(require_empresa_admin),
@@ -463,7 +518,9 @@ async def get_access_groups(
     row = (await session.execute(text(
         "SELECT access_groups FROM empresas WHERE id = :eid"
     ), {"eid": str(current.empresa_id)})).fetchone()
-    return row[0] if row and row[0] else {}
+    if row and row[0]:
+        return row[0]
+    return _DEFAULT_ACCESS_GROUPS
 
 
 @router.put("/administracao/access-groups", summary="Salvar grupos de acesso da empresa")

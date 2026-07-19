@@ -18,6 +18,7 @@ export default function CadastrosPage() {
           content: <EscDataTable
             fetchFn={escService.associacoes}
             searchKeys={['name', 'slug']}
+            statusFilter
             columns={[
               { key: 'name', label: 'Nome' },
               { key: 'slug', label: 'Slug' },
