@@ -329,6 +329,12 @@ Bump `_SCHEMA_VERSION` → 7; documentar em `database/migrations/029_remove_offi
 
 ## FASE 8 — Ajuste do inventário do Escritório para nível empresa
 
+**Nota de reconciliação (2026-07-19):** esta fase, no desenho original de 15/07, tratava "reconectar o ESC operacional" como 1 bloco só (painel `/geral` + módulo ADMIN + inventário + permissões). Na prática, virou 4 itens com estados diferentes:
+- Painel `/geral` migrar pra `empresa_id` → **feito**, dentro da Fase 8a (schema v9).
+- Módulo ADMIN dentro do ESC → **desenhado + prototipado** (Fase 11 abaixo, protótipo local com 7 módulos).
+- Remodelar permissões → **desenhado** (item 4 da Fase 11).
+- Inventário do Escritório (o resto desta seção) → **ainda pendente**, único item que segue exatamente como escrito abaixo.
+
 **Objetivo:** adaptar a spec `2026-05-03-escritorio-design.md`, que hoje ancora o inventário financeiro em `is_office`/`inventory_day_of_month` na `associations` e numa linha Escritório — tudo removido na Fase 7.
 
 **O que quebra (mapeado):**
@@ -416,6 +422,18 @@ Bump `_SCHEMA_VERSION` → 7; documentar em `database/migrations/029_remove_offi
 3. **Ambiente de teste local** (Postgres local + backend porta 9001 + dump restaurado) foi montado ad hoc nesta sessão, sem documentação permanente — vale um `docs/dev-setup-local.md` se for reaproveitado com frequência.
 4. **Mock de frontend (`?mockesc=1`) e `vite.config.ts` com `VITE_BACKEND_PORT`** são temporários — precisam ser removidos/revertidos quando a Fase 9 subir de verdade (`isEsc()` deixa de precisar de mock).
 5. **Fase 8 (inventário) precisa reavaliação** à luz da Fase 9 — provável simplificação, não desenhado ainda (nota já adicionada acima).
+
+---
+
+## Sequência recomendada a partir de 2026-07-19
+
+Fase 10 (Catálogo de Produtos) confirmada pelo usuário como **despriorizada** — fica pra depois, fora da sequência abaixo.
+
+1. **Fase 9 — ESC como associação real.** Primeiro por ser bloqueante: destrava em produção o protótipo do módulo Administração que já está funcionando local (Fase 11 abaixo), e sem ela `isEsc()` nunca é verdadeiro pra usuário real.
+2. **Fase 8 — Inventário do Escritório.** Reavaliar logo depois da Fase 9 subir (provável simplificação — reancorar em `association_id` da linha ESC real, em vez de precisar de `empresa_id` em paralelo).
+3. **Fase 11 — Centralização Administrativa.** Backend (endpoints de escrita) pode começar em paralelo com a Fase 9, já que não depende dela. Frontend (telas) só fica visível em produção depois da Fase 9.
+4. **Gap 1 — Design do financeiro centralizado de verdade.** Ainda sem spec; vira o próximo brainstorm depois que Fase 9 estiver encaminhada.
+5. **Fase 10 — Catálogo de Produtos.** Retomada quando o usuário sinalizar.
 
 ---
 

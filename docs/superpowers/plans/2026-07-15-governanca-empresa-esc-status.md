@@ -105,6 +105,9 @@ Cuidado tomado: `ORDER BY (association_id = a.id) DESC` quebrava com `NULL` (Pos
 
 ## Pendente
 
+### Sequência recomendada (decidida em 2026-07-19, ver plano-mestre)
+Usuário confirmou Fase 10 (Catálogo de Produtos) **despriorizada**. Ordem: **Fase 9** (ESC como associação real — bloqueante, destrava o protótipo do módulo Administração em produção) → **Fase 8** (inventário, reavaliar à luz da 9) → **Fase 11** (Centralização Administrativa — backend em paralelo, frontend depende da 9) → design do financeiro centralizado (gap ainda sem spec) → Fase 10 quando o usuário sinalizar.
+
 ### Specs escritos, aguardando implementação
 - `docs/superpowers/specs/2026-07-16-catalogo-produtos-esc-design.md` — catálogo de produtos (mensalidade/taxa de entrega/comprovante de residência unificados, com estoque pro comprovante). Aprovado, não implementado.
 - `docs/superpowers/specs/2026-07-17-esc-associacao-login-design.md` — ESC vira linha real em `associations` (`id = empresa_id`), login respeita último acesso (`last_association_id`), fix do seletor de troca, remapeamento de usuários reais. Aprovado, não implementado. **Enquanto não implementado, `association_id` de admin_master/superadmin nunca é igual a `empresa_id`** — qualquer lógica de frontend que dependa dessa igualdade (ex.: `isEsc()`) fica sempre falsa.
