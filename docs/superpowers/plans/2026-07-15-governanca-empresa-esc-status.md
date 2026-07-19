@@ -126,6 +126,25 @@ Deploy mais arriscado do projeto (mexe em login + acesso de gente real). Feito c
 
 ---
 
+## Fase 11 — Centralização Administrativa no ESC (NO AR em produção, 2026-07-19)
+
+Deploy aditivo (sem remap de usuário, mais simples que a Fase 9), staged e sem outage. Schema **v11**: `transaction_categories.empresa_id` + `payment_methods.empresa_id` (+ `DROP NOT NULL` em `association_id` das duas, pra permitir cadastro de nível empresa) + `empresas.access_groups` + `notifications.empresa_id`. (`role_permissions.empresa_id` e `audit_log.empresa_id` já vinham da v5.)
+
+**ESC deixou de ser só leitura — agora edita** (router `esc.py` + telas em `frontend/src/pages/esc/`, padrão useState+modal+api/toast com visual do ESC):
+- Cadastros: CRUD de usuário (criar/editar/desativar + **excluir sem movimentação**, senão 409), categorias de transação e formas de pagamento (nível empresa)
+- Administração: permissões (grid access-groups editável, salva em lote; cai num **template padrão** quando a empresa não configurou), avisos (broadcast pra todos os usuários ativos + histórico), auditoria consolidada
+- **Filtros por coluna em todas as telas** (unidade/cargo/status/tipo/prioridade, auto-derivados dos dados) + filtro Ativos/Inativos (padrão Ativos)
+
+**Bugs pegos no teste local antes do deploy:** cast `:param::tipo` no SQLAlchemy → `CAST()`; `association_id NOT NULL` bloqueando cadastro empresa → `DROP NOT NULL`.
+
+**Validado em produção** (usuário descartável, dogfoodando o hard-delete): GET categorias/access-groups(6 cargos)/auditoria → 200; POST criar usuário → 200; DELETE permanente → 200; cleanup 0 restante. Health estável.
+
+**Commit:** merge `c175ccd` na main (branch `fase-11-centralizacao-admin`). Dev mock `vite.config` (9001) fica só no working tree local, nunca commitado.
+
+**Ainda fora de escopo (Fase 11 fechou o que estava spec'd):** produtos (Fase 10, despriorizada), inventário (Fase 8), financeiro centralizado de verdade (gap sem spec), migração de dado legado de categoria/forma/permissão por-associação → empresa.
+
+---
+
 ## Pendente
 
 ### Sequência recomendada (decidida em 2026-07-19, ver plano-mestre)
