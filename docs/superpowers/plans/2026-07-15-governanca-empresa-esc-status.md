@@ -145,6 +145,11 @@ Deploy aditivo (sem remap de usuário, mais simples que a Fase 9), staged e sem 
 
 ---
 
+## Inventário de encomendas (NO AR, 2026-07-19)
+Snapshot pontual no módulo Administração do ESC. Schema **v12** (aditivo): tabela `package_inventories`. ESC escolhe associação + dia + hora (modal) → gera o inventário das encomendas fisicamente na associação naquele momento (recebidas até o ref, não entregues nem devolvidas até o ref) → salva total + itens no histórico. Endpoints `/esc/administracao/inventario-encomendas` (POST/GET/GET{id}), aba nova em Administração. Validado local (pontual confere: hoje→N, data passada→0) + prod (schema=12, tabela existe). Commit `82f93f4`. **Nota:** isto é o inventário de ENCOMENDAS (pacotes) — diferente do inventário FINANCEIRO da Fase 8 (conferência de caixa), que segue pendente.
+
+---
+
 ## Pendente
 
 ### Sequência recomendada (decidida em 2026-07-19, ver plano-mestre)

@@ -425,15 +425,20 @@ Bump `_SCHEMA_VERSION` → 7; documentar em `database/migrations/029_remove_offi
 
 ---
 
-## Sequência recomendada a partir de 2026-07-19
+## Status consolidado (atualizado 2026-07-19)
 
-Fase 10 (Catálogo de Produtos) confirmada pelo usuário como **despriorizada** — fica pra depois, fora da sequência abaixo.
+**No ar em produção:** Fases 1–7 (governança base), 8a (users.empresa_id), 8e (fix acesso empresa-wide), **9** (ESC como associação real, v10), **11** (centralização administrativa, v11), **inventário de encomendas** (v12). Schema em **v12**.
 
-1. **Fase 9 — ESC como associação real.** Primeiro por ser bloqueante: destrava em produção o protótipo do módulo Administração que já está funcionando local (Fase 11 abaixo), e sem ela `isEsc()` nunca é verdadeiro pra usuário real.
-2. **Fase 8 — Inventário do Escritório.** Reavaliar logo depois da Fase 9 subir (provável simplificação — reancorar em `association_id` da linha ESC real, em vez de precisar de `empresa_id` em paralelo).
-3. **Fase 11 — Centralização Administrativa.** Backend (endpoints de escrita) pode começar em paralelo com a Fase 9, já que não depende dela. Frontend (telas) só fica visível em produção depois da Fase 9.
-4. **Gap 1 — Design do financeiro centralizado de verdade.** Ainda sem spec; vira o próximo brainstorm depois que Fase 9 estiver encaminhada.
-5. **Fase 10 — Catálogo de Produtos.** Retomada quando o usuário sinalizar.
+**Ainda falta (lista de gaps):**
+1. **Financeiro centralizado de verdade — SEM SPEC (maior peça).** DRE consolidado, fluxo de caixa e relatórios por empresa; e a decisão sobre o que sai do módulo da associação pro ESC quando `financeiro_centralizado=true`. Precisa de brainstorm/design antes de implementar.
+2. **Migração de dado legado** de `transaction_categories`/`payment_methods`/`role_permissions` (hoje por associação) pro modelo por empresa — reconciliar nomes duplicados entre Vaz Lobo/Congonha. Depende do item 1.
+3. **Fase 8 — inventário FINANCEIRO do Escritório** (conferência de caixa, spec `2026-05-03-escritorio-design.md`) — ainda ancorado no modelo antigo (`is_office`/`inventory_day_of_month`). Reavaliar à luz do ESC real (deve simplificar: reancorar na linha ESC / `empresa_id`). NÃO confundir com o inventário de ENCOMENDAS (já no ar).
+4. **Fase 10 — Catálogo de Produtos** (spec `2026-07-16`) — despriorizado pelo usuário; retomar quando sinalizar.
+5. **Módulos placeholder do ESC ainda sem backend:** Plano de Metas, Sincronização (app offline), Data Analytics, Banco de Dados, Acervo (Fotos/Vídeos, Posts Website). Telas existem como placeholder; sem tabela/lógica.
+6. **Dívida técnica de migration** (`project_migration_replay_gotcha`): v5/v6/v7 sem try/except — recomendado envelopar (padrão v8+) pra migração nunca derrubar cold start.
+7. **Limpezas menores:** `email-validator` no requirements (validação de e-mail); `vite.config` proxy configurável por env (revertido, reintroduzir se útil pro dev local); `docs/dev-setup-local.md` (ambiente local montado ad hoc nesta sessão).
+
+**Próximo natural:** desenhar o **financeiro centralizado** (gap 1) — é o que destrava o maior valor e ainda não tem spec.
 
 ---
 
