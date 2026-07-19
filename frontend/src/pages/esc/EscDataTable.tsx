@@ -15,9 +15,12 @@ interface EscDataTableProps {
   columns: Column[]
   fetchFn: () => Promise<AxiosResponse<any[]>>
   searchKeys?: string[]
+  toolbarAction?: React.ReactNode
+  rowActions?: (row: any) => React.ReactNode
+  reloadKey?: number
 }
 
-export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTableProps) {
+export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarAction, rowActions, reloadKey }: EscDataTableProps) {
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -32,7 +35,7 @@ export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTa
       .catch(() => { if (alive) setError(true) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-  }, [fetchFn])
+  }, [fetchFn, reloadKey])
 
   const filtered = useMemo(() => {
     if (!query.trim() || !searchKeys?.length) return rows
@@ -58,6 +61,7 @@ export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTa
         <span className="text-xs" style={{ color: TEXT_MUTED }}>
           {loading ? 'carregando…' : `${filtered.length} registro(s)`}
         </span>
+        {toolbarAction && <div className="ml-auto">{toolbarAction}</div>}
       </div>
 
       <div className="flex-1 overflow-auto px-6 py-2">
@@ -69,6 +73,7 @@ export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTa
                   {col.label}
                 </th>
               ))}
+              {rowActions && <th className="py-2 pr-4"></th>}
             </tr>
           </thead>
           <tbody>
@@ -93,6 +98,7 @@ export default function EscDataTable({ columns, fetchFn, searchKeys }: EscDataTa
                     {col.render ? col.render(row) : String(row[col.key] ?? '—')}
                   </td>
                 ))}
+                {rowActions && <td className="py-2 pr-4 whitespace-nowrap text-right">{rowActions(row)}</td>}
               </tr>
             ))}
           </tbody>

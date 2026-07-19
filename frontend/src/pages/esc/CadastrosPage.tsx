@@ -2,6 +2,8 @@ import { FolderKanban } from 'lucide-react'
 import EscModulePage from './EscModulePage'
 import EscDataTable from './EscDataTable'
 import EscEmptySection from './EscEmptySection'
+import UsuariosSection from './UsuariosSection'
+import { CategoriasSection, FormasPagamentoSection } from './CadastroFinanceiroSections'
 import { escService } from '../../services/esc'
 
 export default function CadastrosPage() {
@@ -26,17 +28,7 @@ export default function CadastrosPage() {
         },
         {
           key: 'usuarios', label: 'Usuários',
-          content: <EscDataTable
-            fetchFn={escService.usuarios}
-            searchKeys={['full_name', 'email']}
-            columns={[
-              { key: 'full_name', label: 'Nome' },
-              { key: 'email', label: 'E-mail' },
-              { key: 'role', label: 'Cargo' },
-              { key: 'unidade', label: 'Unidade' },
-              { key: 'is_active', label: 'Ativo', render: (r) => (r.is_active ? 'Sim' : 'Não') },
-            ]}
-          />,
+          content: <UsuariosSection />,
         },
         {
           key: 'grupos', label: 'Grupos de Usuários',
@@ -88,6 +80,14 @@ export default function CadastrosPage() {
               { key: 'estoque', label: 'Estoque atual' },
             ]}
           />,
+        },
+        {
+          key: 'categorias', label: 'Categorias',
+          content: <CategoriasSection />,
+        },
+        {
+          key: 'formas', label: 'Formas de Pagamento',
+          content: <FormasPagamentoSection />,
         },
         {
           key: 'produtos', label: 'Produtos',

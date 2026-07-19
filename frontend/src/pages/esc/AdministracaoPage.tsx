@@ -2,27 +2,29 @@ import { ShieldCheck } from 'lucide-react'
 import EscModulePage from './EscModulePage'
 import EscDataTable from './EscDataTable'
 import EscEmptySection from './EscEmptySection'
+import { PermissoesSection, AvisosSection } from './AdminSections'
 import { escService } from '../../services/esc'
 
 export default function AdministracaoPage() {
   return (
     <EscModulePage
       title="Administração"
-      description="Gestão centralizada da empresa: metas, permissões e estoque."
+      description="Gestão centralizada da empresa: permissões, avisos, auditoria, metas e estoque."
       icon={ShieldCheck}
       sections={[
-        { key: 'metas', label: 'Plano de Metas', content: <EscEmptySection columns={['Unidade', 'Meta', 'Período', 'Progresso']} /> },
+        { key: 'permissoes', label: 'Permissões', content: <PermissoesSection /> },
+        { key: 'avisos', label: 'Avisos', content: <AvisosSection /> },
         {
-          key: 'permissoes', label: 'Permissões',
+          key: 'auditoria', label: 'Auditoria',
           content: <EscDataTable
-            fetchFn={escService.permissoes}
-            searchKeys={['role', 'module', 'unidade']}
+            fetchFn={() => escService.auditoria(200)}
+            searchKeys={['action', 'user', 'unidade']}
             columns={[
+              { key: 'created_at', label: 'Data' },
+              { key: 'user', label: 'Usuário' },
+              { key: 'action', label: 'Ação' },
+              { key: 'entity', label: 'Entidade' },
               { key: 'unidade', label: 'Unidade' },
-              { key: 'role', label: 'Cargo' },
-              { key: 'module', label: 'Módulo' },
-              { key: 'can_view', label: 'Ver', render: (r) => (r.can_view ? 'Sim' : 'Não') },
-              { key: 'can_write', label: 'Editar', render: (r) => (r.can_write ? 'Sim' : 'Não') },
             ]}
           />,
         },
@@ -37,6 +39,7 @@ export default function AdministracaoPage() {
             ]}
           />,
         },
+        { key: 'metas', label: 'Plano de Metas', content: <EscEmptySection columns={['Unidade', 'Meta', 'Período', 'Progresso']} /> },
       ]}
     />
   )
