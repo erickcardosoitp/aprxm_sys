@@ -491,9 +491,17 @@ async def run_task_now(
                     """), {"aid": target_aid})).fetchone()
                     configured_amount = Decimal(str(last_row[0])) if last_row else None
 
-                cb_row = (await session.execute(text(
-                    "SELECT id FROM users WHERE association_id = :aid AND role IN ('admin','superadmin','admin_master','diretoria','conferente') AND is_active = TRUE LIMIT 1"
-                ), {"aid": target_aid})).fetchone()
+                # Inclui admins empresa-wide (estacionados no ESC): apos a Fase 9 a
+                # unidade pode nao ter admin local. Prefere admin local se houver.
+                cb_row = (await session.execute(text("""
+                    SELECT id FROM users
+                     WHERE (association_id = :aid
+                            OR association_id = (SELECT empresa_id FROM associations WHERE id = :aid))
+                       AND role IN ('admin','superadmin','admin_master','diretoria','conferente')
+                       AND is_active = TRUE
+                     ORDER BY (association_id = :aid) DESC
+                     LIMIT 1
+                """), {"aid": target_aid})).fetchone()
                 created_by = cb_row[0] if cb_row else None
 
                 if configured_amount and configured_amount > 0 and created_by:
