@@ -1285,9 +1285,15 @@ async def correct_transaction(
     from sqlmodel import select as sq_select
     from app.models.user import User, UserRole
     admin_roles = {UserRole.admin, UserRole.admin_master, UserRole.superadmin}
+    # Inclui admins empresa-wide (estacionados no ESC, association_id == empresa_id):
+    # apos a Fase 9 os admins saem da unidade, entao a senha de admin precisa
+    # ser validada tambem contra os admins do Escritorio.
+    admin_scope = [current.association_id]
+    if current.empresa_id:
+        admin_scope.append(current.empresa_id)
     admins = await session.execute(
         sq_select(User).where(
-            User.association_id == current.association_id,
+            User.association_id.in_(admin_scope),
             User.role.in_(admin_roles),
             User.is_active == True,
         )
@@ -1343,9 +1349,15 @@ async def reverse_transaction(
     from sqlmodel import select as sq_select
     from app.models.user import User, UserRole
     admin_roles = {UserRole.admin, UserRole.admin_master, UserRole.superadmin}
+    # Inclui admins empresa-wide (estacionados no ESC, association_id == empresa_id):
+    # apos a Fase 9 os admins saem da unidade, entao a senha de admin precisa
+    # ser validada tambem contra os admins do Escritorio.
+    admin_scope = [current.association_id]
+    if current.empresa_id:
+        admin_scope.append(current.empresa_id)
     admins = await session.execute(
         sq_select(User).where(
-            User.association_id == current.association_id,
+            User.association_id.in_(admin_scope),
             User.role.in_(admin_roles),
             User.is_active == True,
         )
