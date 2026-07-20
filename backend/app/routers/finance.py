@@ -1608,12 +1608,13 @@ async def list_operadores(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     from sqlalchemy import text as t
-    ROLES = ['operator', 'conferente', 'diretoria_adjunta', 'diretoria', 'admin', 'superadmin']
+    ROLES = ['operator', 'conferente', 'diretoria_adjunta', 'diretoria', 'conselho', 'admin', 'admin_master', 'superadmin']
+    eid = str(current.empresa_id) if current.empresa_id else str(current.association_id)
     rows = (await session.execute(t("""
         SELECT id, full_name, role FROM users
-         WHERE association_id = :aid AND is_active = true
+         WHERE (association_id = :aid OR association_id = :eid) AND is_active = true
            AND role = ANY(:roles) ORDER BY full_name
-    """), {"aid": str(current.association_id), "roles": ROLES})).fetchall()
+    """), {"aid": str(current.association_id), "eid": eid, "roles": ROLES})).fetchall()
     return [{"id": str(r[0]), "full_name": r[1], "role": r[2]} for r in rows]
 
 
@@ -1623,12 +1624,16 @@ async def list_conferentes(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     from sqlalchemy import text as t
-    ROLES = ['conferente', 'diretoria_adjunta', 'diretoria', 'admin', 'superadmin']
+    # Inclui empresa-wide (estacionados no ESC, association_id == empresa_id):
+    # após a Fase 9 os cargos de supervisão foram pro ESC, entao a unidade
+    # pode nao ter conferente local. admin_master/superadmin conferem qualquer unidade.
+    ROLES = ['conferente', 'diretoria_adjunta', 'diretoria', 'conselho', 'admin', 'admin_master', 'superadmin']
+    eid = str(current.empresa_id) if current.empresa_id else str(current.association_id)
     rows = (await session.execute(t("""
         SELECT id, full_name, role FROM users
-         WHERE association_id = :aid AND is_active = true
+         WHERE (association_id = :aid OR association_id = :eid) AND is_active = true
            AND role = ANY(:roles) ORDER BY full_name
-    """), {"aid": str(current.association_id), "roles": ROLES})).fetchall()
+    """), {"aid": str(current.association_id), "eid": eid, "roles": ROLES})).fetchall()
     return [{"id": str(r[0]), "full_name": r[1], "role": r[2]} for r in rows]
 
 
