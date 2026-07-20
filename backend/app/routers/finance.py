@@ -1172,7 +1172,7 @@ async def revert_conferencia(
         raise HTTPException(404, "Sessão não encontrada.")
     if cash.status != "conferido":
         raise HTTPException(400, "Apenas sessões conferidas podem ser revertidas.")
-    cash.status = CashSessionStatus.closed
+    cash.status = "closed"
     session.add(cash)
     await session.commit()
     return {"ok": True, "session_id": str(cash.id), "status": "closed"}
