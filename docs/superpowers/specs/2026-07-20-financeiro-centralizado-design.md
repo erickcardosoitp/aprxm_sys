@@ -53,22 +53,35 @@ Reaproveita o grid de permissões já existente (`empresas.access_groups`, tela 
 - Escopo contido: só o módulo `financeiro` ganha enforcement agora. Os módulos já existentes no grid (`residents`, `packages`, etc.) continuam sem enforcement — fica registrado como gap separado, não mexo aqui.
 - Se no futuro outros cargos (conselho, diretoria) ganharem estação no ESC, o mesmo enforcement já vale pra eles automaticamente — não precisa de mudança adicional.
 
-## 5. Frontend
+## 5. Estorno a partir do Financeiro — devolução
+
+Hoje `reverse_transaction` (`finance_service.py:450`) sempre prende o estorno a uma sessão de caixa **aberta** — se a sessão original já estiver fechada/conferida, ele ignora isso e anexa o estorno em **qualquer sessão aberta hoje** da associação (ou falha, se não houver nenhuma aberta). Isso é enganoso: mexeria no saldo físico do caixa de hoje por causa de um lançamento antigo já conferido, quando na prática **não há dinheiro saindo de caixa nenhum** — é uma devolução contábil.
+
+**Regra nova:**
+- Sessão original **aberta** → comportamento atual, sem mudança (estorno anexado à mesma sessão, ajusta o saldo físico dela — caso do dia a dia, "lancei errado, ainda no mesmo caixa").
+- Sessão original **fechada ou conferida** (ou sem sessão) → **devolução**: o estorno é criado com `cash_session_id = NULL`, sem tentar anexar a nenhuma sessão aberta. Não mexe no saldo de nenhum caixa — só entra como lançamento negativo no faturamento.
+- Já confirmado no código: o DRE (`financeiro.py /dre`) já agrupa e soma corretamente transações com `cash_session_id IS NULL` (via `LEFT JOIN cash_sessions` + grupo "Manual / Sem caixa", mecanismo que já existe hoje) — nenhuma mudança necessária ali, só no `finance_service.py` pra parar de forçar uma sessão aberta quando a original não está mais aberta.
+- Vale pra estorno feito de qualquer lugar (Caixa ou Financeiro) — na prática só vira relevante a partir do ESC, porque é lá que sobra acesso a lançamentos antigos já conferidos pra estornar.
+- Fora de escopo: reverter `mensalidades.status` pra `pending` ao devolver (gap que já existe hoje em qualquer estorno de mensalidade, não introduzido por esta mudança — fica registrado, não mexo aqui).
+
+## 6. Frontend
 
 - **Associação:** hoje o item de menu "Financeiro" usa a mesma permissão de módulo (`'finance'`) do Caixa (`AppShell.tsx`). Passa a ter uma condição extra: some do menu (e a rota redireciona) quando `empresa.financeiro_centralizado === true`, independente de permissão de cargo. Caixa continua usando só `'finance'`, sem mudança.
 - **ESC:** novo módulo "Financeiro" no sidebar do ESC, visível só quando `financeiro_centralizado=true` **e** com `financeiro:view` (seção 4) — sem o flag, não há o que consolidar; item some do sidebar do ESC também. Reaproveita as 9 abas existentes como estão (`DRETab`, `MovimentacoesTab`, `ConciliacaoTab`, `ConciliacaoInteligente`, `EsteiraTab`, `CobrancasTab`, `TransferenciasTab`, `RelatoriosTab`, `DashboardTab`) — sem reescrever nenhuma; só troca a fonte de dados (endpoints já devolvendo o agregado da empresa) e adiciona um seletor de unidade (Todas / unidade específica) no topo, plugado no `?unidade=` do resolver.
 
-## 6. Fora de escopo
+## 7. Fora de escopo
 
 - Migração de dado legado de categoria/forma de pagamento/permissão por associação pra empresa (já registrada como pendência separada).
 - Enforcement geral do `access_groups` pros módulos além de `financeiro`.
 - Qualquer mudança em `require_empresa_admin` (quem entra no ESC) — só quem já entra hoje continua entrando.
 - `transfers.py` (transferência de saldo entre associações) — feature à parte.
 - Empresas com `financeiro_centralizado=false` — zero mudança de comportamento.
+- Reverter status de mensalidade ao devolver (seção 5) — gap pré-existente, não introduzido aqui.
 
-## 7. Critério de pronto
+## 8. Critério de pronto
 
 - Usuário de associação (Vaz Lobo/Congonha, SAPE) não vê mais "Financeiro" no menu nem consegue chamar os 4 routers acima (403); Caixa funciona normal.
 - ESC (admin_master com `financeiro:view`) vê Financeiro consolidado (todas unidades) e filtrado por unidade, com as 9 abas atuais funcionando sem regressão.
 - Admin_master do ESC sem `financeiro:view` no grid não vê o módulo.
 - Empresa sem o flag (qualquer uma além da SAPE hoje) continua 100% como está.
+- Estornar um lançamento de sessão já conferida não altera saldo de nenhum caixa; aparece no DRE como devolução (faturamento negativo).
