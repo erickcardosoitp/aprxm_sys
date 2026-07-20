@@ -150,6 +150,17 @@ Snapshot pontual no módulo Administração do ESC. Schema **v12** (aditivo): ta
 
 ---
 
+## Fallout da Fase 9 — correções de escopo admin_master/empresa-wide (NO AR, 2026-07-19)
+Classe de bug que surgiu depois da Fase 9 (supervisão estacionada no ESC): código que filtrava `association_id` da unidade ou listas de cargo sem `admin_master` passou a excluir os empresa-wide. Corrigidos (todos backend-only, sem migration, deploy via CLI por causa do incidente do GitHub):
+- `tenant.py`: `is_conferente`/`is_diretoria` incluem `admin_master` (Felipe só via caixas que ele abriu + 403 ao reabrir). Commit `91308fa`.
+- `finance.py` `list_conferentes`/`list_operadores`: incluem empresa-wide (ESC) + `admin_master`/`conselho` (conferência não listava ninguém). Commit `b46c60b`.
+- `finance.py` estorno (`reverse`, 2 pontos): valida senha de admin também contra admins do ESC (Felipe não estornava sangria). Commit `d9e7f15`.
+- `settings.py` `require_superadmin` + `admin.py` `created_by` de mensalidade: incluem `admin_master`/empresa-wide (achados em varredura proativa, antes de estourar). Commit `99e4d63`.
+
+**Padrão pra futuras features:** qualquer lookup de usuário/permissão/admin escopado por `association_id` precisa considerar os empresa-wide (`association_id == empresa_id`, estacionados no ESC), e listas de cargo devem incluir `admin_master`. Nota: `auth.py` change-password deixado como está (admin_master pode trocar própria senha — inofensivo).
+
+---
+
 ## Pendente
 
 ### Sequência recomendada (decidida em 2026-07-19, ver plano-mestre)
