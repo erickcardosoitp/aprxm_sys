@@ -73,6 +73,28 @@ class CurrentUser:
         """Admin da empresa (cliente) — escopado à própria empresa via empresa_id."""
         return self.role in ("admin_master", "superadmin")
 
+    @property
+    def is_esc_station(self) -> bool:
+        """Estacionado na linha Escritório da empresa (Fase 9): association_id == empresa_id."""
+        return (
+            self.empresa_id is not None
+            and self.association_id is not None
+            and self.association_id == self.empresa_id
+        )
+
+    @property
+    def is_legacy_wide(self) -> bool:
+        """Fallback transicional: admin_master/superadmin sem association_id ainda remapeado."""
+        return (
+            self.empresa_id is not None
+            and self.association_id is None
+            and self.role in ("admin_master", "superadmin")
+        )
+
+    @property
+    def is_empresa_wide(self) -> bool:
+        return self.is_esc_station or self.is_legacy_wide
+
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -175,3 +197,91 @@ def assert_same_empresa(current: CurrentUser, target_empresa_id: UUID | None) ->
         return
     if target_empresa_id is None or current.empresa_id != target_empresa_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem acesso a essa empresa.")
+
+
+# Template padrao exibido quando a empresa ainda nao configurou permissoes
+# (empresas.access_groups vazio). O admin ve um ponto de partida e salva.
+# Vive aqui (nao em esc.py) para poder ser consultado por require_esc_module
+# sem import circular (esc.py importa deste modulo).
+_DEFAULT_ACCESS_GROUPS = {
+    "operator":          {"residents": ["view"], "packages": ["view", "create"], "service_orders": ["view"], "finance": ["view", "create"], "admin": [], "settings": [], "financeiro": []},
+    "conferente":        {"residents": ["view", "create", "edit"], "packages": ["view", "create", "edit"], "service_orders": ["view", "create", "edit"], "finance": ["view", "create", "edit"], "admin": [], "settings": ["view"], "financeiro": []},
+    "diretoria_adjunta": {"residents": ["view"], "packages": ["view"], "service_orders": ["view", "create", "edit"], "finance": ["view"], "admin": [], "settings": [], "financeiro": []},
+    "diretoria":         {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": ["view"], "admin": ["view"], "settings": ["view"], "financeiro": ["view"]},
+    "conselho":          {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": ["view"], "admin": ["view"], "settings": ["view"], "financeiro": ["view"]},
+    "admin":             {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "edit"], "financeiro": ["view", "create", "edit", "delete"]},
+    "admin_master":      {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "edit"], "financeiro": ["view", "create", "edit", "delete"]},
+    "superadmin":        {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "edit"], "financeiro": ["view", "create", "edit", "delete"]},
+}
+
+
+async def financeiro_scope(
+    current: CurrentUser,
+    session: AsyncSession,
+    unidade: UUID | None = None,
+) -> list[UUID]:
+    """
+    Resolve os association_id que o chamador pode ver no Financeiro.
+
+    - Empresa sem financeiro_centralizado (ou usuario sem empresa): comportamento
+      atual, escopado a propria associacao.
+    - Empresa centralizada + chamador ESC-stationed (ou legacy wide): todas as
+      unidades da empresa, ou so `unidade` se informado.
+    - Empresa centralizada + chamador de associacao (nao ESC): 403 - o modulo
+      Financeiro so existe no ESC quando centralizado.
+    """
+    if current.empresa_id is None:
+        return [current.association_id]
+
+    row = (await session.execute(
+        text("SELECT financeiro_centralizado FROM empresas WHERE id = :eid"),
+        {"eid": str(current.empresa_id)},
+    )).fetchone()
+    centralizado = bool(row[0]) if row else False
+
+    if not centralizado:
+        return [current.association_id]
+
+    if not current.is_empresa_wide:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="O Financeiro desta empresa é centralizado no Escritório.",
+        )
+
+    if unidade is not None:
+        check = (await session.execute(
+            text("SELECT 1 FROM associations WHERE id = :aid AND empresa_id = :eid"),
+            {"aid": str(unidade), "eid": str(current.empresa_id)},
+        )).fetchone()
+        if not check:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unidade não encontrada nesta empresa.")
+        return [unidade]
+
+    rows = (await session.execute(
+        text("SELECT id FROM associations WHERE empresa_id = :eid"),
+        {"eid": str(current.empresa_id)},
+    )).fetchall()
+    return [r[0] for r in rows]
+
+
+def require_esc_module(module: str):
+    """Dependency factory: require_empresa_admin + permissao de 'view' no modulo (access_groups)."""
+
+    async def _check(
+        current: CurrentUser = Depends(require_empresa_admin),
+        session: AsyncSession = Depends(get_session),
+    ) -> CurrentUser:
+        row = (await session.execute(
+            text("SELECT access_groups FROM empresas WHERE id = :eid"),
+            {"eid": str(current.empresa_id)},
+        )).fetchone()
+        access_groups = row[0] if row and row[0] else _DEFAULT_ACCESS_GROUPS
+        perms = access_groups.get(current.role, {}).get(module, [])
+        if "view" not in perms:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Sem permissão de acesso ao módulo {module}.",
+            )
+        return current
+
+    return _check

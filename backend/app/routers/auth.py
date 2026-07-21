@@ -379,8 +379,16 @@ async def me(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from sqlmodel import select
+    from sqlalchemy import text as _t
     user = (await session.execute(select(User).where(User.id == current.user_id))).scalar_one_or_none()
     assoc = (await session.execute(select(Association).where(Association.id == current.association_id))).scalar_one_or_none()
+    financeiro_centralizado = False
+    if current.empresa_id:
+        row = (await session.execute(
+            _t("SELECT financeiro_centralizado FROM empresas WHERE id = :eid"),
+            {"eid": str(current.empresa_id)},
+        )).fetchone()
+        financeiro_centralizado = bool(row[0]) if row else False
     return {
         "user_id": str(current.user_id),
         "association_id": str(current.association_id),
@@ -389,6 +397,7 @@ async def me(
         "email": user.email if user else "",
         "simplifica_mode": user.simplifica_mode if user else False,
         "simplifica_enabled": assoc.simplifica_enabled if assoc else False,
+        "financeiro_centralizado": financeiro_centralizado,
     }
 
 

@@ -98,6 +98,8 @@ export function AppShell() {
   const simplificaEnabled  = useAuthStore((s) => s.simplificaEnabled)
   const setSimplificaPrefs = useAuthStore((s) => s.setSimplificaPrefs)
   const setSimplificaMode  = useAuthStore((s) => s.setSimplificaMode)
+  const financeiroCentralizado    = useAuthStore((s) => s.financeiroCentralizado)
+  const setFinanceiroCentralizado = useAuthStore((s) => s.setFinanceiroCentralizado)
   const isSuperAdmin = role === 'superadmin' || role === 'admin_master'
   const isAdmin      = role === 'admin' || role === 'diretoria' || role === 'conselho' || isSuperAdmin
 
@@ -146,7 +148,10 @@ export function AppShell() {
 
   const { data: meData } = useAuthMe({ enabled: !!role })
   useEffect(() => {
-    if (meData) setSimplificaPrefs(meData.simplifica_mode, meData.simplifica_enabled)
+    if (meData) {
+      setSimplificaPrefs(meData.simplifica_mode, meData.simplifica_enabled)
+      setFinanceiroCentralizado(meData.financeiro_centralizado)
+    }
   }, [meData])
 
   const handleSimplificaToggle = async () => {
@@ -292,12 +297,11 @@ export function AppShell() {
   const navItems: NavItem[] = isOffice
     ? [{ to: '/geral', label: 'Escritório', icon: Building2 }]
     : isAgente
-    ? [
-        { to: '/financeiro', label: 'Financeiro', icon: TrendingUp },
-      ]
+    ? (financeiroCentralizado ? [] : [{ to: '/financeiro', label: 'Financeiro', icon: TrendingUp }])
     : (() => {
         const items: NavItem[] = [{ to: '/overview', label: 'Visão', icon: BarChart2 }]
         for (const { module, item } of MODULE_NAV) {
+          if (item.to === '/financeiro' && financeiroCentralizado) continue
           if (canView(module)) items.push(item)
         }
         items.push(REPORTS_NAV)
@@ -581,7 +585,7 @@ export function AppShell() {
               Escritório
             </div>
             <nav className="flex-1 py-2 flex flex-col">
-              {ESC_NAV.map(({ to, label, icon: Icon }) => (
+              {ESC_NAV.filter(({ to }) => to !== '/esc/financeiro' || financeiroCentralizado).map(({ to, label, icon: Icon }) => (
                 <NavLink
                   key={to}
                   to={to}

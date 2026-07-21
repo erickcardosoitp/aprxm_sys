@@ -468,13 +468,31 @@ class FinanceService:
         if original.reversed_at is not None:
             raise CashSessionError("Transação já foi estornada.")
 
-        if cash_session_id:
-            cs_result = await self._session.execute(select(CashSession).where(CashSession.id == cash_session_id))
-            cash_session = cs_result.scalar_one_or_none()
-            if not cash_session or cash_session.status != CashSessionStatus.open:
+        # Devolução: se a sessão da transação ORIGINAL já não está aberta
+        # (fechada ou conferida, ou nunca teve sessão), o estorno não mexe em
+        # saldo de caixa nenhum — vira lançamento sem sessão, só reduz
+        # faturamento no DRE (grupo "Manual / Sem caixa", já existente).
+        # Anexar a uma sessão aberta "emprestada" (comportamento antigo)
+        # mexeria indevidamente no saldo físico do caixa de hoje por causa de
+        # um lançamento antigo já conferido.
+        original_session = None
+        if original.cash_session_id:
+            os_result = await self._session.execute(
+                select(CashSession).where(CashSession.id == original.cash_session_id)
+            )
+            original_session = os_result.scalar_one_or_none()
+
+        if original_session is not None and original_session.status == CashSessionStatus.open:
+            if cash_session_id:
+                cs_result = await self._session.execute(select(CashSession).where(CashSession.id == cash_session_id))
+                cash_session = cs_result.scalar_one_or_none()
+                if not cash_session or cash_session.status != CashSessionStatus.open:
+                    cash_session = await self.get_open_session(association_id, preferred_by=reversed_by)
+            else:
                 cash_session = await self.get_open_session(association_id, preferred_by=reversed_by)
+            reversal_cash_session_id = cash_session.id
         else:
-            cash_session = await self.get_open_session(association_id, preferred_by=reversed_by)
+            reversal_cash_session_id = None
 
         # Inverse type: income → expense, expense/sangria → income
         inverse_type = (
@@ -484,7 +502,7 @@ class FinanceService:
 
         reversal = Transaction(
             association_id=association_id,
-            cash_session_id=cash_session.id,
+            cash_session_id=reversal_cash_session_id,
             type=inverse_type,
             amount=original.amount,
             description=f"Estorno: {original.description}",

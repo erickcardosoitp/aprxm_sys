@@ -11,6 +11,7 @@ export default function EscFinanceiroPage() {
       description="Financeiro consolidado da empresa — todas as unidades."
       icon={TrendingUp}
       sections={[
+        { key: 'fluxo', label: 'Fluxo de Caixa', content: <EscEmptySection columns={['Unidade', 'Entrada', 'Saída', 'Saldo']} /> },
         {
           key: 'movimentacoes', label: 'Movimentações',
           content: <EscDataTable
@@ -26,8 +27,9 @@ export default function EscFinanceiroPage() {
             ]}
           />,
         },
+        { key: 'crm', label: 'CRM', content: <EscEmptySection columns={['Morador', 'Endereço', 'Status', 'R$ Atrasado', 'Ações/mês']} /> },
         {
-          key: 'sessoes', label: 'Sessões Conferidas',
+          key: 'sessoes', label: 'Sessões de Caixa',
           content: <EscDataTable
             fetchFn={escService.sessoesConferidas}
             searchKeys={['unidade']}
@@ -41,6 +43,8 @@ export default function EscFinanceiroPage() {
           />,
         },
         { key: 'dre', label: 'DRE', content: <EscEmptySection columns={['Unidade', 'Receita', 'Despesa', 'Resultado']} /> },
+        { key: 'contas-pagar', label: 'Contas a Pagar', content: <EscEmptySection columns={['Descrição', 'Unidade', 'Vencimento', 'Valor', 'Status']} /> },
+        { key: 'contas-receber', label: 'Contas a Receber', content: <EscEmptySection columns={['Morador', 'Unidade', 'Origem', 'Valor']} /> },
         {
           key: 'sangrias', label: 'Sangrias',
           content: <EscDataTable
@@ -55,9 +59,8 @@ export default function EscFinanceiroPage() {
             ]}
           />,
         },
-        { key: 'fluxo', label: 'Fluxo de Caixa', content: <EscEmptySection columns={['Unidade', 'Entrada', 'Saída', 'Saldo']} /> },
         { key: 'relatorios', label: 'Relatórios', content: <EscEmptySection columns={['Relatório', 'Período', 'Unidade']} /> },
-        { key: 'pix', label: 'Conciliação Pix', content: <EscEmptySection columns={['Data', 'Valor', 'Unidade', 'Status']} /> },
+        { key: 'pix', label: 'Conciliação PIX', content: <EscEmptySection columns={['Data', 'Valor', 'Unidade', 'Status']} /> },
       ]}
     />
   )

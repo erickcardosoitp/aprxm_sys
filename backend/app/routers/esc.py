@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
-from app.core.tenant import CurrentUser, require_empresa_admin
+from app.core.tenant import CurrentUser, require_empresa_admin, _DEFAULT_ACCESS_GROUPS
 from app.database import get_session
 
 router = APIRouter(prefix="/esc", tags=["Escritório"])
@@ -498,16 +498,8 @@ class AccessGroupsRequest(BaseModel):
     access_groups: dict
 
 
-# Template padrao exibido quando a empresa ainda nao configurou permissoes
-# (empresas.access_groups vazio). O admin ve um ponto de partida e salva.
-_DEFAULT_ACCESS_GROUPS = {
-    "operator":          {"residents": ["view"], "packages": ["view", "create"], "service_orders": ["view"], "finance": ["view", "create"], "admin": [], "settings": []},
-    "conferente":        {"residents": ["view", "create", "edit"], "packages": ["view", "create", "edit"], "service_orders": ["view", "create", "edit"], "finance": ["view", "create", "edit"], "admin": [], "settings": ["view"]},
-    "diretoria_adjunta": {"residents": ["view"], "packages": ["view"], "service_orders": ["view", "create", "edit"], "finance": ["view"], "admin": [], "settings": []},
-    "diretoria":         {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": ["view"], "admin": ["view"], "settings": ["view"]},
-    "conselho":          {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": ["view"], "admin": ["view"], "settings": ["view"]},
-    "admin":             {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "edit"]},
-}
+# _DEFAULT_ACCESS_GROUPS agora vive em app.core.tenant (reaproveitado por
+# require_esc_module sem risco de import circular).
 
 
 @router.get("/administracao/access-groups", summary="Grupos de acesso (template da empresa)")

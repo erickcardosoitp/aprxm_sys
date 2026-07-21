@@ -3,7 +3,7 @@ import api from '../services/api'
 
 type Opts<T> = Omit<UseQueryOptions<T>, 'queryKey' | 'queryFn'>
 
-export function useAuthMe<T = { simplifica_mode: boolean; simplifica_enabled: boolean }>(opts?: Opts<T>) {
+export function useAuthMe<T = { simplifica_mode: boolean; simplifica_enabled: boolean; financeiro_centralizado: boolean }>(opts?: Opts<T>) {
   return useQuery({
     queryKey: ['auth', 'me'],
     queryFn: async () => (await api.get<T>('/auth/me')).data,

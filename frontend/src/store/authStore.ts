@@ -14,10 +14,12 @@ interface AuthStore extends AuthState {
   empresaId: string | null
   simplificaMode: boolean
   simplificaEnabled: boolean
+  financeiroCentralizado: boolean
   setAuth: (token: string, userId: string, associationId: string, role: UserRole, fullName: string, linkedAssociationIds?: string[], associationName?: string, rememberDevice?: boolean, isOffice?: boolean, empresaId?: string | null) => void
   clearAuth: () => void
   setPermissions: (p: Permissions) => void
   setSimplificaPrefs: (mode: boolean, enabled: boolean) => void
+  setFinanceiroCentralizado: (v: boolean) => void
   setSimplificaMode: (mode: boolean) => void
   isAuthenticated: () => boolean
   isAggregator: () => boolean
@@ -40,6 +42,7 @@ export const useAuthStore = create<AuthStore>()(
       empresaId: null,
       simplificaMode: false,
       simplificaEnabled: false,
+      financeiroCentralizado: false,
 
       setAuth: (token, userId, associationId, role, fullName, linkedAssociationIds = [], associationName = '', rememberDevice = false, isOffice = false, empresaId = null) => {
         set({ token, userId, associationId, role, fullName, linkedAssociationIds, associationName, rememberDevice, permissions: null, isOffice, empresaId })
@@ -47,12 +50,13 @@ export const useAuthStore = create<AuthStore>()(
 
       clearAuth: () => {
         localStorage.removeItem('aprxm-auth')
-        set({ token: null, userId: null, associationId: null, role: null, fullName: null, linkedAssociationIds: [], associationName: '', rememberDevice: false, permissions: null, isOffice: false, empresaId: null, simplificaMode: false, simplificaEnabled: false })
+        set({ token: null, userId: null, associationId: null, role: null, fullName: null, linkedAssociationIds: [], associationName: '', rememberDevice: false, permissions: null, isOffice: false, empresaId: null, simplificaMode: false, simplificaEnabled: false, financeiroCentralizado: false })
       },
 
       setPermissions: (permissions) => set({ permissions }),
       setSimplificaPrefs: (simplificaMode, simplificaEnabled) => set({ simplificaMode, simplificaEnabled }),
       setSimplificaMode: (simplificaMode) => set({ simplificaMode }),
+      setFinanceiroCentralizado: (financeiroCentralizado) => set({ financeiroCentralizado }),
 
       isAuthenticated: () => !!get().token,
       isAggregator: () => (get().linkedAssociationIds?.length ?? 0) > 0,
