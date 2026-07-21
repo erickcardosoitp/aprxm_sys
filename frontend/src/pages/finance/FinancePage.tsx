@@ -68,8 +68,8 @@ function SessionDetailModal({
 }) {
   const role = useAuthStore((s) => s.role)
   const userId = useAuthStore((s) => s.userId)
-  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
-  const isAdminRole = role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
+  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'admin_master' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
+  const isAdminRole = role === 'admin' || role === 'admin_master' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
   const [transactions, setTransactions] = useState<SessionTx[]>([])
   const { data: paymentMethods = [] } = usePaymentMethods<PaymentMethodOption[]>()
   const [loading, setLoading] = useState(false)
@@ -469,8 +469,8 @@ function SessionDetailModal({
 export default function FinancePage() {
   const role = useAuthStore((s) => s.role)
   const canSeeTotals = role !== 'operator' && role !== 'viewer'
-  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
-  const isAdminRole = role === 'admin' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
+  const isConferenteOrAbove = role === 'conferente' || role === 'admin' || role === 'admin_master' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
+  const isAdminRole = role === 'admin' || role === 'admin_master' || role === 'superadmin' || role === 'diretoria' || role === 'conselho'
 
   const [tab, setTab] = useState<Tab>('caixa')
   const [session, setSession] = useState<CashSession | null>(null)
