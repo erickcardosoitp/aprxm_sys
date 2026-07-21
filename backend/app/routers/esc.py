@@ -177,19 +177,8 @@ async def list_dependentes(
 # Financeiro
 # ──────────────────────────────────────────────────────────────────────────
 
-@router.get("/financeiro/movimentacoes", summary="Movimentações — todas as unidades")
-async def list_movimentacoes(
-    current: CurrentUser = Depends(require_empresa_admin),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT t.id, t.type, t.amount, t.description, t.transaction_at, a.name AS unidade
-        FROM transactions t JOIN associations a ON a.id = t.association_id
-        WHERE a.empresa_id = :eid
-        ORDER BY t.transaction_at DESC LIMIT 200
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"id": str(r[0]), "type": r[1], "amount": str(r[2]), "description": r[3],
-             "transaction_at": str(r[4]), "unidade": r[5]} for r in rows]
+# Movimentações: substituído por GET /financeiro/movimentacoes (financeiro.py),
+# que já nasce com financeiro_scope, filtros completos e export xlsx.
 
 
 @router.get("/financeiro/sangrias", summary="Sangrias — todas as unidades")

@@ -3,6 +3,9 @@ import EscModulePage from './EscModulePage'
 import EscDataTable from './EscDataTable'
 import EscEmptySection from './EscEmptySection'
 import { escService } from '../../services/esc'
+import FluxoCaixaSection from './financeiro/FluxoCaixaSection'
+import MovimentacoesSection from './financeiro/MovimentacoesSection'
+import DRESection from './financeiro/DRESection'
 
 export default function EscFinanceiroPage() {
   return (
@@ -11,22 +14,8 @@ export default function EscFinanceiroPage() {
       description="Financeiro consolidado da empresa — todas as unidades."
       icon={TrendingUp}
       sections={[
-        { key: 'fluxo', label: 'Fluxo de Caixa', content: <EscEmptySection columns={['Unidade', 'Entrada', 'Saída', 'Saldo']} /> },
-        {
-          key: 'movimentacoes', label: 'Movimentações',
-          content: <EscDataTable
-            fetchFn={escService.movimentacoes}
-            searchKeys={['description', 'unidade']}
-            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'type', label: 'Tipo' }]}
-            columns={[
-              { key: 'type', label: 'Tipo' },
-              { key: 'description', label: 'Descrição' },
-              { key: 'unidade', label: 'Unidade' },
-              { key: 'amount', label: 'Valor', render: (r) => `R$ ${r.amount}` },
-              { key: 'transaction_at', label: 'Data' },
-            ]}
-          />,
-        },
+        { key: 'fluxo', label: 'Fluxo de Caixa', content: <FluxoCaixaSection /> },
+        { key: 'movimentacoes', label: 'Movimentações', content: <MovimentacoesSection /> },
         { key: 'crm', label: 'CRM', content: <EscEmptySection columns={['Morador', 'Endereço', 'Status', 'R$ Atrasado', 'Ações/mês']} /> },
         {
           key: 'sessoes', label: 'Sessões de Caixa',
@@ -42,7 +31,7 @@ export default function EscFinanceiroPage() {
             ]}
           />,
         },
-        { key: 'dre', label: 'DRE', content: <EscEmptySection columns={['Unidade', 'Receita', 'Despesa', 'Resultado']} /> },
+        { key: 'dre', label: 'DRE', content: <DRESection /> },
         { key: 'contas-pagar', label: 'Contas a Pagar', content: <EscEmptySection columns={['Descrição', 'Unidade', 'Vencimento', 'Valor', 'Status']} /> },
         { key: 'contas-receber', label: 'Contas a Receber', content: <EscEmptySection columns={['Morador', 'Unidade', 'Origem', 'Valor']} /> },
         {

@@ -12,9 +12,16 @@ export const escService = {
   visitantes: () => api.get('/esc/moradores/visitantes'),
   dependentes: () => api.get('/esc/moradores/dependentes'),
 
-  movimentacoes: () => api.get('/esc/financeiro/movimentacoes'),
+  movimentacoes: (params?: Record<string, any>) => api.get('/financeiro/movimentacoes', { params }),
+  movimentacoesExport: (params?: Record<string, any>) =>
+    api.get('/financeiro/movimentacoes/export', { params, responseType: 'blob' }),
   sangrias: () => api.get('/esc/financeiro/sangrias'),
   sessoesConferidas: () => api.get('/esc/financeiro/sessoes-conferidas'),
+  financeiroDashboard: (unidade?: string) => api.get('/financeiro/dashboard', { params: { unidade } }),
+  financeiroDre: (params: Record<string, any>) => api.get('/financeiro/dre', { params }),
+  financeiroSummary: (params?: Record<string, any>) => api.get('/financeiro/summary', { params }),
+  caixasAbertos: (unidade?: string) => api.get('/financeiro/caixas-abertos', { params: { unidade } }),
+  zerarCaixa: (session_id: string, reason: string) => api.post('/financeiro/zerar-caixa', { session_id, reason }),
 
   permissoes: () => api.get('/esc/administracao/permissoes'),
   estoque: () => api.get('/esc/administracao/estoque'),

@@ -6,11 +6,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import CurrentUser, get_current_user
+from app.core.tenant import CurrentUser, get_current_user, financeiro_scope
 from app.database import get_session
 from app.services.reconciliation_service import ReconciliationService
 
@@ -20,9 +20,11 @@ router = APIRouter(prefix="/financeiro", tags=["Financeiro"])
 @router.get("/summary")
 async def get_summary(
     period: str = "month",
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     now = datetime.utcnow()
     if period == "week":
         date_from = now - timedelta(days=7)
@@ -42,12 +44,12 @@ async def get_summary(
                 COALESCE(SUM(CASE WHEN type = 'sangria' THEN amount ELSE 0 END), 0) AS total_sangria,
                 COUNT(*) AS total_count
             FROM transactions
-            WHERE association_id = :aid
+            WHERE association_id = ANY(:ids)
               AND transaction_at >= :date_from
               AND reversed_at IS NULL
               AND is_reversal = false
         """),
-        {"aid": str(current.association_id), "date_from": date_from},
+        {"ids": ids, "date_from": date_from},
     )
     row = result.fetchone()
     income = float(row[0])
@@ -58,14 +60,14 @@ async def get_summary(
         text("""
             SELECT income_subtype, COALESCE(SUM(amount), 0)
             FROM transactions
-            WHERE association_id = :aid
+            WHERE association_id = ANY(:ids)
               AND type = 'income'
               AND transaction_at >= :date_from
               AND reversed_at IS NULL
               AND is_reversal = false
             GROUP BY income_subtype
         """),
-        {"aid": str(current.association_id), "date_from": date_from},
+        {"ids": ids, "date_from": date_from},
     )
     income_by_type: dict = {}
     for r in breakdown_result.fetchall():
@@ -77,10 +79,10 @@ async def get_summary(
             SELECT COALESCE(SUM(m.amount), 0), COUNT(*)
             FROM mensalidades m
             JOIN residents r ON r.id = m.resident_id
-            WHERE m.association_id = :aid AND m.status = 'pending'
+            WHERE m.association_id = ANY(:ids) AND m.status = 'pending'
               AND r.type = 'member' AND r.status = 'active'
         """),
-        {"aid": str(current.association_id)},
+        {"ids": ids},
     )
     cr_row = cr_result.fetchone()
 
@@ -98,9 +100,11 @@ async def get_summary(
 
 @router.get("/dashboard", summary="Dashboard financeiro")
 async def get_dashboard(
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
     # Faturamento do dia por tipo
@@ -110,32 +114,30 @@ async def get_dashboard(
                 income_subtype,
                 COALESCE(SUM(amount), 0) AS total
             FROM transactions
-            WHERE association_id = :aid
+            WHERE association_id = ANY(:ids)
               AND type = 'income'
               AND transaction_at >= :today
             GROUP BY income_subtype
         """),
-        {"aid": str(current.association_id), "today": today_start},
+        {"ids": ids, "today": today_start},
     )
     faturamento_dia: dict = {}
     for row in day_result.fetchall():
         faturamento_dia[row[0] or "other"] = float(row[1])
 
-    # Total em caixa (sessão aberta)
+    # Total em caixa (sessões abertas de todas as unidades no escopo)
     cash_result = await session.execute(
         text("""
             SELECT
-                s.opening_balance,
+                COALESCE(SUM(s.opening_balance), 0),
                 COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) AS income,
                 COALESCE(SUM(CASE WHEN t.type != 'income' THEN t.amount ELSE 0 END), 0) AS out
             FROM cash_sessions s
             LEFT JOIN transactions t ON t.cash_session_id = s.id
-            WHERE s.association_id = :aid
+            WHERE s.association_id = ANY(:ids)
               AND s.status = 'open'
-            GROUP BY s.id, s.opening_balance
-            LIMIT 1
         """),
-        {"aid": str(current.association_id)},
+        {"ids": ids},
     )
     cash_row = cash_result.fetchone()
     total_caixa = (
@@ -148,11 +150,11 @@ async def get_dashboard(
         text("""
             SELECT COALESCE(SUM(bs.amount), 0)
             FROM bank_statements bs
-            WHERE bs.association_id = :aid
+            WHERE bs.association_id = ANY(:ids)
               AND bs.conciliado = TRUE
               AND bs.date >= DATE_TRUNC('month', CURRENT_DATE)
         """),
-        {"aid": str(current.association_id)},
+        {"ids": ids},
     )
     total_banco = float(pix_result.scalar() or 0)
 
@@ -161,11 +163,11 @@ async def get_dashboard(
         text("""
             SELECT COALESCE(SUM(amount), 0), COUNT(*)
             FROM mensalidades
-            WHERE association_id = :aid
+            WHERE association_id = ANY(:ids)
               AND status != 'paid'
               AND due_date < CURRENT_DATE
         """),
-        {"aid": str(current.association_id)},
+        {"ids": ids},
     )
     inadimplencia_row = inadimplencia_result.fetchone()
     total_inadimplencia = float(inadimplencia_row[0] or 0)
@@ -178,6 +180,79 @@ async def get_dashboard(
         "inadimplencia_total": total_inadimplencia,
         "inadimplentes_count": inadimplentes_count,
     }
+
+
+@router.get("/caixas-abertos", summary="Sessões de caixa abertas no escopo (pra zerar caixa)")
+async def list_caixas_abertos(
+    unidade: UUID | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    rows = (await session.execute(text("""
+        SELECT s.id, a.name AS unidade, s.opened_at, u.full_name AS aberto_por,
+               s.opening_balance
+               + COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0)
+               - COALESCE(SUM(CASE WHEN t.type != 'income' THEN t.amount ELSE 0 END), 0) AS saldo_disponivel
+        FROM cash_sessions s
+        JOIN associations a ON a.id = s.association_id
+        LEFT JOIN users u ON u.id = s.opened_by
+        LEFT JOIN transactions t ON t.cash_session_id = s.id
+        WHERE s.association_id = ANY(:ids) AND s.status = 'open'
+        GROUP BY s.id, a.name, s.opened_at, u.full_name, s.opening_balance
+        ORDER BY a.name
+    """), {"ids": ids})).fetchall()
+    return [
+        {"session_id": str(r[0]), "unidade": r[1], "opened_at": str(r[2]),
+         "aberto_por": r[3], "saldo_disponivel": float(r[4])}
+        for r in rows
+    ]
+
+
+class ZerarCaixaRequest(BaseModel):
+    session_id: UUID
+    reason: str = Field(min_length=5, max_length=255)
+
+
+@router.post("/zerar-caixa", summary="Zeramento administrativo remoto (ESC) — sangria sem foto")
+async def zerar_caixa(
+    body: ZerarCaixaRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if not current.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem zerar o caixa.")
+    ids = [str(i) for i in await financeiro_scope(current, session)]
+
+    row = (await session.execute(text("""
+        SELECT s.association_id,
+               s.opening_balance
+               + COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0)
+               - COALESCE(SUM(CASE WHEN t.type != 'income' THEN t.amount ELSE 0 END), 0) AS saldo_disponivel
+        FROM cash_sessions s
+        LEFT JOIN transactions t ON t.cash_session_id = s.id
+        WHERE s.id = :sid AND s.status = 'open'
+        GROUP BY s.id, s.association_id, s.opening_balance
+    """), {"sid": str(body.session_id)})).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Sessão aberta não encontrada.")
+    assoc_id, saldo = row
+    if str(assoc_id) not in ids:
+        raise HTTPException(status_code=403, detail="Sessão fora do escopo do Financeiro desta empresa.")
+    if saldo <= 0:
+        raise HTTPException(status_code=400, detail="Saldo disponível já é zero.")
+
+    await session.execute(text("""
+        INSERT INTO transactions
+            (id, association_id, cash_session_id, type, amount, description,
+             is_sangria, sangria_reason, sangria_destination, created_by)
+        VALUES
+            (gen_random_uuid(), :aid, :sid, 'sangria', :amount,
+             'Zeramento administrativo (ESC)', TRUE, :reason, 'Zeramento administrativo (ESC)', :uid)
+    """), {"aid": str(assoc_id), "sid": str(body.session_id), "amount": saldo,
+           "reason": body.reason, "uid": str(current.user_id)})
+    await session.commit()
+    return {"ok": True, "amount": float(saldo)}
 
 
 @router.post("/bank-statements/import")
@@ -198,9 +273,11 @@ async def import_bank_statement(
 async def get_extrato(
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     today = datetime.utcnow().date()
     df = date.fromisoformat(date_from) if date_from else today.replace(day=1)
     dt = date.fromisoformat(date_to) if date_to else today
@@ -214,11 +291,11 @@ async def get_extrato(
             JOIN users u ON u.id = t.created_by
             LEFT JOIN transaction_categories c ON c.id = t.category_id
             LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
-            WHERE t.association_id = :aid
+            WHERE t.association_id = ANY(:ids)
               AND t.transaction_at::date BETWEEN :df AND :dt
             ORDER BY t.transaction_at ASC
         """),
-        {"aid": str(current.association_id), "df": df, "dt": dt},
+        {"ids": ids, "df": df, "dt": dt},
     )
     return [
         {"id": str(r[0]), "tipo": r[1], "subtipo": r[2], "valor": str(r[3]),
@@ -230,9 +307,11 @@ async def get_extrato(
 
 @router.get("/evolucao", summary="Evolução financeira mensal (últimos 6 meses)")
 async def get_evolucao(
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     result = await session.execute(
         text("""
             SELECT
@@ -240,36 +319,194 @@ async def get_evolucao(
               COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) AS entradas,
               COALESCE(SUM(CASE WHEN type!='income' THEN amount ELSE 0 END), 0) AS saidas
             FROM transactions
-            WHERE association_id = :aid
+            WHERE association_id = ANY(:ids)
               AND transaction_at >= NOW() - INTERVAL '6 months'
             GROUP BY mes ORDER BY mes ASC
         """),
-        {"aid": str(current.association_id)},
+        {"ids": ids},
     )
     return [{"mes": r[0], "entradas": float(r[1]), "saidas": float(r[2])} for r in result.fetchall()]
 
 
 @router.get("/fluxo-projetado", summary="Fluxo de caixa projetado (próximos 30 dias)")
 async def get_fluxo_projetado(
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     result = await session.execute(
         text("""
             SELECT r.full_name, m.reference_month, m.due_date, m.amount
             FROM mensalidades m
             JOIN residents r ON r.id = m.resident_id
-            WHERE m.association_id = :aid
+            WHERE m.association_id = ANY(:ids)
               AND m.status = 'pending'
               AND m.due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
             ORDER BY m.due_date ASC
         """),
-        {"aid": str(current.association_id)},
+        {"ids": ids},
     )
     return [
         {"resident_name": r[0], "reference_month": r[1], "due_date": str(r[2]), "amount": str(r[3])}
         for r in result.fetchall()
     ]
+
+
+async def _query_movimentacoes(
+    session: AsyncSession,
+    ids: list[str],
+    date_from: str | None = None,
+    date_to: str | None = None,
+    tipo: list[str] | None = None,
+    produto: list[str] | None = None,
+    morador: str | None = None,
+    rua: str | None = None,
+    inadimplente: bool | None = None,
+    usuario_id: UUID | None = None,
+    cargo: str | None = None,
+) -> list[dict]:
+    conds = ["t.association_id = ANY(:ids)"]
+    p: dict = {"ids": ids}
+
+    if date_from:
+        conds.append("t.transaction_at::date >= :df")
+        p["df"] = date.fromisoformat(date_from)
+    if date_to:
+        conds.append("t.transaction_at::date <= :dt")
+        p["dt"] = date.fromisoformat(date_to)
+
+    if tipo:
+        tipo_conds = []
+        if "entrada" in tipo:
+            tipo_conds.append("(t.type = 'income' AND NOT t.is_reversal)")
+        if "saida" in tipo:
+            tipo_conds.append("(t.type = 'expense' AND NOT t.is_reversal)")
+        if "sangria" in tipo:
+            tipo_conds.append("(t.type = 'sangria' AND NOT t.is_reversal)")
+        if "estorno" in tipo:
+            tipo_conds.append("(t.is_reversal AND t.cash_session_id IS NOT NULL)")
+        if "devolucao" in tipo:
+            tipo_conds.append("(t.is_reversal AND t.cash_session_id IS NULL)")
+        if tipo_conds:
+            conds.append(f"({' OR '.join(tipo_conds)})")
+
+    if produto:
+        conds.append("t.income_subtype = ANY(:produtos)")
+        p["produtos"] = produto
+    if morador:
+        conds.append("COALESCE(res.full_name, res2.full_name) ILIKE :morador")
+        p["morador"] = f"%{morador}%"
+    if rua:
+        conds.append("COALESCE(res.address_street, res2.address_street) ILIKE :rua")
+        p["rua"] = f"%{rua}%"
+    if usuario_id:
+        conds.append("t.created_by = :uid")
+        p["uid"] = str(usuario_id)
+    if cargo:
+        conds.append("u.role = :cargo")
+        p["cargo"] = cargo
+    if inadimplente is not None:
+        sub = """
+            EXISTS (
+                SELECT 1 FROM mensalidades dm
+                WHERE dm.resident_id = COALESCE(res.id, res2.id)
+                  AND dm.status != 'paid'
+                  AND dm.due_date < CURRENT_DATE
+            )
+        """
+        conds.append(sub if inadimplente else f"NOT {sub}")
+
+    where = " AND ".join(conds)
+    rows = (await session.execute(text(f"""
+        SELECT t.transaction_at, t.type, t.is_reversal, t.cash_session_id,
+               a.name AS unidade, COALESCE(res.full_name, res2.full_name) AS morador,
+               t.amount, t.income_subtype,
+               COALESCE(res.status, res2.status)::text AS status_morador,
+               u.full_name AS usuario
+        FROM transactions t
+        JOIN associations a ON a.id = t.association_id
+        LEFT JOIN users u ON u.id = t.created_by
+        LEFT JOIN mensalidades men ON men.transaction_id = t.id
+        LEFT JOIN residents res ON res.id = men.resident_id
+        LEFT JOIN residents res2 ON res2.id = t.resident_id
+        WHERE {where}
+        ORDER BY t.transaction_at DESC
+    """), p)).fetchall()
+
+    TIPO_LABEL = {"income": "Entrada", "expense": "Saída", "sangria": "Sangria"}
+    PRODUTO_LABEL = {
+        "mensalidade": "Mensalidade", "delivery_fee": "Taxa de Entrega",
+        "proof_of_residence": "Comprovante de Residência", "other": "Outras",
+    }
+    out = []
+    for r in rows:
+        if r[2] and r[3] is None:
+            tipo_label = "Devolução"
+        elif r[2]:
+            tipo_label = "Estorno"
+        else:
+            tipo_label = TIPO_LABEL.get(r[1], r[1])
+        out.append({
+            "Data/hora": str(r[0]), "Tipo Movimentação": tipo_label, "Associação": r[4],
+            "Morador": r[5] or "—", "Valor": float(r[6]),
+            "Produto": PRODUTO_LABEL.get(r[7], r[7] or "—"),
+            "Status Morador": r[8] or "—", "Usuário": r[9] or "—",
+        })
+    return out
+
+
+@router.get("/movimentacoes", summary="Movimentações — todas as unidades no escopo, com filtros")
+async def list_movimentacoes(
+    unidade: UUID | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    tipo: list[str] | None = Query(default=None),
+    produto: list[str] | None = Query(default=None),
+    morador: str | None = Query(default=None),
+    rua: str | None = Query(default=None),
+    inadimplente: bool | None = Query(default=None),
+    usuario_id: UUID | None = Query(default=None),
+    cargo: str | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    return await _query_movimentacoes(
+        session, ids, date_from, date_to, tipo, produto,
+        morador, rua, inadimplente, usuario_id, cargo,
+    )
+
+
+@router.get("/movimentacoes/export", summary="Movimentações — export xlsx com os filtros aplicados")
+async def export_movimentacoes(
+    unidade: UUID | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    tipo: list[str] | None = Query(default=None),
+    produto: list[str] | None = Query(default=None),
+    morador: str | None = Query(default=None),
+    rua: str | None = Query(default=None),
+    inadimplente: bool | None = Query(default=None),
+    usuario_id: UUID | None = Query(default=None),
+    cargo: str | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    from app.routers.reports import _mk, _headers, _widths, _xlsx
+
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    rows = await _query_movimentacoes(
+        session, ids, date_from, date_to, tipo, produto,
+        morador, rua, inadimplente, usuario_id, cargo,
+    )
+    wb, ws = _mk("Movimentações")
+    cols = list(rows[0].keys()) if rows else ["Data/hora", "Tipo Movimentação", "Associação", "Morador", "Valor", "Produto", "Status Morador", "Usuário"]
+    _headers(ws, cols)
+    for r in rows:
+        ws.append(list(r.values()))
+    _widths(ws)
+    return _xlsx(wb, "movimentacoes.xlsx")
 
 
 @router.get("/dre", summary="Demonstrativo de Resultado da Associação")
@@ -279,17 +516,18 @@ async def get_dre(
     nivel: int = Query(default=2, ge=1, le=3),
     agrupar_por: str = Query(default="tipo"),
     sub_agrupar_por: str | None = Query(default=None),
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    aid = str(current.association_id)
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     if month:
         date_filter = "EXTRACT(YEAR FROM t.transaction_at)=:yr AND EXTRACT(MONTH FROM t.transaction_at)=:mo"
-        params: dict = {"aid": aid, "yr": year, "mo": month}
+        params: dict = {"ids": ids, "yr": year, "mo": month}
         period_label = f"{str(month).zfill(2)}/{year}"
     else:
         date_filter = "EXTRACT(YEAR FROM t.transaction_at)=:yr"
-        params = {"aid": aid, "yr": year}
+        params = {"ids": ids, "yr": year}
         period_label = str(year)
 
     SUBTYPE_MAP = {
@@ -305,7 +543,7 @@ async def get_dre(
         LEFT JOIN transaction_categories c ON c.id = t.category_id
         LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
         LEFT JOIN users u ON u.id = cs.opened_by
-        WHERE t.association_id = :aid
+        WHERE t.association_id = ANY(:ids)
           AND {date_filter}
           AND t.is_reversal = FALSE
           AND t.reversed_at IS NULL

@@ -229,12 +229,14 @@ async def financeiro_scope(
       unidades da empresa, ou so `unidade` se informado.
     - Empresa centralizada + chamador de associacao (nao ESC): 403 - o modulo
       Financeiro so existe no ESC quando centralizado.
+    - Empresa centralizada + ESC-stationed sem "financeiro:view" no grid de
+      permissoes (access_groups): 403 - nem todo ESC ve o modulo.
     """
     if current.empresa_id is None:
         return [current.association_id]
 
     row = (await session.execute(
-        text("SELECT financeiro_centralizado FROM empresas WHERE id = :eid"),
+        text("SELECT financeiro_centralizado, access_groups FROM empresas WHERE id = :eid"),
         {"eid": str(current.empresa_id)},
     )).fetchone()
     centralizado = bool(row[0]) if row else False
@@ -246,6 +248,13 @@ async def financeiro_scope(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="O Financeiro desta empresa é centralizado no Escritório.",
+        )
+
+    access_groups = row[1] if row and row[1] else _DEFAULT_ACCESS_GROUPS
+    if "view" not in access_groups.get(current.role, {}).get("financeiro", []):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sem permissão de acesso ao módulo financeiro.",
         )
 
     if unidade is not None:
