@@ -150,6 +150,19 @@ Snapshot pontual no módulo Administração do ESC. Schema **v12** (aditivo): ta
 
 ---
 
+## Financeiro Centralizado — Fase 1+2 (NO AR em produção, 2026-07-21)
+Spec: `docs/superpowers/specs/2026-07-20-financeiro-centralizado-design.md`. Plano: `docs/superpowers/plans/2026-07-20-financeiro-centralizado-plan.md`. Zero migration (aditivo, só código).
+
+**Fase 1 — fundação:** `financeiro_scope()` (tenant.py) resolve as unidades visíveis no Financeiro — associação de empresa centralizada leva 403, ESC-stationed vê todas (ou 1 via `?unidade=`); checa também `financeiro:view` no grid `access_groups` (novo módulo `"financeiro"` no template). `reverse_transaction` ganhou a regra de devolução: sessão já fechada/conferida → estorno vira lançamento sem `cash_session_id` (não mexe em saldo de caixa, só reduz faturamento no DRE). Frontend: `/financeiro` some do menu da associação quando centralizado, aparece no ESC. Commit `be0fbf4`.
+
+**Fase 2 — Fluxo de Caixa, Movimentações, DRE:** `financeiro_scope` aplicado em dashboard/DRE/evolução/fluxo-projetado/extrato/summary. Endpoint novo `/financeiro/movimentacoes` (filtros: tipo, produto, morador, rua, inadimplente, usuário, cargo, período) + export xlsx. Endpoints novos `/financeiro/caixas-abertos` e `/financeiro/zerar-caixa` (sangria administrativa remota do ESC, **sem foto de recibo** — decisão explícita do usuário, já que quem aciona não está fisicamente no caixa). Removido stub antigo/duplicado `/esc/financeiro/movimentacoes` (esc.py). 3 seções novas no ESC. Commit `7c178d2`.
+
+Validado localmente contra `aprxm_local` (dump real, 3069 movimentações reais, 3 associações da SAPE) + fluxo de zerar-caixa ponta a ponta com dado descartável (criado, testado, limpo). Deploy `aprxm-sys-backend-7zow123tk` — health 200, 3 endpoints novos confirmados (401 sem token, não 404/500).
+
+**Faltam (Fases 3-7 do plano):** Sessões de Caixa, CRM, Contas a Pagar (única com schema novo), Contas a Receber, Sangrias. Relatórios e Conciliação PIX ficam fora, por pedido explícito do usuário.
+
+---
+
 ## Fallout da Fase 9 — correções de escopo admin_master/empresa-wide (NO AR, 2026-07-19)
 Classe de bug que surgiu depois da Fase 9 (supervisão estacionada no ESC): código que filtrava `association_id` da unidade ou listas de cargo sem `admin_master` passou a excluir os empresa-wide. Corrigidos (todos backend-only, sem migration, deploy via CLI por causa do incidente do GitHub):
 - `tenant.py`: `is_conferente`/`is_diretoria` incluem `admin_master` (Felipe só via caixas que ele abriu + 403 ao reabrir). Commit `91308fa`.
