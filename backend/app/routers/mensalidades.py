@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import CurrentUser, get_current_user
+from app.core.tenant import CurrentUser, get_current_user, financeiro_scope
 from app.database import get_session
 from app.models.mensalidade import Mensalidade
 from app.models.migration_payment import MigrationPaymentTipo
@@ -335,22 +335,46 @@ async def create_mensalidade(
     return _fmt(m)
 
 
+async def _unidade_names(session: AsyncSession, ids: list[UUID]) -> dict[str, str]:
+    from sqlalchemy import text as sa_text
+    rows = (await session.execute(
+        sa_text("SELECT id, name FROM associations WHERE id = ANY(:ids)"), {"ids": [str(i) for i in ids]}
+    )).fetchall()
+    return {str(r[0]): r[1] for r in rows}
+
+
 @router.get("/pending", summary="Mensalidades a receber (não vencidas)")
 async def list_pending(
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    ids = await financeiro_scope(current, session, unidade)
     svc = MensalidadeService(session)
-    return await svc.list_pending(current.association_id)
+    names = await _unidade_names(session, ids)
+    out: list[dict] = []
+    for aid in ids:
+        for item in await svc.list_pending(aid):
+            item["unidade"] = names.get(str(aid))
+            out.append(item)
+    return out
 
 
 @router.get("/delinquent", summary="Listar inadimplentes")
 async def list_delinquent(
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    ids = await financeiro_scope(current, session, unidade)
     svc = MensalidadeService(session)
-    return await svc.list_delinquent(current.association_id)
+    names = await _unidade_names(session, ids)
+    out: list[dict] = []
+    for aid in ids:
+        for item in await svc.list_delinquent(aid):
+            item["unidade"] = names.get(str(aid))
+            out.append(item)
+    return out
 
 
 @router.get("/delinquent/by-street", summary="Inadimplentes agrupados por rua")
@@ -413,11 +437,19 @@ async def list_by_resident(
 @router.get("/paid", summary="Mensalidades pagas (com nome do morador)")
 async def list_paid(
     month: str | None = Query(default=None, description="Filtrar por mês YYYY-MM"),
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    ids = await financeiro_scope(current, session, unidade)
     svc = MensalidadeService(session)
-    return await svc.list_paid(current.association_id, month)
+    names = await _unidade_names(session, ids)
+    out: list[dict] = []
+    for aid in ids:
+        for item in await svc.list_paid(aid, month):
+            item["unidade"] = names.get(str(aid))
+            out.append(item)
+    return out
 
 
 @router.get("/report", summary="Relatório de mensalidades por período")

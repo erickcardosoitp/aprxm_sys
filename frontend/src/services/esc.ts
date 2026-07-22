@@ -26,6 +26,11 @@ export const escService = {
   caixasAbertos: (unidade?: string) => api.get('/financeiro/caixas-abertos', { params: { unidade } }),
   zerarCaixa: (session_id: string, reason: string) => api.post('/financeiro/zerar-caixa', { session_id, reason }),
 
+  crmResidents: (params?: Record<string, any>) => api.get('/crm/residents', { params }),
+  mensalidadesPending: (params?: Record<string, any>) => api.get('/mensalidades/pending', { params }),
+  mensalidadesDelinquent: (params?: Record<string, any>) => api.get('/mensalidades/delinquent', { params }),
+  mensalidadesPaid: (params?: Record<string, any>) => api.get('/mensalidades/paid', { params }),
+
   permissoes: () => api.get('/esc/administracao/permissoes'),
   estoque: () => api.get('/esc/administracao/estoque'),
 

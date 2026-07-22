@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import CurrentUser, get_current_user
+from app.core.tenant import CurrentUser, get_current_user, financeiro_scope
 from app.database import get_session
 from app.services.scoring_service import run_scoring_all
 
@@ -46,43 +46,56 @@ async def crm_residents(
     status_filter: str | None = Query(default=None, alias="status"),
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
+    unidade: UUID | None = Query(default=None),
+    rua: str | None = Query(default=None),
+    dependentes: bool | None = Query(default=None),
+    min_atrasado: float | None = Query(default=None),
+    max_atrasado: float | None = Query(default=None),
+    min_meses_atrasado: int | None = Query(default=None),
+    tempo_associado_meses: int | None = Query(default=None, description="Mínimo de meses como associado"),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     _check_access(current)
 
-    aid = str(current.association_id)
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     offset = (page - 1) * 100
 
-    grace_row = (await session.execute(
-        text("SELECT COALESCE(delinquency_grace_days, 2) FROM association_settings WHERE association_id = :aid"),
-        {"aid": aid},
-    )).fetchone()
-    grace_days = grace_row[0] if grace_row else 2
-
-    filters = ["r.association_id = :aid", "r.type = 'member'", "r.status = 'active'"]
-    params: dict = {"aid": aid, "grace_days": grace_days, "limit": 100, "offset": offset}
+    # grace_days por linha (join association_settings) - unidades diferentes podem ter carência diferente
+    filters = ["r.association_id = ANY(:ids)", "r.type = 'member'", "r.status = 'active'"]
+    params: dict = {"ids": ids, "limit": 100, "offset": offset}
 
     if search:
         filters.append("(unaccent(lower(r.full_name)) LIKE unaccent(lower(:search)) OR r.address_street ILIKE :search)")
         params["search"] = f"%{search}%"
+    if rua:
+        filters.append("r.address_street ILIKE :rua")
+        params["rua"] = f"%{rua}%"
+    if dependentes is not None:
+        dep_sub = "EXISTS (SELECT 1 FROM residents dep WHERE dep.responsible_id = r.id AND dep.type = 'dependent')"
+        filters.append(dep_sub if dependentes else f"NOT {dep_sub}")
+    if tempo_associado_meses:
+        filters.append("COALESCE(r.move_in_date, r.created_at::date) <= (CURRENT_DATE - (:tam || ' months')::interval)")
+        params["tam"] = tempo_associado_meses
 
     if status_filter == "adimplente":
         filters.append("""
             NOT EXISTS (
                 SELECT 1 FROM mensalidades m2
+                JOIN association_settings s2 ON s2.association_id = m2.association_id
                 WHERE m2.resident_id = r.id AND m2.association_id = r.association_id
                   AND m2.status = 'pending'
-                  AND m2.due_date < NOW() - make_interval(days => :grace_days)
+                  AND m2.due_date < NOW() - make_interval(days => COALESCE(s2.delinquency_grace_days, 2))
             )
         """)
     elif status_filter == "inadimplente":
         filters.append("""
             EXISTS (
                 SELECT 1 FROM mensalidades m2
+                JOIN association_settings s2 ON s2.association_id = m2.association_id
                 WHERE m2.resident_id = r.id AND m2.association_id = r.association_id
                   AND m2.status = 'pending'
-                  AND m2.due_date < NOW() - make_interval(days => :grace_days)
+                  AND m2.due_date < NOW() - make_interval(days => COALESCE(s2.delinquency_grace_days, 2))
             )
         """)
 
@@ -91,18 +104,19 @@ async def crm_residents(
     sql = text(f"""
         WITH mens AS (
             SELECT
-                resident_id,
-                COALESCE(SUM(amount) FILTER (
-                    WHERE status = 'pending'
-                      AND due_date < NOW() - make_interval(days => :grace_days)
+                m.resident_id,
+                COALESCE(SUM(m.amount) FILTER (
+                    WHERE m.status = 'pending'
+                      AND m.due_date < NOW() - make_interval(days => COALESCE(s.delinquency_grace_days, 2))
                 ), 0) AS valor_atrasado,
                 COUNT(*) FILTER (
-                    WHERE status = 'pending'
-                      AND due_date < NOW() - make_interval(days => :grace_days)
+                    WHERE m.status = 'pending'
+                      AND m.due_date < NOW() - make_interval(days => COALESCE(s.delinquency_grace_days, 2))
                 ) AS qtd_pendentes
-            FROM mensalidades
-            WHERE association_id = :aid
-            GROUP BY resident_id
+            FROM mensalidades m
+            JOIN association_settings s ON s.association_id = m.association_id
+            WHERE m.association_id = ANY(:ids)
+            GROUP BY m.resident_id
         ),
         pkgs AS (
             SELECT
@@ -111,8 +125,36 @@ async def crm_residents(
                 COUNT(*) FILTER (WHERE delivered_at IS NOT NULL) AS total_entregues,
                 MIN(delivered_at)   AS primeira_entrega
             FROM packages
-            WHERE association_id = :aid
+            WHERE association_id = ANY(:ids)
             GROUP BY resident_id
+        ),
+        acoes_eventos AS (
+            SELECT COALESCE(men.resident_id, t.resident_id) AS resident_id, t.transaction_at AS event_at
+            FROM transactions t
+            LEFT JOIN mensalidades men ON men.transaction_id = t.id
+            WHERE t.association_id = ANY(:ids) AND t.type = 'income' AND NOT t.is_reversal
+              AND t.income_subtype IN ('mensalidade', 'proof_of_residence')
+            UNION ALL
+            SELECT resident_id, delivered_at AS event_at
+            FROM packages
+            WHERE association_id = ANY(:ids) AND delivered_at IS NOT NULL
+        ),
+        acoes AS (
+            SELECT resident_id, COUNT(*) AS total_acoes, MIN(event_at) AS primeiro_evento
+            FROM acoes_eventos WHERE resident_id IS NOT NULL GROUP BY resident_id
+        ),
+        pgto AS (
+            SELECT DISTINCT ON (resident_id) resident_id, forma
+            FROM (
+                SELECT COALESCE(men.resident_id, t.resident_id) AS resident_id, pm.name AS forma, COUNT(*) AS qtd
+                FROM transactions t
+                LEFT JOIN mensalidades men ON men.transaction_id = t.id
+                LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+                WHERE t.association_id = ANY(:ids) AND t.type = 'income' AND NOT t.is_reversal
+                GROUP BY 1, 2
+            ) x
+            WHERE resident_id IS NOT NULL
+            ORDER BY resident_id, qtd DESC
         )
         SELECT
             r.id,
@@ -121,37 +163,74 @@ async def crm_residents(
             r.address_number,
             r.created_at,
             r.phone_primary,
+            a.name AS unidade,
+            COALESCE(r.move_in_date, r.created_at::date) AS associado_desde,
             COALESCE(m.valor_atrasado, 0)  AS valor_atrasado,
             COALESCE(m.qtd_pendentes, 0)   AS qtd_pendentes,
             p.ultima_entrega,
             CASE
                 WHEN p.primeira_entrega IS NOT NULL
-                THEN ROUND(
-                    p.total_entregues::numeric /
-                    GREATEST(1,
-                        EXTRACT(MONTH FROM AGE(NOW(), p.primeira_entrega)) + 1
-                    ), 1)
+                THEN ROUND(p.total_entregues::numeric / GREATEST(1, EXTRACT(MONTH FROM AGE(NOW(), p.primeira_entrega)) + 1), 1)
                 ELSE 0
             END AS enc_mes,
+            CASE
+                WHEN ac.primeiro_evento IS NOT NULL
+                THEN ROUND(ac.total_acoes::numeric / GREATEST(1, EXTRACT(MONTH FROM AGE(NOW(), ac.primeiro_evento)) + 1), 1)
+                ELSE 0
+            END AS acoes_mes,
+            pg.forma AS forma_pagamento_recorrente,
             CASE
                 WHEN COALESCE(m.valor_atrasado, 0) > 0 THEN 'inadimplente'
                 ELSE 'adimplente'
             END AS situacao
         FROM residents r
+        JOIN associations a ON a.id = r.association_id
         LEFT JOIN mens m ON m.resident_id = r.id
         LEFT JOIN pkgs p ON p.resident_id = r.id
+        LEFT JOIN acoes ac ON ac.resident_id = r.id
+        LEFT JOIN pgto pg ON pg.resident_id = r.id
         WHERE {where_clause}
+          {"AND COALESCE(m.valor_atrasado, 0) >= :min_atrasado" if min_atrasado is not None else ""}
+          {"AND COALESCE(m.valor_atrasado, 0) <= :max_atrasado" if max_atrasado is not None else ""}
+          {"AND COALESCE(m.qtd_pendentes, 0) >= :min_meses_atrasado" if min_meses_atrasado is not None else ""}
         ORDER BY m.valor_atrasado DESC NULLS LAST, r.full_name
         LIMIT :limit OFFSET :offset
     """)
+    if min_atrasado is not None:
+        params["min_atrasado"] = min_atrasado
+    if max_atrasado is not None:
+        params["max_atrasado"] = max_atrasado
+    if min_meses_atrasado is not None:
+        params["min_meses_atrasado"] = min_meses_atrasado
 
     rows = (await session.execute(sql, params)).fetchall()
 
-    total_sql = text(f"""
+    extra_conds = (
+        ("AND COALESCE(m.valor_atrasado, 0) >= :min_atrasado" if min_atrasado is not None else "")
+        + (" AND COALESCE(m.valor_atrasado, 0) <= :max_atrasado" if max_atrasado is not None else "")
+        + (" AND COALESCE(m.qtd_pendentes, 0) >= :min_meses_atrasado" if min_meses_atrasado is not None else "")
+    )
+    total = (await session.execute(text(f"""
+        WITH mens AS (
+            SELECT m.resident_id,
+                COALESCE(SUM(m.amount) FILTER (
+                    WHERE m.status = 'pending'
+                      AND m.due_date < NOW() - make_interval(days => COALESCE(s.delinquency_grace_days, 2))
+                ), 0) AS valor_atrasado,
+                COUNT(*) FILTER (
+                    WHERE m.status = 'pending'
+                      AND m.due_date < NOW() - make_interval(days => COALESCE(s.delinquency_grace_days, 2))
+                ) AS qtd_pendentes
+            FROM mensalidades m
+            JOIN association_settings s ON s.association_id = m.association_id
+            WHERE m.association_id = ANY(:ids)
+            GROUP BY m.resident_id
+        )
         SELECT COUNT(*) FROM residents r
-        WHERE {where_clause}
-    """)
-    total = (await session.execute(total_sql, params)).scalar()
+        JOIN associations a ON a.id = r.association_id
+        LEFT JOIN mens m ON m.resident_id = r.id
+        WHERE {where_clause} {extra_conds}
+    """), params)).scalar()
 
     return {
         "items": [
@@ -159,12 +238,16 @@ async def crm_residents(
                 "id": str(r.id),
                 "full_name": r.full_name,
                 "address": f"{r.address_street or ''}, {r.address_number or ''}".strip(", "),
+                "unidade": r.unidade,
+                "associado_desde": r.associado_desde.isoformat() if r.associado_desde else None,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "phone_primary": r.phone_primary,
                 "valor_atrasado": float(r.valor_atrasado),
                 "qtd_pendentes": r.qtd_pendentes,
                 "ultima_entrega": r.ultima_entrega.isoformat() if r.ultima_entrega else None,
                 "enc_mes": float(r.enc_mes),
+                "acoes_mes": float(r.acoes_mes),
+                "forma_pagamento_recorrente": r.forma_pagamento_recorrente,
                 "situacao": r.situacao,
             }
             for r in rows
