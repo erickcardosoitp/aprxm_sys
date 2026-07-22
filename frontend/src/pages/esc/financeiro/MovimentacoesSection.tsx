@@ -3,7 +3,7 @@ import toast from 'react-hot-toast'
 import html2canvas from 'html2canvas'
 import { Download, FileSpreadsheet, X } from 'lucide-react'
 import { escService } from '../../../services/esc'
-import { EscButton, EscField, EscModal, escInputCls, escInputStyle } from '../EscFormKit'
+import { EscButton, EscField, EscModal, EscSelect, escInputCls, escInputStyle, ESC_ACCENT } from '../EscFormKit'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -111,8 +111,8 @@ export default function MovimentacoesSection() {
         <div className="flex items-center gap-2 flex-wrap">
           {PERIODOS.map((p) => (
             <button key={p.key} onClick={() => setPeriodo(p.key)}
-              className="text-xs px-2.5 py-1 rounded-full font-medium transition"
-              style={periodo === p.key ? { backgroundColor: '#26619c', color: '#fff' } : { backgroundColor: '#f1f5f9', color: TEXT_MUTED }}>
+              className="text-xs px-2.5 py-1 rounded-full font-medium transition border"
+              style={periodo === p.key ? { backgroundColor: '#fff', color: ESC_ACCENT, borderColor: ESC_ACCENT } : { backgroundColor: '#fff', color: TEXT_MUTED, borderColor: BORDER }}>
               {p.label}
             </button>
           ))}
@@ -120,7 +120,7 @@ export default function MovimentacoesSection() {
           {TIPOS.map((t) => (
             <button key={t.key} onClick={() => toggle(tipo, t.key, setTipo)}
               className="text-xs px-2.5 py-1 rounded-full font-medium transition border"
-              style={tipo.includes(t.key) ? { backgroundColor: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' } : { color: TEXT_MUTED, borderColor: BORDER }}>
+              style={tipo.includes(t.key) ? { backgroundColor: '#fff', color: ESC_ACCENT, borderColor: ESC_ACCENT } : { color: TEXT_MUTED, borderColor: BORDER }}>
               {t.label}
             </button>
           ))}
@@ -133,25 +133,36 @@ export default function MovimentacoesSection() {
           {PRODUTOS.map((p) => (
             <button key={p.key} onClick={() => toggle(produto, p.key, setProduto)}
               className="text-[11px] px-2 py-1 rounded-full font-medium transition border"
-              style={produto.includes(p.key) ? { backgroundColor: '#f0fdf4', color: '#15803d', borderColor: '#bbf7d0' } : { color: TEXT_MUTED, borderColor: BORDER }}>
+              style={produto.includes(p.key) ? { backgroundColor: '#fff', color: ESC_ACCENT, borderColor: ESC_ACCENT } : { color: TEXT_MUTED, borderColor: BORDER }}>
               {p.label}
             </button>
           ))}
-          <input className={escInputCls + ' w-36'} style={escInputStyle} placeholder="Morador" value={morador} onChange={(e) => setMorador(e.target.value)} />
-          <input className={escInputCls + ' w-32'} style={escInputStyle} placeholder="Rua" value={rua} onChange={(e) => setRua(e.target.value)} />
-          <select className={escInputCls + ' w-40'} style={escInputStyle} value={inadimplente} onChange={(e) => setInadimplente(e.target.value as any)}>
-            <option value="">Inadimplente: todos</option>
-            <option value="sim">Inadimplente: sim</option>
-            <option value="nao">Inadimplente: não</option>
-          </select>
-          <select className={escInputCls + ' w-44'} style={escInputStyle} value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)}>
-            <option value="">Usuário: todos</option>
-            {usuarios.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-          </select>
-          <select className={escInputCls + ' w-36'} style={escInputStyle} value={cargo} onChange={(e) => setCargo(e.target.value)}>
-            <option value="">Cargo: todos</option>
-            {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <span className="mx-1 text-slate-300">|</span>
+          <EscField label="Morador">
+            <input className={escInputCls + ' w-36'} style={escInputStyle} value={morador} onChange={(e) => setMorador(e.target.value)} />
+          </EscField>
+          <EscField label="Rua">
+            <input className={escInputCls + ' w-32'} style={escInputStyle} value={rua} onChange={(e) => setRua(e.target.value)} />
+          </EscField>
+          <EscField label="Inadimplente">
+            <EscSelect className="w-32" value={inadimplente} onChange={(e) => setInadimplente(e.target.value as any)}>
+              <option value="">Todos</option>
+              <option value="sim">Sim</option>
+              <option value="nao">Não</option>
+            </EscSelect>
+          </EscField>
+          <EscField label="Usuário">
+            <EscSelect className="w-40" value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)}>
+              <option value="">Todos</option>
+              {usuarios.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+            </EscSelect>
+          </EscField>
+          <EscField label="Cargo">
+            <EscSelect className="w-32" value={cargo} onChange={(e) => setCargo(e.target.value)}>
+              <option value="">Todos</option>
+              {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </EscSelect>
+          </EscField>
         </div>
       </div>
 

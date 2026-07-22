@@ -1,12 +1,13 @@
-import type { ReactNode } from 'react'
-import { X } from 'lucide-react'
+import type { ReactNode, SelectHTMLAttributes } from 'react'
+import { ChevronDown, X } from 'lucide-react'
 
 export const ESC_ACCENT = '#16a34a'
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
 
 export const escInputCls =
-  "w-full border px-3 py-2 text-sm focus:outline-none focus:ring-1 disabled:bg-slate-50"
+  "w-full border px-3 py-2 text-sm focus:outline-none focus:ring-1 disabled:bg-slate-50 " +
+  "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
 export const escInputStyle = { borderColor: BORDER, fontFamily: "'IBM Plex Sans', sans-serif" } as const
 
 export function EscField({ label, children }: { label: string; children: ReactNode }) {
@@ -15,6 +16,21 @@ export function EscField({ label, children }: { label: string; children: ReactNo
       <span className="text-xs font-medium" style={{ color: TEXT_MUTED }}>{label}</span>
       {children}
     </label>
+  )
+}
+
+// Select nativo estilizado (remove a seta padrão do navegador, usa chevron proprio) -
+// mesma altura/borda/fonte do escInputCls, pra nao misturar controle "cru" com o resto.
+export function EscSelect({ className = '', ...props }: SelectHTMLAttributes<HTMLSelectElement> & { className?: string }) {
+  return (
+    <div className="relative">
+      <select
+        {...props}
+        className={`${escInputCls} appearance-none pr-8 ${className}`}
+        style={escInputStyle}
+      />
+      <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: TEXT_MUTED }} />
+    </div>
   )
 }
 

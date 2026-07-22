@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { escService } from '../../../services/esc'
-import { escInputCls, escInputStyle } from '../EscFormKit'
+import { EscSelect, escInputCls, escInputStyle } from '../EscFormKit'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -76,18 +76,18 @@ export default function DRESection() {
     <div className="flex flex-col h-full overflow-auto px-6 py-4 gap-4">
       <div className="flex items-center gap-2 flex-wrap">
         <input type="number" className={escInputCls + ' w-24'} style={escInputStyle} value={year} onChange={(e) => setYear(Number(e.target.value))} />
-        <select className={escInputCls + ' w-32'} style={escInputStyle} value={month} onChange={(e) => setMonth(e.target.value ? Number(e.target.value) : '')}>
+        <EscSelect className="w-32" value={month} onChange={(e) => setMonth(e.target.value ? Number(e.target.value) : '')}>
           <option value="">Ano inteiro</option>
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{String(m).padStart(2, '0')}</option>)}
-        </select>
-        <select className={escInputCls + ' w-32'} style={escInputStyle} value={nivel} onChange={(e) => setNivel(Number(e.target.value))}>
+        </EscSelect>
+        <EscSelect className="w-32" value={nivel} onChange={(e) => setNivel(Number(e.target.value))}>
           <option value={1}>Nível 1 — totais</option>
           <option value={2}>Nível 2 — grupos</option>
           <option value={3}>Nível 3 — detalhe</option>
-        </select>
-        <select className={escInputCls + ' w-40'} style={escInputStyle} value={agruparPor} onChange={(e) => setAgruparPor(e.target.value)}>
+        </EscSelect>
+        <EscSelect className="w-40" value={agruparPor} onChange={(e) => setAgruparPor(e.target.value)}>
           {AGRUPAR_POR.map((a) => <option key={a.key} value={a.key}>Agrupar por {a.label}</option>)}
-        </select>
+        </EscSelect>
         {loading && <span className="text-xs" style={{ color: TEXT_MUTED }}>carregando…</span>}
       </div>
 

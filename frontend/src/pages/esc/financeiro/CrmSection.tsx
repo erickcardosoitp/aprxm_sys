@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { SlidersHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { escService } from '../../../services/esc'
 import EscDataTable from '../EscDataTable'
-import { escInputCls, escInputStyle } from '../EscFormKit'
+import { EscButton, EscField, EscSelect, escInputCls, escInputStyle, ESC_ACCENT } from '../EscFormKit'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -34,6 +35,7 @@ export default function CrmSection() {
   const [minMeses, setMinMeses] = useState('')
   const [tempoAssociado, setTempoAssociado] = useState('')
   const [dependentes, setDependentes] = useState('')
+  const [avancado, setAvancado] = useState(false)
   const [rows, setRows] = useState<AssociadoRow[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -67,7 +69,7 @@ export default function CrmSection() {
         {VIEWS.map((v) => (
           <button key={v.key} onClick={() => setView(v.key)}
             className="text-sm pb-2 border-b-2 -mb-px"
-            style={{ borderColor: view === v.key ? '#26619c' : 'transparent', color: view === v.key ? '#0f172a' : TEXT_MUTED, fontWeight: view === v.key ? 600 : 500 }}>
+            style={{ borderColor: view === v.key ? ESC_ACCENT : 'transparent', color: view === v.key ? '#0f172a' : TEXT_MUTED, fontWeight: view === v.key ? 600 : 500 }}>
             {v.label}
           </button>
         ))}
@@ -75,24 +77,52 @@ export default function CrmSection() {
 
       {view === 'associados' ? (
         <div className="flex flex-col flex-1 overflow-hidden">
-          <div className="px-6 py-3 flex items-center gap-2 flex-wrap border-b" style={{ borderColor: BORDER }}>
-            <input className={escInputCls + ' w-40'} style={escInputStyle} placeholder="Nome" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value) }} />
-            <input className={escInputCls + ' w-32'} style={escInputStyle} placeholder="Rua" value={rua} onChange={(e) => { setPage(1); setRua(e.target.value) }} />
-            <select className={escInputCls + ' w-36'} style={escInputStyle} value={status} onChange={(e) => { setPage(1); setStatus(e.target.value) }}>
-              <option value="">Status: todos</option>
-              <option value="adimplente">Adimplente</option>
-              <option value="inadimplente">Inadimplente</option>
-            </select>
-            <input type="number" className={escInputCls + ' w-28'} style={escInputStyle} placeholder="Min. R$ atrasado" value={minAtrasado} onChange={(e) => { setPage(1); setMinAtrasado(e.target.value) }} />
-            <input type="number" className={escInputCls + ' w-28'} style={escInputStyle} placeholder="Max. R$ atrasado" value={maxAtrasado} onChange={(e) => { setPage(1); setMaxAtrasado(e.target.value) }} />
-            <input type="number" className={escInputCls + ' w-32'} style={escInputStyle} placeholder="Min. meses atraso" value={minMeses} onChange={(e) => { setPage(1); setMinMeses(e.target.value) }} />
-            <input type="number" className={escInputCls + ' w-32'} style={escInputStyle} placeholder="Min. meses associado" value={tempoAssociado} onChange={(e) => { setPage(1); setTempoAssociado(e.target.value) }} />
-            <select className={escInputCls + ' w-32'} style={escInputStyle} value={dependentes} onChange={(e) => { setPage(1); setDependentes(e.target.value) }}>
-              <option value="">Dependentes: todos</option>
-              <option value="sim">Tem dependente</option>
-              <option value="nao">Sem dependente</option>
-            </select>
-            <span className="text-xs ml-auto" style={{ color: TEXT_MUTED }}>{loading ? 'carregando…' : `${total} associado(s)`}</span>
+          <div className="px-6 py-3 flex flex-col gap-3 border-b" style={{ borderColor: BORDER }}>
+            <div className="flex items-end gap-3 flex-wrap">
+              <EscField label="Nome">
+                <input className={escInputCls + ' w-44'} style={escInputStyle} value={search} onChange={(e) => { setPage(1); setSearch(e.target.value) }} />
+              </EscField>
+              <EscField label="Rua">
+                <input className={escInputCls + ' w-36'} style={escInputStyle} value={rua} onChange={(e) => { setPage(1); setRua(e.target.value) }} />
+              </EscField>
+              <EscField label="Status">
+                <EscSelect className="w-36" value={status} onChange={(e) => { setPage(1); setStatus(e.target.value) }}>
+                  <option value="">Todos</option>
+                  <option value="adimplente">Adimplente</option>
+                  <option value="inadimplente">Inadimplente</option>
+                </EscSelect>
+              </EscField>
+              <button onClick={() => setAvancado((v) => !v)}
+                className="flex items-center gap-1.5 text-xs px-3 py-2 border transition"
+                style={avancado ? { borderColor: ESC_ACCENT, color: ESC_ACCENT } : { borderColor: BORDER, color: TEXT_MUTED }}>
+                <SlidersHorizontal className="w-3.5 h-3.5" /> Mais filtros
+              </button>
+              <span className="text-xs ml-auto self-center" style={{ color: TEXT_MUTED }}>{loading ? 'carregando…' : `${total} associado(s)`}</span>
+            </div>
+
+            {avancado && (
+              <div className="flex items-end gap-3 flex-wrap pt-3 border-t" style={{ borderColor: BORDER }}>
+                <EscField label="R$ atrasado, de">
+                  <input type="number" className={escInputCls + ' w-24'} style={escInputStyle} value={minAtrasado} onChange={(e) => { setPage(1); setMinAtrasado(e.target.value) }} />
+                </EscField>
+                <EscField label="até">
+                  <input type="number" className={escInputCls + ' w-24'} style={escInputStyle} value={maxAtrasado} onChange={(e) => { setPage(1); setMaxAtrasado(e.target.value) }} />
+                </EscField>
+                <EscField label="Mín. meses em atraso">
+                  <input type="number" className={escInputCls + ' w-24'} style={escInputStyle} value={minMeses} onChange={(e) => { setPage(1); setMinMeses(e.target.value) }} />
+                </EscField>
+                <EscField label="Associado há, no mínimo (meses)">
+                  <input type="number" className={escInputCls + ' w-24'} style={escInputStyle} value={tempoAssociado} onChange={(e) => { setPage(1); setTempoAssociado(e.target.value) }} />
+                </EscField>
+                <EscField label="Dependentes">
+                  <EscSelect className="w-40" value={dependentes} onChange={(e) => { setPage(1); setDependentes(e.target.value) }}>
+                    <option value="">Todos</option>
+                    <option value="sim">Tem dependente</option>
+                    <option value="nao">Sem dependente</option>
+                  </EscSelect>
+                </EscField>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-auto px-6 py-2">

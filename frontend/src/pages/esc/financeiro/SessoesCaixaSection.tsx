@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Download, RotateCcw, X } from 'lucide-react'
 import { escService } from '../../../services/esc'
-import { EscButton, EscField, escInputCls, escInputStyle } from '../EscFormKit'
+import { EscButton, EscField, EscSelect, escInputCls, escInputStyle } from '../EscFormKit'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -84,10 +84,10 @@ export default function SessoesCaixaSection() {
   return (
     <div className="flex flex-col h-full">
       <div className="px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: BORDER }}>
-        <select className={escInputCls + ' w-56'} style={escInputStyle} value={unidade} onChange={(e) => setUnidade(e.target.value)}>
+        <EscSelect className="w-56" value={unidade} onChange={(e) => setUnidade(e.target.value)}>
           <option value="">Todas as unidades</option>
           {associacoes.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+        </EscSelect>
         <span className="text-xs ml-auto" style={{ color: TEXT_MUTED }}>{loading ? 'carregando…' : `${rows.length} sessão(ões) conferida(s)`}</span>
       </div>
 
