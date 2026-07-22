@@ -5,9 +5,13 @@ export const ESC_ACCENT = '#16a34a'
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
 
+// [&[type=number]]: escopa o fix de spinner só a input[type=number] - sem isso,
+// "[appearance:textfield]" solto vira dono da propriedade "appearance" em QUALQUER
+// elemento que herde esta classe, inclusive <select>, e briga com o appearance-none
+// do EscSelect (2 setas na tela: a nativa residual + o ChevronDown proprio).
 export const escInputCls =
   "w-full border px-3 py-2 text-sm focus:outline-none focus:ring-1 disabled:bg-slate-50 " +
-  "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+  "[&[type=number]]:[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
 export const escInputStyle = { borderColor: BORDER, fontFamily: "'IBM Plex Sans', sans-serif" } as const
 
 export function EscField({ label, children }: { label: string; children: ReactNode }) {
