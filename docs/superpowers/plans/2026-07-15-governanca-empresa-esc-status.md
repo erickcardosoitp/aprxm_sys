@@ -173,7 +173,13 @@ Validado localmente contra dado real: 446 associados reais (Vaz Lobo+Congonha), 
 
 Validado localmente (12 checks: CRUD, baixa parcial/total/excedente/em conta paga, mecanismo sem-caixa, 403 associação, duplicidade de geração por mês) + **dry-run do DDL direto contra produção real** (BEGIN/ROLLBACK, aplicou sem erro, schema em v12 antes, nada persistiu) antes do deploy.
 
-**Faltam (Fases 6-7 do plano):** Contas a Receber, Sangrias. Relatórios e Conciliação PIX ficam fora, por pedido explícito do usuário.
+**Fase 6 — Contas a Receber:** novo `/esc/financeiro/contas-receber/taxa-entrega` — 1 taxa de R$2,50 prevista por morador **não-associado** com encomenda parada, não por encomenda (retirada em lote é confirmada contra `bulk_deliver_packages`, já validado na Fase 1). Mensalidade a receber reaproveita `/mensalidades/pending` (Fase 4). Frontend: `ContasReceberSection.tsx`, 2 visões.
+
+**Fase 7 — Sangrias:** `/esc/financeiro/sangrias` ganha `financeiro_scope` (antes ia direto por `empresa_id`, sem passar pelo resolver) + filtro por unidade/período + nome do usuário. Colunas ajustadas pra Data/hora, Unidade, Usuário, Valor, Justificativa.
+
+Commit `5a744ff`. Validado localmente: taxa de entrega = R$2,50 (não R$5,00) pra morador com 2 encomendas paradas; sangrias reais das 2 unidades com usuário preenchido; 403 pra associação. **Achado e limpo durante a validação**: dado de teste órfão da Fase 3 (`revert_conferencia` comita internamente — um `session.rollback()` no final do script de teste não desfaz nada depois de um commit no meio) — lição: ao validar endpoint que comita, sempre limpar explicitamente, rollback só funciona se nada comitou antes.
+
+**Financeiro Centralizado — roadmap completo (Fases 1-7).** Só ficam de fora, por pedido explícito do usuário: Relatórios (seção própria de montagem/extração) e Conciliação PIX (estratégia ainda em aberto).
 
 ---
 
