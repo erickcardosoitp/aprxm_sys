@@ -163,7 +163,11 @@ Validado localmente contra `aprxm_local` (dump real, 3069 movimentações reais,
 
 Validado localmente com sessão em Congonha chamada por usuário ESC (não Congonha) — líquido/baixas/qtd_mensalidades corretos, `revert_conferencia` funcionou (antes dava 404).
 
-**Faltam (Fases 4-7 do plano):** CRM, Contas a Pagar (única com schema novo), Contas a Receber, Sangrias. Relatórios e Conciliação PIX ficam fora, por pedido explícito do usuário.
+**Fase 4 — CRM:** achado importante antes de implementar — já existia `/crm/residents` (usado pela tela CRM da associação) calculando quase tudo que a spec pedia (R$ atrasado, qtd. pendente, última entrega, encomendas/mês). Confirmado com o usuário que essa tabela **continua em uso** (só o ranking de agentes/bônus da mesma página é que morreu com o porta-a-porta) — reaproveitado em vez de escrito do zero. Adicionado: `financeiro_scope`, grace_days por unidade (join `association_settings`, não valor único — unidades podem ter carência diferente), `acoes_mes` (mensalidade+encomenda+comprovante, distinto do `enc_mes` que só conta encomenda), `forma_pagamento_recorrente`, `associado_desde`, filtros (rua, tempo associado, dependentes, min/max R$ atrasado, min meses atrasado). `/mensalidades/pending`, `/delinquent`, `/paid` passam a fazer loop por unidade via `financeiro_scope` (preserva grace_days correto por unidade). Frontend: `CrmSection.tsx`, 4 visões. Commit `1dcaf78`.
+
+Validado localmente contra dado real: 446 associados reais (Vaz Lobo+Congonha), 48 com `acoes_mes>0`, 22 com `forma_pagamento_recorrente`; `pending`/`delinquent`/`paid` consolidam as 3 unidades; usuário de associação recebe 403.
+
+**Faltam (Fases 5-7 do plano):** Contas a Pagar (única com schema novo), Contas a Receber, Sangrias. Relatórios e Conciliação PIX ficam fora, por pedido explícito do usuário.
 
 ---
 
