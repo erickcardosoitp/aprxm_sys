@@ -167,7 +167,13 @@ Validado localmente com sessão em Congonha chamada por usuário ESC (não Congo
 
 Validado localmente contra dado real: 446 associados reais (Vaz Lobo+Congonha), 48 com `acoes_mes>0`, 22 com `forma_pagamento_recorrente`; `pending`/`delinquent`/`paid` consolidam as 3 unidades; usuário de associação recebe 403.
 
-**Faltam (Fases 5-7 do plano):** Contas a Pagar (única com schema novo), Contas a Receber, Sangrias. Relatórios e Conciliação PIX ficam fora, por pedido explícito do usuário.
+**UI (feedback do usuário, "muito feio"):** revisão com skill `ui-ux-designer` achou paleta inconsistente entre as 5 seções novas (cada uma com cor de "estado ativo" diferente — azul, índigo, verde preenchido — violando a regra do próprio design system do ESC: verde `#16a34a` só como indicador pontual, nunca fundo). Corrigido: cor unificada em todo lugar, filtros do CRM ganharam rótulo fixo (`EscField`, placeholder-como-rótulo é anti-padrão NN Group) e viraram principais+avançados (Lei de Hick), `EscSelect` novo componente (sem seta nativa do navegador). **Bug achado depois do usuário testar**: `EscSelect` mostrava 2 setas — `escInputCls` tinha `[appearance:textfield]` solto que brigava com o `appearance-none` do select; corrigido escopando só a `input[type=number]`.
+
+**Fase 5 — Contas a Pagar (schema novo, v13):** 3 tabelas aditivas (`contas_pagar_templates`, `contas_pagar`, `conta_pagar_baixas`). Manual ou recorrente (template gera conta do mês); baixa parcial (`amount_paid` acumula, status `pending→partial→paid` calculado em código). Baixa cria uma `transactions` normal (`type=expense`, `cash_session_id=NULL`) — mesmo mecanismo "sem caixa" da devolução (Fase 1): não mexe em saldo de caixa nenhum, só reduz faturamento no DRE. Endpoints novos em `esc.py`, **primeiro uso real de `require_esc_module`**. Frontend: `ContasPagarSection.tsx`. Commit `edbd7d3`.
+
+Validado localmente (12 checks: CRUD, baixa parcial/total/excedente/em conta paga, mecanismo sem-caixa, 403 associação, duplicidade de geração por mês) + **dry-run do DDL direto contra produção real** (BEGIN/ROLLBACK, aplicou sem erro, schema em v12 antes, nada persistiu) antes do deploy.
+
+**Faltam (Fases 6-7 do plano):** Contas a Receber, Sangrias. Relatórios e Conciliação PIX ficam fora, por pedido explícito do usuário.
 
 ---
 
