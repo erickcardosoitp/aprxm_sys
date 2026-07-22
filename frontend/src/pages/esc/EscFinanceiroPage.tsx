@@ -9,6 +9,7 @@ import DRESection from './financeiro/DRESection'
 import SessoesCaixaSection from './financeiro/SessoesCaixaSection'
 import CrmSection from './financeiro/CrmSection'
 import ContasPagarSection from './financeiro/ContasPagarSection'
+import ContasReceberSection from './financeiro/ContasReceberSection'
 
 export default function EscFinanceiroPage() {
   return (
@@ -23,18 +24,19 @@ export default function EscFinanceiroPage() {
         { key: 'sessoes', label: 'Sessões de Caixa', content: <SessoesCaixaSection /> },
         { key: 'dre', label: 'DRE', content: <DRESection /> },
         { key: 'contas-pagar', label: 'Contas a Pagar', content: <ContasPagarSection /> },
-        { key: 'contas-receber', label: 'Contas a Receber', content: <EscEmptySection columns={['Morador', 'Unidade', 'Origem', 'Valor']} /> },
+        { key: 'contas-receber', label: 'Contas a Receber', content: <ContasReceberSection /> },
         {
           key: 'sangrias', label: 'Sangrias',
           content: <EscDataTable
             fetchFn={escService.sangrias}
-            searchKeys={['unidade', 'reason']}
+            searchKeys={['unidade', 'usuario', 'reason']}
             filterKeys={[{ key: 'unidade', label: 'Unidade' }]}
             columns={[
+              { key: 'transaction_at', label: 'Data/hora', render: (r) => new Date(r.transaction_at).toLocaleString('pt-BR') },
               { key: 'unidade', label: 'Unidade' },
+              { key: 'usuario', label: 'Usuário' },
               { key: 'amount', label: 'Valor', render: (r) => `R$ ${r.amount}` },
-              { key: 'destination', label: 'Destino' },
-              { key: 'transaction_at', label: 'Data' },
+              { key: 'reason', label: 'Justificativa' },
             ]}
           />,
         },

@@ -185,17 +185,32 @@ async def list_dependentes(
 
 @router.get("/financeiro/sangrias", summary="Sangrias — todas as unidades")
 async def list_sangrias(
-    current: CurrentUser = Depends(require_empresa_admin),
+    unidade: UUID | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT t.id, t.amount, t.sangria_reason, t.sangria_destination, t.transaction_at, a.name AS unidade
-        FROM transactions t JOIN associations a ON a.id = t.association_id
-        WHERE a.empresa_id = :eid AND t.is_sangria = true
-        ORDER BY t.transaction_at DESC LIMIT 200
-    """), {"eid": str(current.empresa_id)})).fetchall()
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    cond = "t.association_id = ANY(:ids) AND t.is_sangria = true"
+    params: dict = {"ids": ids}
+    if date_from:
+        cond += " AND t.transaction_at::date >= :df"
+        params["df"] = date_from
+    if date_to:
+        cond += " AND t.transaction_at::date <= :dt"
+        params["dt"] = date_to
+    rows = (await session.execute(text(f"""
+        SELECT t.id, t.amount, t.sangria_reason, t.sangria_destination, t.transaction_at,
+               a.name AS unidade, u.full_name AS usuario
+        FROM transactions t
+        JOIN associations a ON a.id = t.association_id
+        LEFT JOIN users u ON u.id = t.created_by
+        WHERE {cond}
+        ORDER BY t.transaction_at DESC LIMIT 1000
+    """), params)).fetchall()
     return [{"id": str(r[0]), "amount": str(r[1]), "reason": r[2], "destination": r[3],
-             "transaction_at": str(r[4]), "unidade": r[5]} for r in rows]
+             "transaction_at": str(r[4]), "unidade": r[5], "usuario": r[6]} for r in rows]
 
 
 @router.get("/financeiro/sessoes-conferidas", summary="Sessões de caixa conferidas — todas as unidades")
@@ -472,6 +487,37 @@ async def baixar_conta_pagar(
     ), {"paid": novo_pago, "status": novo_status, "id": str(conta_id)})
     await session.commit()
     return {"ok": True, "status": novo_status, "amount_paid": float(novo_pago)}
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Contas a Receber (Fase 6) — mensalidade (reaproveita CRM) + taxa de entrega
+# de morador nao-associado, prevista 1x por morador (nao por encomenda).
+# ──────────────────────────────────────────────────────────────────────────
+
+@router.get("/financeiro/contas-receber/taxa-entrega", summary="Taxa de entrega prevista — 1 por morador não-associado com encomenda parada")
+async def list_taxa_entrega_prevista(
+    unidade: UUID | None = Query(default=None),
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    rows = (await session.execute(text("""
+        SELECT r.id, r.full_name, a.name AS unidade,
+               COUNT(p.id) AS qtd_pendente, MAX(p.delivery_fee_amount) AS valor
+        FROM residents r
+        JOIN associations a ON a.id = r.association_id
+        JOIN packages p ON p.resident_id = r.id
+        WHERE r.association_id = ANY(:ids) AND r.type = 'guest'
+          AND p.status IN ('received', 'notified')
+          AND p.has_delivery_fee = TRUE AND p.delivery_fee_paid = FALSE
+        GROUP BY r.id, r.full_name, a.name
+        ORDER BY r.full_name
+    """), {"ids": ids})).fetchall()
+    return [
+        {"resident_id": str(r[0]), "resident_name": r[1], "unidade": r[2],
+         "qtd_pendente": r[3], "valor_previsto": float(r[4] or 2.50)}
+        for r in rows
+    ]
 
 
 # ──────────────────────────────────────────────────────────────────────────

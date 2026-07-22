@@ -36,6 +36,8 @@ export const escService = {
   gerarContaPagarDoTemplate: (id: string, reference_month: string) =>
     api.post(`/esc/financeiro/contas-pagar-templates/${id}/gerar`, null, { params: { reference_month } }),
 
+  taxaEntregaPrevista: (unidade?: string) => api.get('/esc/financeiro/contas-receber/taxa-entrega', { params: { unidade } }),
+
   crmResidents: (params?: Record<string, any>) => api.get('/crm/residents', { params }),
   mensalidadesPending: (params?: Record<string, any>) => api.get('/mensalidades/pending', { params }),
   mensalidadesDelinquent: (params?: Record<string, any>) => api.get('/mensalidades/delinquent', { params }),
