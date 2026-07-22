@@ -6,6 +6,7 @@ import { escService } from '../../services/esc'
 import FluxoCaixaSection from './financeiro/FluxoCaixaSection'
 import MovimentacoesSection from './financeiro/MovimentacoesSection'
 import DRESection from './financeiro/DRESection'
+import SessoesCaixaSection from './financeiro/SessoesCaixaSection'
 
 export default function EscFinanceiroPage() {
   return (
@@ -17,20 +18,7 @@ export default function EscFinanceiroPage() {
         { key: 'fluxo', label: 'Fluxo de Caixa', content: <FluxoCaixaSection /> },
         { key: 'movimentacoes', label: 'Movimentações', content: <MovimentacoesSection /> },
         { key: 'crm', label: 'CRM', content: <EscEmptySection columns={['Morador', 'Endereço', 'Status', 'R$ Atrasado', 'Ações/mês']} /> },
-        {
-          key: 'sessoes', label: 'Sessões de Caixa',
-          content: <EscDataTable
-            fetchFn={escService.sessoesConferidas}
-            searchKeys={['unidade']}
-            filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'status', label: 'Status' }]}
-            columns={[
-              { key: 'unidade', label: 'Unidade' },
-              { key: 'opening_balance', label: 'Saldo Abertura', render: (r) => `R$ ${r.opening_balance}` },
-              { key: 'status', label: 'Status' },
-              { key: 'opened_at', label: 'Aberta em' },
-            ]}
-          />,
-        },
+        { key: 'sessoes', label: 'Sessões de Caixa', content: <SessoesCaixaSection /> },
         { key: 'dre', label: 'DRE', content: <DRESection /> },
         { key: 'contas-pagar', label: 'Contas a Pagar', content: <EscEmptySection columns={['Descrição', 'Unidade', 'Vencimento', 'Valor', 'Status']} /> },
         { key: 'contas-receber', label: 'Contas a Receber', content: <EscEmptySection columns={['Morador', 'Unidade', 'Origem', 'Valor']} /> },

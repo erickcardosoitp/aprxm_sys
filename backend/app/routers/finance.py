@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import CashSessionError
 from app.core.security import verify_password
-from app.core.tenant import CurrentUser, get_current_user, require_admin, require_conferente
+from app.core.tenant import CurrentUser, get_current_user, require_admin, require_conferente, financeiro_scope
 from app.database import AsyncSessionLocal, get_session
 from app.models.finance import CashSession, IncomeSubtype, PaymentMethod, Transaction, TransactionCategory, TransactionType
 from app.services.finance_service import FinanceService
@@ -1161,15 +1161,14 @@ async def revert_conferencia(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from sqlmodel import select as sql_select
-    result = await session.execute(
-        sql_select(CashSession).where(
-            CashSession.id == session_id,
-            CashSession.association_id == current.association_id,
-        )
-    )
+    result = await session.execute(sql_select(CashSession).where(CashSession.id == session_id))
     cash = result.scalar_one_or_none()
     if not cash:
         raise HTTPException(404, "Sessão não encontrada.")
+    if str(cash.association_id) != str(current.association_id):
+        ids = [str(i) for i in await financeiro_scope(current, session)]
+        if str(cash.association_id) not in ids:
+            raise HTTPException(404, "Sessão não encontrada.")
     if cash.status != "conferido":
         raise HTTPException(400, "Apenas sessões conferidas podem ser revertidas.")
     cash.status = "closed"
@@ -2018,7 +2017,12 @@ async def generate_conferencia_pdf(
     from io import BytesIO
     from fpdf import FPDF
 
-    aid = str(current.association_id)
+    ids = [str(current.association_id)]
+    sess_check = (await session.execute(
+        text("SELECT association_id FROM cash_sessions WHERE id = :sid"), {"sid": str(session_id)}
+    )).fetchone()
+    if sess_check and str(sess_check[0]) != str(current.association_id):
+        ids = [str(i) for i in await financeiro_scope(current, session)]
 
     # Dados da sessão
     cs = (await session.execute(text("""
@@ -2028,8 +2032,8 @@ async def generate_conferencia_pdf(
         FROM cash_sessions cs
         LEFT JOIN users u ON u.id = cs.opened_by
         LEFT JOIN associations a ON a.id = cs.association_id
-        WHERE cs.id = :sid AND cs.association_id = :aid
-    """), {"sid": str(session_id), "aid": aid})).fetchone()
+        WHERE cs.id = :sid AND cs.association_id = ANY(:ids)
+    """), {"sid": str(session_id), "ids": ids})).fetchone()
 
     if not cs:
         raise HTTPException(404, "Sessão não encontrada.")

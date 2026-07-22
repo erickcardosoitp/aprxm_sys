@@ -16,7 +16,10 @@ export const escService = {
   movimentacoesExport: (params?: Record<string, any>) =>
     api.get('/financeiro/movimentacoes/export', { params, responseType: 'blob' }),
   sangrias: () => api.get('/esc/financeiro/sangrias'),
-  sessoesConferidas: () => api.get('/esc/financeiro/sessoes-conferidas'),
+  sessoesConferidas: (unidade?: string) => api.get('/esc/financeiro/sessoes-conferidas', { params: { unidade } }),
+  reabrirSessao: (sessionId: string) => api.post(`/finance/sessions/${sessionId}/revert-conferencia`),
+  gerarConferenciaPdf: (sessionId: string, body: Record<string, any>) =>
+    api.post(`/finance/sessions/${sessionId}/conferencia-pdf`, body, { responseType: 'blob' }),
   financeiroDashboard: (unidade?: string) => api.get('/financeiro/dashboard', { params: { unidade } }),
   financeiroDre: (params: Record<string, any>) => api.get('/financeiro/dre', { params }),
   financeiroSummary: (params?: Record<string, any>) => api.get('/financeiro/summary', { params }),

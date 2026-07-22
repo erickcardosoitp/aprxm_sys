@@ -13,13 +13,13 @@ deste router de proposito, o frontend mostra placeholder pra eles.
 """
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
-from app.core.tenant import CurrentUser, require_empresa_admin, _DEFAULT_ACCESS_GROUPS
+from app.core.tenant import CurrentUser, require_empresa_admin, _DEFAULT_ACCESS_GROUPS, financeiro_scope
 from app.database import get_session
 
 router = APIRouter(prefix="/esc", tags=["Escritório"])
@@ -196,19 +196,58 @@ async def list_sangrias(
              "transaction_at": str(r[4]), "unidade": r[5]} for r in rows]
 
 
-@router.get("/financeiro/sessoes-conferidas", summary="Sessões de caixa conferidas (fechadas) — todas as unidades")
+@router.get("/financeiro/sessoes-conferidas", summary="Sessões de caixa conferidas — todas as unidades")
 async def list_sessoes_conferidas(
+    unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     rows = (await session.execute(text("""
-        SELECT cs.id, cs.opening_balance, cs.opened_at, cs.status, a.name AS unidade
-        FROM cash_sessions cs JOIN associations a ON a.id = cs.association_id
-        WHERE a.empresa_id = :eid AND cs.status != 'open'
-        ORDER BY cs.opened_at DESC LIMIT 200
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"id": str(r[0]), "opening_balance": str(r[1]), "opened_at": str(r[2]),
-             "status": r[3], "unidade": r[4]} for r in rows]
+        SELECT
+            cs.id, a.name AS unidade, cs.opened_at, cs.closed_at,
+            u_open.full_name AS usuario, u_review.full_name AS conferido_por,
+            cs.origin,
+            COALESCE(SUM(CASE WHEN t.type = 'income' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS entradas,
+            COALESCE(SUM(CASE WHEN t.type = 'expense' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS saidas,
+            COALESCE(SUM(CASE WHEN t.is_reversal THEN t.amount ELSE 0 END), 0) AS estornos,
+            COALESCE(SUM(CASE WHEN t.type = 'income' AND pm.name ILIKE '%pix%' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS bruto_pix,
+            COALESCE(SUM(CASE WHEN t.type = 'income' AND (pm.name ILIKE '%dinheiro%' OR t.payment_method_id IS NULL) AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS bruto_dinheiro,
+            COALESCE(SUM(CASE WHEN t.type = 'sangria' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS baixas,
+            cs.quebra_caixa, cs.difference AS sobra_falta,
+            COUNT(DISTINCT men.id) AS qtd_mensalidades,
+            cs.dinheiro_contado, cs.pix_contado, cs.quebra_motivo
+        FROM cash_sessions cs
+        JOIN associations a ON a.id = cs.association_id
+        LEFT JOIN users u_open ON u_open.id = cs.opened_by
+        LEFT JOIN users u_review ON u_review.id = cs.reviewed_by
+        LEFT JOIN transactions t ON t.cash_session_id = cs.id
+        LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
+        LEFT JOIN mensalidades men ON men.transaction_id = t.id
+        WHERE cs.association_id = ANY(:ids) AND cs.status = 'conferido'
+        GROUP BY cs.id, a.name, cs.opened_at, cs.closed_at, u_open.full_name,
+                 u_review.full_name, cs.origin, cs.quebra_caixa, cs.difference,
+                 cs.dinheiro_contado, cs.pix_contado, cs.quebra_motivo
+        ORDER BY cs.opened_at DESC LIMIT 500
+    """), {"ids": ids})).fetchall()
+    out = []
+    for r in rows:
+        entradas, saidas = float(r[7]), float(r[8])
+        baixas = float(r[12])
+        out.append({
+            "id": str(r[0]), "unidade": r[1], "opened_at": str(r[2]), "closed_at": str(r[3]) if r[3] else None,
+            "usuario": r[4], "conferido_por": r[5], "origin": r[6] or "Sessão de Caixa",
+            "entradas": entradas, "saidas": saidas, "estornos": float(r[9]),
+            "bruto_pix": float(r[10]), "bruto_dinheiro": float(r[11]), "baixas": baixas,
+            "liquido": round(entradas - baixas, 2),
+            "quebra_caixa": float(r[13]) if r[13] is not None else None,
+            "sobra_falta": float(r[14]) if r[14] is not None else None,
+            "qtd_mensalidades": int(r[15]),
+            "dinheiro_contado": float(r[16]) if r[16] is not None else None,
+            "pix_contado": float(r[17]) if r[17] is not None else None,
+            "quebra_motivo": r[18],
+        })
+    return out
 
 
 # ──────────────────────────────────────────────────────────────────────────
