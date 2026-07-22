@@ -159,7 +159,11 @@ Spec: `docs/superpowers/specs/2026-07-20-financeiro-centralizado-design.md`. Pla
 
 Validado localmente contra `aprxm_local` (dump real, 3069 movimentações reais, 3 associações da SAPE) + fluxo de zerar-caixa ponta a ponta com dado descartável (criado, testado, limpo). Deploy `aprxm-sys-backend-7zow123tk` — health 200, 3 endpoints novos confirmados (401 sem token, não 404/500).
 
-**Faltam (Fases 3-7 do plano):** Sessões de Caixa, CRM, Contas a Pagar (única com schema novo), Contas a Receber, Sangrias. Relatórios e Conciliação PIX ficam fora, por pedido explícito do usuário.
+**Fase 3 — Sessões de Caixa:** `/esc/financeiro/sessoes-conferidas` reescrito com `financeiro_scope`, só `status='conferido'`, calcula líquido/qtd_mensalidades/bruto PIX-dinheiro/sobra-falta/quebra. **Bug de escopo achado e corrigido** (mesma classe do fallout da Fase 9): `revert_conferencia` e `generate_conferencia_pdf` (finance.py) filtravam só por `current.association_id` — ESC tentando reabrir/reimprimir sessão de OUTRA unidade recebia 404, porque `association_id` do ESC é o Escritório, nunca a unidade alvo. Frontend: `SessoesCaixaSection.tsx` (tabela + modal, ações reabrir/2ª via com valores pré-preenchidos). Commit `207d7e2`.
+
+Validado localmente com sessão em Congonha chamada por usuário ESC (não Congonha) — líquido/baixas/qtd_mensalidades corretos, `revert_conferencia` funcionou (antes dava 404).
+
+**Faltam (Fases 4-7 do plano):** CRM, Contas a Pagar (única com schema novo), Contas a Receber, Sangrias. Relatórios e Conciliação PIX ficam fora, por pedido explícito do usuário.
 
 ---
 
