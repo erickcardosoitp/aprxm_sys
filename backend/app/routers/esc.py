@@ -11,6 +11,8 @@ tabela/logica correspondente (Plano de Metas, Monitor de Sincronizacao,
 Data Analytics, Banco de Dados, Fotos e Videos, Posts Website) — ausentes
 deste router de proposito, o frontend mostra placeholder pra eles.
 """
+from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,7 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
-from app.core.tenant import CurrentUser, require_empresa_admin, _DEFAULT_ACCESS_GROUPS, financeiro_scope
+from app.core.tenant import CurrentUser, require_empresa_admin, _DEFAULT_ACCESS_GROUPS, financeiro_scope, require_esc_module
 from app.database import get_session
 
 router = APIRouter(prefix="/esc", tags=["Escritório"])
@@ -248,6 +250,228 @@ async def list_sessoes_conferidas(
             "quebra_motivo": r[18],
         })
     return out
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Contas a Pagar (Fase 5 do Financeiro Centralizado)
+# ──────────────────────────────────────────────────────────────────────────
+
+class CriarContaPagarTemplateRequest(BaseModel):
+    association_id: UUID
+    category_id: UUID | None = None
+    name: str = Field(min_length=1, max_length=255)
+    amount: Decimal = Field(gt=0)
+    due_day: int = Field(ge=1, le=28)
+
+
+class CriarContaPagarRequest(BaseModel):
+    association_id: UUID
+    category_id: UUID | None = None
+    description: str = Field(min_length=1, max_length=255)
+    amount: Decimal = Field(gt=0)
+    due_date: date
+
+
+class BaixaContaPagarRequest(BaseModel):
+    amount: Decimal = Field(gt=0)
+    cash_session_id: UUID | None = None  # None = "sem caixa", mesmo mecanismo da devolucao
+
+
+def _status_conta_pagar(amount: Decimal, amount_paid: Decimal) -> str:
+    if amount_paid <= 0:
+        return "pending"
+    if amount_paid >= amount:
+        return "paid"
+    return "partial"
+
+
+@router.get("/financeiro/contas-pagar-templates", summary="Templates de conta a pagar recorrente")
+async def list_contas_pagar_templates(
+    unidade: UUID | None = Query(default=None),
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    rows = (await session.execute(text("""
+        SELECT t.id, t.name, t.amount, t.due_day, t.is_active, a.name AS unidade, a.id AS association_id
+        FROM contas_pagar_templates t
+        JOIN associations a ON a.id = t.association_id
+        WHERE t.association_id = ANY(:ids)
+        ORDER BY t.is_active DESC, t.name
+    """), {"ids": ids})).fetchall()
+    return [
+        {"id": str(r[0]), "name": r[1], "amount": float(r[2]), "due_day": r[3],
+         "is_active": r[4], "unidade": r[5], "association_id": str(r[6])}
+        for r in rows
+    ]
+
+
+@router.post("/financeiro/contas-pagar-templates", summary="Criar template de conta a pagar recorrente")
+async def criar_conta_pagar_template(
+    body: CriarContaPagarTemplateRequest,
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
+    row = (await session.execute(text("""
+        INSERT INTO contas_pagar_templates (association_id, category_id, name, amount, due_day, created_by)
+        VALUES (:aid, :cat, :name, :amount, :due_day, :uid)
+        RETURNING id
+    """), {
+        "aid": str(body.association_id), "cat": str(body.category_id) if body.category_id else None,
+        "name": body.name, "amount": body.amount, "due_day": body.due_day, "uid": str(current.user_id),
+    })).fetchone()
+    await session.commit()
+    return {"id": str(row[0]), "ok": True}
+
+
+@router.put("/financeiro/contas-pagar-templates/{template_id}", summary="Ativar/desativar template")
+async def atualizar_conta_pagar_template(
+    template_id: UUID,
+    is_active: bool,
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    ids = [str(i) for i in await financeiro_scope(current, session)]
+    row = (await session.execute(text(
+        "UPDATE contas_pagar_templates SET is_active = :active "
+        "WHERE id = :id AND association_id = ANY(:ids) RETURNING id"
+    ), {"active": is_active, "id": str(template_id), "ids": ids})).fetchone()
+    if not row:
+        raise HTTPException(404, "Template não encontrado.")
+    await session.commit()
+    return {"ok": True}
+
+
+@router.post("/financeiro/contas-pagar-templates/{template_id}/gerar", summary="Gerar conta do mês a partir do template")
+async def gerar_conta_pagar_do_template(
+    template_id: UUID,
+    reference_month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    ids = [str(i) for i in await financeiro_scope(current, session)]
+    tpl = (await session.execute(text(
+        "SELECT association_id, category_id, name, amount, due_day FROM contas_pagar_templates "
+        "WHERE id = :id AND association_id = ANY(:ids) AND is_active = TRUE"
+    ), {"id": str(template_id), "ids": ids})).fetchone()
+    if not tpl:
+        raise HTTPException(404, "Template não encontrado ou inativo.")
+
+    dup = (await session.execute(text(
+        "SELECT 1 FROM contas_pagar WHERE template_id = :tid AND reference_month = :ref"
+    ), {"tid": str(template_id), "ref": reference_month})).scalar()
+    if dup:
+        raise HTTPException(409, "Já existe conta gerada deste template neste mês.")
+
+    year, month = map(int, reference_month.split("-"))
+    due_day = min(tpl[4], 28)
+    row = (await session.execute(text("""
+        INSERT INTO contas_pagar (association_id, template_id, category_id, description, amount, due_date, reference_month, created_by)
+        VALUES (:aid, :tid, :cat, :desc, :amount, make_date(:yr, :mo, :day), :ref, :uid)
+        RETURNING id
+    """), {
+        "aid": str(tpl[0]), "tid": str(template_id), "cat": str(tpl[1]) if tpl[1] else None,
+        "desc": tpl[2], "amount": tpl[3], "yr": year, "mo": month, "day": due_day,
+        "ref": reference_month, "uid": str(current.user_id),
+    })).fetchone()
+    await session.commit()
+    return {"id": str(row[0]), "ok": True}
+
+
+@router.get("/financeiro/contas-pagar", summary="Contas a pagar — todas as unidades no escopo")
+async def list_contas_pagar(
+    unidade: UUID | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    cond = "c.association_id = ANY(:ids)"
+    params: dict = {"ids": ids}
+    if status_filter:
+        cond += " AND c.status = :status"
+        params["status"] = status_filter
+    rows = (await session.execute(text(f"""
+        SELECT c.id, c.description, a.name AS unidade, c.amount, c.amount_paid, c.status,
+               c.due_date, cat.name AS categoria, c.template_id IS NOT NULL AS recorrente
+        FROM contas_pagar c
+        JOIN associations a ON a.id = c.association_id
+        LEFT JOIN transaction_categories cat ON cat.id = c.category_id
+        WHERE {cond}
+        ORDER BY c.due_date ASC
+    """), params)).fetchall()
+    return [
+        {
+            "id": str(r[0]), "description": r[1], "unidade": r[2],
+            "amount": float(r[3]), "amount_paid": float(r[4]), "status": r[5],
+            "due_date": str(r[6]), "categoria": r[7], "recorrente": r[8],
+            "atrasada": r[5] != "paid" and r[6] < date.today(),
+        }
+        for r in rows
+    ]
+
+
+@router.post("/financeiro/contas-pagar", summary="Lançar conta a pagar avulsa")
+async def criar_conta_pagar(
+    body: CriarContaPagarRequest,
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
+    row = (await session.execute(text("""
+        INSERT INTO contas_pagar (association_id, category_id, description, amount, due_date, created_by)
+        VALUES (:aid, :cat, :desc, :amount, :due, :uid)
+        RETURNING id
+    """), {
+        "aid": str(body.association_id), "cat": str(body.category_id) if body.category_id else None,
+        "desc": body.description, "amount": body.amount, "due": body.due_date, "uid": str(current.user_id),
+    })).fetchone()
+    await session.commit()
+    return {"id": str(row[0]), "ok": True}
+
+
+@router.post("/financeiro/contas-pagar/{conta_id}/baixa", summary="Registrar baixa (total ou parcial)")
+async def baixar_conta_pagar(
+    conta_id: UUID,
+    body: BaixaContaPagarRequest,
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    ids = [str(i) for i in await financeiro_scope(current, session)]
+    conta = (await session.execute(text(
+        "SELECT association_id, amount, amount_paid, status FROM contas_pagar "
+        "WHERE id = :id AND association_id = ANY(:ids)"
+    ), {"id": str(conta_id), "ids": ids})).fetchone()
+    if not conta:
+        raise HTTPException(404, "Conta a pagar não encontrada.")
+    assoc_id, amount, amount_paid, status = conta
+    if status == "paid":
+        raise HTTPException(400, "Conta já está totalmente paga.")
+    novo_pago = amount_paid + body.amount
+    if novo_pago > amount:
+        raise HTTPException(400, f"Valor excede o saldo devedor (R$ {amount - amount_paid:.2f}).")
+
+    tx_row = (await session.execute(text("""
+        INSERT INTO transactions (id, association_id, cash_session_id, type, amount, description, created_by)
+        VALUES (gen_random_uuid(), :aid, :sid, 'expense', :amount, :desc, :uid)
+        RETURNING id
+    """), {
+        "aid": str(assoc_id), "sid": str(body.cash_session_id) if body.cash_session_id else None,
+        "amount": body.amount, "desc": "Baixa de conta a pagar", "uid": str(current.user_id),
+    })).fetchone()
+
+    await session.execute(text("""
+        INSERT INTO conta_pagar_baixas (conta_pagar_id, transaction_id, amount, created_by)
+        VALUES (:cid, :tid, :amount, :uid)
+    """), {"cid": str(conta_id), "tid": str(tx_row[0]), "amount": body.amount, "uid": str(current.user_id)})
+
+    novo_status = _status_conta_pagar(amount, novo_pago)
+    await session.execute(text(
+        "UPDATE contas_pagar SET amount_paid = :paid, status = :status, updated_at = NOW() WHERE id = :id"
+    ), {"paid": novo_pago, "status": novo_status, "id": str(conta_id)})
+    await session.commit()
+    return {"ok": True, "status": novo_status, "amount_paid": float(novo_pago)}
 
 
 # ──────────────────────────────────────────────────────────────────────────

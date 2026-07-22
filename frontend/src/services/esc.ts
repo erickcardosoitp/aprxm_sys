@@ -26,6 +26,16 @@ export const escService = {
   caixasAbertos: (unidade?: string) => api.get('/financeiro/caixas-abertos', { params: { unidade } }),
   zerarCaixa: (session_id: string, reason: string) => api.post('/financeiro/zerar-caixa', { session_id, reason }),
 
+  contasPagar: (params?: Record<string, any>) => api.get('/esc/financeiro/contas-pagar', { params }),
+  criarContaPagar: (body: any) => api.post('/esc/financeiro/contas-pagar', body),
+  baixarContaPagar: (id: string, body: any) => api.post(`/esc/financeiro/contas-pagar/${id}/baixa`, body),
+  contasPagarTemplates: (params?: Record<string, any>) => api.get('/esc/financeiro/contas-pagar-templates', { params }),
+  criarContaPagarTemplate: (body: any) => api.post('/esc/financeiro/contas-pagar-templates', body),
+  atualizarContaPagarTemplate: (id: string, is_active: boolean) =>
+    api.put(`/esc/financeiro/contas-pagar-templates/${id}`, null, { params: { is_active } }),
+  gerarContaPagarDoTemplate: (id: string, reference_month: string) =>
+    api.post(`/esc/financeiro/contas-pagar-templates/${id}/gerar`, null, { params: { reference_month } }),
+
   crmResidents: (params?: Record<string, any>) => api.get('/crm/residents', { params }),
   mensalidadesPending: (params?: Record<string, any>) => api.get('/mensalidades/pending', { params }),
   mensalidadesDelinquent: (params?: Record<string, any>) => api.get('/mensalidades/delinquent', { params }),

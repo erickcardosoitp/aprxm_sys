@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 12
+_SCHEMA_VERSION = 13
 
 
 async def _run_migrations() -> None:
@@ -487,6 +487,66 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (12, 'v12: inventario de encomendas (package_inventories)') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v13: Financeiro Centralizado, Fase 5 — Contas a Pagar. Aditivo, 3
+            # tabelas novas. Manual ou recorrente (template_id preenchido = gerada
+            # de template); baixa parcial (amount_paid acumula, status calculado
+            # em codigo, nao em constraint).
+            try:
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS contas_pagar_templates (
+                        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        association_id UUID NOT NULL REFERENCES associations(id),
+                        category_id    UUID REFERENCES transaction_categories(id),
+                        name           TEXT NOT NULL,
+                        amount         NUMERIC(12,2) NOT NULL,
+                        due_day        INTEGER NOT NULL CHECK (due_day BETWEEN 1 AND 28),
+                        is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_by     UUID REFERENCES users(id),
+                        created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS contas_pagar (
+                        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        association_id  UUID NOT NULL REFERENCES associations(id),
+                        template_id     UUID REFERENCES contas_pagar_templates(id),
+                        category_id     UUID REFERENCES transaction_categories(id),
+                        description     TEXT NOT NULL,
+                        amount          NUMERIC(12,2) NOT NULL,
+                        amount_paid     NUMERIC(12,2) NOT NULL DEFAULT 0,
+                        due_date        DATE NOT NULL,
+                        status          TEXT NOT NULL DEFAULT 'pending',
+                        reference_month TEXT,
+                        created_by      UUID REFERENCES users(id),
+                        created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS conta_pagar_baixas (
+                        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        conta_pagar_id UUID NOT NULL REFERENCES contas_pagar(id),
+                        transaction_id UUID REFERENCES transactions(id),
+                        amount         NUMERIC(12,2) NOT NULL,
+                        paid_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        created_by     UUID REFERENCES users(id)
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_contas_pagar_assoc ON contas_pagar(association_id, status)"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_conta_pagar_baixas_conta ON conta_pagar_baixas(conta_pagar_id)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (13, 'v13: Contas a Pagar (contas_pagar_templates, contas_pagar, conta_pagar_baixas)') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -1601,6 +1661,63 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (12, 'v12: inventario de encomendas (package_inventories)') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v13: Contas a Pagar — mesmo bloco do ramo _is_existing_db
+        try:
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS contas_pagar_templates (
+                    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    association_id UUID NOT NULL REFERENCES associations(id),
+                    category_id    UUID REFERENCES transaction_categories(id),
+                    name           TEXT NOT NULL,
+                    amount         NUMERIC(12,2) NOT NULL,
+                    due_day        INTEGER NOT NULL CHECK (due_day BETWEEN 1 AND 28),
+                    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_by     UUID REFERENCES users(id),
+                    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """))
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS contas_pagar (
+                    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    association_id  UUID NOT NULL REFERENCES associations(id),
+                    template_id     UUID REFERENCES contas_pagar_templates(id),
+                    category_id     UUID REFERENCES transaction_categories(id),
+                    description     TEXT NOT NULL,
+                    amount          NUMERIC(12,2) NOT NULL,
+                    amount_paid     NUMERIC(12,2) NOT NULL DEFAULT 0,
+                    due_date        DATE NOT NULL,
+                    status          TEXT NOT NULL DEFAULT 'pending',
+                    reference_month TEXT,
+                    created_by      UUID REFERENCES users(id),
+                    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """))
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS conta_pagar_baixas (
+                    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    conta_pagar_id UUID NOT NULL REFERENCES contas_pagar(id),
+                    transaction_id UUID REFERENCES transactions(id),
+                    amount         NUMERIC(12,2) NOT NULL,
+                    paid_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    created_by     UUID REFERENCES users(id)
+                )
+            """))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_contas_pagar_assoc ON contas_pagar(association_id, status)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_conta_pagar_baixas_conta ON conta_pagar_baixas(conta_pagar_id)"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (13, 'v13: Contas a Pagar (contas_pagar_templates, contas_pagar, conta_pagar_baixas)') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()

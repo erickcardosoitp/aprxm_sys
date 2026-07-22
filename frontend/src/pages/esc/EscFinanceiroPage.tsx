@@ -8,6 +8,7 @@ import MovimentacoesSection from './financeiro/MovimentacoesSection'
 import DRESection from './financeiro/DRESection'
 import SessoesCaixaSection from './financeiro/SessoesCaixaSection'
 import CrmSection from './financeiro/CrmSection'
+import ContasPagarSection from './financeiro/ContasPagarSection'
 
 export default function EscFinanceiroPage() {
   return (
@@ -21,7 +22,7 @@ export default function EscFinanceiroPage() {
         { key: 'crm', label: 'CRM', content: <CrmSection /> },
         { key: 'sessoes', label: 'Sessões de Caixa', content: <SessoesCaixaSection /> },
         { key: 'dre', label: 'DRE', content: <DRESection /> },
-        { key: 'contas-pagar', label: 'Contas a Pagar', content: <EscEmptySection columns={['Descrição', 'Unidade', 'Vencimento', 'Valor', 'Status']} /> },
+        { key: 'contas-pagar', label: 'Contas a Pagar', content: <ContasPagarSection /> },
         { key: 'contas-receber', label: 'Contas a Receber', content: <EscEmptySection columns={['Morador', 'Unidade', 'Origem', 'Valor']} /> },
         {
           key: 'sangrias', label: 'Sangrias',
