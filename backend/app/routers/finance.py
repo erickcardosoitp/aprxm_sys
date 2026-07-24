@@ -1368,10 +1368,23 @@ async def reverse_transaction(
     if not authorized:
         raise HTTPException(status_code=403, detail="Senha de administrador incorreta.")
 
+    # A transacao pode pertencer a uma unidade diferente da estacao do chamador
+    # (ex: admin do ESC/Escritorio estornando uma sangria de uma unidade especifica) -
+    # usa financeiro_scope pra resolver quais associacoes o chamador pode agir,
+    # em vez de comparar contra current.association_id direto (bug: 404 sempre
+    # pra quem esta estacionado no Escritorio, ja que nenhuma transacao de unidade
+    # tem association_id == empresa_id).
+    scope_ids = {str(i) for i in await financeiro_scope(current, session)}
+    tx_assoc_id = (await session.execute(
+        text("SELECT association_id FROM transactions WHERE id = :id"), {"id": str(transaction_id)}
+    )).scalar()
+    if not tx_assoc_id or str(tx_assoc_id) not in scope_ids:
+        raise HTTPException(status_code=404, detail="Transação não encontrada no seu escopo.")
+
     svc = FinanceService(session)
     reversal = await svc.reverse_transaction(
         transaction_id=transaction_id,
-        association_id=current.association_id,
+        association_id=tx_assoc_id,
         reversed_by=current.user_id,
         reason=body.reason,
     )
