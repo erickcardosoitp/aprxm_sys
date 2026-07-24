@@ -107,6 +107,9 @@ export default function DRESection() {
               <p className={`text-base font-bold ${dre.resultado >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmt(dre.resultado)}</p>
             </div>
           </div>
+          <p className="text-xs" style={{ color: TEXT_MUTED }}>
+            Sangria não entra neste DRE — é transferência interna de caixa, não receita nem despesa. Acompanhe em Sangrias.
+          </p>
 
           <div className="border" style={{ borderColor: BORDER }}>
             <div className="px-3 py-2 border-b text-xs font-semibold uppercase" style={{ borderColor: BORDER, color: TEXT_MUTED }}>Receitas</div>

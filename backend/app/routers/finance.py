@@ -2154,8 +2154,8 @@ async def generate_conferencia_pdf(
         tipo = TYPE_PT.get(tx[0], tx[0])
         sub = SUBTYPE_PT.get(tx[1] or "", "")
         label = sub if sub else tipo
-        desc = (tx[3] or "")[:38] if not tx[5] else f"{tx[5][:20]} — {tx[3] or ''}"[:38]
-        amt = float(tx[4] or 0)
+        desc = (tx[2] or "")[:38] if not tx[5] else f"{tx[5][:20]} — {tx[2] or ''}"[:38]
+        amt = float(tx[3] or 0)
         dt = tx[6].strftime("%d/%m %H:%M") if tx[6] else "-"
         color = (15, 122, 77) if tx[0] == "income" else (220, 38, 38)
         pdf.cell(22, 5, " " + label[:14], fill=True, border=0)

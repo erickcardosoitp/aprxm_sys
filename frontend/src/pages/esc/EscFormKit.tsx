@@ -14,11 +14,14 @@ export const escInputCls =
   "[&[type=number]]:[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
 export const escInputStyle = { borderColor: BORDER, fontFamily: "'IBM Plex Sans', sans-serif" } as const
 
-export function EscField({ label, children }: { label: string; children: ReactNode }) {
+export function EscField({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium" style={{ color: TEXT_MUTED }}>{label}</span>
+      <span className="text-xs font-medium" style={{ color: TEXT_MUTED }}>
+        {label}{required && <span style={{ color: '#dc2626' }}> *</span>}
+      </span>
       {children}
+      {hint && <span className="text-[11px]" style={{ color: TEXT_MUTED }}>{hint}</span>}
     </label>
   )
 }

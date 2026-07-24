@@ -1,6 +1,5 @@
 import { TrendingUp } from 'lucide-react'
 import EscModulePage from './EscModulePage'
-import EscDataTable from './EscDataTable'
 import EscEmptySection from './EscEmptySection'
 import { escService } from '../../services/esc'
 import FluxoCaixaSection from './financeiro/FluxoCaixaSection'
@@ -10,6 +9,7 @@ import SessoesCaixaSection from './financeiro/SessoesCaixaSection'
 import CrmSection from './financeiro/CrmSection'
 import ContasPagarSection from './financeiro/ContasPagarSection'
 import ContasReceberSection from './financeiro/ContasReceberSection'
+import SangriasSection from './financeiro/SangriasSection'
 
 export default function EscFinanceiroPage() {
   return (
@@ -27,18 +27,7 @@ export default function EscFinanceiroPage() {
         { key: 'contas-receber', label: 'Contas a Receber', content: <ContasReceberSection /> },
         {
           key: 'sangrias', label: 'Sangrias',
-          content: <EscDataTable
-            fetchFn={escService.sangrias}
-            searchKeys={['unidade', 'usuario', 'reason']}
-            filterKeys={[{ key: 'unidade', label: 'Unidade' }]}
-            columns={[
-              { key: 'transaction_at', label: 'Data/hora', render: (r) => new Date(r.transaction_at).toLocaleString('pt-BR') },
-              { key: 'unidade', label: 'Unidade' },
-              { key: 'usuario', label: 'Usuário' },
-              { key: 'amount', label: 'Valor', render: (r) => `R$ ${r.amount}` },
-              { key: 'reason', label: 'Justificativa' },
-            ]}
-          />,
+          content: <SangriasSection />,
         },
         { key: 'relatorios', label: 'Relatórios', content: <EscEmptySection columns={['Relatório', 'Período', 'Unidade']} /> },
         { key: 'pix', label: 'Conciliação PIX', content: <EscEmptySection columns={['Data', 'Valor', 'Unidade', 'Status']} /> },

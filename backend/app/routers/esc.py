@@ -20,11 +20,31 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.security import hash_password
 from app.core.tenant import CurrentUser, require_empresa_admin, _DEFAULT_ACCESS_GROUPS, financeiro_scope, require_esc_module
 from app.database import get_session
 
 router = APIRouter(prefix="/esc", tags=["Escritório"])
+
+# Exclui associações de homologação/teste e unidades marcadas para exclusão
+# das listagens agregadas do ESC (visão de produção por padrão).
+_PROD_ASSOC_FILTER = "a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'"
+
+
+async def _audit(
+    session: AsyncSession, current: CurrentUser, action: str,
+    entity: str, entity_id, detail: str,
+) -> None:
+    """Registra a acao de escrita no audit_log (fica visivel em Administracao > Auditoria).
+    Chamar ANTES do commit — faz parte da mesma transacao da acao."""
+    await session.execute(text("""
+        INSERT INTO audit_log (association_id, empresa_id, user_id, action, entity, entity_id, detail)
+        VALUES (:a, :e, :u, :action, :entity, :eid, :d)
+    """), {
+        "a": str(current.association_id), "e": str(current.empresa_id), "u": str(current.user_id),
+        "action": action, "entity": entity, "eid": str(entity_id) if entity_id else None, "d": detail,
+    })
 
 
 async def _assert_assoc_da_empresa(session: AsyncSession, association_id: UUID, empresa_id) -> None:
@@ -45,12 +65,44 @@ async def list_associacoes(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
+    rows = (await session.execute(text(f"""
         SELECT id, name, slug, is_active, plan_name, created_at
-        FROM associations WHERE empresa_id = :eid ORDER BY name
+        FROM associations a WHERE empresa_id = :eid AND {_PROD_ASSOC_FILTER} ORDER BY name
     """), {"eid": str(current.empresa_id)})).fetchall()
     return [{"id": str(r[0]), "name": r[1], "slug": r[2], "is_active": r[3],
              "plan_name": r[4], "created_at": str(r[5])} for r in rows]
+
+
+class EditarAssociacaoRequest(BaseModel):
+    name: str | None = None
+    slug: str | None = None
+    plan_name: str | None = None
+    is_active: bool | None = None
+
+
+@router.put("/cadastros/associacoes/{association_id}", summary="Editar associação da empresa")
+async def editar_associacao(
+    association_id: UUID,
+    body: EditarAssociacaoRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await _assert_assoc_da_empresa(session, association_id, current.empresa_id)
+    sets, params = [], {"id": str(association_id)}
+    if body.name is not None:
+        sets.append("name = :name"); params["name"] = body.name
+    if body.slug is not None:
+        sets.append("slug = :slug"); params["slug"] = body.slug
+    if body.plan_name is not None:
+        sets.append("plan_name = :plan"); params["plan"] = body.plan_name
+    if body.is_active is not None:
+        sets.append("is_active = :active"); params["active"] = body.is_active
+    if not sets:
+        return {"ok": True, "noop": True}
+    await session.execute(text(f"UPDATE associations SET {', '.join(sets)} WHERE id = :id"), params)
+    await _audit(session, current, "editar_associacao", "associations", association_id, ", ".join(f"{k}={v}" for k, v in params.items() if k != "id"))
+    await session.commit()
+    return {"ok": True}
 
 
 @router.get("/cadastros/usuarios", summary="Usuários da empresa (todas as unidades)")
@@ -71,37 +123,29 @@ async def list_usuarios(
              "unidade": r[6]} for r in rows]
 
 
-@router.get("/cadastros/grupos-usuarios", summary="Grupos de usuários (templates de acesso por cargo)")
-async def list_grupos_usuarios(
-    current: CurrentUser = Depends(require_empresa_admin),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT a.id, a.name, s.access_groups
-        FROM associations a
-        LEFT JOIN association_settings s ON s.association_id = a.id
-        WHERE a.empresa_id = :eid ORDER BY a.name
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    out = []
-    for r in rows:
-        groups = r[2] or {}
-        for role, perms in groups.items():
-            out.append({"unidade": r[1], "grupo": role, "modulos": perms})
-    return out
-
-
 @router.get("/cadastros/encomendas", summary="Encomendas — todas as unidades")
 async def list_encomendas(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
+    cond = f"a.empresa_id = :eid AND {_PROD_ASSOC_FILTER}"
+    params: dict = {"eid": str(current.empresa_id)}
+    if date_from:
+        cond += " AND p.received_at::date >= :df"; params["df"] = date.fromisoformat(date_from)
+    if date_to:
+        cond += " AND p.received_at::date <= :dt"; params["dt"] = date.fromisoformat(date_to)
+    # sem filtro de data: limita as 200 mais recentes (evita carregar o historico
+    # inteiro); com filtro, sem limite — o usuario escolheu o recorte.
+    limit_clause = "" if (date_from or date_to) else "LIMIT 200"
+    rows = (await session.execute(text(f"""
         SELECT p.id, p.status, p.sender_name, p.carrier_name, p.received_at,
                a.name AS unidade
         FROM packages p JOIN associations a ON a.id = p.association_id
-        WHERE a.empresa_id = :eid
-        ORDER BY p.received_at DESC LIMIT 200
-    """), {"eid": str(current.empresa_id)})).fetchall()
+        WHERE {cond}
+        ORDER BY p.received_at DESC {limit_clause}
+    """), params)).fetchall()
     return [{"id": str(r[0]), "status": r[1], "sender_name": r[2], "carrier_name": r[3],
              "received_at": str(r[4]), "unidade": r[5]} for r in rows]
 
@@ -110,14 +154,23 @@ async def list_encomendas(
 async def list_ordens_servico(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
+    cond = f"a.empresa_id = :eid AND {_PROD_ASSOC_FILTER}"
+    params: dict = {"eid": str(current.empresa_id)}
+    if date_from:
+        cond += " AND os.created_at::date >= :df"; params["df"] = date.fromisoformat(date_from)
+    if date_to:
+        cond += " AND os.created_at::date <= :dt"; params["dt"] = date.fromisoformat(date_to)
+    limit_clause = "" if (date_from or date_to) else "LIMIT 200"
+    rows = (await session.execute(text(f"""
         SELECT os.id, os.number, os.title, os.priority, os.status, os.created_at,
                a.name AS unidade
         FROM service_orders os JOIN associations a ON a.id = os.association_id
-        WHERE a.empresa_id = :eid
-        ORDER BY os.created_at DESC LIMIT 200
-    """), {"eid": str(current.empresa_id)})).fetchall()
+        WHERE {cond}
+        ORDER BY os.created_at DESC {limit_clause}
+    """), params)).fetchall()
     return [{"id": str(r[0]), "number": r[1], "title": r[2], "priority": r[3],
              "status": r[4], "created_at": str(r[5]), "unidade": r[6]} for r in rows]
 
@@ -127,13 +180,35 @@ async def list_comprovantes_estoque(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
+    rows = (await session.execute(text(f"""
         SELECT a.id, a.name, COALESCE(s.proof_stock, 0) AS estoque
         FROM associations a
         LEFT JOIN association_settings s ON s.association_id = a.id
-        WHERE a.empresa_id = :eid ORDER BY a.name
+        WHERE a.empresa_id = :eid AND {_PROD_ASSOC_FILTER} ORDER BY a.name
     """), {"eid": str(current.empresa_id)})).fetchall()
     return [{"id": str(r[0]), "unidade": r[1], "estoque": r[2]} for r in rows]
+
+
+class EditarEstoqueComprovanteRequest(BaseModel):
+    estoque: int = Field(ge=0)
+
+
+@router.put("/cadastros/comprovantes-residencia/{association_id}", summary="Editar estoque de comprovante de residência de uma unidade")
+async def editar_comprovante_estoque(
+    association_id: UUID,
+    body: EditarEstoqueComprovanteRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await _assert_assoc_da_empresa(session, association_id, current.empresa_id)
+    await session.execute(text("""
+        INSERT INTO association_settings (association_id, proof_stock)
+        VALUES (:aid, :estoque)
+        ON CONFLICT (association_id) DO UPDATE SET proof_stock = :estoque, updated_at = NOW()
+    """), {"aid": str(association_id), "estoque": body.estoque})
+    await _audit(session, current, "editar_estoque_comprovante", "association_settings", association_id, f"estoque -> {body.estoque}")
+    await session.commit()
+    return {"ok": True}
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -196,13 +271,13 @@ async def list_sangrias(
     params: dict = {"ids": ids}
     if date_from:
         cond += " AND t.transaction_at::date >= :df"
-        params["df"] = date_from
+        params["df"] = date.fromisoformat(date_from)
     if date_to:
         cond += " AND t.transaction_at::date <= :dt"
-        params["dt"] = date_to
+        params["dt"] = date.fromisoformat(date_to)
     rows = (await session.execute(text(f"""
         SELECT t.id, t.amount, t.sangria_reason, t.sangria_destination, t.transaction_at,
-               a.name AS unidade, u.full_name AS usuario
+               a.name AS unidade, u.full_name AS usuario, t.reversed_at, t.is_reversal
         FROM transactions t
         JOIN associations a ON a.id = t.association_id
         LEFT JOIN users u ON u.id = t.created_by
@@ -210,7 +285,8 @@ async def list_sangrias(
         ORDER BY t.transaction_at DESC LIMIT 1000
     """), params)).fetchall()
     return [{"id": str(r[0]), "amount": str(r[1]), "reason": r[2], "destination": r[3],
-             "transaction_at": str(r[4]), "unidade": r[5], "usuario": r[6]} for r in rows]
+             "transaction_at": str(r[4]), "unidade": r[5], "usuario": r[6],
+             "reversed": r[7] is not None, "is_reversal": r[8]} for r in rows]
 
 
 @router.get("/financeiro/sessoes-conferidas", summary="Sessões de caixa conferidas — todas as unidades")
@@ -256,7 +332,7 @@ async def list_sessoes_conferidas(
             "usuario": r[4], "conferido_por": r[5], "origin": r[6] or "Sessão de Caixa",
             "entradas": entradas, "saidas": saidas, "estornos": float(r[9]),
             "bruto_pix": float(r[10]), "bruto_dinheiro": float(r[11]), "baixas": baixas,
-            "liquido": round(entradas - baixas, 2),
+            "liquido": round(entradas - saidas - baixas, 2),
             "quebra_caixa": float(r[13]) if r[13] is not None else None,
             "sobra_falta": float(r[14]) if r[14] is not None else None,
             "qtd_mensalidades": int(r[15]),
@@ -273,7 +349,7 @@ async def list_sessoes_conferidas(
 
 class CriarContaPagarTemplateRequest(BaseModel):
     association_id: UUID
-    category_id: UUID | None = None
+    payable_category_id: UUID | None = None
     name: str = Field(min_length=1, max_length=255)
     amount: Decimal = Field(gt=0)
     due_day: int = Field(ge=1, le=28)
@@ -281,10 +357,71 @@ class CriarContaPagarTemplateRequest(BaseModel):
 
 class CriarContaPagarRequest(BaseModel):
     association_id: UUID
-    category_id: UUID | None = None
+    payable_category_id: UUID | None = None
     description: str = Field(min_length=1, max_length=255)
     amount: Decimal = Field(gt=0)
     due_date: date
+
+
+class CriarPayableCategoriaRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+@router.get("/cadastros/categorias-contas-pagar", summary="Categorias de contas a pagar da empresa")
+async def list_payable_categorias(
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    rows = (await session.execute(text(
+        "SELECT id, name, is_active FROM payable_categories WHERE empresa_id = :eid ORDER BY name"
+    ), {"eid": str(current.empresa_id)})).fetchall()
+    return [{"id": str(r[0]), "name": r[1], "is_active": r[2]} for r in rows]
+
+
+@router.post("/cadastros/categorias-contas-pagar", summary="Criar categoria de conta a pagar (empresa)")
+async def criar_payable_categoria(
+    body: CriarPayableCategoriaRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    row = (await session.execute(text("""
+        INSERT INTO payable_categories (id, empresa_id, name, is_active)
+        VALUES (gen_random_uuid(), :eid, :name, TRUE)
+        RETURNING id
+    """), {"eid": str(current.empresa_id), "name": body.name})).fetchone()
+    await _audit(session, current, "criar_categoria_contas_pagar", "payable_categories", row[0], body.name)
+    await session.commit()
+    return {"id": str(row[0]), "ok": True}
+
+
+class EditarPayableCategoriaRequest(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None
+
+
+@router.put("/cadastros/categorias-contas-pagar/{categoria_id}", summary="Editar/desativar categoria de conta a pagar")
+async def editar_payable_categoria(
+    categoria_id: UUID,
+    body: EditarPayableCategoriaRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    sets, params = [], {"id": str(categoria_id), "eid": str(current.empresa_id)}
+    if body.name is not None:
+        sets.append("name = :name"); params["name"] = body.name
+    if body.is_active is not None:
+        sets.append("is_active = :active"); params["active"] = body.is_active
+    if not sets:
+        return {"ok": True, "noop": True}
+    r = await session.execute(text(
+        f"UPDATE payable_categories SET {', '.join(sets)} WHERE id = :id AND empresa_id = :eid"
+    ), params)
+    if r.rowcount == 0:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Categoria não encontrada na sua empresa.")
+    await _audit(session, current, "editar_categoria_contas_pagar", "payable_categories", categoria_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid")))
+    await session.commit()
+    return {"ok": True}
 
 
 class BaixaContaPagarRequest(BaseModel):
@@ -329,13 +466,14 @@ async def criar_conta_pagar_template(
 ) -> dict:
     await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
     row = (await session.execute(text("""
-        INSERT INTO contas_pagar_templates (association_id, category_id, name, amount, due_day, created_by)
+        INSERT INTO contas_pagar_templates (association_id, payable_category_id, name, amount, due_day, created_by)
         VALUES (:aid, :cat, :name, :amount, :due_day, :uid)
         RETURNING id
     """), {
-        "aid": str(body.association_id), "cat": str(body.category_id) if body.category_id else None,
+        "aid": str(body.association_id), "cat": str(body.payable_category_id) if body.payable_category_id else None,
         "name": body.name, "amount": body.amount, "due_day": body.due_day, "uid": str(current.user_id),
     })).fetchone()
+    await _audit(session, current, "criar_conta_pagar_template", "contas_pagar_templates", row[0], body.name)
     await session.commit()
     return {"id": str(row[0]), "ok": True}
 
@@ -354,6 +492,7 @@ async def atualizar_conta_pagar_template(
     ), {"active": is_active, "id": str(template_id), "ids": ids})).fetchone()
     if not row:
         raise HTTPException(404, "Template não encontrado.")
+    await _audit(session, current, "atualizar_conta_pagar_template", "contas_pagar_templates", template_id, f"is_active -> {is_active}")
     await session.commit()
     return {"ok": True}
 
@@ -367,7 +506,7 @@ async def gerar_conta_pagar_do_template(
 ) -> dict:
     ids = [str(i) for i in await financeiro_scope(current, session)]
     tpl = (await session.execute(text(
-        "SELECT association_id, category_id, name, amount, due_day FROM contas_pagar_templates "
+        "SELECT association_id, payable_category_id, name, amount, due_day FROM contas_pagar_templates "
         "WHERE id = :id AND association_id = ANY(:ids) AND is_active = TRUE"
     ), {"id": str(template_id), "ids": ids})).fetchone()
     if not tpl:
@@ -382,7 +521,7 @@ async def gerar_conta_pagar_do_template(
     year, month = map(int, reference_month.split("-"))
     due_day = min(tpl[4], 28)
     row = (await session.execute(text("""
-        INSERT INTO contas_pagar (association_id, template_id, category_id, description, amount, due_date, reference_month, created_by)
+        INSERT INTO contas_pagar (association_id, template_id, payable_category_id, description, amount, due_date, reference_month, created_by)
         VALUES (:aid, :tid, :cat, :desc, :amount, make_date(:yr, :mo, :day), :ref, :uid)
         RETURNING id
     """), {
@@ -390,6 +529,7 @@ async def gerar_conta_pagar_do_template(
         "desc": tpl[2], "amount": tpl[3], "yr": year, "mo": month, "day": due_day,
         "ref": reference_month, "uid": str(current.user_id),
     })).fetchone()
+    await _audit(session, current, "gerar_conta_pagar_do_template", "contas_pagar", row[0], f"template={template_id} mes={reference_month}")
     await session.commit()
     return {"id": str(row[0]), "ok": True}
 
@@ -409,10 +549,10 @@ async def list_contas_pagar(
         params["status"] = status_filter
     rows = (await session.execute(text(f"""
         SELECT c.id, c.description, a.name AS unidade, c.amount, c.amount_paid, c.status,
-               c.due_date, cat.name AS categoria, c.template_id IS NOT NULL AS recorrente
+               c.due_date, cat.name AS categoria, c.template_id IS NOT NULL AS recorrente, c.association_id
         FROM contas_pagar c
         JOIN associations a ON a.id = c.association_id
-        LEFT JOIN transaction_categories cat ON cat.id = c.category_id
+        LEFT JOIN payable_categories cat ON cat.id = c.payable_category_id
         WHERE {cond}
         ORDER BY c.due_date ASC
     """), params)).fetchall()
@@ -422,6 +562,7 @@ async def list_contas_pagar(
             "amount": float(r[3]), "amount_paid": float(r[4]), "status": r[5],
             "due_date": str(r[6]), "categoria": r[7], "recorrente": r[8],
             "atrasada": r[5] != "paid" and r[6] < date.today(),
+            "association_id": str(r[9]),
         }
         for r in rows
     ]
@@ -435,13 +576,14 @@ async def criar_conta_pagar(
 ) -> dict:
     await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
     row = (await session.execute(text("""
-        INSERT INTO contas_pagar (association_id, category_id, description, amount, due_date, created_by)
+        INSERT INTO contas_pagar (association_id, payable_category_id, description, amount, due_date, created_by)
         VALUES (:aid, :cat, :desc, :amount, :due, :uid)
         RETURNING id
     """), {
-        "aid": str(body.association_id), "cat": str(body.category_id) if body.category_id else None,
+        "aid": str(body.association_id), "cat": str(body.payable_category_id) if body.payable_category_id else None,
         "desc": body.description, "amount": body.amount, "due": body.due_date, "uid": str(current.user_id),
     })).fetchone()
+    await _audit(session, current, "criar_conta_pagar", "contas_pagar", row[0], body.description)
     await session.commit()
     return {"id": str(row[0]), "ok": True}
 
@@ -455,25 +597,31 @@ async def baixar_conta_pagar(
 ) -> dict:
     ids = [str(i) for i in await financeiro_scope(current, session)]
     conta = (await session.execute(text(
-        "SELECT association_id, amount, amount_paid, status FROM contas_pagar "
-        "WHERE id = :id AND association_id = ANY(:ids)"
+        "SELECT c.association_id, c.amount, c.amount_paid, c.status, c.description, pc.name AS categoria "
+        "FROM contas_pagar c LEFT JOIN payable_categories pc ON pc.id = c.payable_category_id "
+        "WHERE c.id = :id AND c.association_id = ANY(:ids)"
     ), {"id": str(conta_id), "ids": ids})).fetchone()
     if not conta:
         raise HTTPException(404, "Conta a pagar não encontrada.")
-    assoc_id, amount, amount_paid, status = conta
+    assoc_id, amount, amount_paid, status, conta_desc, categoria_nome = conta
     if status == "paid":
         raise HTTPException(400, "Conta já está totalmente paga.")
     novo_pago = amount_paid + body.amount
     if novo_pago > amount:
         raise HTTPException(400, f"Valor excede o saldo devedor (R$ {amount - amount_paid:.2f}).")
 
+    # Categoria de contas a pagar e' um conceito proprio (payable_categories), separado das
+    # categorias de movimentacao (transaction_categories) que alimentam o DRE — por isso o
+    # nome da categoria vai na descricao da transacao, pra nao ficar generico "Baixa de conta
+    # a pagar" pra tudo (perderia a classificacao ao olhar o DRE/Movimentacoes).
+    desc = f"Baixa conta a pagar — {categoria_nome}: {conta_desc}" if categoria_nome else f"Baixa de conta a pagar: {conta_desc}"
     tx_row = (await session.execute(text("""
         INSERT INTO transactions (id, association_id, cash_session_id, type, amount, description, created_by)
         VALUES (gen_random_uuid(), :aid, :sid, 'expense', :amount, :desc, :uid)
         RETURNING id
     """), {
         "aid": str(assoc_id), "sid": str(body.cash_session_id) if body.cash_session_id else None,
-        "amount": body.amount, "desc": "Baixa de conta a pagar", "uid": str(current.user_id),
+        "amount": body.amount, "desc": desc, "uid": str(current.user_id),
     })).fetchone()
 
     await session.execute(text("""
@@ -485,6 +633,7 @@ async def baixar_conta_pagar(
     await session.execute(text(
         "UPDATE contas_pagar SET amount_paid = :paid, status = :status, updated_at = NOW() WHERE id = :id"
     ), {"paid": novo_pago, "status": novo_status, "id": str(conta_id)})
+    await _audit(session, current, "baixar_conta_pagar", "contas_pagar", conta_id, f"R$ {body.amount} -> status {novo_status}")
     await session.commit()
     return {"ok": True, "status": novo_status, "amount_paid": float(novo_pago)}
 
@@ -501,21 +650,22 @@ async def list_taxa_entrega_prevista(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    fee_default = Decimal(str(get_settings().delivery_fee_default))
     rows = (await session.execute(text("""
-        SELECT r.id, r.full_name, a.name AS unidade,
-               COUNT(p.id) AS qtd_pendente, MAX(p.delivery_fee_amount) AS valor
+        SELECT r.id, r.full_name, a.name AS unidade, COUNT(p.id) AS qtd_pendente
         FROM residents r
         JOIN associations a ON a.id = r.association_id
         JOIN packages p ON p.resident_id = r.id
         WHERE r.association_id = ANY(:ids) AND r.type = 'guest'
           AND p.status IN ('received', 'notified')
-          AND p.has_delivery_fee = TRUE AND p.delivery_fee_paid = FALSE
         GROUP BY r.id, r.full_name, a.name
         ORDER BY r.full_name
     """), {"ids": ids})).fetchall()
+    # 1 morador = 1 retirada (o morador tende a retirar tudo de uma vez), entao a
+    # projecao e' 1 taxa fixa por morador com pendencia, independente da qtd de pacotes.
     return [
         {"resident_id": str(r[0]), "resident_name": r[1], "unidade": r[2],
-         "qtd_pendente": r[3], "valor_previsto": float(r[4] or 2.50)}
+         "qtd_pendente": r[3], "valor_previsto": float(fee_default)}
         for r in rows
     ]
 
@@ -523,21 +673,6 @@ async def list_taxa_entrega_prevista(
 # ──────────────────────────────────────────────────────────────────────────
 # Administração
 # ──────────────────────────────────────────────────────────────────────────
-
-@router.get("/administracao/permissoes", summary="Permissões por cargo e unidade")
-async def list_permissoes(
-    current: CurrentUser = Depends(require_empresa_admin),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT rp.role, rp.module, rp.can_view, rp.can_write, a.name AS unidade
-        FROM role_permissions rp JOIN associations a ON a.id = rp.association_id
-        WHERE a.empresa_id = :eid
-        ORDER BY a.name, rp.role, rp.module
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"role": r[0], "module": r[1], "can_view": r[2], "can_write": r[3],
-             "unidade": r[4]} for r in rows]
-
 
 @router.get("/administracao/estoque", summary="Estoque (comprovante de residência) por unidade")
 async def list_estoque(
@@ -590,6 +725,7 @@ class CriarUsuarioRequest(BaseModel):
 
 class EditarUsuarioRequest(BaseModel):
     full_name: str | None = None
+    email: str | None = None
     role: str | None = None
     association_id: UUID | None = None
     phone: str | None = None
@@ -602,6 +738,9 @@ async def criar_usuario(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    if body.role in ("admin_master", "superadmin") and current.role not in ("admin_master", "superadmin"):
+        raise HTTPException(status_code=403, detail="Só admin_master ou superadmin pode criar outro admin_master.")
+
     # association_id: None => estaciona no ESC (association_id = empresa_id).
     # Caso contrario, valida que a unidade e da empresa.
     target_assoc = current.empresa_id if body.association_id is None else body.association_id
@@ -622,6 +761,7 @@ async def criar_usuario(
         "eid": str(current.empresa_id), "aid": str(target_assoc), "name": body.full_name,
         "email": body.email, "phone": body.phone, "pw": hash_password(body.password), "role": body.role,
     })).fetchone()
+    await _audit(session, current, "criar_usuario", "user", row[0], f"{body.full_name} ({body.role})")
     await session.commit()
     return {"id": str(row[0]), "ok": True}
 
@@ -642,9 +782,18 @@ async def editar_usuario(
     sets, params = [], {"id": str(user_id)}
     if body.full_name is not None:
         sets.append("full_name = :name"); params["name"] = body.full_name
+    if body.email is not None:
+        dup = (await session.execute(text(
+            "SELECT 1 FROM users WHERE email = :e AND is_active = TRUE AND id != :id"
+        ), {"e": body.email, "id": str(user_id)})).scalar()
+        if dup:
+            raise HTTPException(status_code=409, detail="Já existe usuário ativo com este e-mail.")
+        sets.append("email = :email"); params["email"] = body.email
     if body.phone is not None:
         sets.append("phone = :phone"); params["phone"] = body.phone
     if body.role is not None:
+        if body.role in ("admin_master", "superadmin") and current.role not in ("admin_master", "superadmin"):
+            raise HTTPException(status_code=403, detail="Só admin_master ou superadmin pode promover a admin_master.")
         sets.append("role = CAST(:role AS user_role)"); params["role"] = body.role
     if body.is_active is not None:
         sets.append("is_active = :active"); params["active"] = body.is_active
@@ -657,6 +806,7 @@ async def editar_usuario(
     sets.append("token_version = token_version + 1")
     sets.append("updated_at = NOW()")
     await session.execute(text(f"UPDATE users SET {', '.join(sets)} WHERE id = :id"), params)
+    await _audit(session, current, "editar_usuario", "user", user_id, ", ".join(f"{k}={v}" for k, v in params.items() if k != "id"))
     await session.commit()
     return {"ok": True}
 
@@ -673,9 +823,11 @@ async def desativar_usuario(
         UPDATE users SET is_active = FALSE, token_version = token_version + 1, updated_at = NOW()
         WHERE id = :id AND empresa_id = :eid
     """), {"id": str(user_id), "eid": str(current.empresa_id)})
-    await session.commit()
     if r.rowcount == 0:
+        await session.rollback()
         raise HTTPException(status_code=404, detail="Usuário não encontrado na sua empresa.")
+    await _audit(session, current, "desativar_usuario", "user", user_id, "")
+    await session.commit()
     return {"ok": True}
 
 
@@ -715,6 +867,7 @@ async def excluir_usuario(
         await session.execute(text("DELETE FROM user_association_roles WHERE user_id = :id"), {"id": str(user_id)})
         await session.execute(text("DELETE FROM users WHERE id = :id AND empresa_id = :eid"),
                               {"id": str(user_id), "eid": str(current.empresa_id)})
+        await _audit(session, current, "excluir_usuario_permanente", "user", user_id, "")
         await session.commit()
     except Exception:
         await session.rollback()
@@ -759,8 +912,46 @@ async def criar_categoria(
         RETURNING id
     """), {"eid": str(current.empresa_id), "name": body.name, "type": body.type,
            "desc": body.description, "color": body.color})).fetchone()
+    await _audit(session, current, "criar_categoria", "transaction_categories", row[0], f"{body.name} ({body.type})")
     await session.commit()
     return {"id": str(row[0]), "ok": True}
+
+
+class EditarCategoriaRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    color: str | None = None
+    is_active: bool | None = None
+
+
+@router.put("/cadastros/categorias/{categoria_id}", summary="Editar/desativar categoria de transação")
+async def editar_categoria(
+    categoria_id: UUID,
+    body: EditarCategoriaRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    sets, params = [], {"id": str(categoria_id), "eid": str(current.empresa_id)}
+    if body.name is not None:
+        sets.append("name = :name"); params["name"] = body.name
+    if body.description is not None:
+        sets.append("description = :desc"); params["desc"] = body.description
+    if body.color is not None:
+        sets.append("color = :color"); params["color"] = body.color
+    if body.is_active is not None:
+        sets.append("is_active = :active"); params["active"] = body.is_active
+    if not sets:
+        return {"ok": True, "noop": True}
+    sets.append("updated_at = NOW()")
+    r = await session.execute(text(
+        f"UPDATE transaction_categories SET {', '.join(sets)} WHERE id = :id AND empresa_id = :eid"
+    ), params)
+    if r.rowcount == 0:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Categoria não encontrada na sua empresa.")
+    await _audit(session, current, "editar_categoria", "transaction_categories", categoria_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid")))
+    await session.commit()
+    return {"ok": True}
 
 
 @router.get("/cadastros/formas-pagamento", summary="Formas de pagamento da empresa")
@@ -786,8 +977,40 @@ async def criar_forma(
         VALUES (gen_random_uuid(), NULL, :eid, :name, TRUE)
         RETURNING id
     """), {"eid": str(current.empresa_id), "name": body.name})).fetchone()
+    await _audit(session, current, "criar_forma_pagamento", "payment_methods", row[0], body.name)
     await session.commit()
     return {"id": str(row[0]), "ok": True}
+
+
+class EditarFormaRequest(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None
+
+
+@router.put("/cadastros/formas-pagamento/{forma_id}", summary="Editar/desativar forma de pagamento")
+async def editar_forma(
+    forma_id: UUID,
+    body: EditarFormaRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    sets, params = [], {"id": str(forma_id), "eid": str(current.empresa_id)}
+    if body.name is not None:
+        sets.append("name = :name"); params["name"] = body.name
+    if body.is_active is not None:
+        sets.append("is_active = :active"); params["active"] = body.is_active
+    if not sets:
+        return {"ok": True, "noop": True}
+    sets.append("updated_at = NOW()")
+    r = await session.execute(text(
+        f"UPDATE payment_methods SET {', '.join(sets)} WHERE id = :id AND empresa_id = :eid"
+    ), params)
+    if r.rowcount == 0:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Forma de pagamento não encontrada na sua empresa.")
+    await _audit(session, current, "editar_forma_pagamento", "payment_methods", forma_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid")))
+    await session.commit()
+    return {"ok": True}
 
 
 # ── Permissoes (template unico da empresa) ────────────────────────────────
@@ -823,6 +1046,7 @@ async def put_access_groups(
     await session.execute(text(
         "UPDATE empresas SET access_groups = CAST(:ag AS JSONB), updated_at = NOW() WHERE id = :eid"
     ), {"ag": _json.dumps(body.access_groups), "eid": str(current.empresa_id)})
+    await _audit(session, current, "atualizar_access_groups", "empresas", current.empresa_id, "grid de permissoes atualizado")
     await session.commit()
     return {"ok": True}
 
@@ -868,6 +1092,7 @@ async def enviar_aviso(
         FROM users u
         WHERE u.empresa_id = :eid AND u.is_active = TRUE
     """), {"eid": str(current.empresa_id), "title": body.title, "body": body.body})
+    await _audit(session, current, "enviar_aviso", "notifications", None, f"{body.title} -> {r.rowcount} destinatario(s)")
     await session.commit()
     return {"ok": True, "enviados": r.rowcount}
 
@@ -927,6 +1152,7 @@ async def gerar_inventario_encomendas(
         RETURNING id
     """), {"eid": str(current.empresa_id), "aid": str(body.association_id), "ref": ref,
            "total": len(items), "items": _json.dumps(items), "uid": str(current.user_id)})).fetchone()
+    await _audit(session, current, "gerar_inventario_encomendas", "package_inventories", row[0], f"{len(items)} item(ns)")
     await session.commit()
     return {"id": str(row[0]), "total": len(items), "ok": True}
 

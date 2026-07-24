@@ -45,7 +45,7 @@ export default function UsuariosSection() {
     try {
       const association_id = form.association_id || null
       if (editTarget) {
-        await escService.editarUsuario(editTarget.id, { full_name: form.full_name, role: form.role, association_id })
+        await escService.editarUsuario(editTarget.id, { full_name: form.full_name, email: form.email, role: form.role, association_id })
         toast.success('Usuário atualizado.')
       } else {
         await escService.criarUsuario({ full_name: form.full_name, email: form.email, password: form.password, role: form.role, association_id })
@@ -111,24 +111,24 @@ export default function UsuariosSection() {
             </>
           }
         >
-          <EscField label="Nome completo">
-            <input className={escInputCls} style={escInputStyle} value={form.full_name} onChange={(e) => set('full_name', e.target.value)} />
+          <EscField label="Nome completo" required>
+            <input className={escInputCls} style={escInputStyle} placeholder="Nome e sobrenome" value={form.full_name} onChange={(e) => set('full_name', e.target.value)} />
           </EscField>
-          <EscField label="E-mail">
-            <input className={escInputCls} style={escInputStyle} type="email" value={form.email}
-                   disabled={!!editTarget} onChange={(e) => set('email', e.target.value)} />
+          <EscField label="E-mail" required hint="Usado para login. Alterar aqui não muda a senha do usuário.">
+            <input className={escInputCls} style={escInputStyle} type="email" placeholder="nome@exemplo.com" value={form.email}
+                   onChange={(e) => set('email', e.target.value)} />
           </EscField>
           {!editTarget && (
-            <EscField label="Senha provisória">
+            <EscField label="Senha provisória" required hint="Mínimo 6 caracteres. Compartilhe com o usuário — ele poderá trocar depois.">
               <input className={escInputCls} style={escInputStyle} type="text" value={form.password} onChange={(e) => set('password', e.target.value)} />
             </EscField>
           )}
-          <EscField label="Cargo">
+          <EscField label="Cargo" required>
             <select className={escInputCls} style={escInputStyle} value={form.role} onChange={(e) => set('role', e.target.value)}>
               {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
           </EscField>
-          <EscField label="Unidade">
+          <EscField label="Unidade" hint="Escritório = acesso à empresa toda (ESC). Uma unidade = acesso restrito a ela.">
             <select className={escInputCls} style={escInputStyle} value={form.association_id} onChange={(e) => set('association_id', e.target.value)}>
               <option value="">Escritório (acesso à empresa)</option>
               {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
