@@ -277,6 +277,12 @@ export default function MovimentacoesTab({ period, setPeriod }: Props) {
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                   )}
+                  {movSubTab === 'transferencias' && !t.reversed_at && !t.is_reversal && (
+                    <button onClick={() => { setReversalTarget(t); setReversalReason('') }} title="Estornar"
+                      className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {t.income_subtype === 'proof_of_residence' && (
                     <button onClick={() => handleReprint(t.id)} disabled={reprinting === t.id} title="2ª via"
                       className="p-1.5 text-purple-400 hover:text-purple-600 rounded-lg hover:bg-purple-50 transition">

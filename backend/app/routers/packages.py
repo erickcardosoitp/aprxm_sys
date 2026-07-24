@@ -10,7 +10,7 @@ from sqlmodel import select
 
 from fastapi import HTTPException
 from app.core.exceptions import CashSessionError
-from app.core.tenant import CurrentUser, get_current_user
+from app.core.tenant import CurrentUser, get_current_user, require_module_action
 from app.database import get_session
 from app.models.package import Package, PackageStatus
 from app.models.resident import Resident
@@ -59,7 +59,7 @@ class DeliverPackageRequest(BaseModel):
 @router.post("", summary="Registrar recebimento de encomenda")
 async def receive_package(
     body: ReceivePackageRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "create")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = PackageService(session)
@@ -138,7 +138,7 @@ async def delivery_check(
 async def deliver_package(
     package_id: UUID,
     body: DeliverPackageRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     # Validate exemption token if provided
@@ -240,7 +240,7 @@ class BulkDeliverRequest(BaseModel):
 @router.post("/bulk-deliver", summary="Entrega múltipla — mesma assinatura para N encomendas")
 async def bulk_deliver_packages(
     body: BulkDeliverRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     if not body.package_ids:
@@ -316,7 +316,7 @@ async def bulk_deliver_packages(
 async def add_package_event(
     package_id: UUID,
     body: AddPackageEventRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     result = await session.execute(
@@ -471,7 +471,7 @@ class ReturnPackageRequest(BaseModel):
 async def notify_package(
     package_id: UUID,
     body: NotifyPackageRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from datetime import datetime
@@ -497,7 +497,7 @@ async def notify_package(
 async def return_package(
     package_id: UUID,
     body: ReturnPackageRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from datetime import datetime
@@ -541,7 +541,7 @@ class ReassignPackageRequest(BaseModel):
 async def reassign_package(
     package_id: UUID,
     body: ReassignPackageRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from datetime import datetime
@@ -585,7 +585,7 @@ class EditPackageInfoRequest(BaseModel):
 async def edit_package_info(
     package_id: UUID,
     body: EditPackageInfoRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from fastapi import HTTPException
@@ -628,7 +628,7 @@ class EditDeliveryInfoRequest(BaseModel):
 async def edit_delivery_info(
     package_id: UUID,
     body: EditDeliveryInfoRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from datetime import datetime
@@ -677,7 +677,7 @@ class ReverseDeliveryRequest(BaseModel):
 async def reverse_delivery(
     package_id: UUID,
     body: ReverseDeliveryRequest,
-    current: CurrentUser = Depends(get_current_user),
+    current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from datetime import datetime

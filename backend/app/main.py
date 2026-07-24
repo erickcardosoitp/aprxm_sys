@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 13
+_SCHEMA_VERSION = 14
 
 
 async def _run_migrations() -> None:
@@ -547,6 +547,38 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (13, 'v13: Contas a Pagar (contas_pagar_templates, contas_pagar, conta_pagar_baixas)') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v14: Contas a Pagar passa a ter categorias proprias (payable_categories),
+            # empresa-scoped, desvinculadas de transaction_categories (que sao categorias
+            # de movimentacao/produto, conceito diferente). Aditivo: category_id antigo
+            # fica intocado (historico), so contas novas usam payable_category_id.
+            try:
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS payable_categories (
+                        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        empresa_id UUID NOT NULL REFERENCES empresas(id),
+                        name       VARCHAR(100) NOT NULL,
+                        is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text(
+                    "ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS payable_category_id UUID REFERENCES payable_categories(id)"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE contas_pagar_templates ADD COLUMN IF NOT EXISTS payable_category_id UUID REFERENCES payable_categories(id)"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_payable_categories_empresa ON payable_categories(empresa_id)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (14, 'v14: Contas a Pagar - categorias proprias (payable_categories)') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -1718,6 +1750,35 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (13, 'v13: Contas a Pagar (contas_pagar_templates, contas_pagar, conta_pagar_baixas)') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v14: mesmo bloco do ramo _is_existing_db (Contas a Pagar - categorias proprias)
+        try:
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS payable_categories (
+                    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    empresa_id UUID NOT NULL REFERENCES empresas(id),
+                    name       VARCHAR(100) NOT NULL,
+                    is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """))
+            await session.execute(text(
+                "ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS payable_category_id UUID REFERENCES payable_categories(id)"
+            ))
+            await session.execute(text(
+                "ALTER TABLE contas_pagar_templates ADD COLUMN IF NOT EXISTS payable_category_id UUID REFERENCES payable_categories(id)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_payable_categories_empresa ON payable_categories(empresa_id)"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (14, 'v14: Contas a Pagar - categorias proprias (payable_categories)') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()

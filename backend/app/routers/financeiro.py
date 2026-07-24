@@ -54,6 +54,7 @@ async def get_summary(
     row = result.fetchone()
     income = float(row[0])
     expense = float(row[1])  # sangria = transferência interna, não é despesa
+    sangria = float(row[2])
 
     # Income breakdown by subtype
     breakdown_result = await session.execute(
@@ -89,6 +90,7 @@ async def get_summary(
     return {
         "total_income": income,
         "total_expense": expense,
+        "total_sangria": sangria,
         "total_balance": income - expense,
         "transactions_count": int(row[3]),
         "income_by_type": income_by_type,
@@ -199,6 +201,7 @@ async def list_caixas_abertos(
         LEFT JOIN users u ON u.id = s.opened_by
         LEFT JOIN transactions t ON t.cash_session_id = s.id
         WHERE s.association_id = ANY(:ids) AND s.status = 'open'
+          AND a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'
         GROUP BY s.id, a.name, s.opened_at, u.full_name, s.opening_balance
         ORDER BY a.name
     """), {"ids": ids})).fetchall()
@@ -207,6 +210,76 @@ async def list_caixas_abertos(
          "aberto_por": r[3], "saldo_disponivel": float(r[4])}
         for r in rows
     ]
+
+
+@router.get("/saldo-caixa-realizado", summary="Saldo físico de caixa por unidade (todas as entradas - todas as saídas)")
+async def list_saldo_caixa_realizado(
+    unidade: UUID | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    # Dinheiro fisico no cofre da unidade = todas as entradas menos todas as saidas
+    # ja CONFIRMADAS: transacoes de sessoes ja CONFERIDAS (contagem fisica validada)
+    # + lancamentos sem caixa (manuais/devolucoes). Sessao aberta ou so fechada
+    # (ainda nao conferida) fica de fora — o valor dela pode mudar ate a conferencia.
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    rows = (await session.execute(text("""
+        SELECT a.id, a.name AS unidade,
+               COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0)
+               - COALESCE(SUM(CASE WHEN t.type != 'income' THEN t.amount ELSE 0 END), 0) AS saldo
+        FROM associations a
+        LEFT JOIN transactions t ON t.association_id = a.id
+        LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
+        WHERE a.id = ANY(:ids)
+          AND a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'
+          AND (t.id IS NULL OR t.cash_session_id IS NULL OR cs.status = 'conferido')
+        GROUP BY a.id, a.name
+        ORDER BY a.name
+    """), {"ids": ids})).fetchall()
+    return [{"association_id": str(r[0]), "unidade": r[1], "saldo": float(r[2])} for r in rows]
+
+
+class ZerarCaixaTotalRequest(BaseModel):
+    association_id: UUID
+    reason: str = Field(min_length=5, max_length=255)
+
+
+@router.post("/zerar-caixa-total", summary="Zeramento do saldo realizado total de uma unidade — sangria sem caixa")
+async def zerar_caixa_total(
+    body: ZerarCaixaTotalRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if not current.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem zerar o caixa.")
+    ids = [str(i) for i in await financeiro_scope(current, session)]
+    if str(body.association_id) not in ids:
+        raise HTTPException(status_code=403, detail="Unidade fora do escopo do Financeiro desta empresa.")
+
+    row = (await session.execute(text("""
+        SELECT COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0)
+               - COALESCE(SUM(CASE WHEN t.type != 'income' THEN t.amount ELSE 0 END), 0) AS saldo
+        FROM transactions t
+        LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
+        WHERE t.association_id = :aid
+          AND (t.cash_session_id IS NULL OR cs.status = 'conferido')
+    """), {"aid": str(body.association_id)})).fetchone()
+    saldo = row[0] if row else 0
+    if saldo <= 0:
+        raise HTTPException(status_code=400, detail="Saldo realizado já é zero.")
+
+    # cash_session_id NULL = mesmo mecanismo da devolucao "sem caixa": nao mexe em
+    # nenhuma sessao especifica, so registra a saida e reduz o saldo realizado.
+    await session.execute(text("""
+        INSERT INTO transactions
+            (id, association_id, cash_session_id, type, amount, description,
+             is_sangria, sangria_reason, sangria_destination, created_by)
+        VALUES
+            (gen_random_uuid(), :aid, NULL, 'sangria', :amount,
+             'Zeramento administrativo total (ESC)', TRUE, :reason, 'Zeramento administrativo total (ESC)', :uid)
+    """), {"aid": str(body.association_id), "amount": saldo, "reason": body.reason, "uid": str(current.user_id)})
+    await session.commit()
+    return {"ok": True, "amount": float(saldo)}
 
 
 class ZerarCaixaRequest(BaseModel):

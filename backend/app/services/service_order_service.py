@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
 
 from app.core.exceptions import NotFoundError, UnprocessableError
+from app.models.association import Association
 from app.models.service_order import (
     ServiceOrder,
     ServiceOrderHistory,
@@ -206,8 +207,21 @@ class ServiceOrderService:
         return so
 
     async def _next_number(self, association_id: UUID) -> int:
-        stmt = select(func.coalesce(func.max(ServiceOrder.number), 0)).where(
-            ServiceOrder.association_id == association_id
-        )
+        # OS e' nivel empresa (numeracao unificada) mesmo referenciando uma unidade de
+        # negocio especifica - por isso conta o MAX sobre todas as associacoes da empresa,
+        # nao so a unidade que esta criando a OS.
+        empresa_id = (await self._session.execute(
+            select(Association.empresa_id).where(Association.id == association_id)
+        )).scalar_one_or_none()
+        if empresa_id is None:
+            stmt = select(func.coalesce(func.max(ServiceOrder.number), 0)).where(
+                ServiceOrder.association_id == association_id
+            )
+        else:
+            stmt = (
+                select(func.coalesce(func.max(ServiceOrder.number), 0))
+                .join(Association, Association.id == ServiceOrder.association_id)
+                .where(Association.empresa_id == empresa_id)
+            )
         result = await self._session.execute(stmt)
         return (result.scalar() or 0) + 1

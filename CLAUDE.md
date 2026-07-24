@@ -27,6 +27,28 @@
 - Só analisar múltiplos arquivos se explicitamente solicitado
 - Nunca varrer diretórios
 - Ignorar arquivos não mencionados
+- Antes de ler um arquivo-fonte, seguir o fluxo do Serena MCP abaixo
+
+---
+
+## 🧭 Navegação de Código — Serena MCP (padrão obrigatório)
+
+Serena é o mecanismo **primário** de navegação e entendimento de código neste repositório. Ele indexa símbolos (classes, funções, métodos) e suas relações — usá-lo antes de ler arquivos evita carregar código irrelevante no contexto.
+
+**Fluxo obrigatório antes de qualquer leitura de arquivo-fonte:**
+
+1. Localizar os símbolos relevantes primeiro via Serena (`get_symbols_overview`, `find_symbol`) — nunca abrir um arquivo "para ver o que tem dentro".
+2. Para entender uma peça de código, usar Serena para inspecionar definição, referências, implementações, chamadores/chamados e dependências (`find_referencing_symbols`, `find_implementations`, `find_declaration`) — não repetir isso lendo o arquivo inteiro manualmente.
+3. Preferir navegação semântica (símbolos) a busca textual. `Grep`/`grep` só quando a busca for por string literal sem estrutura de símbolo (ex.: texto de UI, valor de config).
+4. Ler apenas o menor trecho de código necessário depois que o Serena já apontou o local exato (símbolo + arquivo + linha) — nunca o arquivo inteiro, salvo necessidade explícita.
+5. Nunca varrer diretórios inteiros nem abrir arquivos completos "só para garantir", a menos que o Serena não tenha conseguido resolver a informação.
+6. Reaproveitar descobertas já feitas na sessão (símbolos já localizados, referências já mapeadas) em vez de repetir buscas.
+7. Ao editar código: primeiro identificar o(s) símbolo(s) afetado(s) via Serena, depois inspecionar somente a implementação necessária antes de editar (preferir `replace_symbol_body`/`insert_after_symbol`/`insert_before_symbol` a diffs manuais quando a edição for de um símbolo inteiro).
+8. Cair para inspeção direta de arquivo **somente** quando o Serena não tiver informação suficiente ou quando a própria implementação (não a estrutura) precisar ser lida linha a linha.
+
+**Por que esse fluxo existe:** reduz uso de contexto e consumo de tokens (lê-se só o necessário, não arquivos/diretórios inteiros), acelera a navegação em um repositório grande (30 routers, dezenas de milhares de linhas) e aumenta a precisão — encontrar o símbolo certo via referências é mais confiável que grep/leitura manual em arquivos deste tamanho (ex.: `finance.py` 92K, `daily_tasks.py` 56K).
+
+Esta regra é permanente e vale para toda sessão neste repositório, não apenas quando solicitado.
 
 ---
 
