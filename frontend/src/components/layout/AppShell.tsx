@@ -297,11 +297,10 @@ export function AppShell() {
   const navItems: NavItem[] = isOffice
     ? [{ to: '/geral', label: 'Escritório', icon: Building2 }]
     : isAgente
-    ? (financeiroCentralizado ? [] : [{ to: '/financeiro', label: 'Financeiro', icon: TrendingUp }])
+    ? [{ to: '/financeiro', label: 'Financeiro', icon: TrendingUp }]
     : (() => {
         const items: NavItem[] = [{ to: '/overview', label: 'Visão', icon: BarChart2 }]
         for (const { module, item } of MODULE_NAV) {
-          if (item.to === '/financeiro' && financeiroCentralizado) continue
           if (canView(module)) items.push(item)
         }
         items.push(REPORTS_NAV)

@@ -226,9 +226,11 @@ async def financeiro_scope(
     - Empresa sem financeiro_centralizado (ou usuario sem empresa): comportamento
       atual, escopado a propria associacao.
     - Empresa centralizada + chamador ESC-stationed (ou legacy wide): todas as
-      unidades da empresa, ou so `unidade` se informado.
-    - Empresa centralizada + chamador de associacao (nao ESC): 403 - o modulo
-      Financeiro so existe no ESC quando centralizado.
+      unidades da empresa, ou so `unidade` se informado (visao agregada no ESC).
+    - Empresa centralizada + chamador de associacao (nao ESC): tambem escopado a
+      propria associacao (nao bloqueia) - a unidade continua operando o financeiro
+      localmente; centralizacao so adiciona a visao agregada no ESC, nao remove o
+      acesso local. (Antes bloqueava com 403 - decisao revertida a pedido.)
     - Empresa centralizada + ESC-stationed sem "financeiro:view" no grid de
       permissoes (access_groups): 403 - nem todo ESC ve o modulo.
     """
@@ -245,10 +247,7 @@ async def financeiro_scope(
         return [current.association_id]
 
     if not current.is_empresa_wide:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="O Financeiro desta empresa é centralizado no Escritório.",
-        )
+        return [current.association_id]
 
     access_groups = row[1] if row and row[1] else _DEFAULT_ACCESS_GROUPS
     if "view" not in access_groups.get(current.role, {}).get("financeiro", []):
