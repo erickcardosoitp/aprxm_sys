@@ -281,20 +281,21 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
   // Auto-select pending months based on amount
   useEffect(() => {
-    if (txType !== 'income' || incomeSubtype !== 'mensalidade' || isAcordo) return
+    if (txType !== 'income' || incomeSubtype !== 'mensalidade' || isAcordo || !resident) return
     const defaultAmt = parseFloat(settings?.default_mensalidade_amount || '0')
     const count = defaultAmt > 0 && amount ? Math.max(1, Math.round(parseFloat(amount) / defaultAmt)) : 1
-    // Build candidate months: March 2026 → current + 3, skip already paid
+    // Build candidate months: mes de entrada do morador -> atual + 3, pula ja pago
     const paidSet = new Set(residentMensalidades.filter(m => m.status === 'paid').map(m => m.reference_month))
     const candidates: string[] = []
-    const start = new Date(2026, 2, 1) // March 2026
+    const joinDate = new Date(resident.move_in_date || resident.created_at)
+    const start = new Date(joinDate.getFullYear(), joinDate.getMonth(), 1)
     const end = new Date(); end.setMonth(end.getMonth() + 3)
     for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (!paidSet.has(ym)) candidates.push(ym)
     }
     setMensalidadeMonths(candidates.slice(0, count))
-  }, [amount, incomeSubtype, txType, isAcordo, settings?.default_mensalidade_amount, residentMensalidades])
+  }, [amount, incomeSubtype, txType, isAcordo, settings?.default_mensalidade_amount, residentMensalidades, resident])
 
   // Auto-fill from resident lookup into proof fields
   useEffect(() => {
@@ -1221,7 +1222,8 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                     const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
                     const paidSet = new Set(residentMensalidades.filter(m => m.status === 'paid').map(m => m.reference_month))
                     const months: string[] = []
-                    const start = new Date(2026, 2, 1)
+                    const joinDate = new Date(resident.move_in_date || resident.created_at)
+                    const start = new Date(joinDate.getFullYear(), joinDate.getMonth(), 1)
                     const end = new Date(); end.setMonth(end.getMonth() + 3)
                     for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
                       months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)

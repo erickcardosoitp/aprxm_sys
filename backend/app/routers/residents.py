@@ -569,6 +569,14 @@ async def update_resident(
     old_type = resident.type
     for key, value in data.items():
         setattr(resident, key, value)
+
+    # Virou associado agora (guest/dependent -> member): move_in_date passa a ser
+    # a referencia pra geracao de mensalidade. Se nao veio explicito no request,
+    # usa hoje - senao o fallback pra created_at cobraria retroativo desde o
+    # cadastro original como visitante.
+    if old_type != ResidentType.member and resident.type == ResidentType.member and "move_in_date" not in data:
+        resident.move_in_date = date.today()
+
     from datetime import datetime
     resident.updated_at = datetime.utcnow()
     session.add(resident)
