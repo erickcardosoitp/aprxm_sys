@@ -1013,19 +1013,19 @@ async def list_categories(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    from sqlmodel import select
-    stmt = select(TransactionCategory).where(
-        TransactionCategory.association_id == current.association_id,
-        TransactionCategory.is_active == True,  # noqa: E712
-    )
+    # Financeiro Centralizado move as categorias pra escopo de empresa
+    # (association_id=NULL, empresa_id=<eid>) - mesmo caso de payment-methods.
+    where = ["is_active = TRUE", "(association_id = :aid OR (empresa_id = :eid AND :eid IS NOT NULL))"]
+    params: dict = {"aid": str(current.association_id), "eid": str(current.empresa_id) if current.empresa_id else None}
     if type:
-        stmt = stmt.where(TransactionCategory.type == type)
-    stmt = stmt.order_by(TransactionCategory.name)
-    result = await session.execute(stmt)
-    return [
-        {"id": str(c.id), "name": c.name, "type": c.type, "color": c.color}
-        for c in result.scalars().all()
-    ]
+        where.append("type = :type")
+        params["type"] = type.value
+    result = await session.execute(text(f"""
+        SELECT id, name, type, color FROM transaction_categories
+        WHERE {' AND '.join(where)}
+        ORDER BY name
+    """), params)
+    return [{"id": str(r[0]), "name": r[1], "type": r[2], "color": r[3]} for r in result.fetchall()]
 
 
 @router.get("/tesouraria", summary="Visão unificada da tesouraria")
@@ -1519,13 +1519,16 @@ async def list_payment_methods(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    from sqlmodel import select
-    stmt = select(PaymentMethod).where(
-        PaymentMethod.association_id == current.association_id,
-        PaymentMethod.is_active == True,  # noqa: E712
-    ).order_by(PaymentMethod.name)
-    result = await session.execute(stmt)
-    return [{"id": str(m.id), "name": m.name} for m in result.scalars().all()]
+    # Financeiro Centralizado move as formas de pagamento pra escopo de empresa
+    # (association_id=NULL, empresa_id=<eid>) - sem isso, associacao centralizada
+    # fica sem nenhuma forma de pagamento pra lancar transacao local.
+    result = await session.execute(text("""
+        SELECT id, name FROM payment_methods
+        WHERE is_active = TRUE
+          AND (association_id = :aid OR (empresa_id = :eid AND :eid IS NOT NULL))
+        ORDER BY name
+    """), {"aid": str(current.association_id), "eid": str(current.empresa_id) if current.empresa_id else None})
+    return [{"id": str(r[0]), "name": r[1]} for r in result.fetchall()]
 
 
 class CreateCategoryRequest(BaseModel):
