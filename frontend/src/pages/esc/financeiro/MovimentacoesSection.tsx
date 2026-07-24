@@ -22,11 +22,6 @@ const PRODUTOS = [
   { key: 'other', label: 'Outras' },
 ]
 const CARGOS = ['conferente', 'admin', 'admin_master', 'diretoria', 'diretoria_adjunta', 'conselho', 'operator']
-const CARGO_LABEL: Record<string, string> = {
-  conferente: 'Conferente', admin: 'Administrador', admin_master: 'Admin Master',
-  diretoria: 'Diretoria', diretoria_adjunta: 'Diretoria Adjunta', conselho: 'Conselho', operator: 'Operador',
-}
-const STATUS_MORADOR_LABEL: Record<string, string> = { active: 'Ativo', inactive: 'Inativo', suspended: 'Suspenso' }
 const PERIODOS = [
   { key: 'week', label: 'Semana' }, { key: 'month', label: 'Mês' },
   { key: 'quarter', label: 'Trimestre' }, { key: 'year', label: 'Ano' },
@@ -165,7 +160,7 @@ export default function MovimentacoesSection() {
           <EscField label="Cargo">
             <EscSelect className="w-32" value={cargo} onChange={(e) => setCargo(e.target.value)}>
               <option value="">Todos</option>
-              {CARGOS.map((c) => <option key={c} value={c}>{CARGO_LABEL[c] ?? c}</option>)}
+              {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
             </EscSelect>
           </EscField>
         </div>
@@ -192,7 +187,7 @@ export default function MovimentacoesSection() {
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Morador']}</td>
                 <td className="py-2 pr-4 whitespace-nowrap font-medium">R$ {Number(r.Valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Produto']}</td>
-                <td className="py-2 pr-4 whitespace-nowrap">{STATUS_MORADOR_LABEL[r['Status Morador']] ?? r['Status Morador']}</td>
+                <td className="py-2 pr-4 whitespace-nowrap">{r['Status Morador']}</td>
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Usuário']}</td>
               </tr>
             ))}
@@ -211,12 +206,7 @@ export default function MovimentacoesSection() {
               {(Object.keys(detalhe) as (keyof Row)[]).map((k) => (
                 <div key={k} className="flex justify-between text-sm">
                   <span style={{ color: TEXT_MUTED }}>{k}</span>
-                  <span className="font-medium text-right">
-                    {k === 'Valor' ? `R$ ${Number(detalhe[k]).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                      : k === 'Data/hora' ? new Date(detalhe[k]).toLocaleString('pt-BR')
-                      : k === 'Status Morador' ? (STATUS_MORADOR_LABEL[detalhe[k]] ?? detalhe[k])
-                      : String(detalhe[k])}
-                  </span>
+                  <span className="font-medium text-right">{k === 'Valor' ? `R$ ${Number(detalhe[k]).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : k === 'Data/hora' ? new Date(detalhe[k]).toLocaleString('pt-BR') : String(detalhe[k])}</span>
                 </div>
               ))}
             </div>

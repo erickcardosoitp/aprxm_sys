@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.tenant import CurrentUser, get_current_user, require_module_action
+from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
 from app.models.service_order import ServiceOrderPriority, ServiceOrderStatus
 from app.models.user import User
@@ -106,7 +106,7 @@ class AddCommentRequest(BaseModel):
 @router.post("", summary="Criar Ordem de Serviço")
 async def create_so(
     body: CreateSORequest,
-    current: CurrentUser = Depends(require_module_action("service_orders", "create")),
+    current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import asyncio as _asyncio
@@ -159,7 +159,7 @@ async def create_so(
 async def update_so(
     so_id: UUID,
     body: UpdateSORequest,
-    current: CurrentUser = Depends(require_module_action("service_orders", "edit")),
+    current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     svc = ServiceOrderService(session)
@@ -198,7 +198,7 @@ async def update_status(
     so_id: UUID,
     body: UpdateStatusRequest,
     background_tasks: BackgroundTasks,
-    current: CurrentUser = Depends(require_module_action("service_orders", "edit")),
+    current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import asyncio as _aio
@@ -227,7 +227,7 @@ async def update_status(
 async def add_comment(
     so_id: UUID,
     body: AddCommentRequest,
-    current: CurrentUser = Depends(require_module_action("service_orders", "edit")),
+    current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import json

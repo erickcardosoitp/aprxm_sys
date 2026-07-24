@@ -8,10 +8,6 @@ import { EscButton, EscField, EscSelect, escInputCls, escInputStyle, ESC_ACCENT 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
 const fmt = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-const formatCompetencia = (v: string) => {
-  const [ano, mes] = (v ?? '').split('-')
-  return ano && mes ? `${mes}/${ano}` : v
-}
 
 const VIEWS = [
   { key: 'associados', label: 'Associados' },
@@ -46,7 +42,7 @@ export default function CrmSection() {
   const [loading, setLoading] = useState(true)
 
   const params = useMemo(() => {
-    const p: Record<string, any> = { page, page_size: 50 }
+    const p: Record<string, any> = { page }
     if (search.trim()) p.search = search.trim()
     if (rua.trim()) p.rua = rua.trim()
     if (status) p.status = status
@@ -170,7 +166,7 @@ export default function CrmSection() {
           <div className="px-6 py-2 border-t flex items-center justify-between" style={{ borderColor: BORDER }}>
             <button disabled={page === 1} onClick={() => setPage((p) => p - 1)} className="text-xs disabled:opacity-40" style={{ color: TEXT_MUTED }}>← Anterior</button>
             <span className="text-xs" style={{ color: TEXT_MUTED }}>Página {page} · {total} no total</span>
-            <button disabled={page * 50 >= total} onClick={() => setPage((p) => p + 1)} className="text-xs disabled:opacity-40" style={{ color: TEXT_MUTED }}>Próxima →</button>
+            <button disabled={page * 100 >= total} onClick={() => setPage((p) => p + 1)} className="text-xs disabled:opacity-40" style={{ color: TEXT_MUTED }}>Próxima →</button>
           </div>
         </div>
       ) : view === 'receber' ? (
@@ -181,9 +177,9 @@ export default function CrmSection() {
           columns={[
             { key: 'resident_name', label: 'Morador' },
             { key: 'unidade', label: 'Unidade' },
-            { key: 'reference_month', label: 'Competência', render: (r) => formatCompetencia(r.reference_month) },
+            { key: 'reference_month', label: 'Competência' },
             { key: 'due_date', label: 'Vencimento' },
-            { key: 'amount', label: 'Valor', render: (r) => fmt(Number(r.amount)) },
+            { key: 'amount', label: 'Valor', render: (r) => `R$ ${r.amount}` },
           ]}
         />
       ) : view === 'inadimplentes' ? (
@@ -196,7 +192,7 @@ export default function CrmSection() {
             { key: 'unidade', label: 'Unidade' },
             { key: 'address_street', label: 'Rua' },
             { key: 'months_overdue', label: 'Meses atrasado' },
-            { key: 'amount', label: 'Valor', render: (r) => fmt(Number(r.amount)) },
+            { key: 'amount', label: 'Valor', render: (r) => `R$ ${r.amount}` },
           ]}
         />
       ) : (
@@ -207,9 +203,9 @@ export default function CrmSection() {
           columns={[
             { key: 'resident_name', label: 'Morador' },
             { key: 'unidade', label: 'Unidade' },
-            { key: 'reference_month', label: 'Competência', render: (r) => formatCompetencia(r.reference_month) },
-            { key: 'paid_at', label: 'Pago em', render: (r) => new Date(r.paid_at).toLocaleString('pt-BR') },
-            { key: 'amount', label: 'Valor', render: (r) => fmt(Number(r.amount)) },
+            { key: 'reference_month', label: 'Competência' },
+            { key: 'paid_at', label: 'Pago em' },
+            { key: 'amount', label: 'Valor', render: (r) => `R$ ${r.amount}` },
           ]}
         />
       )}

@@ -70,14 +70,8 @@ class CurrentUser:
 
     @property
     def is_empresa_admin(self) -> bool:
-        """Admin da empresa (cliente) — escopado à própria empresa via empresa_id.
-        Inclui diretoria/conselho SE estacionados no Escritório (Fase 9: "libera
-        conselho/diretoria no ESC" via estação, não só role) — sem isso, os únicos
-        4 usuários dessas roles remapeados pra ESC em produção ficam bloqueados de
-        praticamente toda rota /esc/*, que hoje é gateada só por este check."""
-        if self.role in ("admin_master", "superadmin"):
-            return True
-        return self.is_esc_station and self.role in ("diretoria", "conselho")
+        """Admin da empresa (cliente) — escopado à própria empresa via empresa_id."""
+        return self.role in ("admin_master", "superadmin")
 
     @property
     def is_esc_station(self) -> bool:
@@ -296,40 +290,6 @@ def require_esc_module(module: str):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Sem permissão de acesso ao módulo {module}.",
-            )
-        return current
-
-    return _check
-
-
-def require_module_action(module: str, action: str = "view"):
-    """Dependency factory generica: qualquer usuario autenticado (nao so admin da empresa),
-    checa acao (view/create/edit/delete) no grid empresas.access_groups pro seu role.
-    Usado pra gatear rotas de nivel-associacao (packages, service_orders, etc.) que hoje
-    nao tem nenhum controle de cargo — controla o acesso as unidades de negocio pelo ESC
-    (o grid e' editado em Cadastros > Grupos de Usuarios / Administracao > Permissoes)."""
-
-    async def _check(
-        current: CurrentUser = Depends(get_current_user),
-        session: AsyncSession = Depends(get_session),
-    ) -> CurrentUser:
-        if current.is_platform_admin:
-            return current
-        if current.empresa_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Sem permissão de {action} no módulo {module}.",
-            )
-        row = (await session.execute(
-            text("SELECT access_groups FROM empresas WHERE id = :eid"),
-            {"eid": str(current.empresa_id)},
-        )).fetchone()
-        access_groups = row[0] if row and row[0] else _DEFAULT_ACCESS_GROUPS
-        perms = access_groups.get(current.role, {}).get(module, [])
-        if action not in perms:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Sem permissão de {action} no módulo {module}.",
             )
         return current
 

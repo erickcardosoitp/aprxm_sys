@@ -23,10 +23,12 @@ interface Summary {
   total_balance: number
   period_label: string
 }
-interface SaldoUnidade {
-  association_id: string
+interface CaixaAberto {
+  session_id: string
   unidade: string
-  saldo: number
+  opened_at: string
+  aberto_por: string
+  saldo_disponivel: number
 }
 
 export default function FluxoCaixaSection() {
@@ -35,9 +37,9 @@ export default function FluxoCaixaSection() {
 
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [summary, setSummary] = useState<Summary | null>(null)
-  const [saldos, setSaldos] = useState<SaldoUnidade[]>([])
+  const [caixas, setCaixas] = useState<CaixaAberto[]>([])
   const [loading, setLoading] = useState(true)
-  const [zerarAberto, setZerarAberto] = useState(false)
+  const [zerarTarget, setZerarTarget] = useState<CaixaAberto | null>(null)
   const [motivo, setMotivo] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -46,12 +48,12 @@ export default function FluxoCaixaSection() {
     Promise.all([
       escService.financeiroDashboard(),
       escService.financeiroSummary({ period: 'month' }),
-      escService.saldoCaixaRealizado(),
+      escService.caixasAbertos(),
     ])
-      .then(([d, s, sc]) => {
+      .then(([d, s, c]) => {
         setDashboard(d.data)
         setSummary(s.data)
-        setSaldos(sc.data)
+        setCaixas(c.data)
       })
       .catch(() => toast.error('Erro ao carregar fluxo de caixa.'))
       .finally(() => setLoading(false))
@@ -59,18 +61,13 @@ export default function FluxoCaixaSection() {
 
   useEffect(() => { load() }, [])
 
-  const totalSaldo = saldos.reduce((s, c) => s + c.saldo, 0)
-
   const handleZerar = async () => {
-    if (motivo.trim().length < 5) { toast.error('Motivo precisa de pelo menos 5 caracteres.'); return }
-    const alvos = saldos.filter((c) => c.saldo > 0)
+    if (!zerarTarget || motivo.trim().length < 5) { toast.error('Motivo precisa de pelo menos 5 caracteres.'); return }
     setSaving(true)
     try {
-      for (const c of alvos) {
-        await escService.zerarCaixaTotal(c.association_id, motivo.trim())
-      }
-      toast.success(`Saldo total zerado em ${alvos.length} unidade(s).`)
-      setZerarAberto(false)
+      await escService.zerarCaixa(zerarTarget.session_id, motivo.trim())
+      toast.success(`Caixa de ${zerarTarget.unidade} zerado.`)
+      setZerarTarget(null)
       setMotivo('')
       load()
     } catch (e: any) {
@@ -94,57 +91,52 @@ export default function FluxoCaixaSection() {
       </div>
 
       <div className="border" style={{ borderColor: BORDER }}>
-        <div className="px-4 py-2.5 border-b flex items-center justify-between" style={{ borderColor: BORDER }}>
-          <span className="text-sm font-semibold text-slate-800">Saldo físico de caixa por unidade (produção)</span>
-          {isAdmin && saldos.length > 0 && (
-            <EscButton variant="danger" onClick={() => setZerarAberto(true)}>
-              Zerar caixa — total {fmt(totalSaldo)}
-            </EscButton>
-          )}
+        <div className="px-4 py-2.5 border-b text-sm font-semibold text-slate-800" style={{ borderColor: BORDER }}>
+          Caixas abertos agora
         </div>
-        <p className="px-4 pt-2 text-xs" style={{ color: TEXT_MUTED }}>
-          Dinheiro físico no cofre: entradas − saídas já confirmadas (sessões conferidas + lançamentos sem caixa).
-        </p>
-        {saldos.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-center" style={{ color: TEXT_MUTED }}>Nenhuma unidade no escopo.</p>
+        {caixas.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-center" style={{ color: TEXT_MUTED }}>Nenhum caixa aberto no momento.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={{ borderColor: BORDER }}>
                 <th className="text-left py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Unidade</th>
-                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Saldo físico</th>
+                <th className="text-left py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Aberto por</th>
+                <th className="text-left py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Aberto em</th>
+                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Saldo disponível</th>
+                {isAdmin && <th className="py-2 px-4" />}
               </tr>
             </thead>
             <tbody>
-              {saldos.map((c) => (
-                <tr key={c.association_id} className="border-b" style={{ borderColor: BORDER }}>
+              {caixas.map((c) => (
+                <tr key={c.session_id} className="border-b" style={{ borderColor: BORDER }}>
                   <td className="py-2 px-4">{c.unidade}</td>
-                  <td className="py-2 px-4 text-right font-medium">{fmt(c.saldo)}</td>
+                  <td className="py-2 px-4">{c.aberto_por}</td>
+                  <td className="py-2 px-4">{new Date(c.opened_at).toLocaleString('pt-BR')}</td>
+                  <td className="py-2 px-4 text-right font-medium">{fmt(c.saldo_disponivel)}</td>
+                  {isAdmin && (
+                    <td className="py-2 px-4 text-right">
+                      <EscButton variant="danger" onClick={() => setZerarTarget(c)}>Zerar caixa</EscButton>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr className="border-t" style={{ borderColor: BORDER }}>
-                <td className="py-2 px-4 text-right font-semibold" style={{ color: TEXT_MUTED }}>Total</td>
-                <td className="py-2 px-4 text-right font-bold">{fmt(totalSaldo)}</td>
-              </tr>
-            </tfoot>
           </table>
         )}
       </div>
 
-      {zerarAberto && (
+      {zerarTarget && (
         <EscModal
-          title="Zerar caixa — total das unidades de produção"
-          onClose={() => { setZerarAberto(false); setMotivo('') }}
+          title={`Zerar caixa — ${zerarTarget.unidade}`}
+          onClose={() => { setZerarTarget(null); setMotivo('') }}
           footer={<>
-            <EscButton variant="ghost" onClick={() => { setZerarAberto(false); setMotivo('') }}>Cancelar</EscButton>
-            <EscButton variant="danger" onClick={handleZerar} disabled={saving}>{saving ? 'Zerando…' : 'Confirmar zeramento'}</EscButton>
+            <EscButton variant="ghost" onClick={() => { setZerarTarget(null); setMotivo('') }}>Cancelar</EscButton>
+            <EscButton variant="danger" onClick={handleZerar} disabled={saving}>Confirmar zeramento</EscButton>
           </>}
         >
           <p className="text-sm" style={{ color: TEXT_MUTED }}>
-            Registra uma sangria administrativa remota (sem foto) em cada uma das {saldos.filter((c) => c.saldo > 0).length} unidade(s) com saldo,
-            somando <strong>{fmt(totalSaldo)}</strong> no total. O saldo físico de cada unidade vai a zero.
+            Registra uma sangria administrativa remota de <strong>{fmt(zerarTarget.saldo_disponivel)}</strong>, sem foto de recibo — o saldo do caixa vai a zero.
           </p>
           <EscField label="Motivo">
             <textarea className={escInputCls} style={escInputStyle} rows={3} value={motivo} onChange={(e) => setMotivo(e.target.value)}

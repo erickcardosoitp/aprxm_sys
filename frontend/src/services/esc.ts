@@ -2,13 +2,11 @@ import api from './api'
 
 export const escService = {
   associacoes: () => api.get('/esc/cadastros/associacoes'),
-  editarAssociacao: (id: string, body: any) => api.put(`/esc/cadastros/associacoes/${id}`, body),
   usuarios: () => api.get('/esc/cadastros/usuarios'),
-  encomendas: (params?: Record<string, any>) => api.get('/esc/cadastros/encomendas', { params }),
-  ordensServico: (params?: Record<string, any>) => api.get('/esc/cadastros/ordens-servico', { params }),
+  gruposUsuarios: () => api.get('/esc/cadastros/grupos-usuarios'),
+  encomendas: () => api.get('/esc/cadastros/encomendas'),
+  ordensServico: () => api.get('/esc/cadastros/ordens-servico'),
   comprovantesEstoque: () => api.get('/esc/cadastros/comprovantes-residencia'),
-  editarComprovanteEstoque: (associationId: string, estoque: number) =>
-    api.put(`/esc/cadastros/comprovantes-residencia/${associationId}`, { estoque }),
 
   associados: () => api.get('/esc/moradores/associados'),
   visitantes: () => api.get('/esc/moradores/visitantes'),
@@ -17,9 +15,7 @@ export const escService = {
   movimentacoes: (params?: Record<string, any>) => api.get('/financeiro/movimentacoes', { params }),
   movimentacoesExport: (params?: Record<string, any>) =>
     api.get('/financeiro/movimentacoes/export', { params, responseType: 'blob' }),
-  sangrias: (params?: Record<string, any>) => api.get('/esc/financeiro/sangrias', { params }),
-  estornarTransacao: (id: string, reason: string, admin_password: string) =>
-    api.post(`/finance/transactions/${id}/reverse`, { reason, admin_password }),
+  sangrias: () => api.get('/esc/financeiro/sangrias'),
   sessoesConferidas: (unidade?: string) => api.get('/esc/financeiro/sessoes-conferidas', { params: { unidade } }),
   reabrirSessao: (sessionId: string) => api.post(`/finance/sessions/${sessionId}/revert-conferencia`),
   gerarConferenciaPdf: (sessionId: string, body: Record<string, any>) =>
@@ -29,9 +25,6 @@ export const escService = {
   financeiroSummary: (params?: Record<string, any>) => api.get('/financeiro/summary', { params }),
   caixasAbertos: (unidade?: string) => api.get('/financeiro/caixas-abertos', { params: { unidade } }),
   zerarCaixa: (session_id: string, reason: string) => api.post('/financeiro/zerar-caixa', { session_id, reason }),
-  saldoCaixaRealizado: (unidade?: string) => api.get('/financeiro/saldo-caixa-realizado', { params: { unidade } }),
-  zerarCaixaTotal: (association_id: string, reason: string) =>
-    api.post('/financeiro/zerar-caixa-total', { association_id, reason }),
 
   contasPagar: (params?: Record<string, any>) => api.get('/esc/financeiro/contas-pagar', { params }),
   criarContaPagar: (body: any) => api.post('/esc/financeiro/contas-pagar', body),
@@ -50,6 +43,7 @@ export const escService = {
   mensalidadesDelinquent: (params?: Record<string, any>) => api.get('/mensalidades/delinquent', { params }),
   mensalidadesPaid: (params?: Record<string, any>) => api.get('/mensalidades/paid', { params }),
 
+  permissoes: () => api.get('/esc/administracao/permissoes'),
   estoque: () => api.get('/esc/administracao/estoque'),
 
   infra: () => api.get('/esc/ti/infra'),
@@ -62,13 +56,8 @@ export const escService = {
 
   categorias: () => api.get('/esc/cadastros/categorias'),
   criarCategoria: (body: any) => api.post('/esc/cadastros/categorias', body),
-  editarCategoria: (id: string, body: any) => api.put(`/esc/cadastros/categorias/${id}`, body),
   formasPagamento: () => api.get('/esc/cadastros/formas-pagamento'),
   criarForma: (body: any) => api.post('/esc/cadastros/formas-pagamento', body),
-  editarForma: (id: string, body: any) => api.put(`/esc/cadastros/formas-pagamento/${id}`, body),
-  categoriasContasPagar: () => api.get('/esc/cadastros/categorias-contas-pagar'),
-  criarCategoriaContasPagar: (name: string) => api.post('/esc/cadastros/categorias-contas-pagar', { name }),
-  editarCategoriaContasPagar: (id: string, body: any) => api.put(`/esc/cadastros/categorias-contas-pagar/${id}`, body),
 
   getAccessGroups: () => api.get('/esc/administracao/access-groups'),
   putAccessGroups: (access_groups: any) => api.put('/esc/administracao/access-groups', { access_groups }),

@@ -2,18 +2,18 @@ import { ShieldCheck } from 'lucide-react'
 import EscModulePage from './EscModulePage'
 import EscDataTable from './EscDataTable'
 import EscEmptySection from './EscEmptySection'
-import { AvisosSection } from './AdminSections'
+import { PermissoesSection, AvisosSection } from './AdminSections'
 import InventarioEncomendasSection from './InventarioEncomendasSection'
-import ComprovantesEstoqueSection from './ComprovantesEstoqueSection'
 import { escService } from '../../services/esc'
 
 export default function AdministracaoPage() {
   return (
     <EscModulePage
       title="Administração"
-      description="Gestão centralizada da empresa: avisos, auditoria, metas e estoque. Permissões agora ficam em Cadastros > Grupos de Usuários."
+      description="Gestão centralizada da empresa: permissões, avisos, auditoria, metas e estoque."
       icon={ShieldCheck}
       sections={[
+        { key: 'permissoes', label: 'Permissões', content: <PermissoesSection /> },
         { key: 'inventario-encomendas', label: 'Inventário de Encomendas', content: <InventarioEncomendasSection /> },
         { key: 'avisos', label: 'Avisos', content: <AvisosSection /> },
         {
@@ -31,7 +31,17 @@ export default function AdministracaoPage() {
             ]}
           />,
         },
-        { key: 'estoque', label: 'Estoque', content: <ComprovantesEstoqueSection /> },
+        {
+          key: 'estoque', label: 'Estoque',
+          content: <EscDataTable
+            fetchFn={escService.estoque}
+            searchKeys={['unidade']}
+            columns={[
+              { key: 'unidade', label: 'Unidade' },
+              { key: 'estoque', label: 'Comprovantes em estoque' },
+            ]}
+          />,
+        },
         { key: 'metas', label: 'Plano de Metas', content: <EscEmptySection columns={['Unidade', 'Meta', 'Período', 'Progresso']} /> },
       ]}
     />

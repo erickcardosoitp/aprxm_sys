@@ -46,7 +46,6 @@ async def crm_residents(
     status_filter: str | None = Query(default=None, alias="status"),
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=100, ge=1, le=200),
     unidade: UUID | None = Query(default=None),
     rua: str | None = Query(default=None),
     dependentes: bool | None = Query(default=None),
@@ -60,11 +59,11 @@ async def crm_residents(
     _check_access(current)
 
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
-    offset = (page - 1) * page_size
+    offset = (page - 1) * 100
 
     # grace_days por linha (join association_settings) - unidades diferentes podem ter carência diferente
     filters = ["r.association_id = ANY(:ids)", "r.type = 'member'", "r.status = 'active'"]
-    params: dict = {"ids": ids, "limit": page_size, "offset": offset}
+    params: dict = {"ids": ids, "limit": 100, "offset": offset}
 
     if search:
         filters.append("(unaccent(lower(r.full_name)) LIKE unaccent(lower(:search)) OR r.address_street ILIKE :search)")

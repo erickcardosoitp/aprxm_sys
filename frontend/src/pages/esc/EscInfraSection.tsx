@@ -13,11 +13,9 @@ interface Infra {
 export default function EscInfraSection() {
   const [data, setData] = useState<Infra | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
 
   useEffect(() => {
-    setError(false)
-    escService.infra().then((r) => setData(r.data)).catch(() => setError(true)).finally(() => setLoading(false))
+    escService.infra().then((r) => setData(r.data)).finally(() => setLoading(false))
   }, [])
 
   const stats = data
@@ -31,7 +29,6 @@ export default function EscInfraSection() {
   return (
     <div className="px-6 py-4">
       {loading && <p className="text-sm" style={{ color: TEXT_MUTED }}>carregando…</p>}
-      {!loading && error && <p className="text-sm text-red-600">Erro ao carregar dados de infraestrutura. Tente recarregar a página.</p>}
       <div className="grid grid-cols-3 gap-4">
         {stats.map((s) => (
           <div key={s.label} className="border p-4" style={{ borderColor: BORDER }}>
