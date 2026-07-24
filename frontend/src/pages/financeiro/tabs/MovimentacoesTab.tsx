@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Pencil, RotateCcw, Printer, X } from 'lucide-react'
+import { Pencil, RotateCcw, Printer, X, Eye, EyeOff } from 'lucide-react'
 import api from '../../../services/api'
 import toast from 'react-hot-toast'
 import { fmt, fmtDate, parseTxName } from '../utils/formatters'
@@ -27,6 +27,8 @@ export default function MovimentacoesTab({ period, setPeriod }: Props) {
   const [reversing, setReversing] = useState<string | null>(null)
   const [reversalReason, setReversalReason] = useState('')
   const [reversalPassword, setReversalPassword] = useState('')
+  const [showReversalPassword, setShowReversalPassword] = useState(false)
+  const [showEditPassword, setShowEditPassword] = useState(false)
   const [reversalTarget, setReversalTarget] = useState<Tx | null>(null)
 
   // Edit
@@ -339,7 +341,14 @@ export default function MovimentacoesTab({ period, setPeriod }: Props) {
             )}
             <div>
               <label className="block text-xs text-gray-600 mb-1">Senha de administrador *</label>
-              <input type="password" value={editPassword} onChange={e => setEditPassword(e.target.value)} className={inputCls} placeholder="Senha de admin" />
+              <div className="relative">
+                <input type={showEditPassword ? 'text' : 'password'} value={editPassword} onChange={e => setEditPassword(e.target.value)}
+                  className={inputCls + ' pr-9'} placeholder="Senha de admin" />
+                <button type="button" onClick={() => setShowEditPassword(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div className="flex gap-2">
               <button onClick={() => setEditTarget(null)} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">Cancelar</button>
@@ -376,13 +385,19 @@ export default function MovimentacoesTab({ period, setPeriod }: Props) {
             </div>
             <div>
               <label className="block text-xs text-gray-600 mb-1">Senha de administrador *</label>
-              <input
-                type="password"
-                value={reversalPassword}
-                onChange={e => setReversalPassword(e.target.value)}
-                className={inputCls}
-                placeholder="Senha de admin"
-              />
+              <div className="relative">
+                <input
+                  type={showReversalPassword ? 'text' : 'password'}
+                  value={reversalPassword}
+                  onChange={e => setReversalPassword(e.target.value)}
+                  className={inputCls + ' pr-9'}
+                  placeholder="Senha de admin"
+                />
+                <button type="button" onClick={() => setShowReversalPassword(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showReversalPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div className="flex gap-2">
               <button onClick={() => { setReversalTarget(null); setReversalReason(''); setReversalPassword('') }}
