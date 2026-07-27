@@ -288,17 +288,24 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   useEffect(() => {
     if (txType !== 'income' || incomeSubtype !== 'mensalidade' || isAcordo || !resident) return
     const defaultAmt = parseFloat(settings?.default_mensalidade_amount || '0')
-    const count = defaultAmt > 0 && amount ? Math.max(1, Math.round(parseFloat(amount) / defaultAmt)) : 1
     // Build candidate months: mes de entrada do morador -> atual + 3, pula ja pago
     const paidSet = new Set(residentMensalidades.filter(m => m.status === 'paid').map(m => m.reference_month))
     const candidates: string[] = []
     const joinDate = new Date(resident.move_in_date || resident.created_at)
     const start = new Date(joinDate.getFullYear(), joinDate.getMonth(), 1)
+    const now = new Date()
     const end = new Date(); end.setMonth(end.getMonth() + 3)
     for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (!paidSet.has(ym)) candidates.push(ym)
     }
+    // meses vencidos (<= mes atual) entram todos; meses futuros só conforme valor digitado
+    const overdueCount = candidates.filter(ym => {
+      const [y, m] = ym.split('-').map(Number)
+      return new Date(y, m - 1, 1) <= new Date(now.getFullYear(), now.getMonth(), 1)
+    }).length
+    const byAmount = defaultAmt > 0 && amount ? Math.round(parseFloat(amount) / defaultAmt) : 1
+    const count = Math.max(1, overdueCount, byAmount)
     setMensalidadeMonths(candidates.slice(0, count))
   }, [amount, incomeSubtype, txType, isAcordo, settings?.default_mensalidade_amount, residentMensalidades, resident])
 
