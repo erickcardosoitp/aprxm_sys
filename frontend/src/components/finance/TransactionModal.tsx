@@ -169,6 +169,11 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   const { data: categories = [], isLoading: categoriesLoading } = useFinanceCategories<TransactionCategory[]>(txType)
   const { data: paymentMethods = [], isLoading: paymentMethodsLoading } = usePaymentMethods<PaymentMethod[]>()
   const methodsLoading = categoriesLoading || paymentMethodsLoading
+  // Mensalidade so aceita Dinheiro, PIX, Debito ou Credito - Transferencia fica de fora.
+  const mensalidadePaymentMethods = paymentMethods.filter(m => !m.name.toLowerCase().includes('transfer'))
+  const visiblePaymentMethods = txType === 'income' && incomeSubtype === 'mensalidade'
+    ? mensalidadePaymentMethods
+    : paymentMethods
   const [categoryId, setCategoryId] = useState('')
   const [paymentMethodId, setPaymentMethodId] = useState('')
   const [splitEnabled, setSplitEnabled] = useState(false)
@@ -281,20 +286,21 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
   // Auto-select pending months based on amount
   useEffect(() => {
-    if (txType !== 'income' || incomeSubtype !== 'mensalidade' || isAcordo) return
+    if (txType !== 'income' || incomeSubtype !== 'mensalidade' || isAcordo || !resident) return
     const defaultAmt = parseFloat(settings?.default_mensalidade_amount || '0')
     const count = defaultAmt > 0 && amount ? Math.max(1, Math.round(parseFloat(amount) / defaultAmt)) : 1
-    // Build candidate months: March 2026 → current + 3, skip already paid
+    // Build candidate months: mes de entrada do morador -> atual + 3, pula ja pago
     const paidSet = new Set(residentMensalidades.filter(m => m.status === 'paid').map(m => m.reference_month))
     const candidates: string[] = []
-    const start = new Date(2026, 2, 1) // March 2026
+    const joinDate = new Date(resident.move_in_date || resident.created_at)
+    const start = new Date(joinDate.getFullYear(), joinDate.getMonth(), 1)
     const end = new Date(); end.setMonth(end.getMonth() + 3)
     for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (!paidSet.has(ym)) candidates.push(ym)
     }
     setMensalidadeMonths(candidates.slice(0, count))
-  }, [amount, incomeSubtype, txType, isAcordo, settings?.default_mensalidade_amount, residentMensalidades])
+  }, [amount, incomeSubtype, txType, isAcordo, settings?.default_mensalidade_amount, residentMensalidades, resident])
 
   // Auto-fill from resident lookup into proof fields
   useEffect(() => {
@@ -1221,7 +1227,8 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                     const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
                     const paidSet = new Set(residentMensalidades.filter(m => m.status === 'paid').map(m => m.reference_month))
                     const months: string[] = []
-                    const start = new Date(2026, 2, 1)
+                    const joinDate = new Date(resident.move_in_date || resident.created_at)
+                    const start = new Date(joinDate.getFullYear(), joinDate.getMonth(), 1)
                     const end = new Date(); end.setMonth(end.getMonth() + 3)
                     for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
                       months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
@@ -1279,7 +1286,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                       <div className="w-4 h-4 border-2 border-gray-300 border-t-[#26619c] rounded-full animate-spin shrink-0" />
                       Carregando formas de pagamento…
                     </div>
-                  ) : paymentMethods.length > 0 ? (
+                  ) : visiblePaymentMethods.length > 0 ? (
                     <div className="flex flex-col gap-2">
                       <label className="block text-xs font-medium text-gray-600">
                         {splitEnabled ? '1ª forma de pagamento' : 'Forma de pagamento'}
@@ -1291,7 +1298,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                         )}
                       </label>
                       <div className="flex flex-wrap gap-2">
-                        {paymentMethods.map((m) => (
+                        {visiblePaymentMethods.map((m) => (
                           <button key={m.id} type="button" onClick={() => setPaymentMethodId(m.id === paymentMethodId ? '' : m.id)}
                             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
                               paymentMethodId === m.id ? 'bg-[#26619c] text-white border-[#26619c]' : 'border-gray-300 text-gray-600 hover:border-[#26619c]'
@@ -1316,7 +1323,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                               2ª forma
                             </label>
                             <div className="flex flex-wrap gap-2">
-                              {paymentMethods.map((m) => (
+                              {visiblePaymentMethods.map((m) => (
                                 <button key={m.id} type="button" onClick={() => setPaymentMethodId2(m.id === paymentMethodId2 ? '' : m.id)}
                                   className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
                                     paymentMethodId2 === m.id ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600 hover:border-indigo-400'
