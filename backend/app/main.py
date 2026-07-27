@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 14
+_SCHEMA_VERSION = 17
 
 
 async def _run_migrations() -> None:
@@ -579,6 +579,104 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (14, 'v14: Contas a Pagar - categorias proprias (payable_categories)') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v15: Desconferir caixa (volta pra 'closed' com motivo registrado,
+            # aparece como "Devolvido" na UI - distinto de um fechamento normal
+            # que nunca foi conferido). Aditivo.
+            try:
+                await session.execute(text(
+                    "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS reverted_reason TEXT"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS reverted_at TIMESTAMPTZ"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (15, 'v15: Desconferir caixa - cash_sessions.reverted_reason/reverted_at') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v16: Cadastro de Produtos (empresa-wide) — mensalidade, taxa de
+            # entrega, comprovante de residencia. preco_associado/preco_nao_associado
+            # sao valores SUGERIDOS/padrao; association_settings.default_mensalidade_amount
+            # continua sendo a fonte de verdade da cobranca por associacao (aditivo,
+            # nao substitui) - a propagacao do produto pra cada associacao e' feita
+            # explicitamente pelo endpoint de edicao, com checagem de conflito.
+            try:
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS products (
+                        id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        empresa_id           UUID NOT NULL REFERENCES empresas(id),
+                        code                 VARCHAR(50) NOT NULL,
+                        name                 VARCHAR(150) NOT NULL,
+                        description          TEXT,
+                        preco_associado      NUMERIC(10,2) NOT NULL DEFAULT 0,
+                        preco_nao_associado  NUMERIC(10,2) NOT NULL DEFAULT 0,
+                        is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        UNIQUE (empresa_id, code)
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_products_empresa ON products(empresa_id)"
+                ))
+                await session.execute(text("""
+                    INSERT INTO products (empresa_id, code, name, description, preco_associado, preco_nao_associado)
+                    SELECT e.id, v.code, v.name, v.description, v.preco_associado, v.preco_nao_associado
+                    FROM empresas e
+                    CROSS JOIN (VALUES
+                        ('mensalidade', 'Mensalidade', 'Mensalidade associativa', 0, 0),
+                        ('delivery_fee', 'Taxa de Entrega', 'Cobrada de nao-associados/inadimplentes na entrega de encomendas', 0, 2.50),
+                        ('proof_of_residence', 'Comprovante de Residência', 'Emissao de comprovante de residencia', 0, 0)
+                    ) AS v(code, name, description, preco_associado, preco_nao_associado)
+                    ON CONFLICT (empresa_id, code) DO NOTHING
+                """))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (16, 'v16: Cadastro de Produtos (products) - mensalidade/taxa entrega/comprovante') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v17: padronizacao de rastreabilidade — updated_at onde faltava,
+            # created_by/updated_by onde faltava, em tabelas de cadastro e
+            # lancamento. Aditivo, todas colunas nullable (nao quebra historico).
+            try:
+                await session.execute(text("ALTER TABLE payable_categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"))
+                await session.execute(text("ALTER TABLE contas_pagar_templates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"))
+                await session.execute(text("ALTER TABLE contas_pagar_templates ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE transaction_categories ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE transaction_categories ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE payable_categories ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE payable_categories ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE associations ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE associations ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE residents ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE mensalidades ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text("ALTER TABLE packages ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (17, 'v17: rastreabilidade - updated_at/created_by/updated_by padronizados') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -1779,6 +1877,95 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (14, 'v14: Contas a Pagar - categorias proprias (payable_categories)') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v15: mesmo bloco do ramo _is_existing_db (Desconferir caixa)
+        try:
+            await session.execute(text(
+                "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS reverted_reason TEXT"
+            ))
+            await session.execute(text(
+                "ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS reverted_at TIMESTAMPTZ"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (15, 'v15: Desconferir caixa - cash_sessions.reverted_reason/reverted_at') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v16: mesmo bloco do ramo _is_existing_db (Cadastro de Produtos)
+        try:
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS products (
+                    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    empresa_id           UUID NOT NULL REFERENCES empresas(id),
+                    code                 VARCHAR(50) NOT NULL,
+                    name                 VARCHAR(150) NOT NULL,
+                    description          TEXT,
+                    preco_associado      NUMERIC(10,2) NOT NULL DEFAULT 0,
+                    preco_nao_associado  NUMERIC(10,2) NOT NULL DEFAULT 0,
+                    is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    UNIQUE (empresa_id, code)
+                )
+            """))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_products_empresa ON products(empresa_id)"
+            ))
+            await session.execute(text("""
+                INSERT INTO products (empresa_id, code, name, description, preco_associado, preco_nao_associado)
+                SELECT e.id, v.code, v.name, v.description, v.preco_associado, v.preco_nao_associado
+                FROM empresas e
+                CROSS JOIN (VALUES
+                    ('mensalidade', 'Mensalidade', 'Mensalidade associativa', 0, 0),
+                    ('delivery_fee', 'Taxa de Entrega', 'Cobrada de nao-associados/inadimplentes na entrega de encomendas', 0, 2.50),
+                    ('proof_of_residence', 'Comprovante de Residência', 'Emissao de comprovante de residencia', 0, 0)
+                ) AS v(code, name, description, preco_associado, preco_nao_associado)
+                ON CONFLICT (empresa_id, code) DO NOTHING
+            """))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (16, 'v16: Cadastro de Produtos (products) - mensalidade/taxa entrega/comprovante') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v17: mesmo bloco do ramo _is_existing_db (rastreabilidade)
+        try:
+            await session.execute(text("ALTER TABLE payable_categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"))
+            await session.execute(text("ALTER TABLE contas_pagar_templates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"))
+            await session.execute(text("ALTER TABLE contas_pagar_templates ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE transaction_categories ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE transaction_categories ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE payable_categories ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE payable_categories ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE associations ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE associations ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE residents ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE mensalidades ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE contas_pagar ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE cash_sessions ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text("ALTER TABLE packages ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)"))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (17, 'v17: rastreabilidade - updated_at/created_by/updated_by padronizados') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()

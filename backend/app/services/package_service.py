@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -14,7 +15,7 @@ from app.services.finance_service import FinanceService
 
 settings = get_settings()
 
-DELIVERY_FEE = Decimal(str(settings.delivery_fee_default))
+DELIVERY_FEE_FALLBACK = Decimal(str(settings.delivery_fee_default))
 
 
 class PackageService:
@@ -23,8 +24,8 @@ class PackageService:
 
     Business rule:
       On delivery, if the recipient is NOT an active (adimplente) member,
-      a delivery fee of R$ 2.50 is automatically charged and a transaction
-      is created in the open cash session.
+      a delivery fee (cadastro de Produtos, preco_nao_associado) is automatically
+      charged and a transaction is created in the open cash session.
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -125,6 +126,7 @@ class PackageService:
             package.deliverer_name.strip().lower() == delivery_person_name.strip().lower()
         )
         if (not is_active_member or is_delinquent) and not same_deliverer and not skip_fee:
+            delivery_fee = await self._get_delivery_fee(association_id)
             # Charge fee — prefer caller-supplied session, fall back to any open session
             if cash_session_id:
                 cash_session = await self._finance.get_open_session(association_id, session_id=cash_session_id)
@@ -150,7 +152,7 @@ class PackageService:
                 cash_session_id=cash_session.id,
                 tx_type=TransactionType.income,
                 income_subtype=IncomeSubtype.delivery_fee,
-                amount=DELIVERY_FEE,
+                amount=delivery_fee,
                 description=f"Entrega — {delivered_to_name}",
                 created_by=delivered_by,
                 package_id=package_id,
@@ -160,7 +162,7 @@ class PackageService:
                 payer_name=payer_name,
             )
             package.has_delivery_fee = True
-            package.delivery_fee_amount = DELIVERY_FEE
+            package.delivery_fee_amount = delivery_fee
             package.delivery_fee_paid = True
             package.delivery_fee_tx_id = tx.id
 
@@ -215,6 +217,14 @@ class PackageService:
         if not resident:
             return False
         return resident.type in (ResidentType.member, ResidentType.dependent) and resident.status == ResidentStatus.active
+
+    async def _get_delivery_fee(self, association_id: UUID) -> Decimal:
+        row = (await self._session.execute(text("""
+            SELECT p.preco_nao_associado FROM products p
+            JOIN associations a ON a.empresa_id = p.empresa_id
+            WHERE a.id = :aid AND p.code = 'delivery_fee' AND p.is_active = TRUE
+        """), {"aid": str(association_id)})).fetchone()
+        return row[0] if row else DELIVERY_FEE_FALLBACK
 
     async def list_packages(
         self,

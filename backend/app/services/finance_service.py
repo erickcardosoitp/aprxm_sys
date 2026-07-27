@@ -1147,7 +1147,7 @@ class FinanceService:
                     u_open.full_name AS operador_name, u_close.full_name AS fechado_por,
                     u_review.full_name AS conferido_por, cs.origin, a.name AS association_name,
                     cs.quebra_caixa, cs.malote_sent_at, cs.quebra_responsavel,
-                    cs.quebra_assinatura_url, cs.quebra_apurada_at,
+                    cs.quebra_assinatura_url, cs.quebra_apurada_at, cs.reverted_reason,
                     CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_pix, 0)
                          ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
                               AND (t.reversed_at IS NULL AND t.is_reversal = false)
@@ -1187,7 +1187,7 @@ class FinanceService:
                          cs.difference, u_open.full_name, u_close.full_name, u_review.full_name,
                          cs.origin, a.name, cs.quebra_caixa, cs.malote_sent_at, cs.manual_pix,
                          cs.manual_dinheiro, cs.manual_total_bruto, cs.manual_total_baixas,
-                         cs.quebra_responsavel, cs.quebra_assinatura_url, cs.quebra_apurada_at
+                         cs.quebra_responsavel, cs.quebra_assinatura_url, cs.quebra_apurada_at, cs.reverted_reason
                 ORDER BY cs.opened_at DESC
             """),
             params,
@@ -1208,11 +1208,12 @@ class FinanceService:
                 "malote_sent_at": str(r[14]) if r[14] is not None else None,
                 "quebra_responsavel": r[15], "quebra_assinatura_url": r[16],
                 "quebra_apurada_at": str(r[17]) if r[17] is not None else None,
-                "total_pix": str(round(float(r[18]), 2)),
-                "total_dinheiro": str(round(float(r[19]), 2)),
-                "total_bruto": str(round(float(r[20]), 2)),
-                "total_baixas": str(round(float(r[21]), 2)),
-                "total_expense": str(round(float(r[22]), 2)),
+                "reverted_reason": r[18],
+                "total_pix": str(round(float(r[19]), 2)),
+                "total_dinheiro": str(round(float(r[20]), 2)),
+                "total_bruto": str(round(float(r[21]), 2)),
+                "total_baixas": str(round(float(r[22]), 2)),
+                "total_expense": str(round(float(r[23]), 2)),
             }
             for r in rows
         ]

@@ -108,7 +108,9 @@ export default function DRESection() {
             </div>
           </div>
           <p className="text-xs" style={{ color: TEXT_MUTED }}>
-            Sangria não entra neste DRE — é transferência interna de caixa, não receita nem despesa. Acompanhe em Sangrias.
+            Sangria entra como despesa (dinheiro saindo do caixa pra pagar algo) — categorizada pela categoria da
+            transação ou, na falta dela, pelo motivo da sangria. O DRE considera apenas movimentações a partir de
+            08/2026 — meses anteriores aparecem zerados.
           </p>
 
           <div className="border" style={{ borderColor: BORDER }}>

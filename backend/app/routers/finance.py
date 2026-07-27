@@ -107,6 +107,12 @@ class TransactionRequest(BaseModel):
             raise ValueError("Forma de pagamento é obrigatória para mensalidade.")
         return self
 
+    @model_validator(mode="after")
+    def _require_justification_for_expense(self):
+        if self.type == TransactionType.expense and len(self.description.strip()) < 5:
+            raise ValueError("Justificativa é obrigatória para lançar uma despesa (mínimo 5 caracteres).")
+        return self
+
 
 class ConferenciaRequest(BaseModel):
     counted_amount: Decimal = Field(ge=0)
@@ -1154,12 +1160,18 @@ async def reopen_session(
     return {"ok": True, "session_id": str(cash.id), "status": "open"}
 
 
-@router.post("/sessions/{session_id}/revert-conferencia", summary="Desfazer conferência — volta ao status closed")
+class RevertConferenciaRequest(BaseModel):
+    motivo: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/sessions/{session_id}/revert-conferencia", summary="Desconferir caixa (com justificativa) — volta como Devolvido, pode ser conferido de novo")
 async def revert_conferencia(
     session_id: UUID,
+    body: RevertConferenciaRequest,
     current: CurrentUser = Depends(require_conferente),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    from datetime import datetime as _dt
     from sqlmodel import select as sql_select
     result = await session.execute(sql_select(CashSession).where(CashSession.id == session_id))
     cash = result.scalar_one_or_none()
@@ -1171,7 +1183,12 @@ async def revert_conferencia(
             raise HTTPException(404, "Sessão não encontrada.")
     if cash.status != "conferido":
         raise HTTPException(400, "Apenas sessões conferidas podem ser revertidas.")
+    # Volta pra 'closed' (mesmo status de um caixa fechado aguardando conferencia) -
+    # mas grava motivo/quando pra distinguir de um fechamento normal na UI ("Devolvido").
     cash.status = "closed"
+    cash.reverted_reason = body.motivo
+    cash.reverted_at = _dt.utcnow()
+    cash.updated_by = current.user_id
     session.add(cash)
     await session.commit()
     return {"ok": True, "session_id": str(cash.id), "status": "closed"}
@@ -1415,6 +1432,8 @@ async def reverse_transaction(
         pkg.updated_at = _dt.utcnow()
         session.add(pkg)
 
+    from app.core.audit import audit
+    await audit(session, current, "estornar_transacao", "transactions", transaction_id, f"motivo: {body.reason}")
     await session.commit()
     return {
         "id": str(reversal.id),
@@ -2037,15 +2056,20 @@ async def generate_conferencia_pdf(
     if sess_check and str(sess_check[0]) != str(current.association_id):
         ids = [str(i) for i in await financeiro_scope(current, session)]
 
-    # Dados da sessão
+    # Dados da sessão - totais calculados das transacoes (cash_sessions nao guarda
+    # total_bruto/total_baixas/total_expense como coluna, so o esperado/contado).
     cs = (await session.execute(text("""
-        SELECT cs.opened_at, cs.closed_at, cs.expected_balance, cs.total_pix,
-               cs.total_dinheiro, cs.total_bruto, cs.total_baixas, cs.total_expense,
-               u.full_name AS operador, a.name AS assoc
+        SELECT cs.opened_at, cs.closed_at, cs.expected_balance,
+               u.full_name AS operador, a.name AS assoc,
+               COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) AS total_bruto,
+               COALESCE(SUM(CASE WHEN t.type = 'sangria' THEN t.amount ELSE 0 END), 0) AS total_baixas,
+               COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS total_expense
         FROM cash_sessions cs
         LEFT JOIN users u ON u.id = cs.opened_by
         LEFT JOIN associations a ON a.id = cs.association_id
+        LEFT JOIN transactions t ON t.cash_session_id = cs.id AND t.is_reversal = FALSE AND t.reversed_at IS NULL
         WHERE cs.id = :sid AND cs.association_id = ANY(:ids)
+        GROUP BY cs.id, cs.opened_at, cs.closed_at, cs.expected_balance, u.full_name, a.name
     """), {"sid": str(session_id), "ids": ids})).fetchone()
 
     if not cs:
@@ -2076,6 +2100,21 @@ async def generate_conferencia_pdf(
     HDR = (26, 63, 111)
     CINZA = (243, 244, 246)
 
+    def _pdf_safe(s) -> str:
+        """Helvetica (core font do fpdf2) so cobre latin-1 - dado real (nome,
+        descricao, motivo digitado por usuario) pode ter em-dash/aspas curvas/etc
+        que quebram o render com FPDFUnicodeEncodingException. Normaliza os casos
+        comuns e troca qualquer sobra por '?' em vez de derrubar a geracao do PDF."""
+        s = str(s)
+        s = (s.replace("—", "-").replace("–", "-")
+               .replace("‘", "'").replace("’", "'")
+               .replace("“", '"').replace("”", '"'))
+        try:
+            s.encode("latin-1")
+        except UnicodeEncodeError:
+            s = s.encode("latin-1", "replace").decode("latin-1")
+        return s
+
     pdf = FPDF()
     pdf.set_auto_page_break(True, 14)
     pdf.add_page()
@@ -2087,7 +2126,7 @@ async def generate_conferencia_pdf(
     pdf.set_font("Helvetica", "B", 14)
     pdf.cell(0, 10, "Comprovante de Conferencia de Caixa", fill=True, ln=True, align="C")
     pdf.set_font("Helvetica", "", 9)
-    pdf.cell(0, 6, cs[9], ln=True, align="C")
+    pdf.cell(0, 6, _pdf_safe(cs[4]), ln=True, align="C")
     pdf.set_text_color(0, 0, 0)
     pdf.ln(3)
 
@@ -2099,13 +2138,13 @@ async def generate_conferencia_pdf(
     opened = cs[0].strftime("%d/%m/%Y %H:%M") if cs[0] else "-"
     closed = cs[1].strftime("%d/%m/%Y %H:%M") if cs[1] else "-"
     for label, val in [
-        ("Operador", cs[8] or "-"),
+        ("Operador", cs[3] or "-"),
         ("Abertura", opened),
         ("Fechamento", closed),
         ("Conferente", body.conferente_nome),
         ("Gerado em", datetime.now().strftime("%d/%m/%Y %H:%M")),
     ]:
-        pdf.cell(45, 5.5, label + ":"); pdf.cell(0, 5.5, str(val), ln=True)
+        pdf.cell(45, 5.5, label + ":"); pdf.cell(0, 5.5, _pdf_safe(val), ln=True)
     pdf.ln(3)
 
     # Resumo financeiro
@@ -2132,7 +2171,7 @@ async def generate_conferencia_pdf(
     if diferenca != 0 and body.quebra_motivo:
         pdf.set_font("Helvetica", "BI", 8.5)
         pdf.set_text_color(220, 38, 38)
-        pdf.cell(60, 5.5, "Motivo da quebra:"); pdf.cell(0, 5.5, body.quebra_motivo, ln=True)
+        pdf.cell(60, 5.5, "Motivo da quebra:"); pdf.cell(0, 5.5, _pdf_safe(body.quebra_motivo), ln=True)
         pdf.set_text_color(0, 0, 0)
     pdf.ln(3)
 
@@ -2154,13 +2193,13 @@ async def generate_conferencia_pdf(
         tipo = TYPE_PT.get(tx[0], tx[0])
         sub = SUBTYPE_PT.get(tx[1] or "", "")
         label = sub if sub else tipo
-        desc = (tx[2] or "")[:38] if not tx[5] else f"{tx[5][:20]} — {tx[2] or ''}"[:38]
+        desc = _pdf_safe((tx[2] or "")[:38] if not tx[5] else f"{tx[5][:20]} - {tx[2] or ''}"[:38])
         amt = float(tx[3] or 0)
         dt = tx[6].strftime("%d/%m %H:%M") if tx[6] else "-"
         color = (15, 122, 77) if tx[0] == "income" else (220, 38, 38)
-        pdf.cell(22, 5, " " + label[:14], fill=True, border=0)
+        pdf.cell(22, 5, " " + _pdf_safe(label[:14]), fill=True, border=0)
         pdf.cell(72, 5, " " + desc, fill=True, border=0)
-        pdf.cell(30, 5, " " + (tx[4] or "-")[:14], fill=True, border=0)
+        pdf.cell(30, 5, " " + _pdf_safe((tx[4] or "-")[:14]), fill=True, border=0)
         pdf.set_text_color(*color)
         pdf.cell(30, 5, f" R$ {amt:.2f}", fill=True, border=0)
         pdf.set_text_color(0, 0, 0)

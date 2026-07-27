@@ -4,6 +4,7 @@ import html2canvas from 'html2canvas'
 import { Download, FileSpreadsheet, X } from 'lucide-react'
 import { escService } from '../../../services/esc'
 import { EscButton, EscField, EscModal, EscSelect, escInputCls, escInputStyle, ESC_ACCENT } from '../EscFormKit'
+import { unidadeColor } from '../EscDataTable'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -46,6 +47,7 @@ function periodoToRange(periodo: string): { date_from: string; date_to: string }
 interface Row {
   'Data/hora': string; 'Tipo Movimentação': string; 'Associação': string; 'Morador': string
   'Valor': number; 'Produto': string; 'Status Morador': string; 'Usuário': string
+  'Justificativa': string
 }
 
 export default function MovimentacoesSection() {
@@ -175,23 +177,36 @@ export default function MovimentacoesSection() {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b" style={{ borderColor: BORDER }}>
-              {['Data/hora', 'Tipo', 'Associação', 'Morador', 'Valor', 'Produto', 'Status Morador', 'Usuário'].map((h) => (
+              {['Data/hora', 'Tipo', 'Associação', 'Morador', 'Valor', 'Produto', 'Justificativa', 'Status Morador', 'Usuário'].map((h) => (
                 <th key={h} className="text-left py-2 pr-4 font-medium whitespace-nowrap" style={{ color: TEXT_MUTED }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={8} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhuma movimentação no período/filtro.</td></tr>
+              <tr><td colSpan={9} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhuma movimentação no período/filtro.</td></tr>
             )}
             {rows.map((r, i) => (
               <tr key={i} className="border-b hover:bg-slate-50 cursor-pointer" style={{ borderColor: BORDER }} onClick={() => setDetalhe(r)}>
                 <td className="py-2 pr-4 whitespace-nowrap">{new Date(r['Data/hora']).toLocaleString('pt-BR')}</td>
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Tipo Movimentação']}</td>
-                <td className="py-2 pr-4 whitespace-nowrap">{r['Associação']}</td>
+                <td className="py-2 pr-4 whitespace-nowrap">
+                  {r['Associação'] && (
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap"
+                      style={{ backgroundColor: unidadeColor(r['Associação']).bg, color: unidadeColor(r['Associação']).text }}
+                    >
+                      {r['Associação']}
+                    </span>
+                  )}
+                </td>
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Morador']}</td>
                 <td className="py-2 pr-4 whitespace-nowrap font-medium">R$ {Number(r.Valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Produto']}</td>
+                <td className="py-2 pr-4 max-w-[220px] truncate" title={r['Justificativa']}
+                    style={r['Tipo Movimentação'] === 'Saída' ? { color: '#b91c1c' } : undefined}>
+                  {r['Justificativa']}
+                </td>
                 <td className="py-2 pr-4 whitespace-nowrap">{STATUS_MORADOR_LABEL[r['Status Morador']] ?? r['Status Morador']}</td>
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Usuário']}</td>
               </tr>

@@ -93,5 +93,6 @@ class Resident(SQLModel, table=True):
 
     notes: str | None = None
     created_by: UUID | None = Field(default=None, foreign_key="users.id")
+    updated_by: UUID | None = Field(default=None, foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

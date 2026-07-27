@@ -1,13 +1,12 @@
 import { FolderKanban } from 'lucide-react'
 import EscModulePage from './EscModulePage'
-import EscEmptySection from './EscEmptySection'
 import UsuariosSection from './UsuariosSection'
 import ComprovantesEstoqueSection from './ComprovantesEstoqueSection'
 import EncomendasSection from './EncomendasSection'
 import OrdensServicoSection from './OrdensServicoSection'
 import AssociacoesSection from './AssociacoesSection'
 import { PermissoesSection } from './AdminSections'
-import { CategoriasSection, FormasPagamentoSection, CategoriasContasPagarSection } from './CadastroFinanceiroSections'
+import { CategoriasSection, FormasPagamentoSection, CategoriasContasPagarSection, ProdutosSection } from './CadastroFinanceiroSections'
 
 export default function CadastrosPage() {
   return (
@@ -54,7 +53,7 @@ export default function CadastrosPage() {
         },
         {
           key: 'produtos', label: 'Produtos',
-          content: <EscEmptySection columns={['Código', 'Descrição', 'Preço Associado', 'Preço Não Associado']} />,
+          content: <ProdutosSection />,
         },
       ]}
     />

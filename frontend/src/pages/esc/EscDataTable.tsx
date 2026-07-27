@@ -5,6 +5,37 @@ import type { AxiosResponse } from 'axios'
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
 
+const UNIDADE_PALETTE = [
+  { bg: '#dbeafe', text: '#1d4ed8' },
+  { bg: '#dcfce7', text: '#15803d' },
+  { bg: '#fef3c7', text: '#b45309' },
+  { bg: '#fce7f3', text: '#be185d' },
+  { bg: '#ede9fe', text: '#6d28d9' },
+  { bg: '#ffedd5', text: '#c2410c' },
+  { bg: '#cffafe', text: '#0e7490' },
+  { bg: '#e0e7ff', text: '#4338ca' },
+]
+
+export function unidadeColor(nome: string) {
+  let hash = 0
+  for (let i = 0; i < nome.length; i++) hash = (hash * 31 + nome.charCodeAt(i)) >>> 0
+  return UNIDADE_PALETTE[hash % UNIDADE_PALETTE.length]
+}
+
+function UnidadeBadge({ nome }: { nome: string }) {
+  const c = unidadeColor(nome)
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap"
+      style={{ backgroundColor: c.bg, color: c.text }}
+    >
+      {nome}
+    </span>
+  )
+}
+
+const UNIDADE_KEYS = new Set(['unidade', 'associacao', 'association_name', 'assoc', 'assoc_name'])
+
 interface Column {
   key: string
   label: string
@@ -172,7 +203,11 @@ export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarActi
               <tr key={row.id ?? i} className="border-b hover:bg-slate-50" style={{ borderColor: BORDER }}>
                 {columns.map((col) => (
                   <td key={col.key} className="py-2 pr-4 whitespace-nowrap">
-                    {col.render ? col.render(row) : String(row[col.key] ?? '—')}
+                    {col.render
+                      ? col.render(row)
+                      : UNIDADE_KEYS.has(col.key) && row[col.key]
+                        ? <UnidadeBadge nome={String(row[col.key])} />
+                        : String(row[col.key] ?? '—')}
                   </td>
                 ))}
                 {rowActions && <td className="py-2 pr-4 whitespace-nowrap text-right">{rowActions(row)}</td>}

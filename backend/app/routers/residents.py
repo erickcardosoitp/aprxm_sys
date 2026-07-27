@@ -571,7 +571,10 @@ async def update_resident(
         setattr(resident, key, value)
     from datetime import datetime
     resident.updated_at = datetime.utcnow()
+    resident.updated_by = current.user_id
     session.add(resident)
+    from app.core.audit import audit
+    await audit(session, current, "editar_morador", "residents", resident.id, ", ".join(f"{k}={v}" for k, v in data.items()))
     await session.commit()
     await session.refresh(resident)
     return _serialize(resident)

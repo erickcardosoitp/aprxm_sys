@@ -99,8 +99,10 @@ async def editar_associacao(
         sets.append("is_active = :active"); params["active"] = body.is_active
     if not sets:
         return {"ok": True, "noop": True}
+    sets.append("updated_at = NOW()")
+    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
     await session.execute(text(f"UPDATE associations SET {', '.join(sets)} WHERE id = :id"), params)
-    await _audit(session, current, "editar_associacao", "associations", association_id, ", ".join(f"{k}={v}" for k, v in params.items() if k != "id"))
+    await _audit(session, current, "editar_associacao", "associations", association_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "uid")))
     await session.commit()
     return {"ok": True}
 
@@ -173,6 +175,99 @@ async def list_ordens_servico(
     """), params)).fetchall()
     return [{"id": str(r[0]), "number": r[1], "title": r[2], "priority": r[3],
              "status": r[4], "created_at": str(r[5]), "unidade": r[6]} for r in rows]
+
+
+class CriarOrdemServicoRequest(BaseModel):
+    association_id: UUID
+    title: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1)
+    priority: str = "medium"
+    area: str | None = None
+    location_detail: str | None = None
+
+
+class EditarOrdemServicoRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    priority: str | None = None
+    area: str | None = None
+    location_detail: str | None = None
+
+
+async def _empresa_assoc_ids(session: AsyncSession, empresa_id: UUID) -> list[UUID]:
+    rows = (await session.execute(
+        text("SELECT id FROM associations WHERE empresa_id = :eid"), {"eid": str(empresa_id)}
+    )).fetchall()
+    return [r[0] for r in rows]
+
+
+@router.post("/cadastros/ordens-servico", summary="Criar Ordem de Serviço (empresa, qualquer unidade)")
+async def criar_ordem_servico(
+    body: CriarOrdemServicoRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from app.models.service_order import ServiceOrderPriority
+    from app.services.service_order_service import ServiceOrderService
+
+    await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
+    svc = ServiceOrderService(session)
+    so = await svc.create(
+        association_id=body.association_id,
+        created_by=current.user_id,
+        title=body.title,
+        description=body.description,
+        priority=ServiceOrderPriority(body.priority),
+        area=body.area,
+        location_detail=body.location_detail,
+    )
+    await _audit(session, current, "criar_ordem_servico", "service_orders", so.id, f"OS #{so.number}: {body.title}")
+    await session.commit()
+    return {"id": str(so.id), "number": so.number, "status": so.status}
+
+
+@router.put("/cadastros/ordens-servico/{so_id}", summary="Editar Ordem de Serviço (empresa)")
+async def editar_ordem_servico(
+    so_id: UUID,
+    body: EditarOrdemServicoRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from app.services.service_order_service import ServiceOrderService
+
+    ids = await _empresa_assoc_ids(session, current.empresa_id)
+    svc = ServiceOrderService(session)
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        return {"ok": True, "noop": True}
+    data["updated_by"] = current.user_id
+    so = await svc.update(so_id, current.empresa_id, data, association_ids=ids)
+    await _audit(session, current, "editar_ordem_servico", "service_orders", so_id, ", ".join(f"{k}={v}" for k, v in data.items()))
+    await session.commit()
+    return {"id": str(so.id), "number": so.number, "status": so.status}
+
+
+@router.delete("/cadastros/ordens-servico/{so_id}", summary="Excluir Ordem de Serviço (empresa)")
+async def excluir_ordem_servico(
+    so_id: UUID,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    ids = await _empresa_assoc_ids(session, current.empresa_id)
+    so_row = (await session.execute(text(
+        "SELECT id, number, title FROM service_orders WHERE id = :id AND association_id = ANY(:ids)"
+    ), {"id": str(so_id), "ids": [str(i) for i in ids]})).fetchone()
+    if not so_row:
+        raise HTTPException(status_code=404, detail="Ordem de Serviço não encontrada na sua empresa.")
+
+    await session.execute(text("DELETE FROM so_presence WHERE so_id = :id"), {"id": str(so_id)})
+    await session.execute(text("DELETE FROM service_order_tasks WHERE service_order_id = :id"), {"id": str(so_id)})
+    await session.execute(text("DELETE FROM service_order_comments WHERE service_order_id = :id"), {"id": str(so_id)})
+    await session.execute(text("DELETE FROM service_order_history WHERE service_order_id = :id"), {"id": str(so_id)})
+    await session.execute(text("DELETE FROM service_orders WHERE id = :id"), {"id": str(so_id)})
+    await _audit(session, current, "excluir_ordem_servico", "service_orders", so_id, f"OS #{so_row[1]}: {so_row[2]}")
+    await session.commit()
+    return {"ok": True}
 
 
 @router.get("/cadastros/comprovantes-residencia", summary="Estoque de comprovante de residência por unidade")
@@ -385,10 +480,10 @@ async def criar_payable_categoria(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     row = (await session.execute(text("""
-        INSERT INTO payable_categories (id, empresa_id, name, is_active)
-        VALUES (gen_random_uuid(), :eid, :name, TRUE)
+        INSERT INTO payable_categories (id, empresa_id, name, is_active, created_by)
+        VALUES (gen_random_uuid(), :eid, :name, TRUE, :uid)
         RETURNING id
-    """), {"eid": str(current.empresa_id), "name": body.name})).fetchone()
+    """), {"eid": str(current.empresa_id), "name": body.name, "uid": str(current.user_id)})).fetchone()
     await _audit(session, current, "criar_categoria_contas_pagar", "payable_categories", row[0], body.name)
     await session.commit()
     return {"id": str(row[0]), "ok": True}
@@ -413,13 +508,100 @@ async def editar_payable_categoria(
         sets.append("is_active = :active"); params["active"] = body.is_active
     if not sets:
         return {"ok": True, "noop": True}
+    sets.append("updated_at = NOW()")
+    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
     r = await session.execute(text(
         f"UPDATE payable_categories SET {', '.join(sets)} WHERE id = :id AND empresa_id = :eid"
     ), params)
     if r.rowcount == 0:
         await session.rollback()
         raise HTTPException(status_code=404, detail="Categoria não encontrada na sua empresa.")
-    await _audit(session, current, "editar_categoria_contas_pagar", "payable_categories", categoria_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid")))
+    await _audit(session, current, "editar_categoria_contas_pagar", "payable_categories", categoria_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid", "uid")))
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/cadastros/produtos", summary="Produtos da empresa (mensalidade, taxa de entrega, comprovante)")
+async def list_produtos(
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    rows = (await session.execute(text("""
+        SELECT id, code, name, description, preco_associado, preco_nao_associado, is_active
+        FROM products WHERE empresa_id = :eid ORDER BY name
+    """), {"eid": str(current.empresa_id)})).fetchall()
+    return [
+        {
+            "id": str(r[0]), "code": r[1], "name": r[2], "description": r[3],
+            "preco_associado": str(r[4]), "preco_nao_associado": str(r[5]), "is_active": r[6],
+        }
+        for r in rows
+    ]
+
+
+class EditarProdutoRequest(BaseModel):
+    preco_associado: Decimal = Field(ge=0)
+    preco_nao_associado: Decimal = Field(ge=0)
+    is_active: bool | None = None
+    force: bool = False
+    aplicar_divergentes: bool = False  # só usado quando force=True e code='mensalidade'
+
+
+@router.put("/cadastros/produtos/{produto_id}", summary="Editar preço de um produto (com checagem de conflito p/ mensalidade)")
+async def editar_produto(
+    produto_id: UUID,
+    body: EditarProdutoRequest,
+    current: CurrentUser = Depends(require_empresa_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    prod = (await session.execute(text(
+        "SELECT id, code, preco_associado FROM products WHERE id = :id AND empresa_id = :eid"
+    ), {"id": str(produto_id), "eid": str(current.empresa_id)})).fetchone()
+    if not prod:
+        raise HTTPException(status_code=404, detail="Produto não encontrado na sua empresa.")
+
+    if prod[1] == "mensalidade" and not body.force:
+        old_default = prod[2]
+        rows = (await session.execute(text("""
+            SELECT a.id, a.name, s.default_mensalidade_amount
+            FROM associations a
+            JOIN association_settings s ON s.association_id = a.id
+            WHERE a.empresa_id = :eid AND a.is_active = TRUE
+        """), {"eid": str(current.empresa_id)})).fetchall()
+        divergentes = [
+            {"association_id": str(r[0]), "name": r[1], "valor_atual": str(r[2])}
+            for r in rows if r[2] != old_default
+        ]
+        if divergentes:
+            return {"conflito": True, "divergentes": divergentes, "novo_valor": str(body.preco_associado)}
+
+    await session.execute(text("""
+        UPDATE products SET preco_associado = :pa, preco_nao_associado = :pna,
+               is_active = COALESCE(:active, is_active), updated_at = now(), updated_by = :uid
+        WHERE id = :id AND empresa_id = :eid
+    """), {
+        "pa": body.preco_associado, "pna": body.preco_nao_associado,
+        "active": body.is_active, "id": str(produto_id), "eid": str(current.empresa_id),
+        "uid": str(current.user_id),
+    })
+
+    if prod[1] == "mensalidade":
+        if body.aplicar_divergentes:
+            # aplica o novo valor em TODAS as associações da empresa
+            await session.execute(text("""
+                UPDATE association_settings SET default_mensalidade_amount = :val, updated_at = now()
+                WHERE association_id IN (SELECT id FROM associations WHERE empresa_id = :eid)
+            """), {"val": body.preco_associado, "eid": str(current.empresa_id)})
+        else:
+            # respeita quem já customizou (diferente do valor antigo do produto);
+            # só propaga pra quem ainda estava no valor padrão anterior
+            await session.execute(text("""
+                UPDATE association_settings SET default_mensalidade_amount = :val, updated_at = now()
+                WHERE association_id IN (SELECT id FROM associations WHERE empresa_id = :eid)
+                  AND default_mensalidade_amount = :old_val
+            """), {"val": body.preco_associado, "old_val": prod[2], "eid": str(current.empresa_id)})
+
+    await _audit(session, current, "editar_produto", "products", produto_id, f"preco_associado={body.preco_associado} preco_nao_associado={body.preco_nao_associado}")
     await session.commit()
     return {"ok": True}
 
@@ -487,9 +669,9 @@ async def atualizar_conta_pagar_template(
 ) -> dict:
     ids = [str(i) for i in await financeiro_scope(current, session)]
     row = (await session.execute(text(
-        "UPDATE contas_pagar_templates SET is_active = :active "
+        "UPDATE contas_pagar_templates SET is_active = :active, updated_at = NOW(), updated_by = :uid "
         "WHERE id = :id AND association_id = ANY(:ids) RETURNING id"
-    ), {"active": is_active, "id": str(template_id), "ids": ids})).fetchone()
+    ), {"active": is_active, "id": str(template_id), "ids": ids, "uid": str(current.user_id)})).fetchone()
     if not row:
         raise HTTPException(404, "Template não encontrado.")
     await _audit(session, current, "atualizar_conta_pagar_template", "contas_pagar_templates", template_id, f"is_active -> {is_active}")
@@ -631,8 +813,8 @@ async def baixar_conta_pagar(
 
     novo_status = _status_conta_pagar(amount, novo_pago)
     await session.execute(text(
-        "UPDATE contas_pagar SET amount_paid = :paid, status = :status, updated_at = NOW() WHERE id = :id"
-    ), {"paid": novo_pago, "status": novo_status, "id": str(conta_id)})
+        "UPDATE contas_pagar SET amount_paid = :paid, status = :status, updated_at = NOW(), updated_by = :uid WHERE id = :id"
+    ), {"paid": novo_pago, "status": novo_status, "id": str(conta_id), "uid": str(current.user_id)})
     await _audit(session, current, "baixar_conta_pagar", "contas_pagar", conta_id, f"R$ {body.amount} -> status {novo_status}")
     await session.commit()
     return {"ok": True, "status": novo_status, "amount_paid": float(novo_pago)}
@@ -754,12 +936,13 @@ async def criar_usuario(
         raise HTTPException(status_code=409, detail="Já existe usuário ativo com este e-mail.")
 
     row = (await session.execute(text("""
-        INSERT INTO users (id, empresa_id, association_id, full_name, email, phone, hashed_password, role, is_active)
-        VALUES (gen_random_uuid(), :eid, :aid, :name, :email, :phone, :pw, CAST(:role AS user_role), TRUE)
+        INSERT INTO users (id, empresa_id, association_id, full_name, email, phone, hashed_password, role, is_active, created_by)
+        VALUES (gen_random_uuid(), :eid, :aid, :name, :email, :phone, :pw, CAST(:role AS user_role), TRUE, :uid)
         RETURNING id
     """), {
         "eid": str(current.empresa_id), "aid": str(target_assoc), "name": body.full_name,
         "email": body.email, "phone": body.phone, "pw": hash_password(body.password), "role": body.role,
+        "uid": str(current.user_id),
     })).fetchone()
     await _audit(session, current, "criar_usuario", "user", row[0], f"{body.full_name} ({body.role})")
     await session.commit()
@@ -805,8 +988,9 @@ async def editar_usuario(
     # Mudanca de estacao/role/ativo invalida sessoes vivas (token desatualizado).
     sets.append("token_version = token_version + 1")
     sets.append("updated_at = NOW()")
+    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
     await session.execute(text(f"UPDATE users SET {', '.join(sets)} WHERE id = :id"), params)
-    await _audit(session, current, "editar_usuario", "user", user_id, ", ".join(f"{k}={v}" for k, v in params.items() if k != "id"))
+    await _audit(session, current, "editar_usuario", "user", user_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "uid")))
     await session.commit()
     return {"ok": True}
 
@@ -907,11 +1091,11 @@ async def criar_categoria(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     row = (await session.execute(text("""
-        INSERT INTO transaction_categories (id, association_id, empresa_id, name, type, description, color, is_active)
-        VALUES (gen_random_uuid(), NULL, :eid, :name, CAST(:type AS transaction_type), :desc, :color, TRUE)
+        INSERT INTO transaction_categories (id, association_id, empresa_id, name, type, description, color, is_active, created_by)
+        VALUES (gen_random_uuid(), NULL, :eid, :name, CAST(:type AS transaction_type), :desc, :color, TRUE, :uid)
         RETURNING id
     """), {"eid": str(current.empresa_id), "name": body.name, "type": body.type,
-           "desc": body.description, "color": body.color})).fetchone()
+           "desc": body.description, "color": body.color, "uid": str(current.user_id)})).fetchone()
     await _audit(session, current, "criar_categoria", "transaction_categories", row[0], f"{body.name} ({body.type})")
     await session.commit()
     return {"id": str(row[0]), "ok": True}
@@ -943,13 +1127,14 @@ async def editar_categoria(
     if not sets:
         return {"ok": True, "noop": True}
     sets.append("updated_at = NOW()")
+    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
     r = await session.execute(text(
         f"UPDATE transaction_categories SET {', '.join(sets)} WHERE id = :id AND empresa_id = :eid"
     ), params)
     if r.rowcount == 0:
         await session.rollback()
         raise HTTPException(status_code=404, detail="Categoria não encontrada na sua empresa.")
-    await _audit(session, current, "editar_categoria", "transaction_categories", categoria_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid")))
+    await _audit(session, current, "editar_categoria", "transaction_categories", categoria_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid", "uid")))
     await session.commit()
     return {"ok": True}
 
@@ -973,10 +1158,10 @@ async def criar_forma(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     row = (await session.execute(text("""
-        INSERT INTO payment_methods (id, association_id, empresa_id, name, is_active)
-        VALUES (gen_random_uuid(), NULL, :eid, :name, TRUE)
+        INSERT INTO payment_methods (id, association_id, empresa_id, name, is_active, created_by)
+        VALUES (gen_random_uuid(), NULL, :eid, :name, TRUE, :uid)
         RETURNING id
-    """), {"eid": str(current.empresa_id), "name": body.name})).fetchone()
+    """), {"eid": str(current.empresa_id), "name": body.name, "uid": str(current.user_id)})).fetchone()
     await _audit(session, current, "criar_forma_pagamento", "payment_methods", row[0], body.name)
     await session.commit()
     return {"id": str(row[0]), "ok": True}
@@ -1002,13 +1187,14 @@ async def editar_forma(
     if not sets:
         return {"ok": True, "noop": True}
     sets.append("updated_at = NOW()")
+    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
     r = await session.execute(text(
         f"UPDATE payment_methods SET {', '.join(sets)} WHERE id = :id AND empresa_id = :eid"
     ), params)
     if r.rowcount == 0:
         await session.rollback()
         raise HTTPException(status_code=404, detail="Forma de pagamento não encontrada na sua empresa.")
-    await _audit(session, current, "editar_forma_pagamento", "payment_methods", forma_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid")))
+    await _audit(session, current, "editar_forma_pagamento", "payment_methods", forma_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid", "uid")))
     await session.commit()
     return {"ok": True}
 

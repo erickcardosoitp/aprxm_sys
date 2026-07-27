@@ -45,6 +45,8 @@ class TransactionCategory(SQLModel, table=True):
     type: TransactionType = Field(sa_column=Column(SAEnum(TransactionType, name='transaction_type', create_type=False), nullable=False))
     color: str | None = Field(default=None, max_length=7)
     is_active: bool = Field(default=True)
+    created_by: UUID | None = Field(default=None, foreign_key="users.id")
+    updated_by: UUID | None = Field(default=None, foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -56,6 +58,8 @@ class PaymentMethod(SQLModel, table=True):
     association_id: UUID = Field(foreign_key="associations.id", index=True)
     name: str = Field(max_length=100)
     is_active: bool = Field(default=True)
+    created_by: UUID | None = Field(default=None, foreign_key="users.id")
+    updated_by: UUID | None = Field(default=None, foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -86,6 +90,9 @@ class CashSession(SQLModel, table=True):
     device_token: str | None = Field(default=None, max_length=64)
     session_type: str = Field(default="pdv", max_length=20)
     malote_sent_at: datetime | None = None
+    reverted_reason: str | None = None
+    reverted_at: datetime | None = None
+    updated_by: UUID | None = Field(default=None, foreign_key="users.id")
     opened_at: datetime = Field(default_factory=datetime.utcnow)
     closed_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

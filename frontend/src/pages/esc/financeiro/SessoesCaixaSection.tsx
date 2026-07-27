@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Download, RotateCcw, X } from 'lucide-react'
 import { escService } from '../../../services/esc'
-import { EscButton, EscField, EscSelect, escInputCls, escInputStyle } from '../EscFormKit'
+import { EscButton, EscField, EscModal, EscSelect, escInputCls, escInputStyle } from '../EscFormKit'
+import { unidadeColor } from '../EscDataTable'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -26,6 +27,8 @@ export default function SessoesCaixaSection() {
   const [pdfTarget, setPdfTarget] = useState<Sessao | null>(null)
   const [pdfForm, setPdfForm] = useState({ conferente_nome: '', dinheiro_contado: '0', pix_contado: '0', quebra_motivo: '' })
   const [saving, setSaving] = useState(false)
+  const [reabrirTarget, setReabrirTarget] = useState<Sessao | null>(null)
+  const [reabrirMotivo, setReabrirMotivo] = useState('')
 
   const load = () => {
     setLoading(true)
@@ -38,15 +41,16 @@ export default function SessoesCaixaSection() {
   useEffect(() => { escService.associacoes().then((r) => setAssociacoes(r.data)).catch(() => {}) }, [])
   useEffect(() => { load() }, [unidade])
 
-  const handleReabrir = async (s: Sessao) => {
-    if (!confirm(`Reabrir a sessão de ${s.unidade} (${new Date(s.opened_at).toLocaleDateString('pt-BR')})? Ela volta a status "fechada".`)) return
+  const handleReabrir = async () => {
+    if (!reabrirTarget) return
+    if (reabrirMotivo.trim().length < 5) { toast.error('Motivo precisa de pelo menos 5 caracteres.'); return }
     try {
-      await escService.reabrirSessao(s.id)
-      toast.success('Sessão reaberta.')
-      setDetalhe(null)
+      await escService.reabrirSessao(reabrirTarget.id, reabrirMotivo.trim())
+      toast.success('Caixa desconferido — volta como Devolvido no módulo Caixa da unidade, podendo ser conferido de novo.')
+      setDetalhe(null); setReabrirTarget(null); setReabrirMotivo('')
       load()
     } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Erro ao reabrir sessão.')
+      toast.error(e.response?.data?.detail ?? 'Erro ao desconferir sessão.')
     }
   }
 
@@ -107,14 +111,21 @@ export default function SessoesCaixaSection() {
             {rows.map((s) => (
               <tr key={s.id} className="border-b hover:bg-slate-50" style={{ borderColor: BORDER }}>
                 <td className="py-2 pr-4 whitespace-nowrap cursor-pointer" onClick={() => setDetalhe(s)}>{new Date(s.opened_at).toLocaleString('pt-BR')}</td>
-                <td className="py-2 pr-4 whitespace-nowrap cursor-pointer" onClick={() => setDetalhe(s)}>{s.unidade}</td>
+                <td className="py-2 pr-4 whitespace-nowrap cursor-pointer" onClick={() => setDetalhe(s)}>
+                  <span
+                    className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap"
+                    style={{ backgroundColor: unidadeColor(s.unidade).bg, color: unidadeColor(s.unidade).text }}
+                  >
+                    {s.unidade}
+                  </span>
+                </td>
                 <td className="py-2 pr-4 whitespace-nowrap cursor-pointer" onClick={() => setDetalhe(s)}>{s.usuario}</td>
                 <td className="py-2 pr-4 whitespace-nowrap text-green-700 font-medium cursor-pointer" onClick={() => setDetalhe(s)}>{fmt(s.entradas)}</td>
                 <td className="py-2 pr-4 whitespace-nowrap text-red-700 cursor-pointer" onClick={() => setDetalhe(s)}>{fmt(s.saidas)}</td>
                 <td className="py-2 pr-4 whitespace-nowrap font-semibold cursor-pointer" onClick={() => setDetalhe(s)}>{fmt(s.liquido)}</td>
                 <td className="py-2 pr-4 whitespace-nowrap cursor-pointer" onClick={() => setDetalhe(s)}>{s.conferido_por ?? '—'}</td>
                 <td className="py-2 pr-4 whitespace-nowrap">
-                  <button title="Reabrir sessão" onClick={() => handleReabrir(s)} className="p-1 text-slate-400 hover:text-orange-600"><RotateCcw className="w-4 h-4" /></button>
+                  <button title="Desconferir caixa" onClick={() => { setReabrirTarget(s); setReabrirMotivo('') }} className="p-1 text-slate-400 hover:text-orange-600"><RotateCcw className="w-4 h-4" /></button>
                   <button title="2ª via do fechamento" onClick={() => openPdfModal(s)} className="p-1 text-slate-400 hover:text-blue-600"><Download className="w-4 h-4" /></button>
                 </td>
               </tr>
@@ -153,37 +164,60 @@ export default function SessoesCaixaSection() {
       )}
 
       {pdfTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm bg-white shadow-2xl border" style={{ borderColor: BORDER }}>
-            <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: BORDER }}>
-              <h2 className="text-sm font-semibold text-slate-800">2ª via do fechamento</h2>
-              <button onClick={() => setPdfTarget(null)} className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+        <EscModal
+          title={`2ª via do fechamento — ${pdfTarget.unidade}`}
+          onClose={() => setPdfTarget(null)}
+          footer={<>
+            <EscButton variant="ghost" onClick={() => setPdfTarget(null)}>Cancelar</EscButton>
+            <EscButton onClick={handleGerarPdf} disabled={saving}>{saving ? 'Gerando…' : 'Gerar PDF'}</EscButton>
+          </>}
+        >
+          <p className="text-xs" style={{ color: TEXT_MUTED }}>
+            Valores pré-preenchidos com o que foi registrado na conferência de {pdfTarget.conferido_por ?? 'conferente'} — confirme ou ajuste antes de gerar.
+          </p>
+          <EscField label="Conferente" required>
+            <input className={escInputCls} style={escInputStyle} value={pdfForm.conferente_nome}
+              onChange={(e) => setPdfForm((f) => ({ ...f, conferente_nome: e.target.value }))} />
+          </EscField>
+          <EscField label="Dinheiro contado" required>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: TEXT_MUTED }}>R$</span>
+              <input type="number" min="0" step="0.01" className={escInputCls + ' pl-9'} style={escInputStyle} value={pdfForm.dinheiro_contado}
+                onChange={(e) => setPdfForm((f) => ({ ...f, dinheiro_contado: e.target.value }))} />
             </div>
-            <div className="px-5 py-4 flex flex-col gap-3">
-              <p className="text-xs" style={{ color: TEXT_MUTED }}>Valores pré-preenchidos com o que foi registrado na conferência — confirme ou ajuste antes de gerar.</p>
-              <EscField label="Conferente">
-                <input className={escInputCls} style={escInputStyle} value={pdfForm.conferente_nome}
-                  onChange={(e) => setPdfForm((f) => ({ ...f, conferente_nome: e.target.value }))} />
-              </EscField>
-              <EscField label="Dinheiro contado">
-                <input type="number" className={escInputCls} style={escInputStyle} value={pdfForm.dinheiro_contado}
-                  onChange={(e) => setPdfForm((f) => ({ ...f, dinheiro_contado: e.target.value }))} />
-              </EscField>
-              <EscField label="PIX contado">
-                <input type="number" className={escInputCls} style={escInputStyle} value={pdfForm.pix_contado}
-                  onChange={(e) => setPdfForm((f) => ({ ...f, pix_contado: e.target.value }))} />
-              </EscField>
-              <EscField label="Motivo da quebra (opcional)">
-                <input className={escInputCls} style={escInputStyle} value={pdfForm.quebra_motivo}
-                  onChange={(e) => setPdfForm((f) => ({ ...f, quebra_motivo: e.target.value }))} />
-              </EscField>
+          </EscField>
+          <EscField label="PIX contado" required>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: TEXT_MUTED }}>R$</span>
+              <input type="number" min="0" step="0.01" className={escInputCls + ' pl-9'} style={escInputStyle} value={pdfForm.pix_contado}
+                onChange={(e) => setPdfForm((f) => ({ ...f, pix_contado: e.target.value }))} />
             </div>
-            <div className="px-5 py-3 border-t flex justify-end gap-2" style={{ borderColor: BORDER }}>
-              <EscButton variant="ghost" onClick={() => setPdfTarget(null)}>Cancelar</EscButton>
-              <EscButton onClick={handleGerarPdf} disabled={saving}>Gerar PDF</EscButton>
-            </div>
-          </div>
-        </div>
+          </EscField>
+          <EscField label="Motivo da quebra" hint="Só preencher se dinheiro/PIX contado for diferente do esperado.">
+            <input className={escInputCls} style={escInputStyle} value={pdfForm.quebra_motivo}
+              onChange={(e) => setPdfForm((f) => ({ ...f, quebra_motivo: e.target.value }))} />
+          </EscField>
+        </EscModal>
+      )}
+
+      {reabrirTarget && (
+        <EscModal
+          title={`Desconferir caixa — ${reabrirTarget.unidade}`}
+          onClose={() => { setReabrirTarget(null); setReabrirMotivo('') }}
+          footer={<>
+            <EscButton variant="ghost" onClick={() => { setReabrirTarget(null); setReabrirMotivo('') }}>Cancelar</EscButton>
+            <EscButton variant="danger" onClick={handleReabrir}>Confirmar</EscButton>
+          </>}
+        >
+          <p className="text-sm" style={{ color: TEXT_MUTED }}>
+            O caixa sai da lista de conferidas do ESC e volta pro módulo Caixa da unidade como <strong>Devolvido</strong>,
+            podendo ser conferido de novo depois de corrigido.
+          </p>
+          <EscField label="Motivo" required hint="Ex: inconsistência encontrada, lançamento errado, etc.">
+            <textarea className={escInputCls} style={escInputStyle} rows={3} value={reabrirMotivo}
+              onChange={(e) => setReabrirMotivo(e.target.value)} placeholder="Descreva o motivo da devolução…" />
+          </EscField>
+        </EscModal>
       )}
     </div>
   )

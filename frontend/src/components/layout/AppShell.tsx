@@ -80,7 +80,11 @@ export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [assocs, setAssocs] = useState<AssocOption[]>([])
   const [switching, setSwitching] = useState<string | null>(null)
+  const [switchTarget, setSwitchTarget] = useState<{ id: string; name: string } | null>(null)
+  const switchCancelledRef = useRef(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const [envOpen, setEnvOpen] = useState(false)
+  const envRef = useRef<HTMLDivElement>(null)
 
   const [chatUnread, setChatUnread] = useState(0)
   const chatLastReadRef = useRef<string>(localStorage.getItem('chatLastRead') ?? new Date(0).toISOString())
@@ -319,25 +323,33 @@ export function AppShell() {
 
   const openMenu = async () => {
     setMenuOpen(true)
+  }
+
+  const openEnv = async () => {
+    setEnvOpen(true)
     try {
       const res = await api.get<AssocOption[]>('/auth/my-associations')
       setAssocs(res.data)
     } catch { /* silent */ }
   }
 
-  const handleSwitch = async (assocId: string) => {
+  const handleSwitch = async (assocId: string, assocName: string) => {
     if (switching) return
     setSwitching(assocId)
+    setSwitchTarget({ id: assocId, name: assocName })
+    switchCancelledRef.current = false
+    setEnvOpen(false)
     try {
       const res = await api.post<{ access_token: string }>('/auth/switch-association', { association_id: assocId })
+      if (switchCancelledRef.current) return
       const token = res.data.access_token
       const payload = jwtDecode<{ sub: string; association_id: string; role: UserRole; full_name: string; linked_association_ids?: string[]; association_name?: string; is_office?: boolean; empresa_id?: string }>(token)
       const prevRemember = useAuthStore.getState().rememberDevice
       setAuth(token, payload.sub, payload.association_id, payload.role, payload.full_name ?? '', payload.linked_association_ids ?? [], payload.association_name ?? '', prevRemember, payload.is_office ?? false, payload.empresa_id ?? null)
-      setMenuOpen(false)
       navigate('/')
       toast.success(`Ambiente: ${payload.association_name}`)
     } catch (e: any) {
+      if (switchCancelledRef.current) return
       if (e?.response?.status === 409) {
         toast.error('Troca entre empresas diferentes exige novo login. Saindo…', { duration: 3000 })
         setTimeout(() => { clearAuth(); navigate('/login') }, 1500)
@@ -346,7 +358,14 @@ export function AppShell() {
       }
     } finally {
       setSwitching(null)
+      setSwitchTarget(null)
     }
+  }
+
+  const cancelSwitch = () => {
+    switchCancelledRef.current = true
+    setSwitching(null)
+    setSwitchTarget(null)
   }
 
   // Close on outside click
@@ -359,10 +378,26 @@ export function AppShell() {
     return () => document.removeEventListener('mousedown', handler)
   }, [menuOpen])
 
+  useEffect(() => {
+    if (!envOpen) return
+    const handler = (e: MouseEvent) => {
+      if (envRef.current && !envRef.current.contains(e.target as Node)) setEnvOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [envOpen])
+
   return (
     <div className={isEsc ? "h-screen flex flex-col bg-gray-50 overflow-hidden" : "min-h-screen flex flex-col bg-gray-50"}>
       {simplificaLoading && (
         <LoadingScreen message="Carregando Simplifica..." color={themeColor} />
+      )}
+      {switchTarget && (
+        <LoadingScreen
+          message={`Carregando ${switchTarget.name}. Pode levar alguns minutos.`}
+          color={themeColor}
+          onCancel={cancelSwitch}
+        />
       )}
       {!pushDismissed && (pushPerm === 'default' || pushPerm === 'denied') && (
         <div className="bg-blue-600 text-white text-xs flex flex-col items-center gap-1.5 px-4 py-2.5 text-center" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))' }}>
@@ -386,13 +421,53 @@ export function AppShell() {
           )}
         </div>
       )}
-      <header className="text-white flex items-center justify-between px-4 py-3 shadow"
-        style={{ backgroundColor: themeColor, paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
-        <div className="flex flex-col leading-tight min-w-0 max-w-[55vw]">
-          <img src="/logo.png" alt="APRXM" className="h-6 w-auto object-contain" />
-          {associationName && (
-            <span className="text-xs font-semibold opacity-95 leading-tight whitespace-nowrap overflow-hidden text-ellipsis mt-0.5">{associationName}</span>
-          )}
+      <header className="text-white flex items-center justify-between px-4 py-2.5 shadow"
+        style={{ backgroundColor: themeColor, paddingTop: 'max(10px, env(safe-area-inset-top))' }}>
+        <div className="flex items-center gap-3 min-w-0">
+          <img src="/logo.png" alt="APRXM" className="h-9 w-auto object-contain shrink-0" />
+
+          <div className="relative shrink-0" ref={envRef}>
+            <button
+              onClick={envOpen ? () => setEnvOpen(false) : openEnv}
+              className="flex items-center gap-1.5 rounded-xl px-2 py-1 hover:bg-white/10 transition min-w-0"
+            >
+              <span className="text-base sm:text-lg font-bold leading-tight truncate max-w-[38vw] sm:max-w-[300px]">
+                {associationName}
+              </span>
+              <ChevronDown className={`w-4 h-4 opacity-70 shrink-0 transition-transform ${envOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {envOpen && (
+              <div className="absolute left-0 top-full mt-1.5 w-72 max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden text-gray-800">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <p className="text-xs font-medium text-gray-400">Trocar de ambiente</p>
+                </div>
+                <div className="max-h-80 overflow-y-auto flex flex-col gap-1 p-2">
+                  {assocs.length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-4">carregando…</p>
+                  )}
+                  {assocs.map((a) => (
+                    <button
+                      key={a.id}
+                      onClick={() => !a.current && handleSwitch(a.id, a.name)}
+                      disabled={a.current || switching === a.id}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition w-full text-sm ${
+                        a.current
+                          ? 'bg-gray-50 cursor-default'
+                          : 'hover:bg-gray-50 text-gray-700 cursor-pointer disabled:opacity-50'
+                      }`}
+                      style={a.current ? { color: themeColor } : undefined}
+                    >
+                      <Building2 className="w-4 h-4 shrink-0 opacity-60" />
+                      <span className="flex-1 truncate font-medium">{a.name}</span>
+                      {a.current && <Check className="w-3.5 h-3.5 shrink-0" />}
+                      {switching === a.id && <span className="text-xs opacity-60">…</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -527,33 +602,6 @@ export function AppShell() {
                   <p className="text-sm font-semibold text-gray-800 break-words">{fullName}</p>
                   <p className="text-xs text-gray-400 break-words">{associationName}</p>
                 </div>
-
-                {/* Environment switcher */}
-                {assocs.length > 1 && (
-                  <div className="px-4 pt-3 pb-2">
-                    <p className="text-xs font-medium text-gray-400 mb-2">Trocar ambiente</p>
-                    <div className="flex flex-col gap-1">
-                      {assocs.map((a) => (
-                        <button
-                          key={a.id}
-                          onClick={() => !a.current && handleSwitch(a.id)}
-                          disabled={a.current || switching === a.id}
-                          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition w-full text-sm ${
-                            a.current
-                              ? 'bg-gray-50 cursor-default'
-                              : 'hover:bg-gray-50 text-gray-700 cursor-pointer disabled:opacity-50'
-                          }`}
-                          style={a.current ? { color: themeColor } : undefined}
-                        >
-                          <Building2 className="w-4 h-4 shrink-0 opacity-60" />
-                          <span className="flex-1 truncate font-medium">{a.name}</span>
-                          {a.current && <Check className="w-3.5 h-3.5 shrink-0" />}
-                          {switching === a.id && <span className="text-xs opacity-60">…</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {/* Logout */}
                 <div className="px-4 py-3 border-t border-gray-100">

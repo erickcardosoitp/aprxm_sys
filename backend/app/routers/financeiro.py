@@ -53,8 +53,13 @@ async def get_summary(
     )
     row = result.fetchone()
     income = float(row[0])
-    expense = float(row[1])  # sangria = transferência interna, não é despesa
+    expense = float(row[1])
     sangria = float(row[2])
+    # sangria e' despesa real (dinheiro saindo do caixa pra pagar algo) - mesma
+    # regra de negocio do DRE (get_dre). total_balance precisa ser consistente
+    # com o "resultado" do DRE pro mesmo periodo, senao as duas telas mostram
+    # numeros diferentes pro mesmo mes.
+    total_expense_with_sangria = expense + sangria
 
     # Income breakdown by subtype
     breakdown_result = await session.execute(
@@ -91,7 +96,7 @@ async def get_summary(
         "total_income": income,
         "total_expense": expense,
         "total_sangria": sangria,
-        "total_balance": income - expense,
+        "total_balance": income - total_expense_with_sangria,
         "transactions_count": int(row[3]),
         "income_by_type": income_by_type,
         "contas_a_receber": float(cr_row[0] or 0),
@@ -278,6 +283,8 @@ async def zerar_caixa_total(
             (gen_random_uuid(), :aid, NULL, 'sangria', :amount,
              'Zeramento administrativo total (ESC)', TRUE, :reason, 'Zeramento administrativo total (ESC)', :uid)
     """), {"aid": str(body.association_id), "amount": saldo, "reason": body.reason, "uid": str(current.user_id)})
+    from app.core.audit import audit
+    await audit(session, current, "zerar_caixa_total", "associations", body.association_id, f"R$ {saldo} — {body.reason}")
     await session.commit()
     return {"ok": True, "amount": float(saldo)}
 
@@ -324,6 +331,8 @@ async def zerar_caixa(
              'Zeramento administrativo (ESC)', TRUE, :reason, 'Zeramento administrativo (ESC)', :uid)
     """), {"aid": str(assoc_id), "sid": str(body.session_id), "amount": saldo,
            "reason": body.reason, "uid": str(current.user_id)})
+    from app.core.audit import audit
+    await audit(session, current, "zerar_caixa", "cash_sessions", body.session_id, f"R$ {saldo} — {body.reason}")
     await session.commit()
     return {"ok": True, "amount": float(saldo)}
 
@@ -496,7 +505,7 @@ async def _query_movimentacoes(
                a.name AS unidade, COALESCE(res.full_name, res2.full_name) AS morador,
                t.amount, t.income_subtype,
                COALESCE(res.status, res2.status)::text AS status_morador,
-               u.full_name AS usuario
+               u.full_name AS usuario, t.description
         FROM transactions t
         JOIN associations a ON a.id = t.association_id
         LEFT JOIN users u ON u.id = t.created_by
@@ -525,6 +534,7 @@ async def _query_movimentacoes(
             "Morador": r[5] or "—", "Valor": float(r[6]),
             "Produto": PRODUTO_LABEL.get(r[7], r[7] or "—"),
             "Status Morador": r[8] or "—", "Usuário": r[9] or "—",
+            "Justificativa": r[10] or "—",
         })
     return out
 
@@ -616,19 +626,27 @@ async def get_dre(
         LEFT JOIN transaction_categories c ON c.id = t.category_id
         LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
         LEFT JOIN users u ON u.id = cs.opened_by
+        LEFT JOIN conta_pagar_baixas cpb ON cpb.transaction_id = t.id
+        LEFT JOIN contas_pagar cp ON cp.id = cpb.conta_pagar_id
+        LEFT JOIN payable_categories pcat ON pcat.id = cp.payable_category_id
         WHERE t.association_id = ANY(:ids)
           AND {date_filter}
           AND t.is_reversal = FALSE
           AND t.reversed_at IS NULL
-          AND t.type IN ('income','expense')
+          AND t.type IN ('income','expense','sangria')
+          AND t.transaction_at >= '2026-08-01'
     """
+    # Sangria e' despesa real (dinheiro saindo do caixa pra pagar algo -
+    # salario, fornecedor etc.) - entra no DRE como despesa, categorizada
+    # pela categoria da transacao ou, na falta dela, pelo motivo da sangria
+    # (sangria_reason), que e' o texto livre usado historicamente pra isso.
 
     # ── Nível 1: só totais ─────────────────────────────────────────────────
     if nivel == 1:
         r = (await session.execute(text(f"""
             SELECT
                 COALESCE(SUM(amount) FILTER (WHERE type='income'),  0) AS rec,
-                COALESCE(SUM(amount) FILTER (WHERE type='expense'), 0) AS desp
+                COALESCE(SUM(amount) FILTER (WHERE type IN ('expense','sangria')), 0) AS desp
             {BASE}
         """), params)).fetchone()
         tr, td = float(r[0]), float(r[1])
@@ -652,15 +670,16 @@ async def get_dre(
             return categoria or SUBTYPE_MAP.get(subtipo or "", "Sem categoria")
         return "Outras Receitas"
 
-    def _group_label_desp(agrupar_por: str, categoria, op_name) -> str:
+    def _group_label_desp(agrupar_por: str, categoria, op_name, sangria_reason=None, payable_cat=None) -> str:
         if agrupar_por == "origem":
             return "Saídas via Caixa" if op_name else "Saídas Manuais"
-        return categoria or "Despesas Gerais"
+        return categoria or payable_cat or sangria_reason or "Despesas Gerais"
 
     rows_all = (await session.execute(text(f"""
         SELECT t.type, t.income_subtype, c.name AS cat, u.full_name AS op,
                t.amount, t.description, t.transaction_at::date AS dt,
-               CASE WHEN t.cash_session_id IS NOT NULL THEN TRUE ELSE FALSE END AS tem_sessao
+               CASE WHEN t.cash_session_id IS NOT NULL THEN TRUE ELSE FALSE END AS tem_sessao,
+               t.sangria_reason, pcat.name AS payable_cat
         {BASE}
         ORDER BY t.type, t.transaction_at
     """), params)).fetchall()
@@ -669,14 +688,14 @@ async def get_dre(
     despesas: dict[str, list] = {}
 
     for r in rows_all:
-        tipo, subtipo, cat, op, amt, desc, dt, tem_sessao = r
+        tipo, subtipo, cat, op, amt, desc, dt, tem_sessao, sangria_reason, payable_cat = r
         amt = float(amt)
-        linha = {"descricao": desc or cat or subtipo or "—", "valor": round(amt, 2), "data": str(dt)}
+        linha = {"descricao": desc or cat or payable_cat or sangria_reason or subtipo or "—", "valor": round(amt, 2), "data": str(dt)}
         if tipo == "income":
             label = _group_label_rec(agrupar_por, subtipo, cat, op)
             receitas.setdefault(label, []).append(linha)
         else:
-            label = _group_label_desp(agrupar_por, cat, op)
+            label = _group_label_desp(agrupar_por, cat, op, sangria_reason, payable_cat)
             despesas.setdefault(label, []).append(linha)
 
     def _build(groups: dict, include_linhas: bool):
@@ -701,7 +720,7 @@ async def get_dre(
         sub_desp: dict[str, dict[str, float]] = {}
 
         for r in rows_all:
-            tipo, subtipo, cat, op, amt, desc, dt, tem_sessao = r
+            tipo, subtipo, cat, op, amt, desc, dt, tem_sessao, sangria_reason, payable_cat = r
             amt_f = float(amt)
             # label primário (já calculado)
             if tipo == "income":
@@ -710,8 +729,8 @@ async def get_dre(
                 sub_rec.setdefault(pri, {}).setdefault(sub, 0)
                 sub_rec[pri][sub] += amt_f
             else:
-                pri = _group_label_desp(agrupar_por, cat, op)
-                sub = _group_label_desp(sub_agrupar_por, cat, op)
+                pri = _group_label_desp(agrupar_por, cat, op, sangria_reason, payable_cat)
+                sub = _group_label_desp(sub_agrupar_por, cat, op, sangria_reason, payable_cat)
                 sub_desp.setdefault(pri, {}).setdefault(sub, 0)
                 sub_desp[pri][sub] += amt_f
 

@@ -696,7 +696,7 @@ const todayLabel = new Date().toLocaleDateString('pt-BR')
   const handleOfflineExpense = async () => {
     const amt = parseFloat(offlineForm.amount)
     if (!amt || amt <= 0) { toast.error('Valor inválido.'); return }
-    if (offlineType === 'expense' && !offlineForm.description.trim()) { toast.error('Informe a descrição.'); return }
+    if (offlineType === 'expense' && offlineForm.description.trim().length < 5) { toast.error('Justificativa é obrigatória (mínimo 5 caracteres).'); return }
     setSavingOffline(true)
     try {
       const desc = offlineType === 'income'
@@ -866,10 +866,12 @@ const todayLabel = new Date().toLocaleDateString('pt-BR')
               ) : (
                 <>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Descrição</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Justificativa {offlineType === 'expense' && <span className="text-red-500">*</span>}
+                    </label>
                     <input value={offlineForm.description} onChange={e => setOfflineForm(f => ({ ...f, description: e.target.value }))}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40"
-                      placeholder="Ex: Conta de luz, aluguel…" />
+                      placeholder="Ex: Conta de luz, aluguel…" required={offlineType === 'expense'} />
                   </div>
                   {offlineCategories.length > 0 && (
                     <div>
@@ -1218,13 +1220,19 @@ const todayLabel = new Date().toLocaleDateString('pt-BR')
                       conferido: { label: 'Conferido', cls: 'bg-blue-100 text-blue-700' },
                       cancelled: { label: 'Cancelado', cls: 'bg-red-100 text-red-700' },
                     }
-                    const st = statusMap[s.status] ?? { label: s.status, cls: 'bg-gray-100 text-gray-500' }
+                    const isDevolvido = s.status === 'closed' && !!(s as any).reverted_reason
+                    const st = isDevolvido
+                      ? { label: 'Devolvido', cls: 'bg-orange-100 text-orange-700' }
+                      : statusMap[s.status] ?? { label: s.status, cls: 'bg-gray-100 text-gray-500' }
                     return (
                       <tr key={s.id}
                         className="hover:bg-blue-50/40 transition cursor-pointer"
                         onClick={() => setSelectedSession(s)}>
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+                          <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}
+                                title={isDevolvido ? `Motivo: ${(s as any).reverted_reason}` : undefined}>
+                            {st.label}
+                          </span>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
                           <div className="font-semibold text-gray-900">{new Date(s.opened_at).toLocaleDateString('pt-BR')}</div>

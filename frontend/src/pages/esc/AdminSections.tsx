@@ -47,25 +47,25 @@ export function PermissoesSection() {
   }
 
   return (
-    <div className="px-6 py-4 overflow-auto" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
+    <div className="px-6 py-4 h-full overflow-y-auto" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
       <p className="text-xs mb-4" style={{ color: TEXT_MUTED }}>
         Controla o acesso ao Escritório (ESC) e às unidades de negócio — template único da empresa, vale para todas
         as unidades. superadmin/admin_master têm acesso total.
       </p>
-      {MODULES.map((mod) => (
-        <div key={mod} className="mb-5">
-          <h3 className="text-sm font-semibold text-slate-800 mb-1">{MODULE_LABEL[mod]}</h3>
+      {ROLES.map((role) => (
+        <div key={role} className="mb-6">
+          <h3 className="text-sm font-semibold text-slate-800 mb-1 px-2 py-1 bg-slate-100 rounded">{ROLE_LABEL[role] ?? role}</h3>
           <table className="text-sm border-collapse">
             <thead>
               <tr className="border-b" style={{ borderColor: BORDER }}>
-                <th className="text-left py-1 pr-4 font-medium" style={{ color: TEXT_MUTED }}>Cargo</th>
+                <th className="text-left py-1 pr-4 font-medium" style={{ color: TEXT_MUTED }}>Módulo</th>
                 {PERMS.map((p) => <th key={p} className="px-3 py-1 font-medium" style={{ color: TEXT_MUTED }}>{PERM_LABEL[p]}</th>)}
               </tr>
             </thead>
             <tbody>
-              {ROLES.map((role) => (
-                <tr key={role} className="border-b" style={{ borderColor: BORDER }}>
-                  <td className="py-1.5 pr-4">{ROLE_LABEL[role] ?? role}</td>
+              {MODULES.map((mod) => (
+                <tr key={mod} className="border-b" style={{ borderColor: BORDER }}>
+                  <td className="py-1.5 pr-4">{MODULE_LABEL[mod]}</td>
                   {PERMS.map((p) => (
                     <td key={p} className="px-3 py-1.5 text-center">
                       <input type="checkbox" checked={has(role, mod, p)} onChange={() => toggle(role, mod, p)} />

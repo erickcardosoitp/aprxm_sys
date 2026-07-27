@@ -6,6 +6,9 @@ export const escService = {
   usuarios: () => api.get('/esc/cadastros/usuarios'),
   encomendas: (params?: Record<string, any>) => api.get('/esc/cadastros/encomendas', { params }),
   ordensServico: (params?: Record<string, any>) => api.get('/esc/cadastros/ordens-servico', { params }),
+  criarOrdemServico: (body: any) => api.post('/esc/cadastros/ordens-servico', body),
+  editarOrdemServico: (id: string, body: any) => api.put(`/esc/cadastros/ordens-servico/${id}`, body),
+  excluirOrdemServico: (id: string) => api.delete(`/esc/cadastros/ordens-servico/${id}`),
   comprovantesEstoque: () => api.get('/esc/cadastros/comprovantes-residencia'),
   editarComprovanteEstoque: (associationId: string, estoque: number) =>
     api.put(`/esc/cadastros/comprovantes-residencia/${associationId}`, { estoque }),
@@ -21,7 +24,7 @@ export const escService = {
   estornarTransacao: (id: string, reason: string, admin_password: string) =>
     api.post(`/finance/transactions/${id}/reverse`, { reason, admin_password }),
   sessoesConferidas: (unidade?: string) => api.get('/esc/financeiro/sessoes-conferidas', { params: { unidade } }),
-  reabrirSessao: (sessionId: string) => api.post(`/finance/sessions/${sessionId}/revert-conferencia`),
+  reabrirSessao: (sessionId: string, motivo: string) => api.post(`/finance/sessions/${sessionId}/revert-conferencia`, { motivo }),
   gerarConferenciaPdf: (sessionId: string, body: Record<string, any>) =>
     api.post(`/finance/sessions/${sessionId}/conferencia-pdf`, body, { responseType: 'blob' }),
   financeiroDashboard: (unidade?: string) => api.get('/financeiro/dashboard', { params: { unidade } }),
@@ -69,6 +72,9 @@ export const escService = {
   categoriasContasPagar: () => api.get('/esc/cadastros/categorias-contas-pagar'),
   criarCategoriaContasPagar: (name: string) => api.post('/esc/cadastros/categorias-contas-pagar', { name }),
   editarCategoriaContasPagar: (id: string, body: any) => api.put(`/esc/cadastros/categorias-contas-pagar/${id}`, body),
+
+  produtos: () => api.get('/esc/cadastros/produtos'),
+  editarProduto: (id: string, body: any) => api.put(`/esc/cadastros/produtos/${id}`, body),
 
   getAccessGroups: () => api.get('/esc/administracao/access-groups'),
   putAccessGroups: (access_groups: any) => api.put('/esc/administracao/access-groups', { access_groups }),

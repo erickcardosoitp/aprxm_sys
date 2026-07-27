@@ -1,9 +1,10 @@
 interface LoadingScreenProps {
   message?: string
   color?: string
+  onCancel?: () => void
 }
 
-export default function LoadingScreen({ message, color = '#1a1a2e' }: LoadingScreenProps) {
+export default function LoadingScreen({ message, color = '#1a1a2e', onCancel }: LoadingScreenProps) {
   return (
     <div
       className="fixed inset-0 z-[999] flex flex-col items-center justify-center gap-4"
@@ -12,7 +13,15 @@ export default function LoadingScreen({ message, color = '#1a1a2e' }: LoadingScr
       <img src="/logo.png" alt="APRXM" className="h-12 w-auto object-contain" />
       <div className="w-7 h-7 border-2 border-white/30 border-t-white rounded-full animate-spin" />
       {message && (
-        <p className="text-white/60 text-xs animate-pulse">{message}</p>
+        <p className="text-white/60 text-xs animate-pulse text-center px-6">{message}</p>
+      )}
+      {onCancel && (
+        <button
+          onClick={onCancel}
+          className="mt-2 text-xs font-semibold text-white/70 hover:text-white border border-white/30 hover:border-white/60 rounded-lg px-4 py-1.5 transition"
+        >
+          Cancelar
+        </button>
       )}
     </div>
   )

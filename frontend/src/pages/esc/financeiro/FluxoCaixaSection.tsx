@@ -92,6 +92,10 @@ export default function FluxoCaixaSection() {
         <Card label="Saiu (mês)" value={fmt(summary?.total_expense ?? 0)} color="#dc2626" />
         <Card label="Sangrias (mês)" value={fmt(summary?.total_sangria ?? 0)} color="#6366f1" />
       </div>
+      <p className="text-xs -mt-2" style={{ color: TEXT_MUTED }}>
+        Sangria conta como saída aqui (mesma regra do DRE). Diferente do DRE, esta visão é operacional e sempre
+        mostra o período real — não tem o corte de agosto/2026 do relatório contábil.
+      </p>
 
       <div className="border" style={{ borderColor: BORDER }}>
         <div className="px-4 py-2.5 border-b flex items-center justify-between" style={{ borderColor: BORDER }}>
