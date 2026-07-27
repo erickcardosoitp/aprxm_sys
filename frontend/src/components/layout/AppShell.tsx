@@ -431,14 +431,14 @@ export function AppShell() {
               onClick={envOpen ? () => setEnvOpen(false) : openEnv}
               className="flex items-center gap-1.5 rounded-xl px-2 py-1 hover:bg-white/10 transition min-w-0"
             >
-              <span className="text-base sm:text-lg font-bold leading-tight truncate max-w-[38vw] sm:max-w-[300px]">
+              <span className="text-sm sm:text-lg font-bold leading-tight truncate max-w-[50vw] sm:max-w-[420px]">
                 {associationName}
               </span>
               <ChevronDown className={`w-4 h-4 opacity-70 shrink-0 transition-transform ${envOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {envOpen && (
-              <div className="absolute left-0 top-full mt-1.5 w-72 max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden text-gray-800">
+              <div className="absolute left-0 top-full mt-1.5 w-[22rem] max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden text-gray-800">
                 <div className="px-4 py-3 border-b border-gray-100">
                   <p className="text-xs font-medium text-gray-400">Trocar de ambiente</p>
                 </div>
@@ -451,16 +451,16 @@ export function AppShell() {
                       key={a.id}
                       onClick={() => !a.current && handleSwitch(a.id, a.name)}
                       disabled={a.current || switching === a.id}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition w-full text-sm ${
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-xl text-left transition w-full text-sm ${
                         a.current
                           ? 'bg-gray-50 cursor-default'
                           : 'hover:bg-gray-50 text-gray-700 cursor-pointer disabled:opacity-50'
                       }`}
                       style={a.current ? { color: themeColor } : undefined}
                     >
-                      <Building2 className="w-4 h-4 shrink-0 opacity-60" />
-                      <span className="flex-1 truncate font-medium">{a.name}</span>
-                      {a.current && <Check className="w-3.5 h-3.5 shrink-0" />}
+                      <Building2 className="w-4 h-4 shrink-0 opacity-60 mt-0.5" />
+                      <span className="flex-1 font-medium leading-snug break-words">{a.name}</span>
+                      {a.current && <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
                       {switching === a.id && <span className="text-xs opacity-60">…</span>}
                     </button>
                   ))}
