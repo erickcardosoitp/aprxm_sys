@@ -234,6 +234,131 @@ async def change_password(
     return {"detail": "Senha alterada com sucesso. Faça login novamente."}
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+_GENERIC_FORGOT_RESPONSE = {
+    "detail": "Se este e-mail estiver cadastrado, você receberá um link para redefinir sua senha."
+}
+
+
+@router.post("/forgot-password", summary="Solicitar redefinição de senha")
+@limiter.limit("3/minute")
+async def forgot_password(
+    request: Request,
+    body: ForgotPasswordRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    # Resposta sempre generica (mesmo texto, mesmo status) independente do e-mail
+    # existir ou nao — evita enumeracao de usuarios cadastrados.
+    result = await session.execute(
+        select(User).where(User.email == body.email, User.is_active == True)  # noqa: E712
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        return _GENERIC_FORGOT_RESPONSE
+
+    from app.core.security import generate_refresh_token as _gen_token
+    from app.models.password_reset_token import PasswordResetToken
+    from sqlalchemy import text as _t3
+
+    # Invalida tokens de reset anteriores ainda validos deste usuario (uso unico por vez).
+    await session.execute(
+        _t3("UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = :uid AND used_at IS NULL"),
+        {"uid": str(user.id)},
+    )
+
+    raw_token, token_hash = _gen_token()
+    prt = PasswordResetToken(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=datetime.utcnow() + timedelta(minutes=30),
+    )
+    session.add(prt)
+    await session.commit()
+
+    frontend_base = _settings.allowed_origins.split(",")[0].strip()
+    reset_link = f"{frontend_base}/redefinir-senha?token={raw_token}"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a3f6f;margin-bottom:4px">Redefinição de senha</h2>
+      <p>Olá, {user.full_name}. Recebemos uma solicitação para redefinir sua senha.</p>
+      <p><a href="{reset_link}" style="background:#1a3f6f;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block">Redefinir senha</a></p>
+      <p style="color:#6b7280;font-size:13px">Este link expira em 30 minutos e só pode ser usado uma vez.
+      Se você não solicitou isso, ignore este e-mail — sua senha continua a mesma.</p>
+      <p style="color:#6b7280;font-size:13px">APRXM — Sistema de Gestão Comunitária</p>
+    </div>
+    """
+    try:
+        from app.services.email_service import send_email
+        send_email(user.email, "Redefinição de senha — APRXM", html)
+    except Exception:
+        pass  # falha de envio nao deve revelar se o e-mail existe
+
+    from app.core.audit import audit
+    from app.core.tenant import CurrentUser as _CU
+    await audit(
+        session,
+        _CU(user_id=user.id, association_id=user.association_id, role=user.role, empresa_id=user.empresa_id),
+        "forgot_password_request", "user", user.id, "Solicitação de redefinição de senha",
+    )
+    await session.commit()
+    return _GENERIC_FORGOT_RESPONSE
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/reset-password", summary="Redefinir senha com token recebido por e-mail")
+@limiter.limit("5/minute")
+async def reset_password(
+    request: Request,
+    body: ResetPasswordRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=422, detail="A nova senha deve ter pelo menos 6 caracteres.")
+
+    from app.core.security import hash_refresh_token as _hash_token
+    from app.models.password_reset_token import PasswordResetToken
+    from sqlalchemy import text as _t4
+
+    token_hash = _hash_token(body.token)
+    result = await session.execute(
+        select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+    )
+    prt = result.scalar_one_or_none()
+    if not prt or prt.used_at is not None or prt.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Token inválido, expirado ou já utilizado.")
+
+    user_result = await session.execute(select(User).where(User.id == prt.user_id))
+    user = user_result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=400, detail="Token inválido, expirado ou já utilizado.")
+
+    user.hashed_password = hash_password(body.new_password)
+    user.token_version = (user.token_version or 0) + 1
+    session.add(user)
+    prt.used_at = datetime.utcnow()
+    session.add(prt)
+    await session.execute(
+        _t4("UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = :uid"),
+        {"uid": str(user.id)},
+    )
+    from app.core.audit import audit
+    from app.core.tenant import CurrentUser as _CU
+    await audit(
+        session,
+        _CU(user_id=user.id, association_id=user.association_id, role=user.role, empresa_id=user.empresa_id),
+        "reset_password", "user", user.id, "Senha redefinida via token de recuperação",
+    )
+    await session.commit()
+    return {"detail": "Senha redefinida com sucesso. Faça login com a nova senha."}
+
+
 class SwitchAssociationRequest(BaseModel):
     association_id: UUID
 

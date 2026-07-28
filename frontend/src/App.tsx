@@ -56,6 +56,9 @@ import PublicUpdatePage from './pages/public/PublicUpdatePage'
 import CadastroPortaAPorta from './pages/public/CadastroPortaAPorta'
 import AgentPortalPage from './pages/public/AgentPortalPage'
 
+const ForgotPasswordPage = lazyWithReload(() => import('./pages/ForgotPasswordPage'))
+const ResetPasswordPage  = lazyWithReload(() => import('./pages/ResetPasswordPage'))
+
 // Lazy — carregados sob demanda, auto-reload se chunk mudar após deploy
 const FinancePage       = lazyWithReload(() => import('./pages/finance/FinancePage'))
 const PackagesPage      = lazyWithReload(() => import('./pages/packages/PackagesPage'))
@@ -157,6 +160,8 @@ export default function App() {
       <Toaster position="top-center" toastOptions={{ duration: 3500 }} />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/esqueci-senha" element={<Suspense fallback={<PageLoader />}><ForgotPasswordPage /></Suspense>} />
+        <Route path="/redefinir-senha" element={<Suspense fallback={<PageLoader />}><ResetPasswordPage /></Suspense>} />
         <Route path="/cadastro/:slug" element={<PublicRegisterPage />} />
         <Route path="/atualizar/:slug" element={<PublicUpdatePage />} />
         <Route path="/associar" element={<CadastroPortaAPorta />} />

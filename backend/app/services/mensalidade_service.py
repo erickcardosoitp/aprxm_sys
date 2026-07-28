@@ -369,6 +369,15 @@ class MensalidadeService:
         year, month = map(int, reference_month.split("-"))
         last_day = monthrange(year, month)[1]
 
+        # Produto "mensalidade" vigente (rastreabilidade — nao determina o valor, so liga
+        # a mensalidade gerada ao cadastro de Produtos daquele momento).
+        product_row = (await self._session.execute(text("""
+            SELECT p.id FROM products p
+            JOIN associations a ON a.empresa_id = p.empresa_id
+            WHERE a.id = :aid AND p.code = 'mensalidade' AND p.is_active = TRUE
+        """), {"aid": str(association_id)})).fetchone()
+        product_id = product_row[0] if product_row else None
+
         # active members without a mensalidade for this month, including their payment day
         # only residents who joined on or before the reference month —
         # usa move_in_date (data real de associação) quando preenchido, senão cai pra created_at
@@ -407,6 +416,7 @@ class MensalidadeService:
                     amount=amount,
                     status=MensalidadeStatus.pending,
                     created_by=created_by,
+                    product_id=product_id,
                 )
                 self._session.add(m)
                 await self._session.flush()

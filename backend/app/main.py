@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 18
+_SCHEMA_VERSION = 20
 
 
 async def _run_migrations() -> None:
@@ -708,6 +708,51 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (18, 'v18: conta_pagar_baixas.association_id + indices porta-a-porta') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v19: mensalidades.product_id - rastreabilidade com o cadastro de Produtos
+            # (nao muda valor cobrado, so liga a mensalidade ao produto vigente na geracao).
+            try:
+                await session.execute(text(
+                    "ALTER TABLE mensalidades ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id)"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_mensalidades_product ON mensalidades(product_id)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (19, 'v19: mensalidades.product_id (rastreabilidade catalogo de produtos)') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v20: password_reset_tokens - fluxo "esqueci minha senha".
+            try:
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        user_id     UUID NOT NULL REFERENCES users(id),
+                        token_hash  VARCHAR(64) NOT NULL,
+                        expires_at  TIMESTAMPTZ NOT NULL,
+                        used_at     TIMESTAMPTZ,
+                        created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens(token_hash)"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (20, 'v20: password_reset_tokens - fluxo esqueci minha senha') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -2025,6 +2070,50 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (18, 'v18: conta_pagar_baixas.association_id + indices porta-a-porta') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v19: mesmo bloco do ramo _is_existing_db (mensalidades.product_id)
+        try:
+            await session.execute(text(
+                "ALTER TABLE mensalidades ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_mensalidades_product ON mensalidades(product_id)"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (19, 'v19: mensalidades.product_id (rastreabilidade catalogo de produtos)') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v20: mesmo bloco do ramo _is_existing_db (password_reset_tokens)
+        try:
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id     UUID NOT NULL REFERENCES users(id),
+                    token_hash  VARCHAR(64) NOT NULL,
+                    expires_at  TIMESTAMPTZ NOT NULL,
+                    used_at     TIMESTAMPTZ,
+                    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens(token_hash)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id)"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (20, 'v20: password_reset_tokens - fluxo esqueci minha senha') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()

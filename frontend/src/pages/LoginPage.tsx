@@ -377,6 +377,14 @@ export default function LoginPage() {
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Entrar'}
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => navigate('/esqueci-senha')}
+                  className="text-xs text-gray-400 hover:text-[#26619c] text-center"
+                >
+                  Esqueci minha senha
+                </button>
+
                 {'credentials' in navigator && (
                   <button
                     type="button"

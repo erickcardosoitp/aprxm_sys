@@ -34,6 +34,11 @@ class Mensalidade(SQLModel, table=True):
         sa_column=Column(SAEnum(MensalidadeStatus, name="mensalidade_status", create_type=False), nullable=False),
     )
 
+    # Rastreabilidade com o cadastro de Produtos (v16) - nao determina o valor cobrado
+    # (isso continua vindo de association_settings.default_mensalidade_amount), so liga
+    # a mensalidade ao produto vigente no momento da geracao, pra fins de relatorio/DRE.
+    product_id: UUID | None = Field(default=None, foreign_key="products.id")
+
     paid_at: datetime | None = None
     transaction_id: UUID | None = Field(default=None, foreign_key="transactions.id")
     transaction_id_2: UUID | None = Field(default=None, foreign_key="transactions.id")
