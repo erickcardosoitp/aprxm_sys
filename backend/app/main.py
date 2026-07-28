@@ -20,8 +20,14 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    # Migrations ANTES do create_all: num banco vazio, o create_all do SQLModel
+    # cria as tabelas sem os defaults SQL que as migrations definem (ex: empresas.id
+    # sem DEFAULT gen_random_uuid(), timestamptz virando timestamp), e os INSERTs
+    # das migrations de dados quebram. As migrations sao a fonte de verdade do
+    # schema; o create_all so cobre tabela nova de model que ainda nao tem migration.
     await _run_migrations()
+    await init_db()
+    await _seed_local_dev()
     yield
 
 
@@ -2121,6 +2127,80 @@ async def _run_migrations() -> None:
             await session.rollback()
 
 
+async def _seed_local_dev() -> None:
+    """Seed de 1a empresa/associacao/usuario admin pra ambiente de desenvolvimento local
+    (docker-compose). So roda com APP_ENV=development e so se o banco estiver vazio de
+    usuarios — nunca toca num banco que ja tem dado real (staging/producao tem APP_ENV
+    diferente, e mesmo em development so semeia uma vez)."""
+    if settings.app_env != "development":
+        return
+
+    from sqlalchemy import text
+    from app.database import AsyncSessionLocal
+    from app.core.security import hash_password
+
+    async with AsyncSessionLocal() as session:
+        has_users = (await session.execute(text("SELECT 1 FROM users LIMIT 1"))).scalar()
+        if has_users:
+            return
+
+        try:
+            empresa_row = (await session.execute(text("""
+                INSERT INTO empresas (id, name, slug, financeiro_centralizado, plan_name)
+                VALUES (gen_random_uuid(), 'Empresa Demo', 'empresa-demo', FALSE, 'basic')
+                RETURNING id
+            """))).fetchone()
+            empresa_id = empresa_row[0]
+
+            # Linha ESC da empresa (id = empresa_id), mesmo padrao de EmpresaService.create_empresa
+            await session.execute(text("""
+                INSERT INTO associations (id, empresa_id, name, slug, is_active)
+                VALUES (:eid, :eid, 'Escritório', 'empresa-demo-escritorio', TRUE)
+            """), {"eid": str(empresa_id)})
+
+            assoc_row = (await session.execute(text("""
+                INSERT INTO associations (id, empresa_id, name, slug, is_active)
+                VALUES (gen_random_uuid(), :eid, 'Associação Demo', 'associacao-demo', TRUE)
+                RETURNING id
+            """), {"eid": str(empresa_id)})).fetchone()
+            assoc_id = assoc_row[0]
+
+            await session.execute(text("""
+                INSERT INTO association_settings (association_id, community_name)
+                VALUES (:aid, 'Comunidade Demo')
+            """), {"aid": str(assoc_id)})
+
+            for cat_name, cat_type in [("Mensalidade", "income"), ("Taxa de Entrega", "income"), ("Despesas Gerais", "expense")]:
+                await session.execute(text("""
+                    INSERT INTO transaction_categories (id, association_id, name, type)
+                    VALUES (gen_random_uuid(), :aid, :name, CAST(:type AS transaction_type))
+                """), {"aid": str(assoc_id), "name": cat_name, "type": cat_type})
+            for pm_name in ["Dinheiro", "PIX"]:
+                await session.execute(text("""
+                    INSERT INTO payment_methods (id, association_id, name)
+                    VALUES (gen_random_uuid(), :aid, :name)
+                """), {"aid": str(assoc_id), "name": pm_name})
+
+            await session.execute(text("""
+                INSERT INTO cash_boxes (association_id, name, balance)
+                VALUES (:aid, 'Caixa Principal', 200.00)
+            """), {"aid": str(assoc_id)})
+
+            # admin_master empresa-wide — enxerga a empresa inteira, inclusive ESC
+            await session.execute(text("""
+                INSERT INTO users (id, empresa_id, association_id, full_name, email, hashed_password, role)
+                VALUES (gen_random_uuid(), :eid, :eid, 'Admin Local', 'admin@local.dev', :pw, CAST('admin_master' AS user_role))
+            """), {"eid": str(empresa_id), "pw": hash_password("admin123")})
+
+            await session.commit()
+            print("=" * 60)
+            print("SEED LOCAL: login criado — admin@local.dev / admin123")
+            print("=" * 60)
+        except Exception as exc:
+            await session.rollback()
+            print(f"SEED LOCAL falhou (nao-fatal, app continua): {exc}")
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
@@ -2203,9 +2283,16 @@ async def request_timing_middleware(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
+    # Stack trace so' vai pro cliente fora de producao. Em producao ele expunha
+    # estrutura interna de codigo/banco pra qualquer chamador (inclusive nao autenticado);
+    # o trace continua indo pro log do servidor de qualquer forma.
+    trace = traceback.format_exc()
+    print(f"[UNHANDLED] {type(exc).__name__}: {exc}\n{trace}")
+    if settings.app_env == "production":
+        return JSONResponse(status_code=500, content={"detail": "Erro interno do servidor."})
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc), "type": type(exc).__name__, "trace": traceback.format_exc()[-1000:]},
+        content={"detail": str(exc), "type": type(exc).__name__, "trace": trace[-1000:]},
     )
 
 

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:16-alpine
@@ -36,6 +34,9 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
       DELIVERY_FEE_DEFAULT: ${DELIVERY_FEE_DEFAULT:-2.50}
       APP_ENV: ${APP_ENV:-development}
+      # Bind mount Windows<->WSL2 nao suporta inotify nativo bem - forca polling
+      # pro hot-reload nao estourar memoria (erro comum "Cannot allocate memory").
+      WATCHFILES_FORCE_POLLING: "true"
     ports:
       - "8000:8000"
     depends_on:
@@ -49,9 +50,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: dev
     container_name: aprxm_frontend
     environment:
       VITE_API_URL: http://localhost:8000
+      # mesmo motivo do backend: bind mount Windows<->WSL2 nao suporta bem
+      # o watcher nativo do Vite (chokidar) — forca polling.
+      CHOKIDAR_USEPOLLING: "true"
     ports:
       - "5173:5173"
     depends_on:

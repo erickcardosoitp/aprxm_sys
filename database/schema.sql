@@ -31,15 +31,18 @@ CREATE SCHEMA analytics;
 --
 -- Name: pg_session_jwt; Type: EXTENSION; Schema: -; Owner: -
 --
+-- Extensao gerenciada pelo Neon (nao usada pelo app - auth do sistema e' JWT proprio,
+-- nao neon_auth/pg_session_jwt). So existe fora do Neon (ex: Postgres local de
+-- desenvolvimento) se a extensao nao estiver instalada - por isso o DO block:
+-- falha silenciosamente em vez de derrubar o init do banco inteiro.
 
-CREATE EXTENSION IF NOT EXISTS pg_session_jwt WITH SCHEMA public;
-
-
---
--- Name: EXTENSION pg_session_jwt; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION pg_session_jwt IS 'pg_session_jwt: manage authentication sessions using JWTs';
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_session_jwt WITH SCHEMA public;
+    COMMENT ON EXTENSION pg_session_jwt IS 'pg_session_jwt: manage authentication sessions using JWTs';
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'pg_session_jwt indisponivel (esperado fora do Neon) - pulando';
+END $$;
 
 
 --
@@ -4441,6 +4444,4 @@ ALTER TABLE ONLY public.webauthn_credentials
 --
 -- PostgreSQL database dump complete
 --
-
-\unrestrict Q8rwY1BbCXIUNvuLEThAmmsLephjhaFXS6Xn2hhVLMascWA2pAUhTFDcCg6ahg8
 

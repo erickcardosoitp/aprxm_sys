@@ -273,7 +273,7 @@ async def forgot_password(
     prt = PasswordResetToken(
         user_id=user.id,
         token_hash=token_hash,
-        expires_at=datetime.utcnow() + timedelta(minutes=30),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     session.add(prt)
     await session.commit()
@@ -331,7 +331,12 @@ async def reset_password(
         select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
     )
     prt = result.scalar_one_or_none()
-    if not prt or prt.used_at is not None or prt.expires_at < datetime.utcnow():
+    # expires_at vem do Postgres como timestamptz (aware); normaliza pra comparar
+    # sem estourar "can't compare offset-naive and offset-aware datetimes".
+    _expires = prt.expires_at if prt else None
+    if _expires is not None and _expires.tzinfo is None:
+        _expires = _expires.replace(tzinfo=UTC)
+    if not prt or prt.used_at is not None or _expires < datetime.now(UTC):
         raise HTTPException(status_code=400, detail="Token inválido, expirado ou já utilizado.")
 
     user_result = await session.execute(select(User).where(User.id == prt.user_id))
@@ -342,7 +347,7 @@ async def reset_password(
     user.hashed_password = hash_password(body.new_password)
     user.token_version = (user.token_version or 0) + 1
     session.add(user)
-    prt.used_at = datetime.utcnow()
+    prt.used_at = datetime.now(UTC)
     session.add(prt)
     await session.execute(
         _t4("UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = :uid"),
