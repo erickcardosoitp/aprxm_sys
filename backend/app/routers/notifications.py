@@ -191,13 +191,17 @@ async def list_notifications(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict[str, Any]]:
+    # empresa_id no OR cobre broadcast do ESC (esc.py:enviar_aviso grava association_id
+    # cadastral do usuario, que diverge de current.association_id apos switch-association)
     rows = (await session.execute(text("""
         SELECT id, title, body, type, read_at, data, created_at
         FROM notifications
-        WHERE user_id = :uid AND association_id = :aid
+        WHERE user_id = :uid
+          AND (association_id = :aid OR (empresa_id = :eid AND :eid IS NOT NULL))
         ORDER BY created_at DESC
         LIMIT 50
-    """), {"uid": str(current.user_id), "aid": str(current.association_id)})).fetchall()
+    """), {"uid": str(current.user_id), "aid": str(current.association_id),
+           "eid": str(current.empresa_id) if current.empresa_id else None})).fetchall()
     return [
         {
             "id": str(r[0]), "title": r[1], "body": r[2], "type": r[3],
@@ -216,8 +220,11 @@ async def unread_count(
 ) -> dict:
     count = (await session.execute(text("""
         SELECT COUNT(*) FROM notifications
-        WHERE user_id = :uid AND association_id = :aid AND read_at IS NULL
-    """), {"uid": str(current.user_id), "aid": str(current.association_id)})).scalar()
+        WHERE user_id = :uid
+          AND (association_id = :aid OR (empresa_id = :eid AND :eid IS NOT NULL))
+          AND read_at IS NULL
+    """), {"uid": str(current.user_id), "aid": str(current.association_id),
+           "eid": str(current.empresa_id) if current.empresa_id else None})).scalar()
     return {"count": count or 0}
 
 
@@ -242,7 +249,10 @@ async def mark_all_read(
 ) -> dict:
     await session.execute(text("""
         UPDATE notifications SET read_at = NOW()
-        WHERE user_id = :uid AND association_id = :aid AND read_at IS NULL
-    """), {"uid": str(current.user_id), "aid": str(current.association_id)})
+        WHERE user_id = :uid
+          AND (association_id = :aid OR (empresa_id = :eid AND :eid IS NOT NULL))
+          AND read_at IS NULL
+    """), {"uid": str(current.user_id), "aid": str(current.association_id),
+           "eid": str(current.empresa_id) if current.empresa_id else None})
     await session.commit()
     return {"ok": True}

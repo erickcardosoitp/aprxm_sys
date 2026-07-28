@@ -69,10 +69,15 @@ class StorageService:
         return await self.upload(file_bytes, f"upload{ext}", folder)
 
     def delete(self, public_url: str) -> None:
-        """Remove a file given its public URL."""
+        """Remove a file given its public URL — so remove dentro da pasta da propria associacao."""
         client = _get_client()
         # Extract storage path from public URL
         marker = f"/object/public/{self._bucket}/"
-        if marker in public_url:
-            storage_path = public_url.split(marker)[-1]
-            client.storage.from_(self._bucket).remove([storage_path])
+        if marker not in public_url:
+            return
+        storage_path = public_url.split(marker)[-1]
+        # Nunca remover fora da pasta da associacao do chamador, mesmo que a URL
+        # recebida tenha sido adulterada pra apontar pra outro prefixo/associacao.
+        if not storage_path.startswith(f"{self._assoc}/"):
+            raise ValueError("Caminho de arquivo fora do escopo desta associação.")
+        client.storage.from_(self._bucket).remove([storage_path])

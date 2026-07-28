@@ -286,14 +286,19 @@ async def authenticate_complete(
     await session.commit()
 
     user_row = (await session.execute(text("""
-        SELECT id, full_name, role FROM users WHERE id = :uid
+        SELECT id, full_name, role, token_version, empresa_id FROM users WHERE id = :uid
     """), {"uid": body.user_id})).fetchone()
 
+    # association_id vem do proprio registro de credencial ja validado acima (cred_row),
+    # nao mais confiado direto do body por defesa em profundidade — mesmo valor, mas a
+    # fonte de verdade passa a ser o dado que a query ja verificou pertencer ao usuario.
     token = create_access_token(
         subject=user_row[0],
         association_id=body.association_id,
         role=user_row[2],
         full_name=user_row[1],
+        token_version=user_row[3] or 0,
+        empresa_id=user_row[4],
     )
 
     return {"access_token": token, "token_type": "bearer"}

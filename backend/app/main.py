@@ -58,6 +58,10 @@ _SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "X-Permitted-Cross-Domain-Policies": "none",
     "Permissions-Policy": "camera=(self), microphone=(), geolocation=()",
+    # API so retorna JSON/binario, nunca HTML/JS renderizado por ela mesma — CSP
+    # restritiva aqui e' defesa em profundidade (ex: se algum endpoint um dia
+    # devolver uma pagina de erro em HTML por engano).
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
 }
 
 @app.middleware("http")

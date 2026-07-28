@@ -176,9 +176,34 @@ export function AppShell() {
 
   useEffect(() => {
     if (!role) return
+    // So consulta com a aba visivel/ativa - evita bater no banco com o usuario
+    // longe do computador ou numa aba em background. Ao voltar pra aba, consulta
+    // na hora em vez de esperar o proximo tick de 2min.
     fetchUnread()
-    const id = setInterval(fetchUnread, 30_000)
-    return () => clearInterval(id)
+    let id: ReturnType<typeof setInterval> | null = null
+    const start = () => {
+      if (id) return
+      id = setInterval(fetchUnread, 120_000)
+    }
+    const stop = () => {
+      if (!id) return
+      clearInterval(id)
+      id = null
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchUnread()
+        start()
+      } else {
+        stop()
+      }
+    }
+    if (document.visibilityState === 'visible') start()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [role, fetchUnread])
 
   useEffect(() => {

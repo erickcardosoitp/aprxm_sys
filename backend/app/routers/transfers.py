@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import CurrentUser, get_current_user
+from app.core.tenant import CurrentUser, assert_same_empresa, get_current_user
 from app.database import get_session
 from app.services.transfer_service import TransferService
 
@@ -56,6 +56,15 @@ async def set_president(
 ) -> dict:
     if not current.is_admin_master:
         raise HTTPException(403, "Apenas admin_master pode definir o presidente.")
+
+    target_row = (await session.execute(
+        text("SELECT empresa_id FROM associations WHERE id = :aid"),
+        {"aid": str(association_id)},
+    )).fetchone()
+    if not target_row:
+        raise HTTPException(404, "Associação não encontrada.")
+    assert_same_empresa(current, target_row[0])
+
     await session.execute(
         text("UPDATE associations SET presidente_user_id = :pid, updated_at = NOW() WHERE id = :aid"),
         {"pid": str(body.presidente_user_id) if body.presidente_user_id else None, "aid": str(association_id)},
