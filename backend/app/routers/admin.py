@@ -7,6 +7,7 @@ from sqlalchemy import and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.core.audit import audit
 from app.core.security import hash_password
 from app.core.tenant import CurrentUser, get_current_user, require_admin, require_diretoria
 from app.database import get_session
@@ -102,10 +103,7 @@ async def create_user(
             text("UPDATE users SET token_version = token_version + 1 WHERE id = :uid"),
             {"uid": str(existing.id)},
         )
-        await session.execute(
-            text("INSERT INTO audit_log (association_id,user_id,action,entity,entity_id,detail) VALUES (:a,:u,'add_membership','user',:eid,:d)"),
-            {"a": str(current.association_id), "u": str(current.user_id), "eid": str(existing.id), "d": f"{existing.full_name} ({body.role})"},
-        )
+        await audit(session, current, "add_membership", "user", existing.id, f"{existing.full_name} ({body.role})")
         await session.commit()
         return _serialize_user(existing)
 
@@ -124,10 +122,7 @@ async def create_user(
         text("INSERT INTO user_association_roles (user_id, association_id, role) VALUES (:uid, :aid, :role)"),
         {"uid": str(user.id), "aid": str(current.association_id), "role": body.role},
     )
-    await session.execute(
-        text("INSERT INTO audit_log (association_id,user_id,action,entity,entity_id,detail) VALUES (:a,:u,'criar_usuario','user',:eid,:d)"),
-        {"a": str(current.association_id), "u": str(current.user_id), "eid": str(user.id), "d": f"{user.full_name} ({user.role})"},
-    )
+    await audit(session, current, "criar_usuario", "user", user.id, f"{user.full_name} ({user.role})")
     return _serialize_user(user)
 
 
@@ -183,10 +178,7 @@ async def update_user(
     from datetime import datetime
     user.updated_at = datetime.utcnow()
     session.add(user)
-    await session.execute(
-        text("INSERT INTO audit_log (association_id,user_id,action,entity,entity_id,detail) VALUES (:a,:u,'editar_usuario','user',:eid,:d)"),
-        {"a": str(current.association_id), "u": str(current.user_id), "eid": str(user_id), "d": f"{user.full_name} → papel:{user.role}"},
-    )
+    await audit(session, current, "editar_usuario", "user", user_id, f"{user.full_name} → papel:{user.role}")
     return _serialize_user(user)
 
 

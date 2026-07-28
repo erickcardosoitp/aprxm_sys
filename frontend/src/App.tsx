@@ -100,12 +100,6 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
-  const role = useAuthStore((s) => s.role)
-  if (role !== 'superadmin' && role !== 'admin_master') return <Navigate to="/overview" replace />
-  return <>{children}</>
-}
-
 function RedirectByRole() {
   const role             = useAuthStore((s) => s.role)
   const isOffice         = useAuthStore((s) => s.isOffice)

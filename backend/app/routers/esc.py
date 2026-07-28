@@ -32,19 +32,11 @@ router = APIRouter(prefix="/esc", tags=["Escritório"])
 _PROD_ASSOC_FILTER = "a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'"
 
 
-async def _audit(
-    session: AsyncSession, current: CurrentUser, action: str,
-    entity: str, entity_id, detail: str,
-) -> None:
-    """Registra a acao de escrita no audit_log (fica visivel em Administracao > Auditoria).
-    Chamar ANTES do commit — faz parte da mesma transacao da acao."""
-    await session.execute(text("""
-        INSERT INTO audit_log (association_id, empresa_id, user_id, action, entity, entity_id, detail)
-        VALUES (:a, :e, :u, :action, :entity, :eid, :d)
-    """), {
-        "a": str(current.association_id), "e": str(current.empresa_id), "u": str(current.user_id),
-        "action": action, "entity": entity, "eid": str(entity_id) if entity_id else None, "d": detail,
-    })
+# Era uma copia local identica a core.audit.audit (mesma assinatura, mesmo INSERT),
+# so com uma divergencia sutil: nao tratava association_id=None como NULL. Trocado
+# por alias do helper compartilhado em vez de manter 2 implementacoes da mesma coisa —
+# os 23 call sites abaixo continuam iguais (_audit(...)), so muda de onde vem.
+from app.core.audit import audit as _audit  # noqa: E402
 
 
 async def _assert_assoc_da_empresa(session: AsyncSession, association_id: UUID, empresa_id) -> None:
