@@ -37,7 +37,10 @@ class Mensalidade(SQLModel, table=True):
     # Rastreabilidade com o cadastro de Produtos (v16) - nao determina o valor cobrado
     # (isso continua vindo de association_settings.default_mensalidade_amount), so liga
     # a mensalidade ao produto vigente no momento da geracao, pra fins de relatorio/DRE.
-    product_id: UUID | None = Field(default=None, foreign_key="products.id")
+    # Sem foreign_key= aqui de proposito: `products` nao tem model SQLModel (vive so na
+    # migration v16), entao declarar a FK quebraria o create_all. A FK real e criada
+    # no banco pela migration v19.
+    product_id: UUID | None = Field(default=None)
 
     paid_at: datetime | None = None
     transaction_id: UUID | None = Field(default=None, foreign_key="transactions.id")

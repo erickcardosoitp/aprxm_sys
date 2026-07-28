@@ -32,7 +32,13 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def init_db() -> None:
     # Import all models so SQLAlchemy metadata is fully populated before create_all
-    from app.models import association, user, resident, finance, package, service_order, bank_statement, settings, mensalidade, empresa, provisioning_run, painel_admin, password_reset_token  # noqa: F401
+    # Todos os models — se algum ficar de fora, uma FK que aponta pra ele nao resolve
+    # e o create_all quebra inteiro (NoReferencedTableError) num banco novo.
+    from app.models import (  # noqa: F401
+        association, bank_statement, contas_pagar, empresa, finance, mensalidade,
+        migration_payment, package, painel_admin, password_reset_token, porta_a_porta,
+        provisioning_run, resident, service_order, service_order_phase, settings, user,
+    )
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
