@@ -250,7 +250,8 @@ async def search_residents_global(
         sa_text(f"""
             SELECT r.id, r.full_name, r.cpf, r.phone_primary, r.phone_secondary,
                    r.address_street, r.address_number, r.address_city, r.type, r.status,
-                   r.address_cep, r.responsible_id, resp.full_name AS responsible_name
+                   r.address_cep, r.responsible_id, resp.full_name AS responsible_name,
+                   r.move_in_date, r.created_at
             FROM residents r
             LEFT JOIN residents resp ON resp.id = r.responsible_id
             WHERE r.association_id = :aid
@@ -283,6 +284,8 @@ async def search_residents_global(
             "address_cep": r[10],
             "responsible_id": str(r[11]) if r[11] else None,
             "responsible_name": r[12],
+            "move_in_date": r[13].isoformat() if r[13] else None,
+            "created_at": r[14].isoformat() if r[14] else None,
         }
         for r in rows
     ]
