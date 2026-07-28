@@ -691,6 +691,46 @@ async def create_commission_payment(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from sqlalchemy import text as sa_text
+
+    # Trava anti-double-payment: serializa por (associacao, operador) via advisory lock
+    # (Postgres nao permite FOR UPDATE com SUM/agregacao) - duas requisicoes concorrentes
+    # pro mesmo operador esperam uma a outra em vez de ambas lerem o mesmo "pendente".
+    await session.execute(sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {
+        "key": f"commission:{current.association_id}:{body.operator_id}",
+    })
+
+    # Recalcula quanto esse operador ja ganhou de comissao (mesma regra do /summary)
+    # e quanto ja foi pago, agora sob a lock acima.
+    earned_row = (await session.execute(sa_text("""
+        SELECT
+            COUNT(*) FILTER (WHERE l.status = 'paid' AND l.acordo_months IS NULL) AS paid_count,
+            COALESCE(SUM(l.monthly_fee) FILTER (WHERE l.status = 'paid' AND l.acordo_months IS NULL), 0) AS total_fee,
+            COALESCE(SUM(
+                CASE WHEN l.status IN ('paid','agreement') AND l.acordo_months IS NOT NULL
+                THEN CASE WHEN l.acordo_months <= 6 THEN 30.0
+                          WHEN l.acordo_months >= 12 THEN 40.0
+                          ELSE 30.0 END
+                ELSE 0 END
+            ), 0) AS acordo_commission
+        FROM porta_a_porta_leads l
+        WHERE l.association_id = :aid AND COALESCE(l.commissioned_to, l.operator_id) = :op
+    """), {"aid": str(current.association_id), "op": body.operator_id})).fetchone()
+    paid_count = int(earned_row[0] or 0)
+    avg_fee = float(earned_row[1] or 0) / paid_count if paid_count else 20.0
+    earned = round(_regular_commission(paid_count, avg_fee) + float(earned_row[2] or 0), 2)
+
+    already_paid_row = (await session.execute(sa_text("""
+        SELECT COALESCE(SUM(amount), 0) FROM porta_a_porta_commission_payments
+        WHERE association_id = :aid AND operator_id = :op
+    """), {"aid": str(current.association_id), "op": body.operator_id})).fetchone()
+    already_paid = float(already_paid_row[0] or 0)
+    pending = round(max(0.0, earned - already_paid), 2)
+    if float(body.amount) > pending + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Valor excede a comissão pendente deste operador (R$ {pending:.2f}).",
+        )
+
     paid_at = (body.paid_at or datetime.utcnow()).replace(tzinfo=None)
     await session.execute(sa_text("""
         INSERT INTO porta_a_porta_commission_payments

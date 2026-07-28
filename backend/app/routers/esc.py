@@ -807,9 +807,9 @@ async def baixar_conta_pagar(
     })).fetchone()
 
     await session.execute(text("""
-        INSERT INTO conta_pagar_baixas (conta_pagar_id, transaction_id, amount, created_by)
-        VALUES (:cid, :tid, :amount, :uid)
-    """), {"cid": str(conta_id), "tid": str(tx_row[0]), "amount": body.amount, "uid": str(current.user_id)})
+        INSERT INTO conta_pagar_baixas (conta_pagar_id, transaction_id, amount, association_id, created_by)
+        VALUES (:cid, :tid, :amount, :aid, :uid)
+    """), {"cid": str(conta_id), "tid": str(tx_row[0]), "amount": body.amount, "aid": str(assoc_id), "uid": str(current.user_id)})
 
     novo_status = _status_conta_pagar(amount, novo_pago)
     await session.execute(text(
@@ -818,6 +818,70 @@ async def baixar_conta_pagar(
     await _audit(session, current, "baixar_conta_pagar", "contas_pagar", conta_id, f"R$ {body.amount} -> status {novo_status}")
     await session.commit()
     return {"ok": True, "status": novo_status, "amount_paid": float(novo_pago)}
+
+
+class EstornarBaixaRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=255)
+
+
+@router.post("/financeiro/contas-pagar/baixas/{baixa_id}/estornar", summary="Estornar uma baixa de conta a pagar (lançamento errado)")
+async def estornar_baixa_conta_pagar(
+    baixa_id: UUID,
+    body: EstornarBaixaRequest,
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    ids = [str(i) for i in await financeiro_scope(current, session)]
+    row = (await session.execute(text("""
+        SELECT b.id, b.conta_pagar_id, b.transaction_id, b.amount, c.association_id, c.amount, c.amount_paid
+        FROM conta_pagar_baixas b
+        JOIN contas_pagar c ON c.id = b.conta_pagar_id
+        WHERE b.id = :id AND c.association_id = ANY(:ids)
+    """), {"id": str(baixa_id), "ids": ids})).fetchone()
+    if not row:
+        raise HTTPException(404, "Baixa não encontrada.")
+    _, conta_id, transaction_id, baixa_amount, assoc_id, conta_amount, amount_paid = row
+
+    from app.services.finance_service import FinanceService
+    svc = FinanceService(session)
+    if transaction_id:
+        await svc.reverse_transaction(
+            transaction_id=transaction_id,
+            association_id=assoc_id,
+            reversed_by=current.user_id,
+            reason=f"Estorno de baixa de conta a pagar: {body.reason}",
+        )
+
+    await session.execute(text("DELETE FROM conta_pagar_baixas WHERE id = :id"), {"id": str(baixa_id)})
+
+    novo_pago = amount_paid - baixa_amount
+    novo_status = _status_conta_pagar(conta_amount, novo_pago)
+    await session.execute(text(
+        "UPDATE contas_pagar SET amount_paid = :paid, status = :status, updated_at = NOW(), updated_by = :uid WHERE id = :id"
+    ), {"paid": novo_pago, "status": novo_status, "id": str(conta_id), "uid": str(current.user_id)})
+    await _audit(session, current, "estornar_baixa_conta_pagar", "contas_pagar", conta_id, f"Estorno R$ {baixa_amount} — {body.reason}")
+    await session.commit()
+    return {"ok": True, "status": novo_status, "amount_paid": float(novo_pago)}
+
+
+@router.delete("/financeiro/contas-pagar/{conta_id}", summary="Excluir conta a pagar lançada errada (sem baixas)")
+async def excluir_conta_pagar(
+    conta_id: UUID,
+    current: CurrentUser = Depends(require_esc_module("financeiro")),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    ids = [str(i) for i in await financeiro_scope(current, session)]
+    conta = (await session.execute(text(
+        "SELECT amount_paid, description FROM contas_pagar WHERE id = :id AND association_id = ANY(:ids)"
+    ), {"id": str(conta_id), "ids": ids})).fetchone()
+    if not conta:
+        raise HTTPException(404, "Conta a pagar não encontrada.")
+    if conta[0] and conta[0] > 0:
+        raise HTTPException(400, "Conta já possui baixa registrada — estorne a baixa antes de excluir.")
+    await session.execute(text("DELETE FROM contas_pagar WHERE id = :id"), {"id": str(conta_id)})
+    await _audit(session, current, "excluir_conta_pagar", "contas_pagar", conta_id, conta[1] or "")
+    await session.commit()
+    return {"ok": True}
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -961,6 +1025,8 @@ async def editar_usuario(
     ), {"id": str(user_id)})).fetchone()
     if not alvo or str(alvo[0]) != str(current.empresa_id):
         raise HTTPException(status_code=404, detail="Usuário não encontrado na sua empresa.")
+    if (body.role is not None or body.is_active is not None) and str(user_id) == str(current.user_id) and not current.is_admin_master:
+        raise HTTPException(status_code=403, detail="Você não pode alterar seu próprio papel ou status de ativação.")
 
     sets, params = [], {"id": str(user_id)}
     if body.full_name is not None:

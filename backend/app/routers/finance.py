@@ -1205,10 +1205,12 @@ async def conferencia_caixa(
         cash = await svc.get_open_session(current.association_id)
     except CashSessionError:
         raise HTTPException(status_code=404, detail="Nenhuma sessão aberta.")
-    txs = await svc.list_transactions(current.association_id, cash.id)
-    income = sum(float(t.amount) for t in txs if t.type == "income" and not t.is_reversal and t.reversed_at is None)
-    exits = sum(float(t.amount) for t in txs if t.type != "income" and not t.is_reversal and t.reversed_at is None)
-    expected = float(cash.opening_balance) + income - exits
+    # Mesma regra do fechamento oficial (_compute_expected_balance) — exclui repasse
+    # pra caixinha do esperado, senao a conferencia cega diverge do fechamento real.
+    expected_dec, bruto, baixas = await svc._compute_expected_balance(cash)
+    income = float(bruto)
+    exits = float(baixas)
+    expected = float(expected_dec)
     counted = float(body.counted_amount)
     diff = round(counted - expected, 2)
     cash.status = "conferido"

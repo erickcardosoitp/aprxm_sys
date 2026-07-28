@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 17
+_SCHEMA_VERSION = 18
 
 
 async def _run_migrations() -> None:
@@ -677,6 +677,37 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (17, 'v17: rastreabilidade - updated_at/created_by/updated_by padronizados') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            # v18: conta_pagar_baixas ganha association_id (unica tabela do banco
+            # sem essa coluna - violava a regra de tenancy do resto do schema);
+            # indice em association_id nas tabelas de porta-a-porta, que nunca
+            # tiveram indice nenhum (ja causou 404 em producao por scan lento).
+            try:
+                await session.execute(text(
+                    "ALTER TABLE conta_pagar_baixas ADD COLUMN IF NOT EXISTS association_id UUID REFERENCES associations(id)"
+                ))
+                await session.execute(text("""
+                    UPDATE conta_pagar_baixas b SET association_id = cp.association_id
+                    FROM contas_pagar cp
+                    WHERE b.conta_pagar_id = cp.id AND b.association_id IS NULL
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_conta_pagar_baixas_assoc ON conta_pagar_baixas(association_id)"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_porta_a_porta_leads_assoc ON porta_a_porta_leads(association_id)"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_porta_a_porta_payments_assoc ON porta_a_porta_payments(association_id)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (18, 'v18: conta_pagar_baixas.association_id + indices porta-a-porta') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -1966,6 +1997,34 @@ async def _run_migrations() -> None:
             await session.execute(text(
                 "INSERT INTO schema_migrations (version, description) "
                 "VALUES (17, 'v17: rastreabilidade - updated_at/created_by/updated_by padronizados') "
+                "ON CONFLICT DO NOTHING"
+            ))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # v18: mesmo bloco do ramo _is_existing_db (conta_pagar_baixas.association_id + indices porta-a-porta)
+        try:
+            await session.execute(text(
+                "ALTER TABLE conta_pagar_baixas ADD COLUMN IF NOT EXISTS association_id UUID REFERENCES associations(id)"
+            ))
+            await session.execute(text("""
+                UPDATE conta_pagar_baixas b SET association_id = cp.association_id
+                FROM contas_pagar cp
+                WHERE b.conta_pagar_id = cp.id AND b.association_id IS NULL
+            """))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_conta_pagar_baixas_assoc ON conta_pagar_baixas(association_id)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_porta_a_porta_leads_assoc ON porta_a_porta_leads(association_id)"
+            ))
+            await session.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_porta_a_porta_payments_assoc ON porta_a_porta_payments(association_id)"
+            ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (18, 'v18: conta_pagar_baixas.association_id + indices porta-a-porta') "
                 "ON CONFLICT DO NOTHING"
             ))
             await session.commit()

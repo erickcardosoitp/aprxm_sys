@@ -165,14 +165,23 @@ async def get_dashboard(
     )
     total_banco = float(pix_result.scalar() or 0)
 
-    # Inadimplência (mensalidades pendentes vencidas)
+    # Inadimplência (mensalidades pendentes vencidas) — mesma regra oficial de
+    # MensalidadeService.has_delinquent_mensalidade: grace period por associação,
+    # exclui acordo e mensalidades ja cobertas por migration_payments.
     inadimplencia_result = await session.execute(
         text("""
-            SELECT COALESCE(SUM(amount), 0), COUNT(*)
-            FROM mensalidades
-            WHERE association_id = ANY(:ids)
-              AND status != 'paid'
-              AND due_date < CURRENT_DATE
+            SELECT COALESCE(SUM(m.amount), 0), COUNT(*)
+            FROM mensalidades m
+            JOIN association_settings s ON s.association_id = m.association_id
+            WHERE m.association_id = ANY(:ids)
+              AND m.status NOT IN ('paid', 'agreement')
+              AND m.due_date < (CURRENT_DATE - COALESCE(s.delinquency_grace_days, 2) * INTERVAL '1 day')
+              AND NOT EXISTS (
+                SELECT 1 FROM migration_payments mp
+                WHERE mp.resident_id = m.resident_id
+                  AND mp.association_id = m.association_id
+                  AND mp.competencia = m.reference_month
+              )
         """),
         {"ids": ids},
     )
@@ -247,6 +256,7 @@ async def list_saldo_caixa_realizado(
 class ZerarCaixaTotalRequest(BaseModel):
     association_id: UUID
     reason: str = Field(min_length=5, max_length=255)
+    receipt_photo_url: str = Field(min_length=1)
 
 
 @router.post("/zerar-caixa-total", summary="Zeramento do saldo realizado total de uma unidade — sangria sem caixa")
@@ -278,11 +288,12 @@ async def zerar_caixa_total(
     await session.execute(text("""
         INSERT INTO transactions
             (id, association_id, cash_session_id, type, amount, description,
-             is_sangria, sangria_reason, sangria_destination, created_by)
+             is_sangria, sangria_reason, sangria_destination, receipt_photo_url, created_by)
         VALUES
             (gen_random_uuid(), :aid, NULL, 'sangria', :amount,
-             'Zeramento administrativo total (ESC)', TRUE, :reason, 'Zeramento administrativo total (ESC)', :uid)
-    """), {"aid": str(body.association_id), "amount": saldo, "reason": body.reason, "uid": str(current.user_id)})
+             'Zeramento administrativo total (ESC)', TRUE, :reason, 'Zeramento administrativo total (ESC)', :photo, :uid)
+    """), {"aid": str(body.association_id), "amount": saldo, "reason": body.reason,
+           "photo": body.receipt_photo_url, "uid": str(current.user_id)})
     from app.core.audit import audit
     await audit(session, current, "zerar_caixa_total", "associations", body.association_id, f"R$ {saldo} — {body.reason}")
     await session.commit()
@@ -292,9 +303,10 @@ async def zerar_caixa_total(
 class ZerarCaixaRequest(BaseModel):
     session_id: UUID
     reason: str = Field(min_length=5, max_length=255)
+    receipt_photo_url: str = Field(min_length=1)
 
 
-@router.post("/zerar-caixa", summary="Zeramento administrativo remoto (ESC) — sangria sem foto")
+@router.post("/zerar-caixa", summary="Zeramento administrativo remoto (ESC) — sangria com foto de recibo")
 async def zerar_caixa(
     body: ZerarCaixaRequest,
     current: CurrentUser = Depends(get_current_user),
@@ -325,12 +337,12 @@ async def zerar_caixa(
     await session.execute(text("""
         INSERT INTO transactions
             (id, association_id, cash_session_id, type, amount, description,
-             is_sangria, sangria_reason, sangria_destination, created_by)
+             is_sangria, sangria_reason, sangria_destination, receipt_photo_url, created_by)
         VALUES
             (gen_random_uuid(), :aid, :sid, 'sangria', :amount,
-             'Zeramento administrativo (ESC)', TRUE, :reason, 'Zeramento administrativo (ESC)', :uid)
+             'Zeramento administrativo (ESC)', TRUE, :reason, 'Zeramento administrativo (ESC)', :photo, :uid)
     """), {"aid": str(assoc_id), "sid": str(body.session_id), "amount": saldo,
-           "reason": body.reason, "uid": str(current.user_id)})
+           "reason": body.reason, "photo": body.receipt_photo_url, "uid": str(current.user_id)})
     from app.core.audit import audit
     await audit(session, current, "zerar_caixa", "cash_sessions", body.session_id, f"R$ {saldo} — {body.reason}")
     await session.commit()

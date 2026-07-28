@@ -82,7 +82,7 @@ class MensalidadeService:
         from app.models.finance import TransactionType, IncomeSubtype
         from app.models.resident import Resident
 
-        m = await self._get(mensalidade_id, association_id)
+        m = await self._get(mensalidade_id, association_id, for_update=True)
         if m.status == MensalidadeStatus.paid:
             raise UnprocessableError("Mensalidade já está paga.")
 
@@ -170,7 +170,7 @@ class MensalidadeService:
         transaction_id: UUID | None = None,
     ) -> Mensalidade:
         """Low-level pay — used by reconciliation service (no cash session needed)."""
-        m = await self._get(mensalidade_id, association_id)
+        m = await self._get(mensalidade_id, association_id, for_update=True)
         if m.status == MensalidadeStatus.paid:
             raise UnprocessableError("Mensalidade já está paga.")
         m.status = MensalidadeStatus.paid
@@ -583,11 +583,15 @@ class MensalidadeService:
             "items": items,
         }
 
-    async def _get(self, mensalidade_id: UUID, association_id: UUID) -> Mensalidade:
+    async def _get(self, mensalidade_id: UUID, association_id: UUID, for_update: bool = False) -> Mensalidade:
         stmt = select(Mensalidade).where(
             Mensalidade.id == mensalidade_id,
             Mensalidade.association_id == association_id,
         )
+        if for_update:
+            # Trava a linha ate o commit — evita dupla baixa por requests concorrentes
+            # (duplo clique/retry) lendo status='pending' antes que qualquer um comite.
+            stmt = stmt.with_for_update()
         result = await self._session.execute(stmt)
         m = result.scalar_one_or_none()
         if not m:

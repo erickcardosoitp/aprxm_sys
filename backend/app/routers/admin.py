@@ -146,6 +146,11 @@ async def update_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    if (body.role is not None or body.is_active is not None) and user.id == current.user_id and not current.is_admin_master:
+        raise HTTPException(status_code=403, detail="Você não pode alterar seu próprio papel ou status de ativação.")
+    if body.role is not None and body.role != user.role:
+        if body.role in (UserRole.admin_master, UserRole.superadmin) and not current.is_admin_master:
+            raise HTTPException(status_code=403, detail="Somente admin_master/superadmin pode promover a este papel.")
     if body.email is not None and body.email != user.email:
         conflict = (await session.execute(
             select(User).where(User.email == body.email, User.id != user_id)

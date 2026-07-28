@@ -213,6 +213,17 @@ class ServiceOrderService:
         empresa_id = (await self._session.execute(
             select(Association.empresa_id).where(Association.id == association_id)
         )).scalar_one_or_none()
+
+        # Advisory lock serializa criacoes concorrentes da mesma empresa/associacao -
+        # sem isso, 2 requests simultaneos leem o mesmo MAX(number) e geram OS duplicada.
+        # Liberado automaticamente no commit/rollback da transacao (xact lock).
+        from sqlalchemy import text as _lock_text
+        lock_key = f"so_number:{empresa_id or association_id}"
+        await self._session.execute(
+            _lock_text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": lock_key},
+        )
+
         if empresa_id is None:
             stmt = select(func.coalesce(func.max(ServiceOrder.number), 0)).where(
                 ServiceOrder.association_id == association_id

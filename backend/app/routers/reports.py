@@ -75,7 +75,7 @@ async def _query_finance(session, aid: str, date_from=None, date_to=None, tx_typ
         FROM transactions t
         LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
         LEFT JOIN users u ON u.id = t.created_by
-        WHERE {w} ORDER BY t.created_at DESC
+        WHERE {w} ORDER BY t.created_at DESC LIMIT 10000
     """), p)).fetchall()
     return [{"Data": _s(r[0]), "Tipo": "Entrada" if r[1] == "income" else "Saída",
              "Valor (R$)": float(r[2] or 0), "Descrição": _s(r[3]),
@@ -121,7 +121,7 @@ async def _query_residents(session, aid: str, res_type=None, res_status=None, q=
         SELECT full_name, cpf, phone_primary, email, address_street,
                address_number, address_neighborhood, address_cep,
                type, status, created_at::date
-        FROM residents WHERE {w} ORDER BY full_name
+        FROM residents WHERE {w} ORDER BY full_name LIMIT 10000
     """), p)).fetchall()
     cols = ["Nome","CPF","Telefone","E-mail","Rua","Número","Bairro","CEP","Tipo","Status","Cadastrado em"]
     return [dict(zip(cols, [_s(v) for v in r])) for r in rows]
@@ -181,7 +181,7 @@ async def _query_packages(session, aid: str, date_from=None, date_to=None, pkg_s
         FROM packages p
         LEFT JOIN residents r ON r.id = p.resident_id
         LEFT JOIN users u ON u.id = p.received_by
-        WHERE {w} ORDER BY p.received_at DESC
+        WHERE {w} ORDER BY p.received_at DESC LIMIT 10000
     """), p)).fetchall()
     cols = ["Código Rastreio","Destinatário","Rua","CEP","Status","Transportadora",
             "Recebido em","Entregue em","Taxa (R$)","Recebido por"]
@@ -234,7 +234,7 @@ async def _query_service_orders(session, aid: str, date_from=None, date_to=None,
                service_impacted, org_responsible, requester_name, requester_phone,
                assigned_to_name, request_date::date, created_at::date,
                resolved_at::date, resolution_notes, cancellation_reason
-        FROM service_orders WHERE {w} ORDER BY number
+        FROM service_orders WHERE {w} ORDER BY number LIMIT 10000
     """), p)).fetchall()
     cols = ["Nº","Título","Status","Prioridade","Área","Categoria","Serviço Afetado",
             "Org. Responsável","Solicitante","Telefone","Atribuído a","Data Solicitação",
@@ -296,7 +296,7 @@ async def _query_mensalidades(session, aid: str, date_from=None, date_to=None, m
                v.resident_id::text
         FROM v_mensalidades_completas v
         JOIN residents r ON r.id = v.resident_id
-        WHERE {w} AND r.status != 'suspended' ORDER BY v.reference_month, v.resident_name
+        WHERE {w} AND r.status != 'suspended' ORDER BY v.reference_month, v.resident_name LIMIT 10000
     """), p)).fetchall()
     cols = ["Morador","Mês Referência","Vencimento","Valor (R$)","Status","Pago em","Forma Pagamento","Origem","Endereço","Telefone","_rid","Estado Pagamento"]
     _pending_statuses = {"Pendente", "Em atraso"}
@@ -454,7 +454,7 @@ async def _query_entregas(
             JOIN users u ON u.id = COALESCE(t.assigned_to, t.created_by)
             WHERE t.association_id = ANY(:aids) AND t.status = 'done'
               {_dc('t')} {uc}
-            ORDER BY t.updated_at DESC
+            ORDER BY t.updated_at DESC LIMIT 20000
         """), base)).fetchall()
         for r in rows:
             _add(str(r[0]), r[1], "tarefas", r[2], str(r[3]) if r[3] else None, r[4])
@@ -467,7 +467,7 @@ async def _query_entregas(
             WHERE t.association_id = ANY(:aids)
               AND jsonb_array_length(t.checklist) > 0
               {_dc('t')} {uc}
-            ORDER BY t.updated_at DESC
+            ORDER BY t.updated_at DESC LIMIT 20000
         """), base)).fetchall()
         for r in rows:
             cl = r[3]
@@ -487,7 +487,7 @@ async def _query_entregas(
             JOIN daily_tasks t ON t.id = c.task_id
             WHERE c.association_id = ANY(:aids)
               {_dcc('c')} {uc_c}
-            ORDER BY c.created_at DESC
+            ORDER BY c.created_at DESC LIMIT 20000
         """), base)).fetchall()
         for r in rows:
             _add(str(r[0]), r[1], "comentarios", (r[2] or "—")[:80], str(r[3]) if r[3] else None, r[4])
@@ -504,7 +504,7 @@ async def _query_entregas(
             JOIN users u ON u.id = so.created_by
             WHERE so.association_id = ANY(:aids) AND so.status = 'resolved'
               {dc_os}
-            ORDER BY so.updated_at DESC
+            ORDER BY so.updated_at DESC LIMIT 20000
         """), base_no_uid)).fetchall()
         for r in rows:
             _add(str(r[0]), r[1], "os", r[2], str(r[4]) if r[4] else None, f"OS #{r[3]}")
@@ -517,7 +517,7 @@ async def _query_entregas(
             LEFT JOIN service_orders so ON so.id = d.service_order_id
             WHERE d.association_id = ANY(:aids) AND d.status = 'concluido'
               {_dc('d')} {uc}
-            ORDER BY d.updated_at DESC
+            ORDER BY d.updated_at DESC LIMIT 20000
         """), base)).fetchall()
         for r in rows:
             _add(str(r[0]), r[1], "demandas", r[2], str(r[3]) if r[3] else None, f"OS #{r[4]}" if r[4] else None)

@@ -713,6 +713,33 @@ class FinanceService:
         if (proof_stock or 0) <= 0:
             raise UnprocessableError("Sem estoque de comprovantes disponível. Solicite reposição ao administrador.")
 
+        # Valida o valor cobrado contra o cadastro de Produtos (empresa-wide) em vez
+        # de aceitar o amount cru do request — sem isso, qualquer usuario autenticado
+        # podia cobrar o valor que quisesse no comprovante.
+        if not isento:
+            price_row = (await self._session.execute(
+                sa_text("""
+                    SELECT p.preco_associado, p.preco_nao_associado
+                    FROM products p
+                    JOIN associations a ON a.empresa_id = p.empresa_id
+                    WHERE a.id = :aid AND p.code = 'proof_of_residence' AND p.is_active = TRUE
+                """),
+                {"aid": str(association_id)},
+            )).fetchone()
+            if price_row:
+                resident_kind_row = None
+                if resident_id:
+                    resident_kind_row = (await self._session.execute(
+                        sa_text("SELECT type FROM residents WHERE id = :rid"),
+                        {"rid": str(resident_id)},
+                    )).fetchone()
+                is_member = bool(resident_kind_row and resident_kind_row[0] == "member")
+                expected_price = price_row[0] if is_member else price_row[1]
+                if expected_price is not None and amount != expected_price:
+                    raise UnprocessableError(
+                        f"Valor do comprovante deve ser R$ {expected_price} (cadastro de Produtos)."
+                    )
+
         # Generate unique 8-digit barcode code
         barcode_code = "".join(random.choices(string.digits, k=8))
 

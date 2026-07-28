@@ -204,7 +204,9 @@ class ChangePasswordRequest(BaseModel):
 
 
 @router.post("/change-password", summary="Alterar própria senha")
+@limiter.limit("5/minute")
 async def change_password(
+    request: Request,
     body: ChangePasswordRequest,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
@@ -226,6 +228,8 @@ async def change_password(
     await session.execute(_t2(
         "UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = :uid"
     ), {"uid": str(user.id)})
+    from app.core.audit import audit
+    await audit(session, current, "change_password", "user", user.id, "Senha alterada pelo próprio usuário")
     await session.commit()
     return {"detail": "Senha alterada com sucesso. Faça login novamente."}
 
@@ -291,7 +295,9 @@ async def my_associations(
 
 
 @router.post("/switch-association", response_model=TokenResponse, summary="Trocar de ambiente")
+@limiter.limit("15/minute")
 async def switch_association(
+    request: Request,
     body: SwitchAssociationRequest,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
