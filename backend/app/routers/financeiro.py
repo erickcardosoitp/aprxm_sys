@@ -232,22 +232,38 @@ async def list_saldo_caixa_realizado(
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    # Dinheiro fisico no cofre da unidade = todas as entradas menos todas as saidas
-    # ja CONFIRMADAS: transacoes de sessoes ja CONFERIDAS (contagem fisica validada)
-    # + lancamentos sem caixa (manuais/devolucoes). Sessao aberta ou so fechada
-    # (ainda nao conferida) fica de fora — o valor dela pode mudar ate a conferencia.
+    # Dinheiro fisico no cofre da unidade = duas partes somadas:
+    # 1) lancamentos SEM sessao (manuais/devolucoes) — soma direta das transacoes.
+    # 2) sessoes ja CONFERIDAS — usa closing_balance - opening_balance (o valor
+    #    fisico REALMENTE contado na conferencia), nao recalcula pelas transacoes.
+    #    Antes recalculava por transacao, o que ignorava quebra de caixa registrada
+    #    na conferencia (uma sessao com falta/sobra confirmada continuava contando
+    #    o valor teorico, nao o real). Se a quebra foi um erro de lancamento, quem
+    #    perceber corrige com uma entrada manual depois — nao e' papel desta query
+    #    "adivinhar" isso, ela so' reflete o que foi confirmado na conferencia.
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     rows = (await session.execute(text("""
+        WITH sem_sessao AS (
+            SELECT t.association_id,
+                   SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE -t.amount END) AS saldo
+            FROM transactions t
+            WHERE t.cash_session_id IS NULL
+            GROUP BY t.association_id
+        ),
+        conferidas AS (
+            SELECT cs.association_id,
+                   SUM(COALESCE(cs.closing_balance, cs.opening_balance) - cs.opening_balance) AS saldo
+            FROM cash_sessions cs
+            WHERE cs.status = 'conferido'
+            GROUP BY cs.association_id
+        )
         SELECT a.id, a.name AS unidade,
-               COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0)
-               - COALESCE(SUM(CASE WHEN t.type != 'income' THEN t.amount ELSE 0 END), 0) AS saldo
+               COALESCE(ss.saldo, 0) + COALESCE(cf.saldo, 0) AS saldo
         FROM associations a
-        LEFT JOIN transactions t ON t.association_id = a.id
-        LEFT JOIN cash_sessions cs ON cs.id = t.cash_session_id
+        LEFT JOIN sem_sessao ss ON ss.association_id = a.id
+        LEFT JOIN conferidas cf ON cf.association_id = a.id
         WHERE a.id = ANY(:ids)
           AND a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'
-          AND (t.id IS NULL OR t.cash_session_id IS NULL OR cs.status = 'conferido')
-        GROUP BY a.id, a.name
         ORDER BY a.name
     """), {"ids": ids})).fetchall()
     return [{"association_id": str(r[0]), "unidade": r[1], "saldo": float(r[2])} for r in rows]
