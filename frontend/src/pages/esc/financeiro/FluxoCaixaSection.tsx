@@ -24,24 +24,24 @@ const PERIODOS: { value: Periodo; label: string }[] = [
   { value: 'personalizado', label: 'Período personalizado' },
 ]
 
-interface Dashboard {
-  faturamento_dia: Record<string, number>
-  total_caixa: number
-  total_banco_mes: number
-  inadimplencia_total: number
-  inadimplentes_count: number
-}
 interface Summary {
   total_income: number
   total_expense: number
   total_sangria: number
-  total_balance: number
   period_label: string
 }
 interface SaldoUnidade {
   association_id: string
   unidade: string
   saldo: number
+}
+interface MovimentoUnidade {
+  association_id: string
+  unidade: string
+  entrou: number
+  saiu: number
+  sangria: number
+  liquido: number
 }
 interface AlertaPendente {
   association_id: string
@@ -58,9 +58,9 @@ export default function FluxoCaixaSection() {
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
 
-  const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [summary, setSummary] = useState<Summary | null>(null)
-  const [saldos, setSaldos] = useState<SaldoUnidade[]>([])
+  const [saldoFisico, setSaldoFisico] = useState<SaldoUnidade[]>([])
+  const [movimento, setMovimento] = useState<MovimentoUnidade[]>([])
   const [alertas, setAlertas] = useState<AlertaPendente[]>([])
   const [loading, setLoading] = useState(true)
   const [zerarAberto, setZerarAberto] = useState(false)
@@ -70,22 +70,22 @@ export default function FluxoCaixaSection() {
 
   const load = () => {
     setLoading(true)
-    const summaryParams: Record<string, any> = { period: periodo }
+    const params: Record<string, any> = { period: periodo }
     if (periodo === 'personalizado') {
       if (!dataInicio || !dataFim) { setLoading(false); return }
-      summaryParams.date_from = dataInicio
-      summaryParams.date_to = dataFim
+      params.date_from = dataInicio
+      params.date_to = dataFim
     }
     Promise.all([
-      escService.financeiroDashboard(),
-      escService.financeiroSummary(summaryParams),
+      escService.financeiroSummary(params),
       escService.saldoCaixaRealizado(),
+      escService.movimentoPorUnidade(params),
       escService.alertasSessoesPendentes(),
     ])
-      .then(([d, s, sc, al]) => {
-        setDashboard(d.data)
+      .then(([s, sf, mv, al]) => {
         setSummary(s.data)
-        setSaldos(sc.data)
+        setSaldoFisico(sf.data)
+        setMovimento(mv.data)
         setAlertas(al.data)
       })
       .catch(() => toast.error('Erro ao carregar fluxo de caixa.'))
@@ -94,18 +94,22 @@ export default function FluxoCaixaSection() {
 
   useEffect(() => { load() }, [periodo, dataInicio, dataFim])
 
-  const totalSaldo = saldos.reduce((s, c) => s + c.saldo, 0)
+  // Saldo em caixa = total receita - total despesa em lancamentos manuais,
+  // migracao e sessoes CONFERIDAS (mesma fonte de /financeiro/saldo-caixa-realizado).
+  // Nao e afetado pelo filtro de periodo — e o que "Zerar caixa" zera.
+  const totalSaldoEmCaixa = saldoFisico.reduce((s, c) => s + c.saldo, 0)
+  const totalLiquido = movimento.reduce((s, c) => s + c.liquido, 0)
 
   const handleZerar = async () => {
     if (motivo.trim().length < 5) { toast.error('Motivo precisa de pelo menos 5 caracteres.'); return }
     if (!fotoRecibo) { toast.error('Foto do recibo é obrigatória.'); return }
-    const alvos = saldos.filter((c) => c.saldo > 0)
+    const alvos = saldoFisico.filter((c) => c.saldo > 0)
     setSaving(true)
     try {
       for (const c of alvos) {
         await escService.zerarCaixaTotal(c.association_id, motivo.trim(), fotoRecibo)
       }
-      toast.success(`Saldo total zerado em ${alvos.length} unidade(s).`)
+      toast.success(`Saldo em caixa zerado em ${alvos.length} unidade(s).`)
       setZerarAberto(false)
       setMotivo('')
       setFotoRecibo('')
@@ -117,7 +121,7 @@ export default function FluxoCaixaSection() {
     }
   }
 
-  if (loading && !dashboard) {
+  if (loading && saldoFisico.length === 0 && !summary) {
     return <div className="p-6 text-center text-sm" style={{ color: TEXT_MUTED }}>Carregando…</div>
   }
 
@@ -160,51 +164,52 @@ export default function FluxoCaixaSection() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card label="Saldo em caixa" value={fmt(dashboard?.total_caixa ?? 0)} />
+        <Card label="Saldo em caixa" value={fmt(totalSaldoEmCaixa)} />
         <Card label="Entrou" value={fmt(summary?.total_income ?? 0)} color="#16a34a" />
         <Card label="Saiu" value={fmt(summary?.total_expense ?? 0)} color="#dc2626" />
         <Card label="Sangrias" value={fmt(summary?.total_sangria ?? 0)} color="#6366f1" />
       </div>
-      <p className="text-xs -mt-2" style={{ color: TEXT_MUTED }}>
-        Período: <strong>{summary?.period_label ?? '—'}</strong>. Sangria conta como saída aqui (mesma regra do DRE).
-        Diferente do DRE, esta visão é operacional e não tem o corte de agosto/2026 do relatório contábil.
-      </p>
 
       <div className="border" style={{ borderColor: BORDER }}>
         <div className="px-4 py-2.5 border-b flex items-center justify-between" style={{ borderColor: BORDER }}>
-          <span className="text-sm font-semibold text-slate-800">Saldo físico de caixa por unidade (agora)</span>
-          {isAdmin && saldos.length > 0 && (
+          <span className="text-sm font-semibold text-slate-800">Movimento por unidade — {summary?.period_label ?? ''}</span>
+          {isAdmin && saldoFisico.length > 0 && (
             <EscButton variant="danger" onClick={() => setZerarAberto(true)}>
-              Zerar caixa — total {fmt(totalSaldo)}
+              Zerar caixa — saldo em caixa {fmt(totalSaldoEmCaixa)}
             </EscButton>
           )}
         </div>
-        <p className="px-4 pt-2 text-xs" style={{ color: TEXT_MUTED }}>
-          Dinheiro físico no cofre agora: entradas − saídas já confirmadas (sessões conferidas + lançamentos sem caixa).
-          Não é afetado pelo filtro de período acima — é sempre o saldo atual.
-        </p>
-        {saldos.length === 0 ? (
+        {movimento.length === 0 ? (
           <p className="px-4 py-6 text-sm text-center" style={{ color: TEXT_MUTED }}>Nenhuma unidade no escopo.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={{ borderColor: BORDER }}>
                 <th className="text-left py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Unidade</th>
-                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Saldo físico</th>
+                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Entrou</th>
+                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Saiu</th>
+                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Sangria</th>
+                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Líquido</th>
               </tr>
             </thead>
             <tbody>
-              {saldos.map((c) => (
+              {movimento.map((c) => (
                 <tr key={c.association_id} className="border-b" style={{ borderColor: BORDER }}>
                   <td className="py-2 px-4">{c.unidade}</td>
-                  <td className="py-2 px-4 text-right font-medium">{fmt(c.saldo)}</td>
+                  <td className="py-2 px-4 text-right text-green-700">{fmt(c.entrou)}</td>
+                  <td className="py-2 px-4 text-right text-red-700">{fmt(c.saiu)}</td>
+                  <td className="py-2 px-4 text-right" style={{ color: '#6366f1' }}>{fmt(c.sangria)}</td>
+                  <td className="py-2 px-4 text-right font-medium">{fmt(c.liquido)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t" style={{ borderColor: BORDER }}>
                 <td className="py-2 px-4 text-right font-semibold" style={{ color: TEXT_MUTED }}>Total</td>
-                <td className="py-2 px-4 text-right font-bold">{fmt(totalSaldo)}</td>
+                <td className="py-2 px-4"></td>
+                <td className="py-2 px-4"></td>
+                <td className="py-2 px-4"></td>
+                <td className="py-2 px-4 text-right font-bold">{fmt(totalLiquido)}</td>
               </tr>
             </tfoot>
           </table>
@@ -213,7 +218,7 @@ export default function FluxoCaixaSection() {
 
       {zerarAberto && (
         <EscModal
-          title="Zerar caixa — total das unidades de produção"
+          title="Zerar caixa — saldo em caixa"
           onClose={() => { setZerarAberto(false); setMotivo(''); setFotoRecibo('') }}
           footer={<>
             <EscButton variant="ghost" onClick={() => { setZerarAberto(false); setMotivo(''); setFotoRecibo('') }}>Cancelar</EscButton>
@@ -221,8 +226,7 @@ export default function FluxoCaixaSection() {
           </>}
         >
           <p className="text-sm" style={{ color: TEXT_MUTED }}>
-            Registra uma sangria administrativa remota em cada uma das {saldos.filter((c) => c.saldo > 0).length} unidade(s) com saldo,
-            somando <strong>{fmt(totalSaldo)}</strong> no total. O saldo físico de cada unidade vai a zero.
+            Sangria de {fmt(totalSaldoEmCaixa)} em {saldoFisico.filter((c) => c.saldo > 0).length} unidade(s).
           </p>
           <EscField label="Motivo">
             <textarea className={escInputCls} style={escInputStyle} rows={3} value={motivo} onChange={(e) => setMotivo(e.target.value)}

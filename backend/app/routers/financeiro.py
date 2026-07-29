@@ -333,6 +333,40 @@ async def alertas_sessoes_pendentes(
     ]
 
 
+@router.get("/movimento-por-unidade", summary="Entrou/saiu/sangria por unidade no período")
+async def movimento_por_unidade(
+    period: str = "month",
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    unidade: UUID | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    now = datetime.utcnow()
+    _date_from, _date_to, _ = _resolve_period(period, now, date_from, date_to)
+    rows = (await session.execute(text("""
+        SELECT a.id, a.name AS unidade,
+               COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) AS entrou,
+               COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS saiu,
+               COALESCE(SUM(CASE WHEN t.type = 'sangria' THEN t.amount ELSE 0 END), 0) AS sangria
+        FROM associations a
+        LEFT JOIN transactions t ON t.association_id = a.id
+            AND t.transaction_at >= :date_from AND t.transaction_at < :date_to
+            AND t.reversed_at IS NULL AND t.is_reversal = false
+        WHERE a.id = ANY(:ids)
+          AND a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'
+        GROUP BY a.id, a.name
+        ORDER BY a.name
+    """), {"ids": ids, "date_from": _date_from, "date_to": _date_to})).fetchall()
+    return [
+        {"association_id": str(r[0]), "unidade": r[1],
+         "entrou": float(r[2]), "saiu": float(r[3]), "sangria": float(r[4]),
+         "liquido": float(r[2]) - float(r[3]) - float(r[4])}
+        for r in rows
+    ]
+
+
 class ZerarCaixaTotalRequest(BaseModel):
     association_id: UUID
     reason: str = Field(min_length=5, max_length=255)

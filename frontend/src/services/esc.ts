@@ -35,6 +35,7 @@ export const escService = {
     api.post('/financeiro/zerar-caixa', { session_id, reason, receipt_photo_url }),
   saldoCaixaRealizado: (unidade?: string) => api.get('/financeiro/saldo-caixa-realizado', { params: { unidade } }),
   alertasSessoesPendentes: (unidade?: string) => api.get('/financeiro/alertas-sessoes-pendentes', { params: { unidade } }),
+  movimentoPorUnidade: (params: Record<string, any>) => api.get('/financeiro/movimento-por-unidade', { params }),
   zerarCaixaTotal: (association_id: string, reason: string, receipt_photo_url: string) =>
     api.post('/financeiro/zerar-caixa-total', { association_id, reason, receipt_photo_url }),
 
