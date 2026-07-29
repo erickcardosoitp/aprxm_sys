@@ -31,10 +31,12 @@ export const escService = {
   financeiroDre: (params: Record<string, any>) => api.get('/financeiro/dre', { params }),
   financeiroSummary: (params?: Record<string, any>) => api.get('/financeiro/summary', { params }),
   caixasAbertos: (unidade?: string) => api.get('/financeiro/caixas-abertos', { params: { unidade } }),
-  zerarCaixa: (session_id: string, reason: string) => api.post('/financeiro/zerar-caixa', { session_id, reason }),
+  zerarCaixa: (session_id: string, reason: string, receipt_photo_url: string) =>
+    api.post('/financeiro/zerar-caixa', { session_id, reason, receipt_photo_url }),
   saldoCaixaRealizado: (unidade?: string) => api.get('/financeiro/saldo-caixa-realizado', { params: { unidade } }),
-  zerarCaixaTotal: (association_id: string, reason: string) =>
-    api.post('/financeiro/zerar-caixa-total', { association_id, reason }),
+  alertasSessoesPendentes: (unidade?: string) => api.get('/financeiro/alertas-sessoes-pendentes', { params: { unidade } }),
+  zerarCaixaTotal: (association_id: string, reason: string, receipt_photo_url: string) =>
+    api.post('/financeiro/zerar-caixa-total', { association_id, reason, receipt_photo_url }),
 
   contasPagar: (params?: Record<string, any>) => api.get('/esc/financeiro/contas-pagar', { params }),
   criarContaPagar: (body: any) => api.post('/esc/financeiro/contas-pagar', body),

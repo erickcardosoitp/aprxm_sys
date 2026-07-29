@@ -17,24 +17,62 @@ from app.services.reconciliation_service import ReconciliationService
 router = APIRouter(prefix="/financeiro", tags=["Financeiro"])
 
 
+_MIDNIGHT = {"hour": 0, "minute": 0, "second": 0, "microsecond": 0}
+
+
+def _resolve_period(period: str, now: datetime, date_from_str: str | None, date_to_str: str | None) -> tuple[datetime, datetime, str]:
+    """Resolve (date_from, date_to, label) pro periodo pedido.
+
+    Aceita tanto o vocabulario antigo (week/month/year, usado pelo Financeiro
+    por-associacao) quanto o novo (dia/semana/mes/trimestre/semestre/ano/
+    personalizado, usado no Fluxo de Caixa do ESC) — sao dois nomes pro mesmo
+    conceito em varios casos, mantidos juntos pra nao quebrar quem ja chama
+    com o vocabulario antigo.
+    """
+    if period == "personalizado":
+        if not date_from_str or not date_to_str:
+            raise HTTPException(status_code=422, detail="date_from e date_to são obrigatórios para período personalizado.")
+        date_from = datetime.fromisoformat(date_from_str).replace(**_MIDNIGHT)
+        date_to = datetime.fromisoformat(date_to_str).replace(**_MIDNIGHT) + timedelta(days=1)
+        label = f"{date_from_str} a {date_to_str}"
+        return date_from, date_to, label
+
+    date_to = now
+    if period == "dia":
+        date_from = now.replace(**_MIDNIGHT)
+        label = "hoje"
+    elif period in ("week", "semana"):
+        date_from = (now - timedelta(days=now.weekday())).replace(**_MIDNIGHT)
+        label = "esta semana"
+    elif period == "trimestre":
+        q_start_month = ((now.month - 1) // 3) * 3 + 1
+        date_from = now.replace(month=q_start_month, day=1, **_MIDNIGHT)
+        label = f"{(q_start_month - 1) // 3 + 1}º trimestre/{now.year}"
+    elif period == "semestre":
+        s_start_month = 1 if now.month <= 6 else 7
+        date_from = now.replace(month=s_start_month, day=1, **_MIDNIGHT)
+        label = f"{1 if s_start_month == 1 else 2}º semestre/{now.year}"
+    elif period in ("year", "ano"):
+        date_from = now.replace(month=1, day=1, **_MIDNIGHT)
+        label = str(now.year)
+    else:  # month/mes (default)
+        date_from = now.replace(day=1, **_MIDNIGHT)
+        label = now.strftime("%B/%Y")
+    return date_from, date_to, label
+
+
 @router.get("/summary")
 async def get_summary(
     period: str = "month",
+    date_from: str | None = Query(default=None, description="Só usado com period=personalizado, formato YYYY-MM-DD"),
+    date_to: str | None = Query(default=None, description="Só usado com period=personalizado, formato YYYY-MM-DD"),
     unidade: UUID | None = Query(default=None),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     now = datetime.utcnow()
-    if period == "week":
-        date_from = now - timedelta(days=7)
-        label = "últimos 7 dias"
-    elif period == "year":
-        date_from = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-        label = str(now.year)
-    else:  # month
-        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        label = now.strftime("%B/%Y")
+    _date_from, _date_to, label = _resolve_period(period, now, date_from, date_to)
 
     result = await session.execute(
         text("""
@@ -46,10 +84,11 @@ async def get_summary(
             FROM transactions
             WHERE association_id = ANY(:ids)
               AND transaction_at >= :date_from
+              AND transaction_at < :date_to
               AND reversed_at IS NULL
               AND is_reversal = false
         """),
-        {"ids": ids, "date_from": date_from},
+        {"ids": ids, "date_from": _date_from, "date_to": _date_to},
     )
     row = result.fetchone()
     income = float(row[0])
@@ -69,11 +108,12 @@ async def get_summary(
             WHERE association_id = ANY(:ids)
               AND type = 'income'
               AND transaction_at >= :date_from
+              AND transaction_at < :date_to
               AND reversed_at IS NULL
               AND is_reversal = false
             GROUP BY income_subtype
         """),
-        {"ids": ids, "date_from": date_from},
+        {"ids": ids, "date_from": _date_from, "date_to": _date_to},
     )
     income_by_type: dict = {}
     for r in breakdown_result.fetchall():
@@ -267,6 +307,30 @@ async def list_saldo_caixa_realizado(
         ORDER BY a.name
     """), {"ids": ids})).fetchall()
     return [{"association_id": str(r[0]), "unidade": r[1], "saldo": float(r[2])} for r in rows]
+
+
+@router.get("/alertas-sessoes-pendentes", summary="Sessões fechadas há mais de 3 dias sem conferência, por unidade")
+async def alertas_sessoes_pendentes(
+    unidade: UUID | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+    rows = (await session.execute(text("""
+        SELECT a.id, a.name AS unidade, COUNT(*) AS qtd, MIN(cs.closed_at) AS mais_antiga
+        FROM cash_sessions cs
+        JOIN associations a ON a.id = cs.association_id
+        WHERE cs.association_id = ANY(:ids)
+          AND cs.status = 'closed'
+          AND cs.closed_at < NOW() - INTERVAL '3 days'
+        GROUP BY a.id, a.name
+        ORDER BY qtd DESC
+    """), {"ids": ids})).fetchall()
+    return [
+        {"association_id": str(r[0]), "unidade": r[1], "qtd": r[2],
+         "mais_antiga": r[3].isoformat() if r[3] else None}
+        for r in rows
+    ]
 
 
 class ZerarCaixaTotalRequest(BaseModel):
