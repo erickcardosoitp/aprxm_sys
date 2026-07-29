@@ -28,7 +28,7 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 async def _create_base_schema(session) -> None:
     """Cria o schema do zero num banco 100% vazio (sem o dump de referencia).
@@ -1457,6 +1457,46 @@ async def _apply_versioned_migrations(session) -> None:
         await session.commit()
     except Exception:
         await session.rollback()
+
+    # v21: UNIQUE(association_id, cpf) em residents — so aplica se nao houver
+    # duplicata hoje (nao temos como saber o estado de producao antecipadamente).
+    # Se houver CPF duplicado, a migration NAO falha e NAO trava o cold start —
+    # so' avisa no log do servidor pra alguem investigar com
+    # database/check_cpf_duplicado.sql. Reexecuta a cada deploy ate a duplicata
+    # ser resolvida e a constraint conseguir ser aplicada.
+    try:
+        dup_count = (await session.execute(text("""
+            SELECT COUNT(*) FROM (
+                SELECT association_id, cpf FROM residents
+                WHERE cpf IS NOT NULL AND cpf != ''
+                GROUP BY association_id, cpf HAVING COUNT(*) > 1
+            ) t
+        """))).scalar()
+        if dup_count:
+            print(
+                f"[MIGRATION v21] {dup_count} grupo(s) de CPF duplicado em residents — "
+                "UNIQUE(association_id, cpf) NAO aplicada. Rode "
+                "database/check_cpf_duplicado.sql pra localizar e corrigir."
+            )
+        else:
+            # Postgres nao suporta "ADD CONSTRAINT IF NOT EXISTS" — checa via pg_constraint.
+            exists = (await session.execute(text(
+                "SELECT 1 FROM pg_constraint WHERE conname = 'uq_residents_assoc_cpf'"
+            ))).scalar()
+            if not exists:
+                await session.execute(text(
+                    "ALTER TABLE residents ADD CONSTRAINT uq_residents_assoc_cpf "
+                    "UNIQUE (association_id, cpf)"
+                ))
+            await session.execute(text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (21, 'v21: UNIQUE(association_id, cpf) em residents') "
+                "ON CONFLICT DO NOTHING"
+            ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v21] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:
