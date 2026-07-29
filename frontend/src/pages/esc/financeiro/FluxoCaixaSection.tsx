@@ -5,6 +5,7 @@ import { escService } from '../../../services/esc'
 import { uploadService } from '../../../services/upload'
 import { PhotoCapture } from '../../../components/packages/PhotoCapture'
 import { EscButton, EscField, EscModal, escInputCls, escInputStyle } from '../EscFormKit'
+import { useSort, SortTh } from '../EscDataTable'
 import { useAuthStore } from '../../../store/authStore'
 
 const BORDER = '#e2e8f0'
@@ -100,6 +101,8 @@ export default function FluxoCaixaSection() {
   const totalSaldoEmCaixa = saldoFisico.reduce((s, c) => s + c.saldo, 0)
   const totalLiquido = movimento.reduce((s, c) => s + c.liquido, 0)
 
+  const { sorted: sortedMovimento, sortKey, sortDir, toggleSort } = useSort(movimento)
+
   const handleZerar = async () => {
     if (motivo.trim().length < 5) { toast.error('Motivo precisa de pelo menos 5 caracteres.'); return }
     if (!fotoRecibo) { toast.error('Foto do recibo é obrigatória.'); return }
@@ -185,15 +188,15 @@ export default function FluxoCaixaSection() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={{ borderColor: BORDER }}>
-                <th className="text-left py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Unidade</th>
-                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Entrou</th>
-                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Saiu</th>
-                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Sangria</th>
-                <th className="text-right py-2 px-4 font-medium" style={{ color: TEXT_MUTED }}>Líquido</th>
+                <SortTh label="Unidade" sortKey="unidade" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('unidade')} />
+                <SortTh label="Entrou" sortKey="entrou" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('entrou')} align="right" />
+                <SortTh label="Saiu" sortKey="saiu" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('saiu')} align="right" />
+                <SortTh label="Sangria" sortKey="sangria" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('sangria')} align="right" />
+                <SortTh label="Líquido" sortKey="liquido" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('liquido')} align="right" />
               </tr>
             </thead>
             <tbody>
-              {movimento.map((c) => (
+              {sortedMovimento.map((c) => (
                 <tr key={c.association_id} className="border-b" style={{ borderColor: BORDER }}>
                   <td className="py-2 px-4">{c.unidade}</td>
                   <td className="py-2 px-4 text-right text-green-700">{fmt(c.entrou)}</td>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { escService } from '../../../services/esc'
-import EscDataTable from '../EscDataTable'
+import EscDataTable, { useSort, SortTh } from '../EscDataTable'
 import { EscButton, EscField, EscSelect, escInputCls, escInputStyle, ESC_ACCENT } from '../EscFormKit'
 
 const BORDER = '#e2e8f0'
@@ -66,6 +66,8 @@ export default function CrmSection() {
       .catch(() => toast.error('Erro ao carregar associados.'))
       .finally(() => setLoading(false))
   }, [view, params])
+
+  const { sorted: sortedRows, sortKey, sortDir, toggleSort } = useSort(rows)
 
   return (
     <div className="flex flex-col h-full">
@@ -133,16 +135,24 @@ export default function CrmSection() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="border-b" style={{ borderColor: BORDER }}>
-                  {['Nome', 'Endereço', 'Unidade', 'Associado a', 'Status', 'R$ Atrasado', 'Qtd. meses', 'Ações/mês', 'Encomendas/mês', 'Última entrega', 'Forma pagto.'].map((h) => (
-                    <th key={h} className="text-left py-2 pr-4 font-medium whitespace-nowrap" style={{ color: TEXT_MUTED }}>{h}</th>
-                  ))}
+                  <SortTh label="Nome" sortKey="full_name" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('full_name')} />
+                  <SortTh label="Endereço" sortKey="address" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('address')} />
+                  <SortTh label="Unidade" sortKey="unidade" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('unidade')} />
+                  <SortTh label="Associado a" sortKey="associado_desde" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('associado_desde')} />
+                  <SortTh label="Status" sortKey="situacao" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('situacao')} />
+                  <SortTh label="R$ Atrasado" sortKey="valor_atrasado" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('valor_atrasado')} />
+                  <SortTh label="Qtd. meses" sortKey="qtd_pendentes" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('qtd_pendentes')} />
+                  <SortTh label="Ações/mês" sortKey="acoes_mes" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('acoes_mes')} />
+                  <SortTh label="Encomendas/mês" sortKey="enc_mes" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('enc_mes')} />
+                  <SortTh label="Última entrega" sortKey="ultima_entrega" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('ultima_entrega')} />
+                  <SortTh label="Forma pagto." sortKey="forma_pagamento_recorrente" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('forma_pagamento_recorrente')} />
                 </tr>
               </thead>
               <tbody>
                 {!loading && rows.length === 0 && (
                   <tr><td colSpan={11} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhum associado encontrado.</td></tr>
                 )}
-                {rows.map((r) => {
+                {sortedRows.map((r) => {
                   const meses = r.associado_desde
                     ? Math.max(0, Math.floor((Date.now() - new Date(r.associado_desde).getTime()) / (30 * 86400000)))
                     : null

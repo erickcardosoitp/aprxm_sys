@@ -657,10 +657,9 @@ async def _query_movimentacoes(
             tipo_label = TIPO_LABEL.get(r[1], r[1])
         out.append({
             "Data/hora": str(r[0]), "Tipo Movimentação": tipo_label, "Associação": r[4],
-            "Morador": r[5] or "—", "Valor": float(r[6]),
-            "Produto": PRODUTO_LABEL.get(r[7], r[7] or "—"),
-            "Status Morador": r[8] or "—", "Usuário": r[9] or "—",
-            "Justificativa": r[10] or "—",
+            "Morador": r[5] or "—", "Status Morador": r[8] or "—",
+            "Valor": float(r[6]), "Produto": PRODUTO_LABEL.get(r[7], r[7] or "—"),
+            "Usuário": r[9] or "—", "Justificativa": r[10] or "—",
         })
     return out
 
@@ -710,7 +709,7 @@ async def export_movimentacoes(
         morador, rua, inadimplente, usuario_id, cargo,
     )
     wb, ws = _mk("Movimentações")
-    cols = list(rows[0].keys()) if rows else ["Data/hora", "Tipo Movimentação", "Associação", "Morador", "Valor", "Produto", "Status Morador", "Usuário"]
+    cols = list(rows[0].keys()) if rows else ["Data/hora", "Tipo Movimentação", "Associação", "Morador", "Status Morador", "Valor", "Produto", "Usuário", "Justificativa"]
     _headers(ws, cols)
     for r in rows:
         ws.append(list(r.values()))

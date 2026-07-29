@@ -510,6 +510,7 @@ class FinanceService:
             reversal_of_id=original.id,
             reversal_reason=reason,
             created_by=reversed_by,
+            resident_id=original.resident_id,
             income_subtype=IncomeSubtype.other if inverse_type == TransactionType.income else None,
         )
         self._session.add(reversal)

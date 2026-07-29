@@ -3,7 +3,7 @@ import toast from 'react-hot-toast'
 import { Download, RotateCcw, X } from 'lucide-react'
 import { escService } from '../../../services/esc'
 import { EscButton, EscField, EscModal, EscSelect, escInputCls, escInputStyle } from '../EscFormKit'
-import { unidadeColor } from '../EscDataTable'
+import { unidadeColor, useSort, SortTh } from '../EscDataTable'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -29,6 +29,8 @@ export default function SessoesCaixaSection() {
   const [saving, setSaving] = useState(false)
   const [reabrirTarget, setReabrirTarget] = useState<Sessao | null>(null)
   const [reabrirMotivo, setReabrirMotivo] = useState('')
+
+  const { sorted: sortedRows, sortKey, sortDir, toggleSort } = useSort(rows)
 
   const load = () => {
     setLoading(true)
@@ -99,16 +101,21 @@ export default function SessoesCaixaSection() {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b" style={{ borderColor: BORDER }}>
-              {['Data/hora', 'Associação', 'Usuário', 'Entradas', 'Saídas', 'Líquido', 'Conferido por', 'Ações'].map((h) => (
-                <th key={h} className="text-left py-2 pr-4 font-medium whitespace-nowrap" style={{ color: TEXT_MUTED }}>{h}</th>
-              ))}
+              <SortTh label="Data/hora" sortKey="opened_at" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('opened_at')} />
+              <SortTh label="Associação" sortKey="unidade" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('unidade')} />
+              <SortTh label="Usuário" sortKey="usuario" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('usuario')} />
+              <SortTh label="Entradas" sortKey="entradas" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('entradas')} />
+              <SortTh label="Saídas" sortKey="saidas" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('saidas')} />
+              <SortTh label="Líquido" sortKey="liquido" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('liquido')} />
+              <SortTh label="Conferido por" sortKey="conferido_por" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('conferido_por')} />
+              <th className="py-2 pr-4" style={{ color: TEXT_MUTED }}>Ações</th>
             </tr>
           </thead>
           <tbody>
             {!loading && rows.length === 0 && (
               <tr><td colSpan={8} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhuma sessão conferida.</td></tr>
             )}
-            {rows.map((s) => (
+            {sortedRows.map((s) => (
               <tr key={s.id} className="border-b hover:bg-slate-50" style={{ borderColor: BORDER }}>
                 <td className="py-2 pr-4 whitespace-nowrap cursor-pointer" onClick={() => setDetalhe(s)}>{new Date(s.opened_at).toLocaleString('pt-BR')}</td>
                 <td className="py-2 pr-4 whitespace-nowrap cursor-pointer" onClick={() => setDetalhe(s)}>

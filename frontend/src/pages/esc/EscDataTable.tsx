@@ -36,6 +36,47 @@ function UnidadeBadge({ nome }: { nome: string }) {
 
 const UNIDADE_KEYS = new Set(['unidade', 'associacao', 'association_name', 'assoc', 'assoc_name'])
 
+export function useSort<T extends Record<string, any>>(rows: T[]) {
+  const [sortKey, setSortKey] = useState<keyof T | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const toggleSort = (key: keyof T) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); return }
+    if (sortDir === 'asc') { setSortDir('desc'); return }
+    setSortKey(null)
+  }
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return rows
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...rows].sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey]
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      const an = Number(av), bn = Number(bv)
+      if (av !== '' && bv !== '' && !Number.isNaN(an) && !Number.isNaN(bn)) return (an - bn) * dir
+      return String(av).localeCompare(String(bv), 'pt-BR') * dir
+    })
+  }, [rows, sortKey, sortDir])
+
+  return { sorted, sortKey, sortDir, toggleSort }
+}
+
+export function SortTh({ label, sortKey, activeKey, dir, onClick, align = 'left' }:
+  { label: string; sortKey: string | number | symbol; activeKey: string | number | symbol | null; dir: 'asc' | 'desc'; onClick: () => void; align?: 'left' | 'right' }) {
+  return (
+    <th onClick={onClick}
+        className={`py-2 ${align === 'right' ? 'text-right px-4' : 'text-left pr-4'} font-medium whitespace-nowrap cursor-pointer select-none hover:text-slate-700`}
+        style={{ color: TEXT_MUTED }}>
+      <span className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end w-full' : ''}`}>
+        {label}
+        {activeKey === sortKey && (dir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+      </span>
+    </th>
+  )
+}
+
 interface Column {
   key: string
   label: string
@@ -60,14 +101,6 @@ export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarActi
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'ativos' | 'inativos' | 'todos'>('ativos')
   const [colFilters, setColFilters] = useState<Record<string, string>>({})
-  const [sortKey, setSortKey] = useState<string | null>(null)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-
-  function toggleSort(key: string) {
-    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); return }
-    if (sortDir === 'asc') { setSortDir('desc'); return }
-    setSortKey(null)
-  }
 
   useEffect(() => {
     let alive = true
@@ -89,7 +122,7 @@ export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarActi
     return m
   }, [rows, filterKeys])
 
-  const filtered = useMemo(() => {
+  const filteredUnsorted = useMemo(() => {
     let out = rows
     if (statusFilter && status !== 'todos') {
       const want = status === 'ativos'
@@ -102,22 +135,10 @@ export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarActi
       const q = query.toLowerCase()
       out = out.filter((r) => searchKeys.some((k) => String(r[k] ?? '').toLowerCase().includes(q)))
     }
-    if (sortKey) {
-      const dir = sortDir === 'asc' ? 1 : -1
-      out = [...out].sort((a, b) => {
-        const av = a[sortKey]
-        const bv = b[sortKey]
-        if (av == null && bv == null) return 0
-        if (av == null) return 1
-        if (bv == null) return -1
-        const an = Number(av)
-        const bn = Number(bv)
-        if (!Number.isNaN(an) && !Number.isNaN(bn)) return (an - bn) * dir
-        return String(av).localeCompare(String(bv), 'pt-BR') * dir
-      })
-    }
     return out
-  }, [rows, query, searchKeys, statusFilter, status, colFilters, sortKey, sortDir])
+  }, [rows, query, searchKeys, statusFilter, status, colFilters])
+
+  const { sorted: filtered, sortKey, sortDir, toggleSort } = useSort(filteredUnsorted)
 
   return (
     <div className="flex flex-col h-full">
@@ -169,17 +190,8 @@ export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarActi
           <thead>
             <tr className="border-b" style={{ borderColor: BORDER }}>
               {columns.map((col) => (
-                <th
-                  key={col.key}
-                  onClick={() => toggleSort(col.key)}
-                  className="text-left py-2 pr-4 font-medium whitespace-nowrap cursor-pointer select-none hover:text-slate-700"
-                  style={{ color: TEXT_MUTED }}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    {col.label}
-                    {sortKey === col.key && (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                  </span>
-                </th>
+                <SortTh key={col.key} label={col.label} sortKey={col.key} activeKey={sortKey} dir={sortDir}
+                  onClick={() => toggleSort(col.key)} />
               ))}
               {rowActions && <th className="py-2 pr-4"></th>}
             </tr>

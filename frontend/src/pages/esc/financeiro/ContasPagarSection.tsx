@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import { Plus, Settings2 } from 'lucide-react'
 import { escService } from '../../../services/esc'
 import { EscButton, EscField, EscModal, EscSelect, escInputCls, escInputStyle, ESC_ACCENT } from '../EscFormKit'
+import { useSort, SortTh } from '../EscDataTable'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -117,6 +118,8 @@ export default function ContasPagarSection() {
     } catch { toast.error('Erro ao atualizar template.') }
   }
 
+  const { sorted: sortedContas, sortKey, sortDir, toggleSort } = useSort(contas)
+
   const openBaixa = (c: Conta) => {
     setBaixaTarget(c)
     setBaixaAmount(String((c.amount - c.amount_paid).toFixed(2)))
@@ -169,16 +172,20 @@ export default function ContasPagarSection() {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b" style={{ borderColor: BORDER }}>
-              {['Descrição', 'Unidade', 'Vencimento', 'Valor', 'Pago', 'Status', 'Ações'].map((h) => (
-                <th key={h} className="text-left py-2 pr-4 font-medium whitespace-nowrap" style={{ color: TEXT_MUTED }}>{h}</th>
-              ))}
+              <SortTh label="Descrição" sortKey="description" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('description')} />
+              <SortTh label="Unidade" sortKey="unidade" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('unidade')} />
+              <SortTh label="Vencimento" sortKey="due_date" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('due_date')} />
+              <SortTh label="Valor" sortKey="amount" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('amount')} />
+              <SortTh label="Pago" sortKey="amount_paid" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('amount_paid')} />
+              <SortTh label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('status')} />
+              <th className="py-2 pr-4" style={{ color: TEXT_MUTED }}>Ações</th>
             </tr>
           </thead>
           <tbody>
             {!loading && contas.length === 0 && (
               <tr><td colSpan={7} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhuma conta a pagar.</td></tr>
             )}
-            {contas.map((c) => (
+            {sortedContas.map((c) => (
               <tr key={c.id} className="border-b hover:bg-slate-50" style={{ borderColor: BORDER }}>
                 <td className="py-2 pr-4 whitespace-nowrap">{c.description}{c.recorrente && <span className="ml-1.5 text-[10px]" style={{ color: TEXT_MUTED }}>(recorrente)</span>}</td>
                 <td className="py-2 pr-4 whitespace-nowrap">{c.unidade}</td>

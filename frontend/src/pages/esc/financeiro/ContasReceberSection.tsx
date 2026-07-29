@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { escService } from '../../../services/esc'
 import { EscSelect, escInputCls, escInputStyle } from '../EscFormKit'
+import { useSort, SortTh } from '../EscDataTable'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -57,6 +58,9 @@ export default function ContasReceberSection() {
   const totalMensalidade = mensalidadesFiltradas.reduce((s, m) => s + Number(m.amount), 0)
   const totalTaxa = taxasFiltradas.reduce((s, t) => s + t.valor_previsto, 0)
 
+  const { sorted: mensalidadesSorted, sortKey: sortKeyM, sortDir: sortDirM, toggleSort: toggleSortM } = useSort(mensalidadesFiltradas)
+  const { sorted: taxasSorted, sortKey: sortKeyT, sortDir: sortDirT, toggleSort: toggleSortT } = useSort(taxasFiltradas)
+
   return (
     <div className="flex flex-col h-full">
       <div className="px-6 pt-3 border-b flex items-end gap-4 flex-wrap" style={{ borderColor: BORDER }}>
@@ -86,16 +90,18 @@ export default function ContasReceberSection() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b" style={{ borderColor: BORDER }}>
-                {['Morador', 'Unidade', 'Competência', 'Vencimento', 'Valor'].map((h) => (
-                  <th key={h} className="text-left py-2 pr-4 font-medium whitespace-nowrap" style={{ color: TEXT_MUTED }}>{h}</th>
-                ))}
+                <SortTh label="Morador" sortKey="resident_name" activeKey={sortKeyM} dir={sortDirM} onClick={() => toggleSortM('resident_name')} />
+                <SortTh label="Unidade" sortKey="unidade" activeKey={sortKeyM} dir={sortDirM} onClick={() => toggleSortM('unidade')} />
+                <SortTh label="Competência" sortKey="reference_month" activeKey={sortKeyM} dir={sortDirM} onClick={() => toggleSortM('reference_month')} />
+                <SortTh label="Vencimento" sortKey="due_date" activeKey={sortKeyM} dir={sortDirM} onClick={() => toggleSortM('due_date')} />
+                <SortTh label="Valor" sortKey="amount" activeKey={sortKeyM} dir={sortDirM} onClick={() => toggleSortM('amount')} />
               </tr>
             </thead>
             <tbody>
               {!loading && mensalidadesFiltradas.length === 0 && (
                 <tr><td colSpan={5} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhuma mensalidade a receber.</td></tr>
               )}
-              {mensalidadesFiltradas.map((m, i) => (
+              {mensalidadesSorted.map((m, i) => (
                 <tr key={i} className="border-b" style={{ borderColor: BORDER }}>
                   <td className="py-2 pr-4 whitespace-nowrap">{m.resident_name}</td>
                   <td className="py-2 pr-4 whitespace-nowrap">{m.unidade}</td>
@@ -114,16 +120,17 @@ export default function ContasReceberSection() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="border-b" style={{ borderColor: BORDER }}>
-                  {['Morador', 'Unidade', 'Encomendas paradas', 'Valor previsto'].map((h) => (
-                    <th key={h} className="text-left py-2 pr-4 font-medium whitespace-nowrap" style={{ color: TEXT_MUTED }}>{h}</th>
-                  ))}
+                  <SortTh label="Morador" sortKey="resident_name" activeKey={sortKeyT} dir={sortDirT} onClick={() => toggleSortT('resident_name')} />
+                  <SortTh label="Unidade" sortKey="unidade" activeKey={sortKeyT} dir={sortDirT} onClick={() => toggleSortT('unidade')} />
+                  <SortTh label="Encomendas paradas" sortKey="qtd_pendente" activeKey={sortKeyT} dir={sortDirT} onClick={() => toggleSortT('qtd_pendente')} />
+                  <SortTh label="Valor previsto" sortKey="valor_previsto" activeKey={sortKeyT} dir={sortDirT} onClick={() => toggleSortT('valor_previsto')} />
                 </tr>
               </thead>
               <tbody>
                 {!loading && taxasFiltradas.length === 0 && (
                   <tr><td colSpan={4} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhuma taxa de entrega prevista.</td></tr>
                 )}
-                {taxasFiltradas.map((t) => (
+                {taxasSorted.map((t) => (
                   <tr key={t.resident_id} className="border-b" style={{ borderColor: BORDER }}>
                     <td className="py-2 pr-4 whitespace-nowrap">{t.resident_name}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{t.unidade}</td>

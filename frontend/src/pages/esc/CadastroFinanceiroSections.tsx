@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Plus, Pencil } from 'lucide-react'
 import { escInputCls, escInputStyle, EscButton, EscModal, EscField } from './EscFormKit'
+import { useSort, SortTh } from './EscDataTable'
 import { escService } from '../../services/esc'
 
 const BORDER = '#e2e8f0'
@@ -239,6 +240,8 @@ export function ProdutosSection() {
     setEditTarget(p); setPrecoAssociado(p.preco_associado); setPrecoNaoAssociado(p.preco_nao_associado); setConflito(null)
   }
 
+  const { sorted: sortedRows, sortKey, sortDir, toggleSort } = useSort(rows)
+
   const doSave = async (force: boolean, aplicarDivergentes: boolean) => {
     if (!editTarget) return
     setSaving(true)
@@ -265,14 +268,14 @@ export function ProdutosSection() {
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b" style={{ borderColor: BORDER }}>
-            <th className="text-left py-2 pr-4 font-medium" style={{ color: TEXT_MUTED }}>Produto</th>
-            <th className="text-left py-2 pr-4 font-medium" style={{ color: TEXT_MUTED }}>Preço Associado</th>
-            <th className="text-left py-2 pr-4 font-medium" style={{ color: TEXT_MUTED }}>Preço Não Associado</th>
+            <SortTh label="Produto" sortKey="name" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('name')} />
+            <SortTh label="Preço Associado" sortKey="preco_associado" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('preco_associado')} />
+            <SortTh label="Preço Não Associado" sortKey="preco_nao_associado" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('preco_nao_associado')} />
             <th className="py-2 pr-4"></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((p) => (
+          {sortedRows.map((p) => (
             <tr key={p.id} className="border-b" style={{ borderColor: BORDER }}>
               <td className="py-2 pr-4">{p.name}</td>
               <td className="py-2 pr-4">R$ {Number(p.preco_associado).toFixed(2)}</td>

@@ -4,7 +4,7 @@ import html2canvas from 'html2canvas'
 import { Download, FileSpreadsheet, X } from 'lucide-react'
 import { escService } from '../../../services/esc'
 import { EscButton, EscField, EscModal, EscSelect, escInputCls, escInputStyle, ESC_ACCENT } from '../EscFormKit'
-import { unidadeColor } from '../EscDataTable'
+import { unidadeColor, useSort, SortTh } from '../EscDataTable'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -46,15 +46,27 @@ function periodoToRange(periodo: string): { date_from: string; date_to: string }
 
 interface Row {
   'Data/hora': string; 'Tipo Movimentação': string; 'Associação': string; 'Morador': string
-  'Valor': number; 'Produto': string; 'Status Morador': string; 'Usuário': string
+  'Status Morador': string; 'Valor': number; 'Produto': string; 'Usuário': string
   'Justificativa': string
 }
+
+const COLUMNS: { key: keyof Row; label: string }[] = [
+  { key: 'Data/hora', label: 'Data/hora' },
+  { key: 'Tipo Movimentação', label: 'Tipo' },
+  { key: 'Associação', label: 'Associação' },
+  { key: 'Morador', label: 'Morador' },
+  { key: 'Status Morador', label: 'Status Morador' },
+  { key: 'Valor', label: 'Valor' },
+  { key: 'Produto', label: 'Produto' },
+  { key: 'Usuário', label: 'Usuário' },
+  { key: 'Justificativa', label: 'Justificativa' },
+]
 
 export default function MovimentacoesSection() {
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState('month')
-  const [tipo, setTipo] = useState<string[]>([])
+  const [tipo, setTipo] = useState<string[]>(['entrada', 'saida'])
   const [produto, setProduto] = useState<string[]>([])
   const [morador, setMorador] = useState('')
   const [rua, setRua] = useState('')
@@ -90,6 +102,8 @@ export default function MovimentacoesSection() {
 
   const toggle = (arr: string[], key: string, set: (v: string[]) => void) =>
     set(arr.includes(key) ? arr.filter((k) => k !== key) : [...arr, key])
+
+  const { sorted: sortedRows, sortKey, sortDir, toggleSort } = useSort(rows)
 
   const handleExport = async () => {
     try {
@@ -177,8 +191,9 @@ export default function MovimentacoesSection() {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b" style={{ borderColor: BORDER }}>
-              {['Data/hora', 'Tipo', 'Associação', 'Morador', 'Valor', 'Produto', 'Justificativa', 'Status Morador', 'Usuário'].map((h) => (
-                <th key={h} className="text-left py-2 pr-4 font-medium whitespace-nowrap" style={{ color: TEXT_MUTED }}>{h}</th>
+              {COLUMNS.map(({ key, label }) => (
+                <SortTh key={key} label={label} sortKey={key} activeKey={sortKey} dir={sortDir}
+                  onClick={() => toggleSort(key)} />
               ))}
             </tr>
           </thead>
@@ -186,7 +201,7 @@ export default function MovimentacoesSection() {
             {!loading && rows.length === 0 && (
               <tr><td colSpan={9} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhuma movimentação no período/filtro.</td></tr>
             )}
-            {rows.map((r, i) => (
+            {sortedRows.map((r, i) => (
               <tr key={i} className="border-b hover:bg-slate-50 cursor-pointer" style={{ borderColor: BORDER }} onClick={() => setDetalhe(r)}>
                 <td className="py-2 pr-4 whitespace-nowrap">{new Date(r['Data/hora']).toLocaleString('pt-BR')}</td>
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Tipo Movimentação']}</td>
@@ -201,14 +216,14 @@ export default function MovimentacoesSection() {
                   )}
                 </td>
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Morador']}</td>
+                <td className="py-2 pr-4 whitespace-nowrap">{STATUS_MORADOR_LABEL[r['Status Morador']] ?? r['Status Morador']}</td>
                 <td className="py-2 pr-4 whitespace-nowrap font-medium">R$ {Number(r.Valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                 <td className="py-2 pr-4 whitespace-nowrap">{r['Produto']}</td>
-                <td className="py-2 pr-4 max-w-[220px] truncate" title={r['Justificativa']}
+                <td className="py-2 pr-4 whitespace-nowrap">{r['Usuário']}</td>
+                <td className="py-2 pr-4 max-w-[280px] whitespace-normal break-words"
                     style={r['Tipo Movimentação'] === 'Saída' ? { color: '#b91c1c' } : undefined}>
                   {r['Justificativa']}
                 </td>
-                <td className="py-2 pr-4 whitespace-nowrap">{STATUS_MORADOR_LABEL[r['Status Morador']] ?? r['Status Morador']}</td>
-                <td className="py-2 pr-4 whitespace-nowrap">{r['Usuário']}</td>
               </tr>
             ))}
           </tbody>
