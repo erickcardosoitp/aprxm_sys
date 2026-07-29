@@ -278,6 +278,76 @@ async def financeiro_scope(
     return [r[0] for r in rows]
 
 
+async def resolve_scope(
+    current: CurrentUser,
+    session: AsyncSession,
+    module: str,
+    unidade: UUID | None = None,
+) -> list[UUID]:
+    """Helper canonico de escopo empresa->associacao, pra modulos que ainda
+    nao tem NENHUMA consciencia de empresa (packages, demands, porta_a_porta,
+    reports, chat...).
+
+    NAO USADO EM LUGAR NENHUM AINDA — e' aditivo, criado pra centralizar a
+    lógica de "quais associacoes esse chamador pode ver" antes de decidir migrar
+    cada modulo, um de cada vez, com teste dedicado. Ver notas de arquitetura
+    da auditoria (6 mecanismos de escopo coexistindo, cada um com uma nuance):
+
+    - financeiro_scope() (acima) e' o mais antigo E o mais completo — tem uma
+      regra extra especifica do financeiro (`empresas.financeiro_centralizado`,
+      um toggle de produto que so' esse modulo tem). NAO foi substituido por
+      este helper — continua sendo a fonte de verdade do financeiro.
+    - _group_assoc_ids() (service_orders.py, daily_tasks.py, duplicado em 2
+      arquivos) faz basicamente o que este helper faz, sem o check de
+      access_groups. Migrar esses 2 arquivos pra ca elimina a duplicacao, mas
+      precisa validar que nenhum caller dependia da ausencia desse check.
+    - linked_association_ids/is_aggregator (geral.py, superadmin.py) e' um
+      mecanismo mais antigo e distinto (nao usa empresa_id) — migrar exige
+      entender o que ele cobre hoje que este helper nao cobriria.
+    - chat_group (chat.py, reports.py) e' agrupamento MANUAL, nao corresponde
+      1:1 a empresa_id — migrar as cegas pode juntar/separar conversas ou
+      relatorios errado. Precisa decisao de produto antes, nao so' tecnica.
+
+    Regra deste helper (só a parte comum, sem toggle de modulo):
+    - current.empresa_id is None (sistema sem camada empresa): so' a propria
+      associacao.
+    - current nao e' empresa-wide (nao esta na estacao ESC): so' a propria
+      associacao — usuario comum nunca ganha visao cross-unidade por aqui.
+    - empresa-wide sem "view" em access_groups[role][module]: 403.
+    - unidade especifica pedida (visao de 1 unidade dentro do ESC): valida que
+      pertence a mesma empresa, retorna so' ela.
+    - senao: todas as associacoes da empresa.
+    """
+    if current.empresa_id is None or not current.is_empresa_wide:
+        return [current.association_id]
+
+    row = (await session.execute(
+        text("SELECT access_groups FROM empresas WHERE id = :eid"),
+        {"eid": str(current.empresa_id)},
+    )).fetchone()
+    access_groups = row[0] if row and row[0] else _DEFAULT_ACCESS_GROUPS
+    if "view" not in access_groups.get(current.role, {}).get(module, []):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Sem permissão de acesso ao módulo {module}.",
+        )
+
+    if unidade is not None:
+        check = (await session.execute(
+            text("SELECT 1 FROM associations WHERE id = :aid AND empresa_id = :eid"),
+            {"aid": str(unidade), "eid": str(current.empresa_id)},
+        )).fetchone()
+        if not check:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unidade não encontrada nesta empresa.")
+        return [unidade]
+
+    rows = (await session.execute(
+        text("SELECT id FROM associations WHERE empresa_id = :eid"),
+        {"eid": str(current.empresa_id)},
+    )).fetchall()
+    return [r[0] for r in rows]
+
+
 def require_esc_module(module: str):
     """Dependency factory: require_empresa_admin + permissao de 'view' no modulo (access_groups)."""
 
