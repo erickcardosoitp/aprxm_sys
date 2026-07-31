@@ -6,46 +6,44 @@ Cada endpoint retorna dado de TODAS as associacoes da empresa do usuario
 governanca (empresa -> unidades de negocio). Guardado por require_empresa_admin
 (admin_master/superadmin escopados a empresa).
 
+Este router so faz parsing de request/resposta, chamada de EscService e
+auditoria/commit — toda query mora em app/services/esc_service.py.
+
 TEMPORARIO/em construcao: alguns modulos do esboco do ESC ainda nao tem
 tabela/logica correspondente (Plano de Metas, Monitor de Sincronizacao,
 Data Analytics, Banco de Dados, Fotos e Videos, Posts Website) — ausentes
 deste router de proposito, o frontend mostra placeholder pra eles.
 """
-from datetime import date
+import logging
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.security import hash_password
 from app.core.tenant import CurrentUser, require_empresa_admin, _DEFAULT_ACCESS_GROUPS, financeiro_scope, require_esc_module
 from app.database import get_session
+from app.services.esc_service import EscService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/esc", tags=["Escritório"])
-
-# Exclui associações de homologação/teste e unidades marcadas para exclusão
-# das listagens agregadas do ESC (visão de produção por padrão).
-_PROD_ASSOC_FILTER = "a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'"
 
 
 # Era uma copia local identica a core.audit.audit (mesma assinatura, mesmo INSERT),
 # so com uma divergencia sutil: nao tratava association_id=None como NULL. Trocado
 # por alias do helper compartilhado em vez de manter 2 implementacoes da mesma coisa —
-# os 23 call sites abaixo continuam iguais (_audit(...)), so muda de onde vem.
+# os call sites abaixo continuam iguais (_audit(...)), so muda de onde vem.
 from app.core.audit import audit as _audit  # noqa: E402
 
 
 async def _assert_assoc_da_empresa(session: AsyncSession, association_id: UUID, empresa_id) -> None:
-    """Garante que a associacao alvo pertence a empresa do usuario (escopo)."""
-    ok = (await session.execute(text(
-        "SELECT 1 FROM associations WHERE id = :aid AND empresa_id = :eid"
-    ), {"aid": str(association_id), "eid": str(empresa_id)})).scalar()
-    if not ok:
-        raise HTTPException(status_code=403, detail="Associação fora da sua empresa.")
+    await EscService(session).assert_assoc_da_empresa(association_id, empresa_id)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -57,12 +55,7 @@ async def list_associacoes(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text(f"""
-        SELECT id, name, slug, is_active, plan_name, created_at
-        FROM associations a WHERE empresa_id = :eid AND {_PROD_ASSOC_FILTER} ORDER BY name
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"id": str(r[0]), "name": r[1], "slug": r[2], "is_active": r[3],
-             "plan_name": r[4], "created_at": str(r[5])} for r in rows]
+    return await EscService(session).list_associacoes(current.empresa_id)
 
 
 class EditarAssociacaoRequest(BaseModel):
@@ -79,21 +72,10 @@ async def editar_associacao(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    await _assert_assoc_da_empresa(session, association_id, current.empresa_id)
-    sets, params = [], {"id": str(association_id)}
-    if body.name is not None:
-        sets.append("name = :name"); params["name"] = body.name
-    if body.slug is not None:
-        sets.append("slug = :slug"); params["slug"] = body.slug
-    if body.plan_name is not None:
-        sets.append("plan_name = :plan"); params["plan"] = body.plan_name
-    if body.is_active is not None:
-        sets.append("is_active = :active"); params["active"] = body.is_active
-    if not sets:
+    svc = EscService(session)
+    params = await svc.editar_associacao(association_id, current.empresa_id, body, current.user_id)
+    if params is None:
         return {"ok": True, "noop": True}
-    sets.append("updated_at = NOW()")
-    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
-    await session.execute(text(f"UPDATE associations SET {', '.join(sets)} WHERE id = :id"), params)
     await _audit(session, current, "editar_associacao", "associations", association_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "uid")))
     await session.commit()
     return {"ok": True}
@@ -104,17 +86,7 @@ async def list_usuarios(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT u.id, u.full_name, u.email, u.role, u.is_active, u.last_login_at,
-               COALESCE(a.name, 'Escritório') AS unidade
-        FROM users u
-        LEFT JOIN associations a ON a.id = u.association_id
-        WHERE u.empresa_id = :eid
-        ORDER BY u.full_name
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"id": str(r[0]), "full_name": r[1], "email": r[2], "role": r[3],
-             "is_active": r[4], "last_login_at": str(r[5]) if r[5] else None,
-             "unidade": r[6]} for r in rows]
+    return await EscService(session).list_usuarios(current.empresa_id)
 
 
 @router.get("/cadastros/encomendas", summary="Encomendas — todas as unidades")
@@ -123,25 +95,14 @@ async def list_encomendas(
     session: AsyncSession = Depends(get_session),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
-) -> list[dict]:
-    cond = f"a.empresa_id = :eid AND {_PROD_ASSOC_FILTER}"
-    params: dict = {"eid": str(current.empresa_id)}
-    if date_from:
-        cond += " AND p.received_at::date >= :df"; params["df"] = date.fromisoformat(date_from)
-    if date_to:
-        cond += " AND p.received_at::date <= :dt"; params["dt"] = date.fromisoformat(date_to)
-    # sem filtro de data: limita as 200 mais recentes (evita carregar o historico
-    # inteiro); com filtro, sem limite — o usuario escolheu o recorte.
-    limit_clause = "" if (date_from or date_to) else "LIMIT 200"
-    rows = (await session.execute(text(f"""
-        SELECT p.id, p.status, p.sender_name, p.carrier_name, p.received_at,
-               a.name AS unidade
-        FROM packages p JOIN associations a ON a.id = p.association_id
-        WHERE {cond}
-        ORDER BY p.received_at DESC {limit_clause}
-    """), params)).fetchall()
-    return [{"id": str(r[0]), "status": r[1], "sender_name": r[2], "carrier_name": r[3],
-             "received_at": str(r[4]), "unidade": r[5]} for r in rows]
+    search: str | None = Query(default=None),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    items, total = await EscService(session).list_encomendas(
+        current.empresa_id, date_from, date_to, skip, limit, search,
+    )
+    return {"total": total, "items": items}
 
 
 @router.get("/cadastros/ordens-servico", summary="Ordens de Serviço — todas as unidades")
@@ -150,23 +111,14 @@ async def list_ordens_servico(
     session: AsyncSession = Depends(get_session),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
-) -> list[dict]:
-    cond = f"a.empresa_id = :eid AND {_PROD_ASSOC_FILTER}"
-    params: dict = {"eid": str(current.empresa_id)}
-    if date_from:
-        cond += " AND os.created_at::date >= :df"; params["df"] = date.fromisoformat(date_from)
-    if date_to:
-        cond += " AND os.created_at::date <= :dt"; params["dt"] = date.fromisoformat(date_to)
-    limit_clause = "" if (date_from or date_to) else "LIMIT 200"
-    rows = (await session.execute(text(f"""
-        SELECT os.id, os.number, os.title, os.priority, os.status, os.created_at,
-               a.name AS unidade
-        FROM service_orders os JOIN associations a ON a.id = os.association_id
-        WHERE {cond}
-        ORDER BY os.created_at DESC {limit_clause}
-    """), params)).fetchall()
-    return [{"id": str(r[0]), "number": r[1], "title": r[2], "priority": r[3],
-             "status": r[4], "created_at": str(r[5]), "unidade": r[6]} for r in rows]
+    search: str | None = Query(default=None),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    items, total = await EscService(session).list_ordens_servico(
+        current.empresa_id, date_from, date_to, skip, limit, search,
+    )
+    return {"total": total, "items": items}
 
 
 class CriarOrdemServicoRequest(BaseModel):
@@ -184,13 +136,6 @@ class EditarOrdemServicoRequest(BaseModel):
     priority: str | None = None
     area: str | None = None
     location_detail: str | None = None
-
-
-async def _empresa_assoc_ids(session: AsyncSession, empresa_id: UUID) -> list[UUID]:
-    rows = (await session.execute(
-        text("SELECT id FROM associations WHERE empresa_id = :eid"), {"eid": str(empresa_id)}
-    )).fetchall()
-    return [r[0] for r in rows]
 
 
 @router.post("/cadastros/ordens-servico", summary="Criar Ordem de Serviço (empresa, qualquer unidade)")
@@ -227,7 +172,7 @@ async def editar_ordem_servico(
 ) -> dict:
     from app.services.service_order_service import ServiceOrderService
 
-    ids = await _empresa_assoc_ids(session, current.empresa_id)
+    ids = await EscService(session).empresa_assoc_ids(current.empresa_id)
     svc = ServiceOrderService(session)
     data = body.model_dump(exclude_none=True)
     if not data:
@@ -245,19 +190,8 @@ async def excluir_ordem_servico(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    ids = await _empresa_assoc_ids(session, current.empresa_id)
-    so_row = (await session.execute(text(
-        "SELECT id, number, title FROM service_orders WHERE id = :id AND association_id = ANY(:ids)"
-    ), {"id": str(so_id), "ids": [str(i) for i in ids]})).fetchone()
-    if not so_row:
-        raise HTTPException(status_code=404, detail="Ordem de Serviço não encontrada na sua empresa.")
-
-    await session.execute(text("DELETE FROM so_presence WHERE so_id = :id"), {"id": str(so_id)})
-    await session.execute(text("DELETE FROM service_order_tasks WHERE service_order_id = :id"), {"id": str(so_id)})
-    await session.execute(text("DELETE FROM service_order_comments WHERE service_order_id = :id"), {"id": str(so_id)})
-    await session.execute(text("DELETE FROM service_order_history WHERE service_order_id = :id"), {"id": str(so_id)})
-    await session.execute(text("DELETE FROM service_orders WHERE id = :id"), {"id": str(so_id)})
-    await _audit(session, current, "excluir_ordem_servico", "service_orders", so_id, f"OS #{so_row[1]}: {so_row[2]}")
+    number, title = await EscService(session).excluir_ordem_servico(so_id, current.empresa_id)
+    await _audit(session, current, "excluir_ordem_servico", "service_orders", so_id, f"OS #{number}: {title}")
     await session.commit()
     return {"ok": True}
 
@@ -267,13 +201,7 @@ async def list_comprovantes_estoque(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text(f"""
-        SELECT a.id, a.name, COALESCE(s.proof_stock, 0) AS estoque
-        FROM associations a
-        LEFT JOIN association_settings s ON s.association_id = a.id
-        WHERE a.empresa_id = :eid AND {_PROD_ASSOC_FILTER} ORDER BY a.name
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"id": str(r[0]), "unidade": r[1], "estoque": r[2]} for r in rows]
+    return await EscService(session).list_comprovantes_estoque(current.empresa_id)
 
 
 class EditarEstoqueComprovanteRequest(BaseModel):
@@ -287,12 +215,8 @@ async def editar_comprovante_estoque(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    await _assert_assoc_da_empresa(session, association_id, current.empresa_id)
-    await session.execute(text("""
-        INSERT INTO association_settings (association_id, proof_stock)
-        VALUES (:aid, :estoque)
-        ON CONFLICT (association_id) DO UPDATE SET proof_stock = :estoque, updated_at = NOW()
-    """), {"aid": str(association_id), "estoque": body.estoque})
+    svc = EscService(session)
+    await svc.editar_comprovante_estoque(association_id, current.empresa_id, body.estoque)
     await _audit(session, current, "editar_estoque_comprovante", "association_settings", association_id, f"estoque -> {body.estoque}")
     await session.commit()
     return {"ok": True}
@@ -302,23 +226,12 @@ async def editar_comprovante_estoque(
 # Moradores
 # ──────────────────────────────────────────────────────────────────────────
 
-async def _list_residents_by_type(session: AsyncSession, empresa_id, resident_type: str) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT r.id, r.full_name, r.cpf, r.status, r.created_at, a.name AS unidade
-        FROM residents r JOIN associations a ON a.id = r.association_id
-        WHERE a.empresa_id = :eid AND r.type = :rtype
-        ORDER BY r.full_name LIMIT 300
-    """), {"eid": str(empresa_id), "rtype": resident_type})).fetchall()
-    return [{"id": str(r[0]), "full_name": r[1], "cpf": r[2], "status": r[3],
-             "created_at": str(r[4]), "unidade": r[5]} for r in rows]
-
-
 @router.get("/moradores/associados", summary="Associados — todas as unidades")
 async def list_associados(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    return await _list_residents_by_type(session, current.empresa_id, "member")
+    return await EscService(session).list_residents_by_type(current.empresa_id, "member")
 
 
 @router.get("/moradores/visitantes", summary="Visitantes — todas as unidades")
@@ -326,7 +239,7 @@ async def list_visitantes(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    return await _list_residents_by_type(session, current.empresa_id, "guest")
+    return await EscService(session).list_residents_by_type(current.empresa_id, "guest")
 
 
 @router.get("/moradores/dependentes", summary="Dependentes — todas as unidades")
@@ -334,7 +247,7 @@ async def list_dependentes(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    return await _list_residents_by_type(session, current.empresa_id, "dependent")
+    return await EscService(session).list_residents_by_type(current.empresa_id, "dependent")
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -354,26 +267,7 @@ async def list_sangrias(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
-    cond = "t.association_id = ANY(:ids) AND t.is_sangria = true"
-    params: dict = {"ids": ids}
-    if date_from:
-        cond += " AND t.transaction_at::date >= :df"
-        params["df"] = date.fromisoformat(date_from)
-    if date_to:
-        cond += " AND t.transaction_at::date <= :dt"
-        params["dt"] = date.fromisoformat(date_to)
-    rows = (await session.execute(text(f"""
-        SELECT t.id, t.amount, t.sangria_reason, t.sangria_destination, t.transaction_at,
-               a.name AS unidade, u.full_name AS usuario, t.reversed_at, t.is_reversal
-        FROM transactions t
-        JOIN associations a ON a.id = t.association_id
-        LEFT JOIN users u ON u.id = t.created_by
-        WHERE {cond}
-        ORDER BY t.transaction_at DESC LIMIT 1000
-    """), params)).fetchall()
-    return [{"id": str(r[0]), "amount": str(r[1]), "reason": r[2], "destination": r[3],
-             "transaction_at": str(r[4]), "unidade": r[5], "usuario": r[6],
-             "reversed": r[7] is not None, "is_reversal": r[8]} for r in rows]
+    return await EscService(session).list_sangrias(ids, date_from, date_to)
 
 
 @router.get("/financeiro/sessoes-conferidas", summary="Sessões de caixa conferidas — todas as unidades")
@@ -383,51 +277,7 @@ async def list_sessoes_conferidas(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
-    rows = (await session.execute(text("""
-        SELECT
-            cs.id, a.name AS unidade, cs.opened_at, cs.closed_at,
-            u_open.full_name AS usuario, u_review.full_name AS conferido_por,
-            cs.origin,
-            COALESCE(SUM(CASE WHEN t.type = 'income' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS entradas,
-            COALESCE(SUM(CASE WHEN t.type = 'expense' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS saidas,
-            COALESCE(SUM(CASE WHEN t.is_reversal THEN t.amount ELSE 0 END), 0) AS estornos,
-            COALESCE(SUM(CASE WHEN t.type = 'income' AND pm.name ILIKE '%pix%' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS bruto_pix,
-            COALESCE(SUM(CASE WHEN t.type = 'income' AND (pm.name ILIKE '%dinheiro%' OR t.payment_method_id IS NULL) AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS bruto_dinheiro,
-            COALESCE(SUM(CASE WHEN t.type = 'sangria' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS baixas,
-            cs.quebra_caixa, cs.difference AS sobra_falta,
-            COUNT(DISTINCT men.id) AS qtd_mensalidades,
-            cs.dinheiro_contado, cs.pix_contado, cs.quebra_motivo
-        FROM cash_sessions cs
-        JOIN associations a ON a.id = cs.association_id
-        LEFT JOIN users u_open ON u_open.id = cs.opened_by
-        LEFT JOIN users u_review ON u_review.id = cs.reviewed_by
-        LEFT JOIN transactions t ON t.cash_session_id = cs.id
-        LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
-        LEFT JOIN mensalidades men ON men.transaction_id = t.id
-        WHERE cs.association_id = ANY(:ids) AND cs.status = 'conferido'
-        GROUP BY cs.id, a.name, cs.opened_at, cs.closed_at, u_open.full_name,
-                 u_review.full_name, cs.origin, cs.quebra_caixa, cs.difference,
-                 cs.dinheiro_contado, cs.pix_contado, cs.quebra_motivo
-        ORDER BY cs.opened_at DESC LIMIT 500
-    """), {"ids": ids})).fetchall()
-    out = []
-    for r in rows:
-        entradas, saidas = float(r[7]), float(r[8])
-        baixas = float(r[12])
-        out.append({
-            "id": str(r[0]), "unidade": r[1], "opened_at": str(r[2]), "closed_at": str(r[3]) if r[3] else None,
-            "usuario": r[4], "conferido_por": r[5], "origin": r[6] or "Sessão de Caixa",
-            "entradas": entradas, "saidas": saidas, "estornos": float(r[9]),
-            "bruto_pix": float(r[10]), "bruto_dinheiro": float(r[11]), "baixas": baixas,
-            "liquido": round(entradas - saidas - baixas, 2),
-            "quebra_caixa": float(r[13]) if r[13] is not None else None,
-            "sobra_falta": float(r[14]) if r[14] is not None else None,
-            "qtd_mensalidades": int(r[15]),
-            "dinheiro_contado": float(r[16]) if r[16] is not None else None,
-            "pix_contado": float(r[17]) if r[17] is not None else None,
-            "quebra_motivo": r[18],
-        })
-    return out
+    return await EscService(session).list_sessoes_conferidas(ids)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -459,10 +309,7 @@ async def list_payable_categorias(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text(
-        "SELECT id, name, is_active FROM payable_categories WHERE empresa_id = :eid ORDER BY name"
-    ), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"id": str(r[0]), "name": r[1], "is_active": r[2]} for r in rows]
+    return await EscService(session).list_payable_categorias(current.empresa_id)
 
 
 @router.post("/cadastros/categorias-contas-pagar", summary="Criar categoria de conta a pagar (empresa)")
@@ -471,14 +318,10 @@ async def criar_payable_categoria(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    row = (await session.execute(text("""
-        INSERT INTO payable_categories (id, empresa_id, name, is_active, created_by)
-        VALUES (gen_random_uuid(), :eid, :name, TRUE, :uid)
-        RETURNING id
-    """), {"eid": str(current.empresa_id), "name": body.name, "uid": str(current.user_id)})).fetchone()
-    await _audit(session, current, "criar_categoria_contas_pagar", "payable_categories", row[0], body.name)
+    cat_id = await EscService(session).criar_payable_categoria(current.empresa_id, body.name, current.user_id)
+    await _audit(session, current, "criar_categoria_contas_pagar", "payable_categories", cat_id, body.name)
     await session.commit()
-    return {"id": str(row[0]), "ok": True}
+    return {"id": str(cat_id), "ok": True}
 
 
 class EditarPayableCategoriaRequest(BaseModel):
@@ -493,21 +336,10 @@ async def editar_payable_categoria(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    sets, params = [], {"id": str(categoria_id), "eid": str(current.empresa_id)}
-    if body.name is not None:
-        sets.append("name = :name"); params["name"] = body.name
-    if body.is_active is not None:
-        sets.append("is_active = :active"); params["active"] = body.is_active
-    if not sets:
+    svc = EscService(session)
+    params = await svc.editar_payable_categoria(categoria_id, current.empresa_id, body, current.user_id)
+    if not params:
         return {"ok": True, "noop": True}
-    sets.append("updated_at = NOW()")
-    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
-    r = await session.execute(text(
-        f"UPDATE payable_categories SET {', '.join(sets)} WHERE id = :id AND empresa_id = :eid"
-    ), params)
-    if r.rowcount == 0:
-        await session.rollback()
-        raise HTTPException(status_code=404, detail="Categoria não encontrada na sua empresa.")
     await _audit(session, current, "editar_categoria_contas_pagar", "payable_categories", categoria_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid", "uid")))
     await session.commit()
     return {"ok": True}
@@ -518,17 +350,7 @@ async def list_produtos(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT id, code, name, description, preco_associado, preco_nao_associado, is_active
-        FROM products WHERE empresa_id = :eid ORDER BY name
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [
-        {
-            "id": str(r[0]), "code": r[1], "name": r[2], "description": r[3],
-            "preco_associado": str(r[4]), "preco_nao_associado": str(r[5]), "is_active": r[6],
-        }
-        for r in rows
-    ]
+    return await EscService(session).list_produtos(current.empresa_id)
 
 
 class EditarProdutoRequest(BaseModel):
@@ -546,69 +368,17 @@ async def editar_produto(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    prod = (await session.execute(text(
-        "SELECT id, code, preco_associado FROM products WHERE id = :id AND empresa_id = :eid"
-    ), {"id": str(produto_id), "eid": str(current.empresa_id)})).fetchone()
-    if not prod:
-        raise HTTPException(status_code=404, detail="Produto não encontrado na sua empresa.")
-
-    if prod[1] == "mensalidade" and not body.force:
-        old_default = prod[2]
-        rows = (await session.execute(text("""
-            SELECT a.id, a.name, s.default_mensalidade_amount
-            FROM associations a
-            JOIN association_settings s ON s.association_id = a.id
-            WHERE a.empresa_id = :eid AND a.is_active = TRUE
-        """), {"eid": str(current.empresa_id)})).fetchall()
-        divergentes = [
-            {"association_id": str(r[0]), "name": r[1], "valor_atual": str(r[2])}
-            for r in rows if r[2] != old_default
-        ]
-        if divergentes:
-            return {"conflito": True, "divergentes": divergentes, "novo_valor": str(body.preco_associado)}
-
-    await session.execute(text("""
-        UPDATE products SET preco_associado = :pa, preco_nao_associado = :pna,
-               is_active = COALESCE(:active, is_active), updated_at = now(), updated_by = :uid
-        WHERE id = :id AND empresa_id = :eid
-    """), {
-        "pa": body.preco_associado, "pna": body.preco_nao_associado,
-        "active": body.is_active, "id": str(produto_id), "eid": str(current.empresa_id),
-        "uid": str(current.user_id),
-    })
-
-    if prod[1] == "mensalidade":
-        if body.aplicar_divergentes:
-            # aplica o novo valor em TODAS as associações da empresa
-            await session.execute(text("""
-                UPDATE association_settings SET default_mensalidade_amount = :val, updated_at = now()
-                WHERE association_id IN (SELECT id FROM associations WHERE empresa_id = :eid)
-            """), {"val": body.preco_associado, "eid": str(current.empresa_id)})
-        else:
-            # respeita quem já customizou (diferente do valor antigo do produto);
-            # só propaga pra quem ainda estava no valor padrão anterior
-            await session.execute(text("""
-                UPDATE association_settings SET default_mensalidade_amount = :val, updated_at = now()
-                WHERE association_id IN (SELECT id FROM associations WHERE empresa_id = :eid)
-                  AND default_mensalidade_amount = :old_val
-            """), {"val": body.preco_associado, "old_val": prod[2], "eid": str(current.empresa_id)})
-
+    resultado = await EscService(session).editar_produto(produto_id, current.empresa_id, body, current.user_id)
+    if resultado.get("conflito"):
+        return resultado
     await _audit(session, current, "editar_produto", "products", produto_id, f"preco_associado={body.preco_associado} preco_nao_associado={body.preco_nao_associado}")
     await session.commit()
-    return {"ok": True}
+    return resultado
 
 
 class BaixaContaPagarRequest(BaseModel):
     amount: Decimal = Field(gt=0)
     cash_session_id: UUID | None = None  # None = "sem caixa", mesmo mecanismo da devolucao
-
-
-def _status_conta_pagar(amount: Decimal, amount_paid: Decimal) -> str:
-    if amount_paid <= 0:
-        return "pending"
-    if amount_paid >= amount:
-        return "paid"
-    return "partial"
 
 
 @router.get("/financeiro/contas-pagar-templates", summary="Templates de conta a pagar recorrente")
@@ -618,18 +388,7 @@ async def list_contas_pagar_templates(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
-    rows = (await session.execute(text("""
-        SELECT t.id, t.name, t.amount, t.due_day, t.is_active, a.name AS unidade, a.id AS association_id
-        FROM contas_pagar_templates t
-        JOIN associations a ON a.id = t.association_id
-        WHERE t.association_id = ANY(:ids)
-        ORDER BY t.is_active DESC, t.name
-    """), {"ids": ids})).fetchall()
-    return [
-        {"id": str(r[0]), "name": r[1], "amount": float(r[2]), "due_day": r[3],
-         "is_active": r[4], "unidade": r[5], "association_id": str(r[6])}
-        for r in rows
-    ]
+    return await EscService(session).list_contas_pagar_templates(ids)
 
 
 @router.post("/financeiro/contas-pagar-templates", summary="Criar template de conta a pagar recorrente")
@@ -639,17 +398,10 @@ async def criar_conta_pagar_template(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
-    row = (await session.execute(text("""
-        INSERT INTO contas_pagar_templates (association_id, payable_category_id, name, amount, due_day, created_by)
-        VALUES (:aid, :cat, :name, :amount, :due_day, :uid)
-        RETURNING id
-    """), {
-        "aid": str(body.association_id), "cat": str(body.payable_category_id) if body.payable_category_id else None,
-        "name": body.name, "amount": body.amount, "due_day": body.due_day, "uid": str(current.user_id),
-    })).fetchone()
-    await _audit(session, current, "criar_conta_pagar_template", "contas_pagar_templates", row[0], body.name)
+    tpl_id = await EscService(session).criar_conta_pagar_template(body, current.user_id)
+    await _audit(session, current, "criar_conta_pagar_template", "contas_pagar_templates", tpl_id, body.name)
     await session.commit()
-    return {"id": str(row[0]), "ok": True}
+    return {"id": str(tpl_id), "ok": True}
 
 
 @router.put("/financeiro/contas-pagar-templates/{template_id}", summary="Ativar/desativar template")
@@ -660,12 +412,7 @@ async def atualizar_conta_pagar_template(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     ids = [str(i) for i in await financeiro_scope(current, session)]
-    row = (await session.execute(text(
-        "UPDATE contas_pagar_templates SET is_active = :active, updated_at = NOW(), updated_by = :uid "
-        "WHERE id = :id AND association_id = ANY(:ids) RETURNING id"
-    ), {"active": is_active, "id": str(template_id), "ids": ids, "uid": str(current.user_id)})).fetchone()
-    if not row:
-        raise HTTPException(404, "Template não encontrado.")
+    await EscService(session).atualizar_conta_pagar_template(template_id, ids, is_active, current.user_id)
     await _audit(session, current, "atualizar_conta_pagar_template", "contas_pagar_templates", template_id, f"is_active -> {is_active}")
     await session.commit()
     return {"ok": True}
@@ -679,33 +426,10 @@ async def gerar_conta_pagar_do_template(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     ids = [str(i) for i in await financeiro_scope(current, session)]
-    tpl = (await session.execute(text(
-        "SELECT association_id, payable_category_id, name, amount, due_day FROM contas_pagar_templates "
-        "WHERE id = :id AND association_id = ANY(:ids) AND is_active = TRUE"
-    ), {"id": str(template_id), "ids": ids})).fetchone()
-    if not tpl:
-        raise HTTPException(404, "Template não encontrado ou inativo.")
-
-    dup = (await session.execute(text(
-        "SELECT 1 FROM contas_pagar WHERE template_id = :tid AND reference_month = :ref"
-    ), {"tid": str(template_id), "ref": reference_month})).scalar()
-    if dup:
-        raise HTTPException(409, "Já existe conta gerada deste template neste mês.")
-
-    year, month = map(int, reference_month.split("-"))
-    due_day = min(tpl[4], 28)
-    row = (await session.execute(text("""
-        INSERT INTO contas_pagar (association_id, template_id, payable_category_id, description, amount, due_date, reference_month, created_by)
-        VALUES (:aid, :tid, :cat, :desc, :amount, make_date(:yr, :mo, :day), :ref, :uid)
-        RETURNING id
-    """), {
-        "aid": str(tpl[0]), "tid": str(template_id), "cat": str(tpl[1]) if tpl[1] else None,
-        "desc": tpl[2], "amount": tpl[3], "yr": year, "mo": month, "day": due_day,
-        "ref": reference_month, "uid": str(current.user_id),
-    })).fetchone()
-    await _audit(session, current, "gerar_conta_pagar_do_template", "contas_pagar", row[0], f"template={template_id} mes={reference_month}")
+    conta_id = await EscService(session).gerar_conta_pagar_do_template(template_id, ids, reference_month, current.user_id)
+    await _audit(session, current, "gerar_conta_pagar_do_template", "contas_pagar", conta_id, f"template={template_id} mes={reference_month}")
     await session.commit()
-    return {"id": str(row[0]), "ok": True}
+    return {"id": str(conta_id), "ok": True}
 
 
 @router.get("/financeiro/contas-pagar", summary="Contas a pagar — todas as unidades no escopo")
@@ -716,30 +440,7 @@ async def list_contas_pagar(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
-    cond = "c.association_id = ANY(:ids)"
-    params: dict = {"ids": ids}
-    if status_filter:
-        cond += " AND c.status = :status"
-        params["status"] = status_filter
-    rows = (await session.execute(text(f"""
-        SELECT c.id, c.description, a.name AS unidade, c.amount, c.amount_paid, c.status,
-               c.due_date, cat.name AS categoria, c.template_id IS NOT NULL AS recorrente, c.association_id
-        FROM contas_pagar c
-        JOIN associations a ON a.id = c.association_id
-        LEFT JOIN payable_categories cat ON cat.id = c.payable_category_id
-        WHERE {cond}
-        ORDER BY c.due_date ASC
-    """), params)).fetchall()
-    return [
-        {
-            "id": str(r[0]), "description": r[1], "unidade": r[2],
-            "amount": float(r[3]), "amount_paid": float(r[4]), "status": r[5],
-            "due_date": str(r[6]), "categoria": r[7], "recorrente": r[8],
-            "atrasada": r[5] != "paid" and r[6] < date.today(),
-            "association_id": str(r[9]),
-        }
-        for r in rows
-    ]
+    return await EscService(session).list_contas_pagar(ids, status_filter)
 
 
 @router.post("/financeiro/contas-pagar", summary="Lançar conta a pagar avulsa")
@@ -749,17 +450,10 @@ async def criar_conta_pagar(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
-    row = (await session.execute(text("""
-        INSERT INTO contas_pagar (association_id, payable_category_id, description, amount, due_date, created_by)
-        VALUES (:aid, :cat, :desc, :amount, :due, :uid)
-        RETURNING id
-    """), {
-        "aid": str(body.association_id), "cat": str(body.payable_category_id) if body.payable_category_id else None,
-        "desc": body.description, "amount": body.amount, "due": body.due_date, "uid": str(current.user_id),
-    })).fetchone()
-    await _audit(session, current, "criar_conta_pagar", "contas_pagar", row[0], body.description)
+    conta_id = await EscService(session).criar_conta_pagar(body, current.user_id)
+    await _audit(session, current, "criar_conta_pagar", "contas_pagar", conta_id, body.description)
     await session.commit()
-    return {"id": str(row[0]), "ok": True}
+    return {"id": str(conta_id), "ok": True}
 
 
 @router.post("/financeiro/contas-pagar/{conta_id}/baixa", summary="Registrar baixa (total ou parcial)")
@@ -770,46 +464,10 @@ async def baixar_conta_pagar(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     ids = [str(i) for i in await financeiro_scope(current, session)]
-    conta = (await session.execute(text(
-        "SELECT c.association_id, c.amount, c.amount_paid, c.status, c.description, pc.name AS categoria "
-        "FROM contas_pagar c LEFT JOIN payable_categories pc ON pc.id = c.payable_category_id "
-        "WHERE c.id = :id AND c.association_id = ANY(:ids)"
-    ), {"id": str(conta_id), "ids": ids})).fetchone()
-    if not conta:
-        raise HTTPException(404, "Conta a pagar não encontrada.")
-    assoc_id, amount, amount_paid, status, conta_desc, categoria_nome = conta
-    if status == "paid":
-        raise HTTPException(400, "Conta já está totalmente paga.")
-    novo_pago = amount_paid + body.amount
-    if novo_pago > amount:
-        raise HTTPException(400, f"Valor excede o saldo devedor (R$ {amount - amount_paid:.2f}).")
-
-    # Categoria de contas a pagar e' um conceito proprio (payable_categories), separado das
-    # categorias de movimentacao (transaction_categories) que alimentam o DRE — por isso o
-    # nome da categoria vai na descricao da transacao, pra nao ficar generico "Baixa de conta
-    # a pagar" pra tudo (perderia a classificacao ao olhar o DRE/Movimentacoes).
-    desc = f"Baixa conta a pagar — {categoria_nome}: {conta_desc}" if categoria_nome else f"Baixa de conta a pagar: {conta_desc}"
-    tx_row = (await session.execute(text("""
-        INSERT INTO transactions (id, association_id, cash_session_id, type, amount, description, created_by)
-        VALUES (gen_random_uuid(), :aid, :sid, 'expense', :amount, :desc, :uid)
-        RETURNING id
-    """), {
-        "aid": str(assoc_id), "sid": str(body.cash_session_id) if body.cash_session_id else None,
-        "amount": body.amount, "desc": desc, "uid": str(current.user_id),
-    })).fetchone()
-
-    await session.execute(text("""
-        INSERT INTO conta_pagar_baixas (conta_pagar_id, transaction_id, amount, association_id, created_by)
-        VALUES (:cid, :tid, :amount, :aid, :uid)
-    """), {"cid": str(conta_id), "tid": str(tx_row[0]), "amount": body.amount, "aid": str(assoc_id), "uid": str(current.user_id)})
-
-    novo_status = _status_conta_pagar(amount, novo_pago)
-    await session.execute(text(
-        "UPDATE contas_pagar SET amount_paid = :paid, status = :status, updated_at = NOW(), updated_by = :uid WHERE id = :id"
-    ), {"paid": novo_pago, "status": novo_status, "id": str(conta_id), "uid": str(current.user_id)})
-    await _audit(session, current, "baixar_conta_pagar", "contas_pagar", conta_id, f"R$ {body.amount} -> status {novo_status}")
+    resultado = await EscService(session).baixar_conta_pagar(conta_id, ids, body.amount, body.cash_session_id, current.user_id)
+    await _audit(session, current, "baixar_conta_pagar", "contas_pagar", conta_id, f"R$ {body.amount} -> status {resultado['status']}")
     await session.commit()
-    return {"ok": True, "status": novo_status, "amount_paid": float(novo_pago)}
+    return {"ok": True, "status": resultado["status"], "amount_paid": resultado["amount_paid"]}
 
 
 class EstornarBaixaRequest(BaseModel):
@@ -823,37 +481,14 @@ async def estornar_baixa_conta_pagar(
     current: CurrentUser = Depends(require_esc_module("financeiro")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    ids = [str(i) for i in await financeiro_scope(current, session)]
-    row = (await session.execute(text("""
-        SELECT b.id, b.conta_pagar_id, b.transaction_id, b.amount, c.association_id, c.amount, c.amount_paid
-        FROM conta_pagar_baixas b
-        JOIN contas_pagar c ON c.id = b.conta_pagar_id
-        WHERE b.id = :id AND c.association_id = ANY(:ids)
-    """), {"id": str(baixa_id), "ids": ids})).fetchone()
-    if not row:
-        raise HTTPException(404, "Baixa não encontrada.")
-    _, conta_id, transaction_id, baixa_amount, assoc_id, conta_amount, amount_paid = row
-
     from app.services.finance_service import FinanceService
-    svc = FinanceService(session)
-    if transaction_id:
-        await svc.reverse_transaction(
-            transaction_id=transaction_id,
-            association_id=assoc_id,
-            reversed_by=current.user_id,
-            reason=f"Estorno de baixa de conta a pagar: {body.reason}",
-        )
 
-    await session.execute(text("DELETE FROM conta_pagar_baixas WHERE id = :id"), {"id": str(baixa_id)})
-
-    novo_pago = amount_paid - baixa_amount
-    novo_status = _status_conta_pagar(conta_amount, novo_pago)
-    await session.execute(text(
-        "UPDATE contas_pagar SET amount_paid = :paid, status = :status, updated_at = NOW(), updated_by = :uid WHERE id = :id"
-    ), {"paid": novo_pago, "status": novo_status, "id": str(conta_id), "uid": str(current.user_id)})
-    await _audit(session, current, "estornar_baixa_conta_pagar", "contas_pagar", conta_id, f"Estorno R$ {baixa_amount} — {body.reason}")
+    ids = [str(i) for i in await financeiro_scope(current, session)]
+    finance_svc = FinanceService(session)
+    resultado = await EscService(session).estornar_baixa_conta_pagar(baixa_id, ids, body.reason, current, finance_svc)
+    await _audit(session, current, "estornar_baixa_conta_pagar", "contas_pagar", resultado["conta_id"], f"Estorno R$ {resultado['baixa_amount']} — {body.reason}")
     await session.commit()
-    return {"ok": True, "status": novo_status, "amount_paid": float(novo_pago)}
+    return {"ok": True, "status": resultado["status"], "amount_paid": resultado["amount_paid"]}
 
 
 @router.delete("/financeiro/contas-pagar/{conta_id}", summary="Excluir conta a pagar lançada errada (sem baixas)")
@@ -863,15 +498,8 @@ async def excluir_conta_pagar(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     ids = [str(i) for i in await financeiro_scope(current, session)]
-    conta = (await session.execute(text(
-        "SELECT amount_paid, description FROM contas_pagar WHERE id = :id AND association_id = ANY(:ids)"
-    ), {"id": str(conta_id), "ids": ids})).fetchone()
-    if not conta:
-        raise HTTPException(404, "Conta a pagar não encontrada.")
-    if conta[0] and conta[0] > 0:
-        raise HTTPException(400, "Conta já possui baixa registrada — estorne a baixa antes de excluir.")
-    await session.execute(text("DELETE FROM contas_pagar WHERE id = :id"), {"id": str(conta_id)})
-    await _audit(session, current, "excluir_conta_pagar", "contas_pagar", conta_id, conta[1] or "")
+    descricao = await EscService(session).excluir_conta_pagar(conta_id, ids)
+    await _audit(session, current, "excluir_conta_pagar", "contas_pagar", conta_id, descricao)
     await session.commit()
     return {"ok": True}
 
@@ -889,23 +517,7 @@ async def list_taxa_entrega_prevista(
 ) -> list[dict]:
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     fee_default = Decimal(str(get_settings().delivery_fee_default))
-    rows = (await session.execute(text("""
-        SELECT r.id, r.full_name, a.name AS unidade, COUNT(p.id) AS qtd_pendente
-        FROM residents r
-        JOIN associations a ON a.id = r.association_id
-        JOIN packages p ON p.resident_id = r.id
-        WHERE r.association_id = ANY(:ids) AND r.type = 'guest'
-          AND p.status IN ('received', 'notified')
-        GROUP BY r.id, r.full_name, a.name
-        ORDER BY r.full_name
-    """), {"ids": ids})).fetchall()
-    # 1 morador = 1 retirada (o morador tende a retirar tudo de uma vez), entao a
-    # projecao e' 1 taxa fixa por morador com pendencia, independente da qtd de pacotes.
-    return [
-        {"resident_id": str(r[0]), "resident_name": r[1], "unidade": r[2],
-         "qtd_pendente": r[3], "valor_previsto": float(fee_default)}
-        for r in rows
-    ]
+    return await EscService(session).list_taxa_entrega_prevista(ids, fee_default)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -917,7 +529,7 @@ async def list_estoque(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    return await list_comprovantes_estoque(current, session)
+    return await EscService(session).list_comprovantes_estoque(current.empresa_id)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -930,18 +542,17 @@ async def infra_health(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import time as _time
+    from sqlalchemy import text as _text
     t0 = _time.monotonic()
     try:
-        await session.execute(text("SELECT 1"))
+        await session.execute(_text("SELECT 1"))
         db_ms = round((_time.monotonic() - t0) * 1000)
         db_ok = True
     except Exception:
+        logger.exception("Falha no healthcheck de banco (SELECT 1)")
         db_ms = -1
         db_ok = False
-    open_sessions = (await session.execute(
-        text("SELECT COUNT(*) FROM cash_sessions cs JOIN associations a ON a.id = cs.association_id WHERE a.empresa_id = :eid AND cs.status = 'open'"),
-        {"eid": str(current.empresa_id)},
-    )).scalar() or 0
+    open_sessions = await EscService(session).open_cash_sessions_count(current.empresa_id)
     return {"db_ok": db_ok, "db_latency_ms": db_ms, "open_cash_sessions": open_sessions}
 
 
@@ -976,33 +587,10 @@ async def criar_usuario(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    if body.role in ("admin_master", "superadmin") and current.role not in ("admin_master", "superadmin"):
-        raise HTTPException(status_code=403, detail="Só admin_master ou superadmin pode criar outro admin_master.")
-
-    # association_id: None => estaciona no ESC (association_id = empresa_id).
-    # Caso contrario, valida que a unidade e da empresa.
-    target_assoc = current.empresa_id if body.association_id is None else body.association_id
-    if body.association_id is not None:
-        await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
-
-    dup = (await session.execute(text(
-        "SELECT 1 FROM users WHERE email = :e AND is_active = TRUE"
-    ), {"e": body.email})).scalar()
-    if dup:
-        raise HTTPException(status_code=409, detail="Já existe usuário ativo com este e-mail.")
-
-    row = (await session.execute(text("""
-        INSERT INTO users (id, empresa_id, association_id, full_name, email, phone, hashed_password, role, is_active, created_by)
-        VALUES (gen_random_uuid(), :eid, :aid, :name, :email, :phone, :pw, CAST(:role AS user_role), TRUE, :uid)
-        RETURNING id
-    """), {
-        "eid": str(current.empresa_id), "aid": str(target_assoc), "name": body.full_name,
-        "email": body.email, "phone": body.phone, "pw": hash_password(body.password), "role": body.role,
-        "uid": str(current.user_id),
-    })).fetchone()
-    await _audit(session, current, "criar_usuario", "user", row[0], f"{body.full_name} ({body.role})")
+    user_id = await EscService(session).criar_usuario(body, current.role, current.empresa_id, current.user_id, hash_password(body.password))
+    await _audit(session, current, "criar_usuario", "user", user_id, f"{body.full_name} ({body.role})")
     await session.commit()
-    return {"id": str(row[0]), "ok": True}
+    return {"id": str(user_id), "ok": True}
 
 
 @router.put("/cadastros/usuarios/{user_id}", summary="Editar usuário da empresa (ESC)")
@@ -1012,42 +600,10 @@ async def editar_usuario(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    alvo = (await session.execute(text(
-        "SELECT empresa_id FROM users WHERE id = :id"
-    ), {"id": str(user_id)})).fetchone()
-    if not alvo or str(alvo[0]) != str(current.empresa_id):
-        raise HTTPException(status_code=404, detail="Usuário não encontrado na sua empresa.")
-    if (body.role is not None or body.is_active is not None) and str(user_id) == str(current.user_id) and not current.is_admin_master:
-        raise HTTPException(status_code=403, detail="Você não pode alterar seu próprio papel ou status de ativação.")
-
-    sets, params = [], {"id": str(user_id)}
-    if body.full_name is not None:
-        sets.append("full_name = :name"); params["name"] = body.full_name
-    if body.email is not None:
-        dup = (await session.execute(text(
-            "SELECT 1 FROM users WHERE email = :e AND is_active = TRUE AND id != :id"
-        ), {"e": body.email, "id": str(user_id)})).scalar()
-        if dup:
-            raise HTTPException(status_code=409, detail="Já existe usuário ativo com este e-mail.")
-        sets.append("email = :email"); params["email"] = body.email
-    if body.phone is not None:
-        sets.append("phone = :phone"); params["phone"] = body.phone
-    if body.role is not None:
-        if body.role in ("admin_master", "superadmin") and current.role not in ("admin_master", "superadmin"):
-            raise HTTPException(status_code=403, detail="Só admin_master ou superadmin pode promover a admin_master.")
-        sets.append("role = CAST(:role AS user_role)"); params["role"] = body.role
-    if body.is_active is not None:
-        sets.append("is_active = :active"); params["active"] = body.is_active
-    if body.association_id is not None:
-        await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
-        sets.append("association_id = :aid"); params["aid"] = str(body.association_id)
-    if not sets:
+    svc = EscService(session)
+    params = await svc.editar_usuario(user_id, body, current, current.empresa_id)
+    if params is None:
         return {"ok": True, "noop": True}
-    # Mudanca de estacao/role/ativo invalida sessoes vivas (token desatualizado).
-    sets.append("token_version = token_version + 1")
-    sets.append("updated_at = NOW()")
-    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
-    await session.execute(text(f"UPDATE users SET {', '.join(sets)} WHERE id = :id"), params)
     await _audit(session, current, "editar_usuario", "user", user_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "uid")))
     await session.commit()
     return {"ok": True}
@@ -1059,26 +615,10 @@ async def desativar_usuario(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    if str(user_id) == str(current.user_id):
-        raise HTTPException(status_code=400, detail="Você não pode desativar a si mesmo.")
-    r = await session.execute(text("""
-        UPDATE users SET is_active = FALSE, token_version = token_version + 1, updated_at = NOW()
-        WHERE id = :id AND empresa_id = :eid
-    """), {"id": str(user_id), "eid": str(current.empresa_id)})
-    if r.rowcount == 0:
-        await session.rollback()
-        raise HTTPException(status_code=404, detail="Usuário não encontrado na sua empresa.")
+    await EscService(session).desativar_usuario(user_id, current.user_id, current.empresa_id)
     await _audit(session, current, "desativar_usuario", "user", user_id, "")
     await session.commit()
     return {"ok": True}
-
-
-# tabelas de "movimentacao" que impedem exclusao definitiva
-_ACTIVITY = [
-    ("transactions", "created_by"), ("cash_sessions", "opened_by"),
-    ("packages", "received_by"), ("service_orders", "created_by"),
-    ("mensalidades", "created_by"),
-]
 
 
 @router.delete("/cadastros/usuarios/{user_id}/permanente", summary="Excluir usuário sem movimentação (ESC)")
@@ -1087,33 +627,24 @@ async def excluir_usuario(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    if str(user_id) == str(current.user_id):
-        raise HTTPException(status_code=400, detail="Você não pode excluir a si mesmo.")
-    alvo = (await session.execute(text(
-        "SELECT empresa_id FROM users WHERE id = :id"
-    ), {"id": str(user_id)})).fetchone()
-    if not alvo or str(alvo[0]) != str(current.empresa_id):
-        raise HTTPException(status_code=404, detail="Usuário não encontrado na sua empresa.")
-
-    # movimentacao => nao pode excluir, so desativar
-    for tbl, col in _ACTIVITY:
-        n = (await session.execute(text(
-            f"SELECT 1 FROM {tbl} WHERE {col} = :id LIMIT 1"
-        ), {"id": str(user_id)})).scalar()
-        if n:
-            raise HTTPException(status_code=409, detail="Usuário possui movimentação — use Desativar em vez de Excluir.")
-
-    # remove vinculos incidentais e o usuario; FK residual (ex.: auditoria) aborta com 409
+    svc = EscService(session)
+    # As checagens de negocio (auto-exclusao, empresa, movimentacao vinculada)
+    # ja levantam HTTPException de dentro do service -- aqui so protegemos
+    # contra falha inesperada do driver na hora do DELETE em si.
     try:
-        await session.execute(text("DELETE FROM refresh_tokens WHERE user_id = :id"), {"id": str(user_id)})
-        await session.execute(text("DELETE FROM user_association_roles WHERE user_id = :id"), {"id": str(user_id)})
-        await session.execute(text("DELETE FROM users WHERE id = :id AND empresa_id = :eid"),
-                              {"id": str(user_id), "eid": str(current.empresa_id)})
-        await _audit(session, current, "excluir_usuario_permanente", "user", user_id, "")
-        await session.commit()
+        await svc.excluir_usuario(user_id, current.user_id, current.empresa_id)
+    except HTTPException:
+        raise
+    except IntegrityError:
+        await session.rollback()
+        logger.exception("IntegrityError ao excluir usuário %s (empresa %s)", user_id, current.empresa_id)
+        raise HTTPException(status_code=409, detail="Usuário possui registros vinculados — use Desativar.")
     except Exception:
         await session.rollback()
-        raise HTTPException(status_code=409, detail="Usuário possui registros vinculados — use Desativar.")
+        logger.exception("Falha inesperada ao excluir usuário %s (empresa %s)", user_id, current.empresa_id)
+        raise HTTPException(status_code=500, detail="Erro inesperado ao excluir usuário.")
+    await _audit(session, current, "excluir_usuario_permanente", "user", user_id, "")
+    await session.commit()
     return {"ok": True}
 
 
@@ -1135,11 +666,7 @@ async def list_categorias(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT id, name, type, description, is_active FROM transaction_categories
-        WHERE empresa_id = :eid ORDER BY type, name
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"id": str(r[0]), "name": r[1], "type": r[2], "description": r[3], "is_active": r[4]} for r in rows]
+    return await EscService(session).list_categorias(current.empresa_id)
 
 
 @router.post("/cadastros/categorias", summary="Criar categoria de transação (empresa)")
@@ -1148,15 +675,10 @@ async def criar_categoria(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    row = (await session.execute(text("""
-        INSERT INTO transaction_categories (id, association_id, empresa_id, name, type, description, color, is_active, created_by)
-        VALUES (gen_random_uuid(), NULL, :eid, :name, CAST(:type AS transaction_type), :desc, :color, TRUE, :uid)
-        RETURNING id
-    """), {"eid": str(current.empresa_id), "name": body.name, "type": body.type,
-           "desc": body.description, "color": body.color, "uid": str(current.user_id)})).fetchone()
-    await _audit(session, current, "criar_categoria", "transaction_categories", row[0], f"{body.name} ({body.type})")
+    cat_id = await EscService(session).criar_categoria(current.empresa_id, body, current.user_id)
+    await _audit(session, current, "criar_categoria", "transaction_categories", cat_id, f"{body.name} ({body.type})")
     await session.commit()
-    return {"id": str(row[0]), "ok": True}
+    return {"id": str(cat_id), "ok": True}
 
 
 class EditarCategoriaRequest(BaseModel):
@@ -1173,25 +695,10 @@ async def editar_categoria(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    sets, params = [], {"id": str(categoria_id), "eid": str(current.empresa_id)}
-    if body.name is not None:
-        sets.append("name = :name"); params["name"] = body.name
-    if body.description is not None:
-        sets.append("description = :desc"); params["desc"] = body.description
-    if body.color is not None:
-        sets.append("color = :color"); params["color"] = body.color
-    if body.is_active is not None:
-        sets.append("is_active = :active"); params["active"] = body.is_active
-    if not sets:
+    svc = EscService(session)
+    params = await svc.editar_categoria(categoria_id, current.empresa_id, body, current.user_id)
+    if not params:
         return {"ok": True, "noop": True}
-    sets.append("updated_at = NOW()")
-    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
-    r = await session.execute(text(
-        f"UPDATE transaction_categories SET {', '.join(sets)} WHERE id = :id AND empresa_id = :eid"
-    ), params)
-    if r.rowcount == 0:
-        await session.rollback()
-        raise HTTPException(status_code=404, detail="Categoria não encontrada na sua empresa.")
     await _audit(session, current, "editar_categoria", "transaction_categories", categoria_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid", "uid")))
     await session.commit()
     return {"ok": True}
@@ -1202,11 +709,7 @@ async def list_formas(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT id, name, is_active FROM payment_methods
-        WHERE empresa_id = :eid ORDER BY name
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"id": str(r[0]), "name": r[1], "is_active": r[2]} for r in rows]
+    return await EscService(session).list_formas(current.empresa_id)
 
 
 @router.post("/cadastros/formas-pagamento", summary="Criar forma de pagamento (empresa)")
@@ -1215,14 +718,10 @@ async def criar_forma(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    row = (await session.execute(text("""
-        INSERT INTO payment_methods (id, association_id, empresa_id, name, is_active, created_by)
-        VALUES (gen_random_uuid(), NULL, :eid, :name, TRUE, :uid)
-        RETURNING id
-    """), {"eid": str(current.empresa_id), "name": body.name, "uid": str(current.user_id)})).fetchone()
-    await _audit(session, current, "criar_forma_pagamento", "payment_methods", row[0], body.name)
+    forma_id = await EscService(session).criar_forma(current.empresa_id, body.name, current.user_id)
+    await _audit(session, current, "criar_forma_pagamento", "payment_methods", forma_id, body.name)
     await session.commit()
-    return {"id": str(row[0]), "ok": True}
+    return {"id": str(forma_id), "ok": True}
 
 
 class EditarFormaRequest(BaseModel):
@@ -1237,21 +736,10 @@ async def editar_forma(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    sets, params = [], {"id": str(forma_id), "eid": str(current.empresa_id)}
-    if body.name is not None:
-        sets.append("name = :name"); params["name"] = body.name
-    if body.is_active is not None:
-        sets.append("is_active = :active"); params["active"] = body.is_active
-    if not sets:
+    svc = EscService(session)
+    params = await svc.editar_forma(forma_id, current.empresa_id, body, current.user_id)
+    if not params:
         return {"ok": True, "noop": True}
-    sets.append("updated_at = NOW()")
-    sets.append("updated_by = :uid"); params["uid"] = str(current.user_id)
-    r = await session.execute(text(
-        f"UPDATE payment_methods SET {', '.join(sets)} WHERE id = :id AND empresa_id = :eid"
-    ), params)
-    if r.rowcount == 0:
-        await session.rollback()
-        raise HTTPException(status_code=404, detail="Forma de pagamento não encontrada na sua empresa.")
     await _audit(session, current, "editar_forma_pagamento", "payment_methods", forma_id, ", ".join(f"{k}={v}" for k, v in params.items() if k not in ("id", "eid", "uid")))
     await session.commit()
     return {"ok": True}
@@ -1272,12 +760,8 @@ async def get_access_groups(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    row = (await session.execute(text(
-        "SELECT access_groups FROM empresas WHERE id = :eid"
-    ), {"eid": str(current.empresa_id)})).fetchone()
-    if row and row[0]:
-        return row[0]
-    return _DEFAULT_ACCESS_GROUPS
+    groups = await EscService(session).get_access_groups(current.empresa_id)
+    return groups if groups is not None else _DEFAULT_ACCESS_GROUPS
 
 
 @router.put("/administracao/access-groups", summary="Salvar grupos de acesso da empresa")
@@ -1286,10 +770,7 @@ async def put_access_groups(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    import json as _json
-    await session.execute(text(
-        "UPDATE empresas SET access_groups = CAST(:ag AS JSONB), updated_at = NOW() WHERE id = :eid"
-    ), {"ag": _json.dumps(body.access_groups), "eid": str(current.empresa_id)})
+    await EscService(session).put_access_groups(current.empresa_id, body.access_groups)
     await _audit(session, current, "atualizar_access_groups", "empresas", current.empresa_id, "grid de permissoes atualizado")
     await session.commit()
     return {"ok": True}
@@ -1303,16 +784,7 @@ async def list_auditoria(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT al.created_at, al.action, al.entity, u.full_name, a.name AS unidade
-        FROM audit_log al
-        LEFT JOIN users u ON u.id = al.user_id
-        LEFT JOIN associations a ON a.id = al.association_id
-        WHERE a.empresa_id = :eid OR al.empresa_id = :eid
-        ORDER BY al.created_at DESC LIMIT :lim
-    """), {"eid": str(current.empresa_id), "lim": min(limit, 500)})).fetchall()
-    return [{"created_at": str(r[0]), "action": r[1], "entity": r[2],
-             "user": r[3], "unidade": r[4]} for r in rows]
+    return await EscService(session).list_auditoria(current.empresa_id, limit)
 
 
 # ── Central de avisos (broadcast) ─────────────────────────────────────────
@@ -1328,17 +800,10 @@ async def enviar_aviso(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    # Fan-out: 1 notificacao por usuario ativo de toda associacao da empresa,
-    # marcada com empresa_id (rastreio de broadcast).
-    r = await session.execute(text("""
-        INSERT INTO notifications (id, association_id, empresa_id, user_id, title, body, type)
-        SELECT gen_random_uuid(), u.association_id, :eid, u.id, :title, :body, 'broadcast'
-        FROM users u
-        WHERE u.empresa_id = :eid AND u.is_active = TRUE
-    """), {"eid": str(current.empresa_id), "title": body.title, "body": body.body})
-    await _audit(session, current, "enviar_aviso", "notifications", None, f"{body.title} -> {r.rowcount} destinatario(s)")
+    enviados = await EscService(session).enviar_aviso(current.empresa_id, body.title, body.body)
+    await _audit(session, current, "enviar_aviso", "notifications", None, f"{body.title} -> {enviados} destinatario(s)")
     await session.commit()
-    return {"ok": True, "enviados": r.rowcount}
+    return {"ok": True, "enviados": enviados}
 
 
 @router.get("/administracao/avisos", summary="Histórico de avisos (broadcasts) da empresa")
@@ -1346,13 +811,7 @@ async def list_avisos(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT title, body, MIN(created_at) AS enviado_em, COUNT(*) AS destinatarios
-        FROM notifications
-        WHERE empresa_id = :eid AND type = 'broadcast'
-        GROUP BY title, body ORDER BY enviado_em DESC LIMIT 100
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"title": r[0], "body": r[1], "enviado_em": str(r[2]), "destinatarios": r[3]} for r in rows]
+    return await EscService(session).list_avisos(current.empresa_id)
 
 
 # ── Inventário de encomendas (snapshot pontual) ───────────────────────────
@@ -1369,36 +828,14 @@ async def gerar_inventario_encomendas(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     await _assert_assoc_da_empresa(session, body.association_id, current.empresa_id)
-    from datetime import datetime as _dt
     try:
-        ref = _dt.fromisoformat(body.reference_at)
+        ref = datetime.fromisoformat(body.reference_at)
     except ValueError:
         raise HTTPException(status_code=422, detail="Data/hora inválida.")
-    # Encomendas fisicamente na associacao no momento de referencia: recebidas
-    # ate o ref e ainda nao entregues nem devolvidas ate o ref.
-    rows = (await session.execute(text("""
-        SELECT p.id, p.sender_name, p.carrier_name, p.object_type, p.tracking_code,
-               p.received_at, r.full_name AS morador
-        FROM packages p
-        LEFT JOIN residents r ON r.id = p.resident_id
-        WHERE p.association_id = :aid
-          AND p.received_at <= :ref
-          AND (p.delivered_at IS NULL OR p.delivered_at > :ref)
-          AND (p.returned_at IS NULL OR p.returned_at > :ref)
-        ORDER BY p.received_at
-    """), {"aid": str(body.association_id), "ref": ref})).fetchall()
-    items = [{"id": str(r[0]), "sender_name": r[1], "carrier_name": r[2], "object_type": r[3],
-              "tracking_code": r[4], "received_at": str(r[5]), "morador": r[6]} for r in rows]
-    import json as _json
-    row = (await session.execute(text("""
-        INSERT INTO package_inventories (id, empresa_id, association_id, reference_at, total, items, created_by)
-        VALUES (gen_random_uuid(), :eid, :aid, :ref, :total, CAST(:items AS jsonb), :uid)
-        RETURNING id
-    """), {"eid": str(current.empresa_id), "aid": str(body.association_id), "ref": ref,
-           "total": len(items), "items": _json.dumps(items), "uid": str(current.user_id)})).fetchone()
-    await _audit(session, current, "gerar_inventario_encomendas", "package_inventories", row[0], f"{len(items)} item(ns)")
+    inv_id, total = await EscService(session).gerar_inventario_encomendas(current.empresa_id, body.association_id, ref, current.user_id)
+    await _audit(session, current, "gerar_inventario_encomendas", "package_inventories", inv_id, f"{total} item(ns)")
     await session.commit()
-    return {"id": str(row[0]), "total": len(items), "ok": True}
+    return {"id": str(inv_id), "total": total, "ok": True}
 
 
 @router.get("/administracao/inventario-encomendas", summary="Histórico de inventários de encomendas")
@@ -1406,16 +843,7 @@ async def list_inventario_encomendas(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    rows = (await session.execute(text("""
-        SELECT pi.id, a.name AS unidade, pi.reference_at, pi.total, pi.created_at, u.full_name AS por
-        FROM package_inventories pi
-        JOIN associations a ON a.id = pi.association_id
-        LEFT JOIN users u ON u.id = pi.created_by
-        WHERE pi.empresa_id = :eid
-        ORDER BY pi.created_at DESC LIMIT 200
-    """), {"eid": str(current.empresa_id)})).fetchall()
-    return [{"id": str(r[0]), "unidade": r[1], "reference_at": str(r[2]), "total": r[3],
-             "created_at": str(r[4]), "por": r[5]} for r in rows]
+    return await EscService(session).list_inventario_encomendas(current.empresa_id)
 
 
 @router.get("/administracao/inventario-encomendas/{inv_id}", summary="Detalhe (itens) do inventário")
@@ -1424,11 +852,4 @@ async def detalhe_inventario_encomendas(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    row = (await session.execute(text("""
-        SELECT pi.items, pi.total, pi.reference_at, a.name
-        FROM package_inventories pi JOIN associations a ON a.id = pi.association_id
-        WHERE pi.id = :id AND pi.empresa_id = :eid
-    """), {"id": str(inv_id), "eid": str(current.empresa_id)})).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Inventário não encontrado.")
-    return {"items": row[0], "total": row[1], "reference_at": str(row[2]), "unidade": row[3]}
+    return await EscService(session).detalhe_inventario_encomendas(inv_id, current.empresa_id)

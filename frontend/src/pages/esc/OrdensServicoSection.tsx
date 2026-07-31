@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import EscDataTable from './EscDataTable'
+import { useSort, SortTh } from './EscDataTable'
 import { EscButton, EscField, EscModal, EscSelect, escInputCls, escInputStyle } from './EscFormKit'
 import { escService } from '../../services/esc'
+
+const BORDER = '#e2e8f0'
+const TEXT_MUTED = '#64748b'
+const PAGE_SIZE = 50
 
 const OS_PRIORITY_PT: Record<string, string> = {
   low: 'Baixa', medium: 'Média', high: 'Alta', critical: 'Crítica',
@@ -13,12 +17,22 @@ const OS_STATUS_PT: Record<string, string> = {
   resolved: 'Concluída', archived: 'Arquivada', cancelled: 'Cancelada',
 }
 
+interface OrdemServico {
+  id: string; number: number; title: string; priority: string; status: string
+  created_at: string; unidade: string
+}
+
 const emptyForm = { association_id: '', title: '', description: '', priority: 'medium', area: '', location_detail: '' }
 
 export default function OrdensServicoSection() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [reloadKey, setReloadKey] = useState(0)
+  const [rows, setRows] = useState<OrdemServico[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
   const [associacoes, setAssociacoes] = useState<{ id: string; name: string }[]>([])
   const [creating, setCreating] = useState(false)
   const [createForm, setCreateForm] = useState(emptyForm)
@@ -29,10 +43,23 @@ export default function OrdensServicoSection() {
 
   useEffect(() => { escService.associacoes().then((r) => setAssociacoes(r.data)).catch(() => {}) }, [])
 
-  const fetchFn = useCallback(
-    () => escService.ordensServico({ date_from: dateFrom || undefined, date_to: dateTo || undefined }),
-    [dateFrom, dateTo, reloadKey],
-  )
+  const params = useMemo(() => {
+    const p: Record<string, any> = { skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE }
+    if (dateFrom) p.date_from = dateFrom
+    if (dateTo) p.date_to = dateTo
+    if (search.trim()) p.search = search.trim()
+    return p
+  }, [page, dateFrom, dateTo, search])
+
+  useEffect(() => {
+    setLoading(true)
+    escService.ordensServico(params)
+      .then((r) => { setRows(r.data.items); setTotal(r.data.total) })
+      .catch(() => toast.error('Erro ao carregar ordens de serviço.'))
+      .finally(() => setLoading(false))
+  }, [params, reloadKey])
+
+  const { sorted: sortedRows, sortKey, sortDir, toggleSort } = useSort(rows)
 
   const doCreate = async () => {
     if (!createForm.association_id || !createForm.title.trim() || !createForm.description.trim()) {
@@ -75,42 +102,63 @@ export default function OrdensServicoSection() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-6 pt-3 flex items-end gap-3">
-        <EscField label="Criada de" hint="Sem filtro: só as 200 mais recentes">
-          <input type="date" className={escInputCls + ' w-36'} style={escInputStyle} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+      <div className="px-6 pt-3 flex items-end gap-3 flex-wrap">
+        <EscField label="Criada de">
+          <input type="date" className={escInputCls + ' w-36'} style={escInputStyle} value={dateFrom} onChange={(e) => { setPage(1); setDateFrom(e.target.value) }} />
         </EscField>
         <EscField label="até">
-          <input type="date" className={escInputCls + ' w-36'} style={escInputStyle} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <input type="date" className={escInputCls + ' w-36'} style={escInputStyle} value={dateTo} onChange={(e) => { setPage(1); setDateTo(e.target.value) }} />
         </EscField>
+        <EscField label="Buscar">
+          <input className={escInputCls + ' w-44'} style={escInputStyle} placeholder="Título" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value) }} />
+        </EscField>
+        <span className="text-xs" style={{ color: TEXT_MUTED }}>{loading ? 'carregando…' : `${total} OS`}</span>
         <div className="ml-auto">
           <EscButton onClick={() => setCreating(true)}><Plus className="w-4 h-4" /> Nova OS</EscButton>
         </div>
       </div>
-      <div className="flex-1 overflow-hidden">
-        <EscDataTable
-          fetchFn={fetchFn}
-          reloadKey={reloadKey}
-          searchKeys={['title']}
-          filterKeys={[
-            { key: 'unidade', label: 'Unidade' },
-            { key: 'priority', label: 'Prioridade' },
-            { key: 'status', label: 'Status' },
-          ]}
-          columns={[
-            { key: 'number', label: 'Nº' },
-            { key: 'title', label: 'Título' },
-            { key: 'priority', label: 'Prioridade', render: (r) => OS_PRIORITY_PT[r.priority] ?? r.priority },
-            { key: 'status', label: 'Status', render: (r) => OS_STATUS_PT[r.status] ?? r.status },
-            { key: 'unidade', label: 'Unidade' },
-            { key: 'created_at', label: 'Criada em', render: (r) => new Date(r.created_at).toLocaleString('pt-BR') },
-          ]}
-          rowActions={(r) => (
-            <div className="flex items-center gap-2 justify-end">
-              <button onClick={() => openEdit(r)} className="text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
-              <button onClick={() => setDeleteTarget(r)} className="text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
-            </div>
-          )}
-        />
+
+      <div className="flex-1 overflow-auto px-6 py-2">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b" style={{ borderColor: BORDER }}>
+              <SortTh label="Nº" sortKey="number" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('number')} />
+              <SortTh label="Título" sortKey="title" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('title')} />
+              <SortTh label="Prioridade" sortKey="priority" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('priority')} />
+              <SortTh label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('status')} />
+              <SortTh label="Unidade" sortKey="unidade" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('unidade')} />
+              <SortTh label="Criada em" sortKey="created_at" activeKey={sortKey} dir={sortDir} onClick={() => toggleSort('created_at')} />
+              <th className="py-2 pr-4" style={{ color: TEXT_MUTED }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {!loading && rows.length === 0 && (
+              <tr><td colSpan={7} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhuma OS encontrada.</td></tr>
+            )}
+            {sortedRows.map((r) => (
+              <tr key={r.id} className="border-b hover:bg-slate-50" style={{ borderColor: BORDER }}>
+                <td className="py-2 pr-4 whitespace-nowrap">{r.number}</td>
+                <td className="py-2 pr-4 whitespace-nowrap">{r.title}</td>
+                <td className="py-2 pr-4 whitespace-nowrap">{OS_PRIORITY_PT[r.priority] ?? r.priority}</td>
+                <td className="py-2 pr-4 whitespace-nowrap">{OS_STATUS_PT[r.status] ?? r.status}</td>
+                <td className="py-2 pr-4 whitespace-nowrap">{r.unidade}</td>
+                <td className="py-2 pr-4 whitespace-nowrap">{new Date(r.created_at).toLocaleString('pt-BR')}</td>
+                <td className="py-2 pr-4 whitespace-nowrap text-right">
+                  <div className="flex items-center gap-2 justify-end">
+                    <button onClick={() => openEdit(r)} className="text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => setDeleteTarget(r)} className="text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="px-6 py-2 border-t flex items-center justify-between" style={{ borderColor: BORDER }}>
+        <button disabled={page === 1} onClick={() => setPage((p) => p - 1)} className="text-xs disabled:opacity-40" style={{ color: TEXT_MUTED }}>← Anterior</button>
+        <span className="text-xs" style={{ color: TEXT_MUTED }}>Página {page} · {total} no total</span>
+        <button disabled={page * PAGE_SIZE >= total} onClick={() => setPage((p) => p + 1)} className="text-xs disabled:opacity-40" style={{ color: TEXT_MUTED }}>Próxima →</button>
       </div>
 
       {creating && (
