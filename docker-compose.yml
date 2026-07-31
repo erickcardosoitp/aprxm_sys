@@ -24,6 +24,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: aprxm_backend
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aprxm_user}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-aprxm_db}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
@@ -36,6 +38,7 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
       DELIVERY_FEE_DEFAULT: ${DELIVERY_FEE_DEFAULT:-2.50}
       APP_ENV: ${APP_ENV:-development}
+      WATCHFILES_FORCE_POLLING: "true"
     ports:
       - "8000:8000"
     depends_on:
@@ -49,9 +52,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: builder
     container_name: aprxm_frontend
     environment:
-      VITE_API_URL: http://localhost:8000
+      API_PROXY_TARGET: http://backend:8000
     ports:
       - "5173:5173"
     depends_on:

@@ -79,7 +79,37 @@ async def get_summary(
     for r in breakdown_result.fetchall():
         income_by_type[r[0] or "other"] = float(r[1])
 
-    # Contas a receber: mensalidades pendentes de associados ativos
+    expense_breakdown = await session.execute(
+        text("""
+            SELECT COALESCE(c.name, 'Sem categoria'), COALESCE(SUM(t.amount), 0)
+            FROM transactions t
+            LEFT JOIN transaction_categories c ON c.id = t.category_id
+            WHERE t.association_id = ANY(:ids)
+              AND t.type = 'expense'
+              AND t.transaction_at >= :date_from
+              AND t.reversed_at IS NULL
+              AND t.is_reversal = false
+            GROUP BY c.name
+        """),
+        {"ids": ids, "date_from": date_from},
+    )
+    expense_by_category: dict = {r[0]: float(r[1]) for r in expense_breakdown.fetchall()}
+
+    sangria_breakdown = await session.execute(
+        text("""
+            SELECT COALESCE(sangria_destination, 'Sem destino informado'), COALESCE(SUM(amount), 0)
+            FROM transactions
+            WHERE association_id = ANY(:ids)
+              AND type = 'sangria'
+              AND transaction_at >= :date_from
+              AND reversed_at IS NULL
+              AND is_reversal = false
+            GROUP BY sangria_destination
+        """),
+        {"ids": ids, "date_from": date_from},
+    )
+    sangria_by_destination: dict = {r[0]: float(r[1]) for r in sangria_breakdown.fetchall()}
+
     cr_result = await session.execute(
         text("""
             SELECT COALESCE(SUM(m.amount), 0), COUNT(*)
@@ -99,6 +129,8 @@ async def get_summary(
         "total_balance": income - total_expense_with_sangria,
         "transactions_count": int(row[3]),
         "income_by_type": income_by_type,
+        "expense_by_category": expense_by_category,
+        "sangria_by_destination": sangria_by_destination,
         "contas_a_receber": float(cr_row[0] or 0),
         "contas_a_receber_count": int(cr_row[1] or 0),
         "period_label": label,

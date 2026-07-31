@@ -12,7 +12,7 @@ from app.core.limiter import limiter
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, notifications, packages, painel_auth, porta_a_porta, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
+from app.routers import admin, agent, auth, carriers, cash_boxes, chat, community, crm, daily_tasks, datalake, demands, directory, esc, finance, financeiro, geral, governanca, mensalidades, notifications, packages, painel_auth, porta_a_porta, public, reports, resident_portal, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Bump this integer every time a new migration block is added below.
 # Cold starts where applied_version == _SCHEMA_VERSION exit in ~2ms (one SELECT).
-_SCHEMA_VERSION = 20
+_SCHEMA_VERSION = 30
 
 
 async def _run_migrations() -> None:
@@ -243,8 +243,8 @@ async def _run_migrations() -> None:
                     v_anchor_assoc_id UUID;
                     v_migrated_ids UUID[];
                 BEGIN
-                    INSERT INTO empresas (name, slug, financeiro_centralizado, plan_name)
-                    VALUES ('SAPE - Vaz Lobo / Buriti / Congonha', 'sape-vazlobo-congonha', TRUE, 'enterprise')
+                    INSERT INTO empresas (id, name, slug, financeiro_centralizado, plan_name, is_active, created_at, updated_at)
+                    VALUES (gen_random_uuid(), 'SAPE - Vaz Lobo / Buriti / Congonha', 'sape-vazlobo-congonha', TRUE, 'enterprise', TRUE, NOW(), NOW())
                     ON CONFLICT (slug) DO NOTHING;
 
                     SELECT id INTO v_empresa_id FROM empresas WHERE slug = 'sape-vazlobo-congonha';
@@ -753,6 +753,309 @@ async def _run_migrations() -> None:
                 await session.execute(text(
                     "INSERT INTO schema_migrations (version, description) "
                     "VALUES (20, 'v20: password_reset_tokens - fluxo esqueci minha senha') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            try:
+                await session.execute(text(
+                    "ALTER TABLE residents ADD COLUMN IF NOT EXISTS password_hash TEXT"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE residents ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (22, 'v22: Portal do Morador - residents.password_hash/token_version') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            try:
+                await session.execute(text("""
+                    DO $$ BEGIN
+                        CREATE TYPE community_author_type AS ENUM ('resident', 'staff');
+                    EXCEPTION WHEN duplicate_object THEN NULL;
+                    END $$
+                """))
+                await session.execute(text("""
+                    DO $$ BEGIN
+                        CREATE TYPE community_post_category AS ENUM ('anuncio', 'reclamacao', 'aviso', 'outro');
+                    EXCEPTION WHEN duplicate_object THEN NULL;
+                    END $$
+                """))
+                await session.execute(text("""
+                    DO $$ BEGIN
+                        CREATE TYPE community_post_status AS ENUM ('pending', 'approved', 'rejected', 'removed');
+                    EXCEPTION WHEN duplicate_object THEN NULL;
+                    END $$
+                """))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS community_posts (
+                        id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        association_id       UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                        author_type          community_author_type NOT NULL,
+                        author_resident_id   UUID REFERENCES residents(id) ON DELETE SET NULL,
+                        author_user_id       UUID REFERENCES users(id) ON DELETE SET NULL,
+                        author_name          VARCHAR(255) NOT NULL,
+                        category             community_post_category NOT NULL DEFAULT 'outro',
+                        title                VARCHAR(150),
+                        body                 TEXT NOT NULL,
+                        image_urls           JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        status               community_post_status NOT NULL DEFAULT 'pending',
+                        moderation_reason    TEXT,
+                        moderated_by_ai      BOOLEAN NOT NULL DEFAULT FALSE,
+                        moderated_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                        pinned               BOOLEAN NOT NULL DEFAULT FALSE,
+                        created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_community_posts_feed ON community_posts(association_id, status, pinned DESC, created_at DESC)"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_community_posts_author_resident ON community_posts(author_resident_id)"
+                ))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS community_comments (
+                        id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        post_id            UUID NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+                        association_id     UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                        author_type        community_author_type NOT NULL,
+                        author_resident_id UUID REFERENCES residents(id) ON DELETE SET NULL,
+                        author_user_id     UUID REFERENCES users(id) ON DELETE SET NULL,
+                        author_name        VARCHAR(255) NOT NULL,
+                        body               TEXT NOT NULL,
+                        created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_community_comments_post ON community_comments(post_id, created_at)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (23, 'v23: Feed da comunidade - community_posts, community_comments') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            try:
+                await session.execute(text("""
+                    DO $$ BEGIN
+                        ALTER TYPE community_post_status ADD VALUE IF NOT EXISTS 'resolved';
+                    EXCEPTION WHEN duplicate_object THEN NULL;
+                    END $$
+                """))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+            try:
+                await session.execute(text(
+                    "ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS admin_reply TEXT"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS admin_reply_at TIMESTAMPTZ"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS admin_reply_by UUID REFERENCES users(id) ON DELETE SET NULL"
+                ))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS resident_notifications (
+                        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                        resident_id    UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+                        type           VARCHAR(30) NOT NULL,
+                        title          VARCHAR(255) NOT NULL,
+                        body           TEXT,
+                        post_id        UUID REFERENCES community_posts(id) ON DELETE CASCADE,
+                        read_at        TIMESTAMPTZ,
+                        created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_resident_notif_unread ON resident_notifications(resident_id) WHERE read_at IS NULL"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_resident_notif_resident ON resident_notifications(resident_id, created_at DESC)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (24, 'v24: resposta oficial + status resolved + resident_notifications') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            try:
+                await session.execute(text("""
+                    DO $$ BEGIN
+                        CREATE TYPE community_place_category AS ENUM (
+                            'lanchonete', 'restaurante', 'mercado', 'servico', 'saude', 'beleza', 'educacao', 'outro'
+                        );
+                    EXCEPTION WHEN duplicate_object THEN NULL;
+                    END $$
+                """))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS community_places (
+                        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                        category       community_place_category NOT NULL DEFAULT 'outro',
+                        name           VARCHAR(150) NOT NULL,
+                        description    TEXT,
+                        phone          VARCHAR(20),
+                        whatsapp       VARCHAR(20),
+                        address        TEXT,
+                        image_urls     JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+                        created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_community_places_assoc ON community_places(association_id, is_active, category)"
+                ))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS community_place_ratings (
+                        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        place_id    UUID NOT NULL REFERENCES community_places(id) ON DELETE CASCADE,
+                        resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+                        stars       SMALLINT NOT NULL CHECK (stars BETWEEN 1 AND 5),
+                        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        UNIQUE (place_id, resident_id)
+                    )
+                """))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS community_place_update_requests (
+                        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        place_id       UUID NOT NULL REFERENCES community_places(id) ON DELETE CASCADE,
+                        association_id UUID NOT NULL REFERENCES associations(id) ON DELETE CASCADE,
+                        resident_id    UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+                        changes        JSONB NOT NULL,
+                        notes          TEXT,
+                        status         VARCHAR(20) NOT NULL DEFAULT 'pending',
+                        reviewed_by    UUID REFERENCES users(id) ON DELETE SET NULL,
+                        reviewed_at    TIMESTAMPTZ,
+                        created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_place_update_requests_status ON community_place_update_requests(association_id, status)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (25, 'v25: Diretorio da comunidade - community_places, ratings, update_requests') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            try:
+                await session.execute(text(
+                    "ALTER TABLE residents ADD COLUMN IF NOT EXISTS username VARCHAR(50)"
+                ))
+                await session.execute(text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_residents_assoc_username
+                        ON residents (association_id, LOWER(username)) WHERE username IS NOT NULL
+                """))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (26, 'v26: residents.username - login por nome/email/usuario') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            try:
+                await session.execute(text(
+                    "ALTER TABLE community_places ADD COLUMN IF NOT EXISTS owner_resident_id UUID REFERENCES residents(id) ON DELETE SET NULL"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE community_places ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'approved'"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE community_places ADD COLUMN IF NOT EXISTS moderation_reason TEXT"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_community_places_owner ON community_places(owner_resident_id)"
+                ))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_community_places_status ON community_places(association_id, status)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (27, 'v27: community_places.owner_resident_id/status - cadastro pelo morador') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            try:
+                await session.execute(text("""
+                    DO $$ BEGIN
+                        ALTER TYPE community_post_category ADD VALUE IF NOT EXISTS 'solicitacao';
+                    EXCEPTION WHEN duplicate_object THEN NULL;
+                    END $$
+                """))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (28, 'v28: community_post_category - solicitacao') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            try:
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS community_post_likes (
+                        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        post_id     UUID NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+                        resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+                        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        UNIQUE (post_id, resident_id)
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_community_post_likes_post ON community_post_likes(post_id)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (29, 'v29: community_post_likes - curtida em publicacoes') "
+                    "ON CONFLICT DO NOTHING"
+                ))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+            try:
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS community_comment_likes (
+                        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        comment_id  UUID NOT NULL REFERENCES community_comments(id) ON DELETE CASCADE,
+                        resident_id UUID NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+                        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        UNIQUE (comment_id, resident_id)
+                    )
+                """))
+                await session.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_community_comment_likes_comment ON community_comment_likes(comment_id)"
+                ))
+                await session.execute(text(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (30, 'v30: community_comment_likes - curtida em comentarios') "
                     "ON CONFLICT DO NOTHING"
                 ))
                 await session.commit()
@@ -1654,8 +1957,8 @@ async def _run_migrations() -> None:
                 v_anchor_assoc_id UUID;
                 v_migrated_ids UUID[];
             BEGIN
-                INSERT INTO empresas (name, slug, financeiro_centralizado, plan_name)
-                VALUES ('SAPE - Vaz Lobo / Buriti / Congonha', 'sape-vazlobo-congonha', TRUE, 'enterprise')
+                INSERT INTO empresas (id, name, slug, financeiro_centralizado, plan_name, is_active, created_at, updated_at)
+                VALUES (gen_random_uuid(), 'SAPE - Vaz Lobo / Buriti / Congonha', 'sape-vazlobo-congonha', TRUE, 'enterprise', TRUE, NOW(), NOW())
                 ON CONFLICT (slug) DO NOTHING;
 
                 SELECT id INTO v_empresa_id FROM empresas WHERE slug = 'sape-vazlobo-congonha';
@@ -2242,6 +2545,9 @@ app.include_router(governanca.router, prefix=PREFIX)
 app.include_router(esc.router, prefix=PREFIX)
 app.include_router(painel_auth.router, prefix=PREFIX)
 app.include_router(porta_a_porta.router, prefix=PREFIX)
+app.include_router(resident_portal.router, prefix=PREFIX)
+app.include_router(community.router, prefix=PREFIX)
+app.include_router(directory.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

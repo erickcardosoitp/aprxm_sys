@@ -58,3 +58,6 @@ backend/.env.vercel
 
 # Backups de banco (dados sensiveis - nunca commitar)
 *.dump
+
+# Credenciais de teste local (dev only - nunca commitar)
+CREDENCIAIS_TESTE_LOCAL.txt

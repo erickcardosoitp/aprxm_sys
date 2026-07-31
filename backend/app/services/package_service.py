@@ -12,6 +12,7 @@ from app.models.finance import IncomeSubtype, TransactionCategory, TransactionTy
 from app.models.package import Package, PackageStatus
 from app.models.resident import Resident, ResidentStatus, ResidentType
 from app.services.finance_service import FinanceService
+from app.services.resident_notification_service import notify_resident
 
 settings = get_settings()
 
@@ -73,6 +74,12 @@ class PackageService:
         )
         self._session.add(package)
         await self._session.flush()
+
+        if resident_id:
+            title = "Encomenda chegou!"
+            body = f"Você tem uma encomenda de {carrier_name} aguardando retirada." if carrier_name else "Você tem uma encomenda aguardando retirada."
+            await notify_resident(self._session, association_id, resident_id, "package", title, body)
+
         return package
 
     # ------------------------------------------------------------------

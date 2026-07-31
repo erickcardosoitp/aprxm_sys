@@ -29,6 +29,10 @@
       "schedule": "0 9 * * *"
     },
     {
+      "path": "/api/v1/mensalidades/cron-remind-due",
+      "schedule": "15 9 * * *"
+    },
+    {
       "path": "/api/v1/datalake/run",
       "schedule": "0 12 * * *"
     },

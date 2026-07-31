@@ -566,6 +566,13 @@ async def reassign_package(
         {"a": str(current.association_id), "p": str(package_id), "u": str(current.user_id),
          "msg": f"Encomenda reatribuída para {resident.full_name}"},
     )
+    if pkg.status != PackageStatus.delivered:
+        from app.services.resident_notification_service import notify_resident
+        await notify_resident(
+            session, current.association_id, body.resident_id, "package",
+            "Encomenda chegou!",
+            f"Você tem uma encomenda de {pkg.carrier_name} aguardando retirada." if pkg.carrier_name else "Você tem uma encomenda aguardando retirada.",
+        )
     await session.commit()
     return {"id": str(pkg.id), "resident_id": str(pkg.resident_id), "resident_name": resident.full_name}
 

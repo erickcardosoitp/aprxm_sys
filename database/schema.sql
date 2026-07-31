@@ -32,14 +32,14 @@ CREATE SCHEMA analytics;
 -- Name: pg_session_jwt; Type: EXTENSION; Schema: -; Owner: -
 --
 
-CREATE EXTENSION IF NOT EXISTS pg_session_jwt WITH SCHEMA public;
+-- CREATE EXTENSION IF NOT EXISTS pg_session_jwt WITH SCHEMA public;
 
 
 --
 -- Name: EXTENSION pg_session_jwt; Type: COMMENT; Schema: -; Owner: -
 --
 
-COMMENT ON EXTENSION pg_session_jwt IS 'pg_session_jwt: manage authentication sessions using JWTs';
+-- COMMENT ON EXTENSION pg_session_jwt IS 'pg_session_jwt: manage authentication sessions using JWTs';
 
 
 --
@@ -145,6 +145,58 @@ CREATE TYPE public.mensalidade_status AS ENUM (
     'paid',
     'overdue',
     'agreement'
+);
+
+
+--
+-- Name: community_author_type; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.community_author_type AS ENUM (
+    'resident',
+    'staff'
+);
+
+
+--
+-- Name: community_post_category; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.community_post_category AS ENUM (
+    'anuncio',
+    'reclamacao',
+    'aviso',
+    'outro',
+    'solicitacao'
+);
+
+
+--
+-- Name: community_post_status; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.community_post_status AS ENUM (
+    'pending',
+    'approved',
+    'rejected',
+    'removed',
+    'resolved'
+);
+
+
+--
+-- Name: community_place_category; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.community_place_category AS ENUM (
+    'lanchonete',
+    'restaurante',
+    'mercado',
+    'servico',
+    'saude',
+    'beleza',
+    'educacao',
+    'outro'
 );
 
 
@@ -1459,7 +1511,153 @@ CREATE TABLE public.residents (
     has_pests boolean,
     address_neighborhood character varying(100),
     address_country character varying(100) DEFAULT 'Brasil'::character varying,
-    proof_of_payment_url text
+    proof_of_payment_url text,
+    password_hash text,
+    token_version integer DEFAULT 0 NOT NULL,
+    username character varying(50)
+);
+
+
+--
+-- Name: community_posts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.community_posts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    association_id uuid NOT NULL,
+    author_type public.community_author_type NOT NULL,
+    author_resident_id uuid,
+    author_user_id uuid,
+    author_name character varying(255) NOT NULL,
+    category public.community_post_category DEFAULT 'outro'::public.community_post_category NOT NULL,
+    title character varying(150),
+    body text NOT NULL,
+    image_urls jsonb DEFAULT '[]'::jsonb NOT NULL,
+    status public.community_post_status DEFAULT 'pending'::public.community_post_status NOT NULL,
+    moderation_reason text,
+    moderated_by_ai boolean DEFAULT false NOT NULL,
+    moderated_by_user_id uuid,
+    pinned boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    admin_reply text,
+    admin_reply_at timestamp with time zone,
+    admin_reply_by uuid
+);
+
+
+--
+-- Name: community_comments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.community_comments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    post_id uuid NOT NULL,
+    association_id uuid NOT NULL,
+    author_type public.community_author_type NOT NULL,
+    author_resident_id uuid,
+    author_user_id uuid,
+    author_name character varying(255) NOT NULL,
+    body text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: community_post_likes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.community_post_likes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    post_id uuid NOT NULL,
+    resident_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: community_comment_likes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.community_comment_likes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    comment_id uuid NOT NULL,
+    resident_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: resident_notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.resident_notifications (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    association_id uuid NOT NULL,
+    resident_id uuid NOT NULL,
+    type character varying(30) NOT NULL,
+    title character varying(255) NOT NULL,
+    body text,
+    post_id uuid,
+    read_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: community_places; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.community_places (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    association_id uuid NOT NULL,
+    category public.community_place_category DEFAULT 'outro'::public.community_place_category NOT NULL,
+    name character varying(150) NOT NULL,
+    description text,
+    phone character varying(20),
+    whatsapp character varying(20),
+    address text,
+    image_urls jsonb DEFAULT '[]'::jsonb NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    owner_resident_id uuid,
+    status character varying(20) DEFAULT 'approved'::character varying NOT NULL,
+    moderation_reason text
+);
+
+
+--
+-- Name: community_place_ratings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.community_place_ratings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    place_id uuid NOT NULL,
+    resident_id uuid NOT NULL,
+    stars smallint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT community_place_ratings_stars_check CHECK (((stars >= 1) AND (stars <= 5)))
+);
+
+
+--
+-- Name: community_place_update_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.community_place_update_requests (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    place_id uuid NOT NULL,
+    association_id uuid NOT NULL,
+    resident_id uuid NOT NULL,
+    changes jsonb NOT NULL,
+    notes text,
+    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    reviewed_by uuid,
+    reviewed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -4442,5 +4640,5 @@ ALTER TABLE ONLY public.webauthn_credentials
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Q8rwY1BbCXIUNvuLEThAmmsLephjhaFXS6Xn2hhVLMascWA2pAUhTFDcCg6ahg8
+-- \unrestrict Q8rwY1BbCXIUNvuLEThAmmsLephjhaFXS6Xn2hhVLMascWA2pAUhTFDcCg6ahg8
 

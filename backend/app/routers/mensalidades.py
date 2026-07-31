@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,11 +72,10 @@ async def delete_by_month(
 
 @router.post("/cron-generate", summary="Geração automática semanal (chamada por cron externo)")
 async def cron_generate(
-    request,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import os
-    from fastapi import Request
     from sqlalchemy import text
     from decimal import Decimal
     from datetime import datetime
@@ -153,11 +152,10 @@ async def cron_generate(
 
 @router.post("/cron-check-overdue", summary="Cron diário: verifica inadimplentes por associação")
 async def cron_check_overdue(
-    request,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import os
-    from fastapi import Request
     from sqlalchemy import text
     from datetime import datetime, timedelta
 
@@ -177,7 +175,7 @@ async def cron_check_overdue(
 
     summary = []
     for assoc_id, assoc_name, grace_days in rows:
-        cutoff = (datetime.utcnow().date() - timedelta(days=grace_days)).isoformat()
+        cutoff = datetime.utcnow().date() - timedelta(days=grace_days)
         result = (await session.execute(text("""
             SELECT COUNT(DISTINCT m.resident_id), COUNT(m.id), COALESCE(SUM(m.amount), 0)
             FROM mensalidades m
@@ -193,10 +191,52 @@ async def cron_check_overdue(
             "unique_delinquents": result[0],
             "total_records": result[1],
             "total_amount": float(result[2]),
-            "cutoff_date": cutoff,
+            "cutoff_date": cutoff.isoformat(),
         })
 
     return {"checked_at": datetime.utcnow().isoformat(), "associations": summary}
+
+
+@router.post("/cron-remind-due", summary="Cron diário: lembra moradores de mensalidade próxima do vencimento")
+async def cron_remind_due(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    import os
+    from datetime import datetime, timedelta
+    from sqlalchemy import text
+    from app.services.resident_notification_service import notify_resident
+
+    secret = os.environ.get("CRON_SECRET", "")
+    if secret:
+        auth = request.headers.get("x-cron-secret", "")
+        if auth != secret:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Não autorizado.")
+
+    today = datetime.utcnow().date()
+    offsets = (3, 1, 0)
+    total_notified = 0
+
+    for offset in offsets:
+        target = today + timedelta(days=offset)
+        rows = (await session.execute(text("""
+            SELECT m.association_id, m.resident_id, m.amount, m.reference_month
+            FROM mensalidades m
+            JOIN residents res ON res.id = m.resident_id
+            WHERE m.status = 'pending' AND m.due_date = :target
+              AND res.type = 'member' AND res.status = 'active'
+        """), {"target": target})).fetchall()
+
+        for aid, rid, amount, ref in rows:
+            title = "Mensalidade vence hoje" if offset == 0 else f"Mensalidade vence em {offset} dia{'s' if offset > 1 else ''}"
+            prazo = "hoje" if offset == 0 else f"em {offset} dia{'s' if offset > 1 else ''}"
+            body = f"Mensalidade de {ref} no valor de R$ {float(amount):.2f} vence {prazo}."
+            await notify_resident(session, aid, rid, "mensalidade_reminder", title, body)
+            total_notified += 1
+
+    await session.commit()
+    return {"checked_at": today.isoformat(), "notified": total_notified}
 
 
 @router.post("/generate-month", summary="Gerar mensalidades pendentes para todos os associados ativos do mês")

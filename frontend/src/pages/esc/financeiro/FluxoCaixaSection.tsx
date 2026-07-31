@@ -3,6 +3,8 @@ import toast from 'react-hot-toast'
 import { escService } from '../../../services/esc'
 import { EscButton, EscField, EscModal, escInputCls, escInputStyle } from '../EscFormKit'
 import { useAuthStore } from '../../../store/authStore'
+import { SUBTYPE_LABELS } from '../../financeiro/constants/financeiro'
+import CategoryBarChart from './CategoryBarChart'
 
 const BORDER = '#e2e8f0'
 const TEXT_MUTED = '#64748b'
@@ -22,6 +24,11 @@ interface Summary {
   total_sangria: number
   total_balance: number
   period_label: string
+  income_by_type: Record<string, number>
+  expense_by_category: Record<string, number>
+  sangria_by_destination: Record<string, number>
+  contas_a_receber: number
+  contas_a_receber_count: number
 }
 interface SaldoUnidade {
   association_id: string
@@ -97,6 +104,31 @@ export default function FluxoCaixaSection() {
         mostra o período real — não tem o corte de agosto/2026 do relatório contábil.
       </p>
 
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <Card label="Contas a receber" value={fmt(summary?.contas_a_receber ?? 0)} sub={`${summary?.contas_a_receber_count ?? 0} mensalidade(s) pendente(s)`} />
+        <Card label="Banco no mês (PIX conciliado)" value={fmt(dashboard?.total_banco_mes ?? 0)} color="#0891b2" />
+        <Card label="Inadimplência" value={fmt(dashboard?.inadimplencia_total ?? 0)} color="#dc2626" sub={`${dashboard?.inadimplentes_count ?? 0} morador(es)`} />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <CategoryBarChart
+          title={`Receita do período por tipo (${summary?.period_label ?? ''})`}
+          data={summary?.income_by_type ?? {}}
+          labelMap={SUBTYPE_LABELS}
+          hue={142}
+        />
+        <CategoryBarChart
+          title="Despesas por categoria — pra onde foi"
+          data={summary?.expense_by_category ?? {}}
+          hue={0}
+        />
+        <CategoryBarChart
+          title="Sangrias por destino — pra onde foi"
+          data={summary?.sangria_by_destination ?? {}}
+          hue={243}
+        />
+      </div>
+
       <div className="border" style={{ borderColor: BORDER }}>
         <div className="px-4 py-2.5 border-b flex items-center justify-between" style={{ borderColor: BORDER }}>
           <span className="text-sm font-semibold text-slate-800">Saldo físico de caixa por unidade (produção)</span>
@@ -160,11 +192,12 @@ export default function FluxoCaixaSection() {
   )
 }
 
-function Card({ label, value, color }: { label: string; value: string; color?: string }) {
+function Card({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
     <div className="border p-3" style={{ borderColor: BORDER }}>
       <p className="text-[11px] mb-0.5" style={{ color: TEXT_MUTED }}>{label}</p>
       <p className="text-base font-bold" style={{ color: color ?? '#0f172a' }}>{value}</p>
+      {sub && <p className="text-[11px] mt-0.5" style={{ color: TEXT_MUTED }}>{sub}</p>}
     </div>
   )
 }

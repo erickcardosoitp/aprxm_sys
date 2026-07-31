@@ -726,11 +726,40 @@ function CustomTooltip({ active, payload, label }: any) {
   )
 }
 
-async function resolveStreetGeometry(cep: string, streetHint: string): Promise<{ segments: [number, number][][]; lat: number; lng: number } | null> {
-  const clean = cep.replace(/\D/g, '')
+async function fetchWithTimeout(input: string, init: RequestInit = {}, timeoutMs = 8000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    // Step 1: resolve street name + city via BrasilAPI
-    const geoRes = await fetch(`https://brasilapi.com.br/api/cep/v2/${clean}`)
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+const GEOMETRY_CACHE_KEY = 'aprxm-street-geometry-cache-v1'
+
+type GeometryCacheEntry = { segments: [number, number][][]; lat: number; lng: number }
+
+function loadGeometryCache(): Record<string, GeometryCacheEntry> {
+  try { return JSON.parse(localStorage.getItem(GEOMETRY_CACHE_KEY) ?? '{}') } catch { return {} }
+}
+
+function saveGeometryCacheEntry(key: string, value: GeometryCacheEntry) {
+  try {
+    const cache = loadGeometryCache()
+    cache[key] = value
+    localStorage.setItem(GEOMETRY_CACHE_KEY, JSON.stringify(cache))
+  } catch {}
+}
+
+async function resolveStreetGeometry(cep: string, streetHint: string): Promise<GeometryCacheEntry | null> {
+  const clean = cep.replace(/\D/g, '')
+  const cacheKey = `${clean}|${streetHint || ''}`.toLowerCase()
+  const cached = loadGeometryCache()[cacheKey]
+  if (cached) return cached
+
+  try {
+    const geoRes = await fetchWithTimeout(`https://brasilapi.com.br/api/cep/v2/${clean}`)
     if (!geoRes.ok) return null
     const geoData = await geoRes.json()
     const street = streetHint || geoData?.street || ''
@@ -738,29 +767,28 @@ async function resolveStreetGeometry(cep: string, streetHint: string): Promise<{
     const state  = geoData?.state  || ''
     if (!street || !city) return null
 
-    // Step 2: query Overpass for the street's polyline geometry
-    await new Promise(r => setTimeout(r, 300)) // avoid hammering Overpass
-    const query = `[out:json][timeout:20];area["name"="${city}"]["place"~"city|town|municipality"]->.c;way["name"="${street}"]["highway"](area.c);out geom;`
-    const ovRes = await fetch('https://overpass-api.de/api/interpreter', {
+    const query = `[out:json][timeout:15];area["name"="${city}"]["place"~"city|town|municipality"]->.c;way["name"="${street}"]["highway"](area.c);out geom;`
+    const ovRes = await fetchWithTimeout('https://overpass-api.de/api/interpreter', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: `data=${encodeURIComponent(query)}`,
     })
-    if (!ovRes.ok) return null
-    const ovData = await ovRes.json()
-    const ways: any[] = (ovData.elements ?? []).filter((e: any) => e.type === 'way' && e.geometry?.length > 1)
+    let ways: any[] = []
+    if (ovRes.ok) {
+      const ovData = await ovRes.json()
+      ways = (ovData.elements ?? []).filter((e: any) => e.type === 'way' && e.geometry?.length > 1)
+    }
     if (!ways.length) {
-      // Fallback: try state-scoped query (handles cities sharing names)
-      await new Promise(r => setTimeout(r, 300))
-      const q2 = `[out:json][timeout:20];area["name"="${state}"]["admin_level"="4"]->.s;area["name"="${city}"][admin_level~"7|8"](area.s)->.c;way["name"="${street}"]["highway"](area.c);out geom;`
-      const ov2 = await fetch('https://overpass-api.de/api/interpreter', {
+      const q2 = `[out:json][timeout:15];area["name"="${state}"]["admin_level"="4"]->.s;area["name"="${city}"][admin_level~"7|8"](area.s)->.c;way["name"="${street}"]["highway"](area.c);out geom;`
+      const ov2 = await fetchWithTimeout('https://overpass-api.de/api/interpreter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `data=${encodeURIComponent(q2)}`,
       })
-      if (!ov2.ok) return null
-      const d2 = await ov2.json()
-      ways.push(...(d2.elements ?? []).filter((e: any) => e.type === 'way' && e.geometry?.length > 1))
+      if (ov2.ok) {
+        const d2 = await ov2.json()
+        ways.push(...(d2.elements ?? []).filter((e: any) => e.type === 'way' && e.geometry?.length > 1))
+      }
     }
     if (!ways.length) return null
 
@@ -768,8 +796,12 @@ async function resolveStreetGeometry(cep: string, streetHint: string): Promise<{
       w.geometry.map((pt: any) => [pt.lat, pt.lon] as [number, number])
     )
     const firstPt = segments[0][0]
-    return { segments, lat: firstPt[0], lng: firstPt[1] }
-  } catch { return null }
+    const result = { segments, lat: firstPt[0], lng: firstPt[1] }
+    saveGeometryCacheEntry(cacheKey, result)
+    return result
+  } catch {
+    return null
+  }
 }
 
 function MapTab() {
@@ -794,12 +826,15 @@ function MapTab() {
         const res = await api.get<CepData[]>('/residents/map-data')
         const data = res.data.filter(d => d.cep)
         const resolved: CepPoint[] = []
-        for (let i = 0; i < data.length; i++) {
+        let done = 0
+        const BATCH_SIZE = 4
+        for (let i = 0; i < data.length; i += BATCH_SIZE) {
           if (cancelled) return
-          const d = data[i]
-          const geo = await resolveStreetGeometry(d.cep, d.street)
-          if (geo) resolved.push({ ...d, ...geo })
-          setProgress(Math.round((i + 1) / data.length * 100))
+          const batch = data.slice(i, i + BATCH_SIZE)
+          const geos = await Promise.all(batch.map(d => resolveStreetGeometry(d.cep, d.street)))
+          geos.forEach((geo, idx) => { if (geo) resolved.push({ ...batch[idx], ...geo }) })
+          done += batch.length
+          setProgress(Math.round(done / data.length * 100))
         }
         if (!cancelled) setPoints(resolved)
       } finally {

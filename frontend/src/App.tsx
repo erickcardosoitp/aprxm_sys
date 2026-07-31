@@ -55,6 +55,8 @@ import PublicRegisterPage from './pages/public/PublicRegisterPage'
 import PublicUpdatePage from './pages/public/PublicUpdatePage'
 import CadastroPortaAPorta from './pages/public/CadastroPortaAPorta'
 import AgentPortalPage from './pages/public/AgentPortalPage'
+import MoradorLoginPage from './pages/morador/MoradorLoginPage'
+import MoradorPainelPage from './pages/morador/MoradorPainelPage'
 
 const ForgotPasswordPage = lazyWithReload(() => import('./pages/ForgotPasswordPage'))
 const ResetPasswordPage  = lazyWithReload(() => import('./pages/ResetPasswordPage'))
@@ -73,6 +75,7 @@ const LogsPage          = lazyWithReload(() => import('./pages/logs/LogsPage'))
 const TIPage            = lazyWithReload(() => import('./pages/ti/TIPage'))
 const ChatPage          = lazyWithReload(() => import('./pages/chat/ChatPage'))
 const HelpPage          = lazyWithReload(() => import('./pages/help/HelpPage'))
+const EscAprovacoesPage     = lazyWithReload(() => import('./pages/esc/AprovacoesPage'))
 const EscCadastrosPage      = lazyWithReload(() => import('./pages/esc/CadastrosPage'))
 const EscMoradoresPage      = lazyWithReload(() => import('./pages/esc/MoradoresPage'))
 const EscAdministracaoPage  = lazyWithReload(() => import('./pages/esc/AdministracaoPage'))
@@ -80,6 +83,8 @@ const EscFinanceiroPage     = lazyWithReload(() => import('./pages/esc/EscFinanc
 const EscSincronizacaoPage  = lazyWithReload(() => import('./pages/esc/SincronizacaoPage'))
 const EscTIPage             = lazyWithReload(() => import('./pages/esc/EscTIPage'))
 const EscAcervoPage         = lazyWithReload(() => import('./pages/esc/AcervoPage'))
+const CommunityModerationPage = lazyWithReload(() => import('./pages/community/CommunityModerationPage'))
+const DirectoryStaffPage = lazyWithReload(() => import('./pages/directory/DirectoryStaffPage'))
 
 function PageLoader() {
   return (
@@ -166,6 +171,8 @@ export default function App() {
         <Route path="/atualizar/:slug" element={<PublicUpdatePage />} />
         <Route path="/associar" element={<CadastroPortaAPorta />} />
         <Route path="/agente" element={<AgentPortalPage />} />
+        <Route path="/morador/painel" element={<MoradorPainelPage />} />
+        <Route path="/morador/:slug" element={<MoradorLoginPage />} />
         <Route
           path="/"
           element={
@@ -185,6 +192,7 @@ export default function App() {
           <Route path="financeiro"     element={<RequireNotOffice><RequireModule module="settings"><Suspense fallback={<PageLoader />}><FinanceiroPage /></Suspense></RequireModule></RequireNotOffice>} />
           <Route path="reports"        element={<RequireNotOffice><Suspense fallback={<PageLoader />}><ReportsPage /></Suspense></RequireNotOffice>} />
           <Route path="geral"          element={<RequireAggregator><Suspense fallback={<PageLoader />}><GeralPage /></Suspense></RequireAggregator>} />
+          <Route path="esc/aprovacoes"     element={<RequireEsc><Suspense fallback={<PageLoader />}><EscAprovacoesPage /></Suspense></RequireEsc>} />
           <Route path="esc/cadastros"      element={<RequireEsc><Suspense fallback={<PageLoader />}><EscCadastrosPage /></Suspense></RequireEsc>} />
           <Route path="esc/moradores"      element={<RequireEsc><Suspense fallback={<PageLoader />}><EscMoradoresPage /></Suspense></RequireEsc>} />
           <Route path="esc/administracao"  element={<RequireEsc><Suspense fallback={<PageLoader />}><EscAdministracaoPage /></Suspense></RequireEsc>} />
@@ -195,6 +203,8 @@ export default function App() {
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><LogsPage /></Suspense></RequireAdmin></RequireNotOffice>} />
           <Route path="ti"             element={<RequireAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireAdmin>} />
           <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />
+          <Route path="comunidade"     element={<RequireNotOffice><Suspense fallback={<PageLoader />}><CommunityModerationPage /></Suspense></RequireNotOffice>} />
+          <Route path="diretorio"      element={<RequireNotOffice><Suspense fallback={<PageLoader />}><DirectoryStaffPage /></Suspense></RequireNotOffice>} />
           <Route path="crm"            element={<Navigate to="/financeiro" replace />} />
           <Route path="agentes"        element={<Navigate to="/financeiro" replace />} />
           <Route path="help"           element={<Navigate to="/help/abrir-caixa" replace />} />

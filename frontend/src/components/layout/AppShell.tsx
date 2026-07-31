@@ -1,6 +1,6 @@
 import { type ComponentType, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, FolderKanban, HelpCircle, Image, LogOut, MessageSquare, Package, Palette, RefreshCw, RotateCcw, Settings, ShieldCheck, TrendingUp, UserCheck, Users } from 'lucide-react'
+import { Activity, BarChart2, Bell, Building2, Check, CheckCircle2, ChevronDown, DollarSign, Download, FileText, FolderKanban, HelpCircle, Image, LogOut, MessageSquare, Package, Palette, RefreshCw, RotateCcw, Settings, ShieldCheck, TrendingUp, UserCheck, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
@@ -36,6 +36,7 @@ const MODULE_NAV: { module: string; item: NavItem }[] = [
 ]
 
 const ESC_NAV: NavItem[] = [
+  { to: '/esc/aprovacoes',     label: 'Comunidade',      icon: CheckCircle2 },
   { to: '/esc/cadastros',      label: 'Cadastros',       icon: FolderKanban },
   { to: '/esc/moradores',      label: 'Moradores',       icon: Users },
   { to: '/esc/financeiro',     label: 'Financeiro',      icon: TrendingUp },
@@ -308,6 +309,8 @@ export function AppShell() {
           if (canView(module)) items.push(item)
         }
         items.push(REPORTS_NAV)
+        items.push({ to: '/comunidade', label: 'Comunidade', icon: MessageSquare })
+        items.push({ to: '/diretorio', label: 'Diretório', icon: Building2 })
         if (permissions?.settings?.can_view || isSuperAdmin) items.push(SETTINGS_NAV)
         if (isAdmin) { items.push(ADMIN_NAV); items.push(LOGS_NAV); items.push({ to: '/ti', label: 'Analytics', icon: Activity }) }
         if (isSuperAdmin && !isAdmin) { items.push({ to: '/ti', label: 'Analytics', icon: Activity }) }
