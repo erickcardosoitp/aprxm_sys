@@ -50,7 +50,7 @@ export default function EscModulePage({ title, description, icon: Icon, sections
         </div>
       )}
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-auto">
         {current?.content}
       </div>
     </div>
