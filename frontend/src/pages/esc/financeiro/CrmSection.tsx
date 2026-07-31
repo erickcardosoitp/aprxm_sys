@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { escService } from '../../../services/esc'
-import EscDataTable, { useSort, SortTh } from '../EscDataTable'
+import EscDataTable, { SortTh } from '../EscDataTable'
 import { EscButton, EscField, EscSelect, escInputCls, escInputStyle, ESC_ACCENT } from '../EscFormKit'
 
 const BORDER = '#e2e8f0'
@@ -44,6 +44,18 @@ export default function CrmSection() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [sortKey, setSortKey] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  // Lista e paginada no servidor (LIMIT/OFFSET) -- ordenar so a pagina
+  // atual no cliente da resultado errado (o maior valor pode estar noutra
+  // pagina). Por isso o sort tem que ir pro backend, nao usar useSort aqui.
+  const toggleSort = (key: string) => {
+    setPage(1)
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); return }
+    if (sortDir === 'asc') { setSortDir('desc'); return }
+    setSortKey(null)
+  }
 
   const params = useMemo(() => {
     const p: Record<string, any> = { page, page_size: 50 }
@@ -55,8 +67,9 @@ export default function CrmSection() {
     if (minMeses) p.min_meses_atrasado = Number(minMeses)
     if (tempoAssociado) p.tempo_associado_meses = Number(tempoAssociado)
     if (dependentes) p.dependentes = dependentes === 'sim'
+    if (sortKey) { p.sort_by = sortKey; p.sort_dir = sortDir }
     return p
-  }, [page, search, rua, status, minAtrasado, maxAtrasado, minMeses, tempoAssociado, dependentes])
+  }, [page, search, rua, status, minAtrasado, maxAtrasado, minMeses, tempoAssociado, dependentes, sortKey, sortDir])
 
   useEffect(() => {
     if (view !== 'associados') return
@@ -66,8 +79,6 @@ export default function CrmSection() {
       .catch(() => toast.error('Erro ao carregar associados.'))
       .finally(() => setLoading(false))
   }, [view, params])
-
-  const { sorted: sortedRows, sortKey, sortDir, toggleSort } = useSort(rows)
 
   return (
     <div className="flex flex-col h-full">
@@ -152,7 +163,7 @@ export default function CrmSection() {
                 {!loading && rows.length === 0 && (
                   <tr><td colSpan={11} className="py-10 text-center text-sm" style={{ color: TEXT_MUTED }}>nenhum associado encontrado.</td></tr>
                 )}
-                {sortedRows.map((r) => {
+                {rows.map((r) => {
                   const meses = r.associado_desde
                     ? Math.max(0, Math.floor((Date.now() - new Date(r.associado_desde).getTime()) / (30 * 86400000)))
                     : null

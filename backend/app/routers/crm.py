@@ -54,10 +54,32 @@ async def crm_residents(
     max_atrasado: float | None = Query(default=None),
     min_meses_atrasado: int | None = Query(default=None),
     tempo_associado_meses: int | None = Query(default=None, description="Mínimo de meses como associado"),
+    sort_by: str | None = Query(default=None),
+    sort_dir: str = Query(default="asc"),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     _check_access(current)
+
+    # Lista paginada no banco (LIMIT/OFFSET) -- ordenar so a pagina atual no
+    # frontend da resultado errado (o "maior" some se estiver noutra pagina).
+    # Por isso a ordenacao tem que ser aplicada aqui, antes do LIMIT/OFFSET.
+    # Whitelist explicita: nunca interpolar sort_by direto na query.
+    SORT_MAP = {
+        "full_name": "r.full_name",
+        "address": "r.address_street",
+        "unidade": "a.name",
+        "associado_desde": "COALESCE(r.move_in_date, r.created_at::date)",
+        "situacao": "CASE WHEN COALESCE(m.valor_atrasado, 0) > 0 THEN 1 ELSE 0 END",
+        "valor_atrasado": "COALESCE(m.valor_atrasado, 0)",
+        "qtd_pendentes": "COALESCE(m.qtd_pendentes, 0)",
+        "acoes_mes": "acoes_mes",
+        "enc_mes": "enc_mes",
+        "ultima_entrega": "p.ultima_entrega",
+        "forma_pagamento_recorrente": "pg.forma",
+    }
+    _dir = "DESC" if sort_dir == "desc" else "ASC"
+    order_by = f"{SORT_MAP[sort_by]} {_dir} NULLS LAST, r.full_name" if sort_by in SORT_MAP else "m.valor_atrasado DESC NULLS LAST, r.full_name"
 
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     offset = (page - 1) * page_size
@@ -194,7 +216,7 @@ async def crm_residents(
           {"AND COALESCE(m.valor_atrasado, 0) >= :min_atrasado" if min_atrasado is not None else ""}
           {"AND COALESCE(m.valor_atrasado, 0) <= :max_atrasado" if max_atrasado is not None else ""}
           {"AND COALESCE(m.qtd_pendentes, 0) >= :min_meses_atrasado" if min_meses_atrasado is not None else ""}
-        ORDER BY m.valor_atrasado DESC NULLS LAST, r.full_name
+        ORDER BY {order_by}
         LIMIT :limit OFFSET :offset
     """)
     if min_atrasado is not None:
