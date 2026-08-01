@@ -413,3 +413,19 @@ def require_module_action(module: str, action: str = "view"):
         return current
 
     return _check
+
+
+_PRESIDENCIA_ROLES = ("admin", "conselho", "admin_master", "superadmin")
+
+
+async def require_presidencia_access(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Gate do painel da presidencia (mini-app separado, mesma credencial do aprxm).
+    Ver docs/superpowers/specs/2026-08-01-painel-presidencia-design.md — acesso restrito
+    a admin/conselho (+ admin_master/superadmin por padrao), nao usa access_groups por
+    modulo porque o painel inteiro e' uma unica visao, nao módulos separados."""
+    if current.role not in _PRESIDENCIA_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso ao painel da presidência restrito a admin/conselho.",
+        )
+    return current
