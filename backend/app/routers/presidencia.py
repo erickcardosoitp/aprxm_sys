@@ -31,3 +31,23 @@ async def get_status(
     freshness = await svc.freshness()
     reachable = await svc.analytics_reachable()
     return {**freshness, "analytics_reachable": reachable}
+
+
+@router.get("/inicio", summary="Resumo 1-tela: saude da associacao hoje")
+async def get_inicio(
+    current: CurrentUser = Depends(require_presidencia_access),
+    svc: PresidenciaService = Depends(_get_service),
+) -> dict:
+    freshness = await svc.freshness()
+    data = await svc.get_inicio()
+    return {**freshness, "data": data}
+
+
+@router.get("/resumo", summary="9 KPIs com WoW/MoM/YoY/ToT")
+async def get_resumo(
+    current: CurrentUser = Depends(require_presidencia_access),
+    svc: PresidenciaService = Depends(_get_service),
+) -> dict:
+    freshness = await svc.freshness()
+    data = await svc.get_resumo()
+    return {**freshness, "data": data}

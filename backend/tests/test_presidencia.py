@@ -78,3 +78,70 @@ class TestFreshness:
             assert result["stale"] is True
             assert result["generated_at"] is None
         asyncio.get_event_loop().run_until_complete(run())
+
+
+# ── get_inicio / get_resumo (shape, sem depender de dado real) ──────────────
+
+class TestGetInicio:
+    def test_inicio_returns_expected_shape(self):
+        from app.services.presidencia_service import PresidenciaService
+
+        session = AsyncMock()
+        session_result = MagicMock(); session_result.scalar.return_value = 2  # caixas abertos
+        session.execute = AsyncMock(return_value=session_result)
+
+        analytics = AsyncMock()
+
+        def make(v):
+            r = MagicMock()
+            r.scalar.return_value = v
+            r.fetchone.return_value = v
+            return r
+
+        analytics.execute = AsyncMock(side_effect=[
+            make(7312.51),          # receita_mes
+            make((132, 261)),        # mensalidades pagas/vencidas
+            make(5220.0),            # inadimplente
+            make((1426, 408, 69, 949)),  # moradores
+            make((1556, 48.0, 312)),     # pacotes
+            make((2, 0)),                 # os
+        ])
+        svc = PresidenciaService(session, analytics)
+
+        async def run():
+            data = await svc.get_inicio()
+            assert data["financeiro"]["receita_mes_atual"] == 7312.51
+            assert data["moradores"]["total"] == 1426
+            assert data["pacotes_os"]["pacotes_recebidos"] == 1556
+            assert "alertas" in data
+            assert any("caixas abertos" in a for a in data["alertas"])
+        asyncio.get_event_loop().run_until_complete(run())
+
+
+class TestGetResumo:
+    def test_resumo_returns_wow_shape(self):
+        from app.services.presidencia_service import PresidenciaService
+
+        session = AsyncMock()
+        analytics = AsyncMock()
+
+        def make(v):
+            r = MagicMock()
+            r.scalar.return_value = v
+            return r
+
+        # 4 KPIs x (atual, anterior) = 8 chamadas
+        analytics.execute = AsyncMock(side_effect=[
+            make(1000.0), make(1400.0),   # receita
+            make(365), make(386),          # encomendas
+            make(9), make(18),             # crescimento
+            make(1.1), make(2.1),          # tempo entrega
+        ])
+        svc = PresidenciaService(session, analytics)
+
+        async def run():
+            data = await svc.get_resumo()
+            assert data["receita_liquida"]["atual"] == 1000.0
+            assert data["receita_liquida"]["wow_pct"] == round(100 * (1000 - 1400) / 1400, 1)
+            assert data["encomendas"]["anterior"] == 386
+        asyncio.get_event_loop().run_until_complete(run())
