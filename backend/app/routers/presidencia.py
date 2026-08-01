@@ -37,11 +37,12 @@ async def get_status(
 @router.get("/inicio", summary="Resumo 1-tela: saude da associacao hoje")
 async def get_inicio(
     unidade: str | None = Query(default=None, description="Nome da associacao (Congonha/Vaz Lobo) ou omitido para Todos"),
+    periodo: str = Query(default="mes", pattern="^(mes|trimestre|semestre|ano)$"),
     current: CurrentUser = Depends(require_presidencia_access),
     svc: PresidenciaService = Depends(_get_service),
 ) -> dict:
     freshness = await svc.freshness()
-    data = await svc.get_inicio(unidade)
+    data = await svc.get_inicio(unidade, periodo)
     return {**freshness, "data": data}
 
 

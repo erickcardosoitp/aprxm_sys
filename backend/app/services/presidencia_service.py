@@ -8,6 +8,7 @@ public padrao (mesmo destino que _write_gold_sync grava).
 
 Ver docs/superpowers/specs/2026-08-01-painel-presidencia-design.md.
 """
+from datetime import date
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import text
@@ -16,6 +17,20 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.config import get_settings
 
 settings = get_settings()
+
+
+def _ultimos_meses_yyyymm(n: int) -> list[str]:
+    """Lista de 'YYYY-MM' dos ultimos n meses, incluindo o atual."""
+    hoje = date.today()
+    meses = []
+    ano, mes = hoje.year, hoje.month
+    for _ in range(n):
+        meses.append(f"{ano:04d}-{mes:02d}")
+        mes -= 1
+        if mes == 0:
+            mes = 12
+            ano -= 1
+    return meses
 
 _dw_engine: AsyncEngine | None = None
 _DwSessionLocal: async_sessionmaker[AsyncSession] | None = None
@@ -87,18 +102,20 @@ class PresidenciaService:
 
     # ── /inicio ──────────────────────────────────────────────────────────
 
-    async def get_inicio(self, unidade: str | None = None) -> dict:
+    async def get_inicio(self, unidade: str | None = None, periodo: str = "mes") -> dict:
         unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
-        params = {"unidade": unidade} if unidade else {}
+        meses_atras = {"mes": 1, "trimestre": 3, "semestre": 6, "ano": 12}.get(periodo, 1)
+        meses_alvo = _ultimos_meses_yyyymm(meses_atras)
+        params = {"unidade": unidade, "meses": meses_alvo} if unidade else {"meses": meses_alvo}
 
         receita_mes = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(receita_total), 0) FROM receita_diaria
-            WHERE to_char(data, 'YYYY-MM') = to_char(now(), 'YYYY-MM') {unidade_filter}
+            WHERE to_char(data, 'YYYY-MM') = ANY(:meses) {unidade_filter}
         """), params)).scalar()
 
         cob = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(pagas), 0), COALESCE(SUM(total), 0)
-            FROM taxa_cobranca WHERE to_char(mes, 'YYYY-MM') = to_char(now(), 'YYYY-MM') {unidade_filter}
+            FROM taxa_cobranca WHERE to_char(mes, 'YYYY-MM') = ANY(:meses) {unidade_filter}
         """), params)).fetchone()
         pagas, total_cob = cob[0] or 0, cob[1] or 0
         taxa_cobranca = round(100.0 * pagas / total_cob, 1) if total_cob else None
@@ -115,7 +132,7 @@ class PresidenciaService:
 
         pacotes = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(recebidos),0), AVG(media_dias_permanencia)
-            FROM encomendas_mensal WHERE mes = to_char(now(), 'YYYY-MM') {unidade_filter}
+            FROM encomendas_mensal WHERE mes = ANY(:meses) {unidade_filter}
         """), params)).fetchone()
 
         parados = (await self.dw.execute(text(
@@ -124,7 +141,7 @@ class PresidenciaService:
 
         os_row = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(abertas),0), COALESCE(SUM(fechadas),0)
-            FROM ordens_servico_mensal WHERE mes = to_char(now(), 'YYYY-MM') {unidade_filter}
+            FROM ordens_servico_mensal WHERE mes = ANY(:meses) {unidade_filter}
         """), params)).fetchone()
 
         caixas_unidade_filter = "AND a.name = :unidade" if unidade else ""
