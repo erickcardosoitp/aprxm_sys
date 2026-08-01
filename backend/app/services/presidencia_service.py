@@ -81,46 +81,52 @@ class PresidenciaService:
 
     # ── /inicio ──────────────────────────────────────────────────────────
 
-    async def get_inicio(self) -> dict:
-        receita_mes = (await self.dw.execute(text("""
-            SELECT COALESCE(SUM(receita_total), 0) FROM receita_diaria
-            WHERE to_char(data, 'YYYY-MM') = to_char(now(), 'YYYY-MM')
-        """))).scalar()
+    async def get_inicio(self, unidade: str | None = None) -> dict:
+        unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
+        params = {"unidade": unidade} if unidade else {}
 
-        cob = (await self.dw.execute(text("""
+        receita_mes = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(receita_total), 0) FROM receita_diaria
+            WHERE to_char(data, 'YYYY-MM') = to_char(now(), 'YYYY-MM') {unidade_filter}
+        """), params)).scalar()
+
+        cob = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(pagas), 0), COALESCE(SUM(total), 0)
-            FROM taxa_cobranca WHERE mes = to_char(now(), 'YYYY-MM')
-        """))).fetchone()
+            FROM taxa_cobranca WHERE mes = to_char(now(), 'YYYY-MM') {unidade_filter}
+        """), params)).fetchone()
         pagas, total_cob = cob[0] or 0, cob[1] or 0
         taxa_cobranca = round(100.0 * pagas / total_cob, 1) if total_cob else None
 
         inadimplente = (await self.dw.execute(text(
-            "SELECT COALESCE(SUM(valor_devido), 0) FROM relatorio_inadimplencia"
-        ))).scalar()
+            f"SELECT COALESCE(SUM(valor_devido), 0) FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter}"
+        ), params)).scalar()
 
-        moradores = (await self.dw.execute(text("""
+        moradores = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(total_ativos),0), COALESCE(SUM(associados),0),
                    COALESCE(SUM(dependentes),0), COALESCE(SUM(visitantes),0)
-            FROM panorama_moradores
-        """))).fetchone()
+            FROM panorama_moradores WHERE 1=1 {unidade_filter}
+        """), params)).fetchone()
 
-        pacotes = (await self.dw.execute(text("""
+        pacotes = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(recebidos),0), AVG(media_dias_permanencia)
-            FROM encomendas_mensal WHERE mes = to_char(now(), 'YYYY-MM')
-        """))).fetchone()
+            FROM encomendas_mensal WHERE mes = to_char(now(), 'YYYY-MM') {unidade_filter}
+        """), params)).fetchone()
 
         parados = (await self.dw.execute(text(
-            "SELECT COALESCE(SUM(paradas_3d), 0) FROM encomendas_paradas"
-        ))).scalar() or 0
+            f"SELECT COALESCE(SUM(paradas_3d), 0) FROM encomendas_paradas WHERE 1=1 {unidade_filter}"
+        ), params)).scalar() or 0
 
-        os_row = (await self.dw.execute(text("""
+        os_row = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(abertas),0), COALESCE(SUM(fechadas),0)
-            FROM ordens_servico_mensal WHERE mes = to_char(now(), 'YYYY-MM')
-        """))).fetchone()
+            FROM ordens_servico_mensal WHERE mes = to_char(now(), 'YYYY-MM') {unidade_filter}
+        """), params)).fetchone()
 
-        caixas_abertos = (await self.session.execute(text(
-            "SELECT COUNT(*) FROM cash_sessions WHERE status = 'open'"
-        ))).scalar() or 0
+        caixas_unidade_filter = "AND a.name = :unidade" if unidade else ""
+        caixas_abertos = (await self.session.execute(text(f"""
+            SELECT COUNT(*) FROM cash_sessions cs
+            JOIN associations a ON a.id = cs.association_id
+            WHERE cs.status = 'open' {caixas_unidade_filter}
+        """), params)).scalar() or 0
 
         alertas = []
         if parados > 0:

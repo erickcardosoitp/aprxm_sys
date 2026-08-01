@@ -7,7 +7,7 @@ Ver docs/superpowers/specs/2026-08-01-painel-presidencia-design.md.
 Acesso: mesma credencial/JWT do app operacional, gate por role
 (require_presidencia_access — admin/conselho/admin_master/superadmin).
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import CurrentUser, require_presidencia_access
@@ -36,11 +36,12 @@ async def get_status(
 
 @router.get("/inicio", summary="Resumo 1-tela: saude da associacao hoje")
 async def get_inicio(
+    unidade: str | None = Query(default=None, description="Nome da associacao (Congonha/Vaz Lobo) ou omitido para Todos"),
     current: CurrentUser = Depends(require_presidencia_access),
     svc: PresidenciaService = Depends(_get_service),
 ) -> dict:
     freshness = await svc.freshness()
-    data = await svc.get_inicio()
+    data = await svc.get_inicio(unidade)
     return {**freshness, "data": data}
 
 
