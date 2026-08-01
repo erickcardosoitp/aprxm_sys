@@ -543,7 +543,21 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     tsk  = silver.get("daily_tasks_enriched", pd.DataFrame())
     mens = frames.get("mensalidades", pd.DataFrame())
 
+    # empresa_id e' 1:1 com id_associacao (uma associacao pertence a 1 empresa) --
+    # em vez de propagar pelos ~33 groupby/agg abaixo, mapeia direto no gargalo
+    # unico (up()) antes da carga. Adicionado 2026-08-01 (ETL empresa-aware, ver
+    # docs/superpowers/plans/2026-08-01-etl-empresa-aware-plan.md).
+    _assocs_emp = frames.get("associations", pd.DataFrame())
+    assoc_empresa_map = (
+        _assocs_emp.set_index("id")["empresa_id"].to_dict()
+        if not _assocs_emp.empty and "empresa_id" in _assocs_emp.columns
+        else {}
+    )
+
     def up(df, name):
+        if not df.empty and "id_associacao" in df.columns and "empresa_id" not in df.columns:
+            df = df.copy()
+            df["empresa_id"] = df["id_associacao"].map(assoc_empresa_map)
         dominio, arquivo = GOLD_PATHS.get(name, ("outros", name))
         key = f"ouro/{dominio}/{arquivo}.parquet"
         stats[name] = _upload_df(client, df, key)

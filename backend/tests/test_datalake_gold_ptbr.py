@@ -120,3 +120,21 @@ def test_receita_diaria_has_portuguese_columns():
         for old in ["date", "week", "month", "association_id", "association_name",
                     "total_income", "total_expense", "net"]:
             assert old not in cols, f"coluna antiga {old} sobrou em receita_diaria: {cols}"
+
+
+def test_gold_tables_carry_empresa_id():
+    frames = _frames()
+    client = _NullClient()
+    _, silver = build_silver(frames, pd.Timestamp.now().isoformat(), client)
+    _, gold_frames = build_gold(frames, silver, client)
+
+    expected_empresa_id = frames["associations"].iloc[0]["empresa_id"]
+    tabelas_sem_empresa_id = []
+    for name, df in gold_frames.items():
+        if "id_associacao" not in df.columns:
+            continue
+        if "empresa_id" not in df.columns or df["empresa_id"].isna().any():
+            tabelas_sem_empresa_id.append(name)
+        elif not (df["empresa_id"] == expected_empresa_id).all():
+            tabelas_sem_empresa_id.append(name)
+    assert not tabelas_sem_empresa_id, f"tabelas sem empresa_id correto: {tabelas_sem_empresa_id}"
