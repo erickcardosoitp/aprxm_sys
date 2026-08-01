@@ -1612,10 +1612,10 @@ def _validate_gold(silver: dict, gold_stats: dict) -> list[str]:
         errors.append("transactions_enriched vazio — nenhuma transacao encontrada")
     if res.empty:
         errors.append("residents_clean vazio — nenhum morador encontrado")
-    if not gold_stats.get("daily_revenue"):
-        errors.append("daily_revenue nao gerado")
-    if not gold_stats.get("operational_kpis"):
-        errors.append("operational_kpis nao gerado")
+    if not gold_stats.get("receita_diaria"):
+        errors.append("receita_diaria nao gerado")
+    if not gold_stats.get("kpis_operacionais"):
+        errors.append("kpis_operacionais nao gerado")
     if not tx.empty and tx["amount"].isnull().mean() > 0.5:
         errors.append("transactions: > 50% de valores nulos em amount")
 
