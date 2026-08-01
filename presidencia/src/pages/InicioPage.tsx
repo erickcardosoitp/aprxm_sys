@@ -17,11 +17,11 @@ export function InicioPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const { unidade } = useUnidade()
-  const { periodo } = usePeriodo()
+  const { periodo, ate, isAtual } = usePeriodo()
 
   useEffect(() => {
     const cached = takeInicioCache()
-    if (cached && unidade === 'todos' && periodo === 'mes') {
+    if (cached && unidade === 'todos' && periodo === 'mes' && isAtual) {
       setData(cached.data)
       setFreshness({ generated_at: cached.generated_at, stale: cached.stale })
       setLoading(false)
@@ -29,7 +29,7 @@ export function InicioPage() {
     }
     let cancelled = false
     setLoading(true)
-    getInicio(nomeAssociacaoFor(unidade), periodo)
+    getInicio(nomeAssociacaoFor(unidade), periodo, ate)
       .then((res) => {
         if (cancelled) return
         setData(res.data)
@@ -47,7 +47,7 @@ export function InicioPage() {
       })
       .finally(() => !cancelled && setLoading(false))
     return () => { cancelled = true }
-  }, [unidade, periodo])
+  }, [unidade, periodo, ate])
 
   if (loading) return <p className="text-sm text-ink-muted">Carregando...</p>
   if (error) return <p className="rounded bg-red-100 px-3 py-2 text-sm text-red-700">{error}</p>
