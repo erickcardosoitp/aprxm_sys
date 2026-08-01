@@ -185,7 +185,7 @@ export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarActi
         {toolbarAction && <div className="ml-auto">{toolbarAction}</div>}
       </div>
 
-      <div className="flex-1 overflow-auto px-6 py-2">
+      <div className="flex-1 min-h-0 overflow-auto px-6 py-2">
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b" style={{ borderColor: BORDER }}>
