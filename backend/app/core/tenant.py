@@ -209,15 +209,26 @@ def assert_same_empresa(current: CurrentUser, target_empresa_id: UUID | None) ->
 # (empresas.access_groups vazio). O admin ve um ponto de partida e salva.
 # Vive aqui (nao em esc.py) para poder ser consultado por require_esc_module
 # sem import circular (esc.py importa deste modulo).
+#
+# Espelha o que ja esta salvo em producao pra empresa real (SAPE - Vaz Lobo /
+# Buriti / Congonha) -- confirmado em auditoria de 2026-08-01 que o grid real
+# e' a fonte de verdade, este template antigo (so' "view" pra diretoria/
+# conselho) estava desatualizado e nao refletia a operacao de fato.
+#
+# "viewer" e' role de integracao via API (portal do morador, futuro painel da
+# presidencia) -- nao aparece no grid do frontend (AdminSections.tsx ROLES),
+# so' precisa de "view" em tudo pra nao ser bloqueado pelas dependencies
+# require_esc_module/require_module_action.
 _DEFAULT_ACCESS_GROUPS = {
-    "operator":          {"residents": ["view"], "packages": ["view", "create"], "service_orders": ["view"], "finance": ["view", "create"], "admin": [], "settings": [], "financeiro": []},
+    "operator":          {"residents": ["view", "create", "edit"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit"], "finance": ["view", "create", "edit"], "admin": [], "settings": [], "financeiro": []},
     "conferente":        {"residents": ["view", "create", "edit"], "packages": ["view", "create", "edit"], "service_orders": ["view", "create", "edit"], "finance": ["view", "create", "edit"], "admin": [], "settings": ["view"], "financeiro": []},
-    "diretoria_adjunta": {"residents": ["view"], "packages": ["view"], "service_orders": ["view", "create", "edit"], "finance": ["view"], "admin": [], "settings": [], "financeiro": []},
-    "diretoria":         {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": ["view"], "admin": ["view"], "settings": ["view"], "financeiro": ["view"]},
-    "conselho":          {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": ["view"], "admin": ["view"], "settings": ["view"], "financeiro": ["view"]},
+    "diretoria_adjunta": {"residents": ["view"], "packages": ["view"], "service_orders": ["view", "create", "edit"], "finance": ["view", "create", "edit", "delete"], "admin": [], "settings": ["view", "create", "edit"], "financeiro": ["view"]},
+    "diretoria":         {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view"], "settings": ["view", "create", "edit"], "financeiro": ["view", "create", "edit", "delete"]},
+    "conselho":          {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "create", "edit", "delete"], "financeiro": ["view", "create", "edit", "delete"]},
     "admin":             {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "edit"], "financeiro": ["view", "create", "edit", "delete"]},
     "admin_master":      {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "edit"], "financeiro": ["view", "create", "edit", "delete"]},
     "superadmin":        {"residents": ["view", "create", "edit", "delete"], "packages": ["view", "create", "edit", "delete"], "service_orders": ["view", "create", "edit", "delete"], "finance": ["view", "create", "edit", "delete"], "admin": ["view", "create", "edit", "delete"], "settings": ["view", "edit"], "financeiro": ["view", "create", "edit", "delete"]},
+    "viewer":            {"residents": ["view"], "packages": ["view"], "service_orders": ["view"], "finance": ["view"], "admin": [], "settings": [], "financeiro": ["view"]},
 }
 
 
