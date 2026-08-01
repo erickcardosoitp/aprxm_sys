@@ -8,6 +8,8 @@ public padrao (mesmo destino que _write_gold_sync grava).
 
 Ver docs/superpowers/specs/2026-08-01-painel-presidencia-design.md.
 """
+from urllib.parse import urlsplit, urlunsplit
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
@@ -23,7 +25,11 @@ def _dw_async_url() -> str:
     url = settings.datawarehouse_db_url
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return url
+    # Neon copia sslmode/channel_binding na querystring (formato libpq) --
+    # asyncpg nao aceita esses kwargs via connect(), ssl ja e' setado
+    # explicitamente via connect_args abaixo.
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 
 def get_dw_engine() -> AsyncEngine:
