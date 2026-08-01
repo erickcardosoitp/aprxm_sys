@@ -2,7 +2,6 @@ from app.models.association import Association
 from app.models.finance import CashSession, IncomeSubtype, PaymentMethod, Transaction, TransactionCategory, TransactionType
 from app.models.mensalidade import Mensalidade, MensalidadeStatus
 from app.models.package import Package
-from app.models.porta_a_porta import PortaAPortaLead, PortaAPortaPayment
 from app.models.resident import Resident
 from app.models.service_order import ServiceOrder, ServiceOrderHistory
 from app.models.settings import AssociationSettings
@@ -14,5 +13,4 @@ __all__ = [
     "TransactionType", "IncomeSubtype",
     "Mensalidade", "MensalidadeStatus",
     "Package", "ServiceOrder", "ServiceOrderHistory", "AssociationSettings",
-    "PortaAPortaLead", "PortaAPortaPayment",
 ]

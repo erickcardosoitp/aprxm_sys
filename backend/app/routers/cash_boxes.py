@@ -126,32 +126,12 @@ async def saldo_consolidado(
          WHERE cs.association_id = :aid AND cs.status != 'open' {date_filter}
     """), params)).fetchone()
 
-    pap_params: dict = {"aid": aid}
-    pap_date_filter = ""
-    if from_date:
-        pap_date_filter += " AND DATE(l.updated_at) >= :from_date"
-        pap_params["from_date"] = from_date
-    if to_date:
-        pap_date_filter += " AND DATE(l.updated_at) <= :to_date"
-        pap_params["to_date"] = to_date
-
-    pap_row = (await session.execute(text(f"""
-        SELECT
-            COUNT(*) AS total_pagos,
-            COALESCE(SUM(p.amount), 0) AS recebido
-          FROM porta_a_porta_payments p
-          JOIN porta_a_porta_leads l ON l.id = p.lead_id
-         WHERE l.association_id = :aid AND p.status = 'paid' {pap_date_filter}
-    """), pap_params)).fetchone()
-
     bruto = float(sessoes_row[1])
     baixas = float(sessoes_row[2])
     liquido_caixas = round(bruto - baixas, 2)
-    pap_recebido = float(pap_row[1])
-    total_consolidado = round(liquido_caixas + pap_recebido, 2)
 
     return {
-        "total_consolidado": str(total_consolidado),
+        "total_consolidado": str(liquido_caixas),
         "caixas": {
             "sessoes": int(sessoes_row[0]),
             "bruto": str(round(bruto, 2)),
@@ -159,10 +139,6 @@ async def saldo_consolidado(
             "liquido": str(liquido_caixas),
             "pix": str(round(float(sessoes_row[3]), 2)),
             "dinheiro": str(round(float(sessoes_row[4]), 2)),
-        },
-        "porta_a_porta": {
-            "total_pagos": int(pap_row[0]),
-            "recebido": str(round(pap_recebido, 2)),
         },
     }
 

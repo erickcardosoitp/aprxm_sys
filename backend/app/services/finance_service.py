@@ -375,38 +375,6 @@ class FinanceService:
                     "Mensalidade já paga para o(s) mês(es) selecionado(s). Nenhum lançamento foi registrado."
                 )
 
-            if is_acordo:
-                from app.models.porta_a_porta import PortaAPortaLead
-                from app.models.resident import Resident as ResidentModel
-                res_obj = await self._session.get(ResidentModel, resident_id)
-                if res_obj:
-                    ex_lead = (await self._session.execute(
-                        select(PortaAPortaLead).where(
-                            PortaAPortaLead.association_id == association_id,
-                            PortaAPortaLead.resident_id == resident_id,
-                            PortaAPortaLead.status != "cancelled",
-                        )
-                    )).scalar_one_or_none()
-                    if ex_lead:
-                        ex_lead.status = "agreement"
-                        ex_lead.updated_at = datetime.utcnow()
-                        self._session.add(ex_lead)
-                    else:
-                        self._session.add(PortaAPortaLead(
-                            association_id=association_id,
-                            operator_id=created_by,
-                            full_name=res_obj.full_name,
-                            phone=res_obj.phone_primary,
-                            cpf=res_obj.cpf,
-                            address_street=res_obj.address_street or "—",
-                            address_number=res_obj.address_number or "—",
-                            payment_type="parcelado",
-                            total_installments=acordo_installments,
-                            monthly_fee=amount,
-                            status="agreement",
-                            resident_id=resident_id,
-                        ))
-
         return tx
 
     async def perform_sangria(
@@ -1281,21 +1249,6 @@ class FinanceService:
              ORDER BY cs.opened_at DESC
         """), {"aid": aid})).fetchall()
 
-        pap_row = (await self._session.execute(sa_text("""
-            SELECT COALESCE(SUM(p.amount),0), COUNT(*)
-              FROM porta_a_porta_payments p
-              JOIN porta_a_porta_leads l ON l.id = p.lead_id
-             WHERE l.association_id=:aid AND p.status='paid'
-               AND DATE(p.paid_at) = CURRENT_DATE
-               AND NOT EXISTS (
-                   SELECT 1 FROM transactions t
-                   WHERE t.description LIKE '%Porta a Porta%'
-                     AND t.association_id=:aid
-                     AND DATE(t.transaction_at) = CURRENT_DATE
-                     AND t.amount = p.amount
-               )
-        """), {"aid": aid})).fetchone()
-
         boxes = (await self._session.execute(sa_text(
             "SELECT id, name, balance FROM cash_boxes WHERE association_id=:aid AND is_active=true ORDER BY name"
         ), {"aid": aid})).fetchall()
@@ -1337,7 +1290,6 @@ class FinanceService:
                                       "operador": r[5],
                                       "already_transferred": str(round(float(r[6] or 0), 2)),
                                       "remaining": str(round(max(0.0, float(r[2] or 0) - float(r[7] or 0) - float(r[6] or 0)), 2))} for r in conf_rows],
-            "pap_today": {"total": str(round(float(pap_row[0]), 2)), "count": pap_row[1]},
             "caixinhas": [{"id": str(r[0]), "name": r[1], "balance": str(round(float(r[2]), 2)),
                            "breakdown": breakdown_by_box.get(str(r[0]), [])} for r in boxes],
             "total_limbo": str(round(sum(max(0.0, float(r[2] or 0) - float(r[7] or 0) - float(r[6] or 0)) for r in conf_rows), 2)),

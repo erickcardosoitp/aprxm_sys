@@ -36,7 +36,7 @@ async def init_db() -> None:
     # e o create_all quebra inteiro (NoReferencedTableError) num banco novo.
     from app.models import (  # noqa: F401
         association, bank_statement, contas_pagar, empresa, finance, mensalidade,
-        migration_payment, package, painel_admin, password_reset_token, porta_a_porta,
+        migration_payment, package, painel_admin, password_reset_token,
         provisioning_run, resident, service_order, service_order_phase, settings, user,
     )
 

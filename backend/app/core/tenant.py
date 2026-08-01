@@ -285,8 +285,7 @@ async def resolve_scope(
     unidade: UUID | None = None,
 ) -> list[UUID]:
     """Helper canonico de escopo empresa->associacao, pra modulos que ainda
-    nao tem NENHUMA consciencia de empresa (packages, demands, porta_a_porta,
-    reports, chat...).
+    nao tem NENHUMA consciencia de empresa (packages, demands, reports, chat...).
 
     NAO USADO EM LUGAR NENHUM AINDA — e' aditivo, criado pra centralizar a
     lógica de "quais associacoes esse chamador pode ver" antes de decidir migrar

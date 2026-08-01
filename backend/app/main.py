@@ -13,7 +13,7 @@ from app.core.limiter import limiter
 from app.config import get_settings
 from app.database import init_db
 from app.db.migrations import run_migrations, seed_local_dev
-from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, notifications, packages, painel_auth, porta_a_porta, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
+from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, notifications, packages, painel_auth, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -163,7 +163,6 @@ app.include_router(crm.router, prefix=PREFIX)
 app.include_router(governanca.router, prefix=PREFIX)
 app.include_router(esc.router, prefix=PREFIX)
 app.include_router(painel_auth.router, prefix=PREFIX)
-app.include_router(porta_a_porta.router, prefix=PREFIX)
 
 
 @app.get("/health", tags=["Sistema"])

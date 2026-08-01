@@ -300,7 +300,7 @@ export default function TransferenciasTab({ onRequestAdminClose }: Props) {
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
               <p className="text-[10px] text-gray-500 mb-1">Hoje</p>
               <p className="text-sm font-bold text-green-700">{tesouraria ? fmt(tesouraria.faturamento_hoje) : '—'}</p>
@@ -308,11 +308,6 @@ export default function TransferenciasTab({ onRequestAdminClose }: Props) {
             <div className="bg-white rounded-xl border border-amber-100 p-3 text-center">
               <p className="text-[10px] text-gray-500 mb-1">A Repassar</p>
               <p className="text-sm font-bold text-amber-700">{tesouraria ? fmt(tesouraria.total_limbo) : '—'}</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
-              <p className="text-[10px] text-gray-500 mb-1">PAP Hoje</p>
-              <p className="text-sm font-bold text-green-700">{tesouraria ? fmt(tesouraria.pap_today.total) : '—'}</p>
-              <p className="text-[10px] text-gray-400">{tesouraria?.pap_today.count ?? 0} pgtos</p>
             </div>
           </div>
 

@@ -101,7 +101,6 @@ export interface PaidItem {
 export interface Tesouraria {
   open_sessions: { id: string; opened_at: string; opening_balance: string; operador: string; expected_balance: string }[]
   conferido_sessions: { id: string; opened_at: string; closing_balance: string | null; expected_balance: string | null; difference: string | null; operador: string; already_transferred: string; remaining: string }[]
-  pap_today: { total: string; count: number }
   caixinhas: { id: string; name: string; balance: string; breakdown: { pm: string; total: string }[] }[]
   total_limbo: string
   faturamento_hoje: string

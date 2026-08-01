@@ -712,7 +712,6 @@ async def merge_residents(
         ("packages", "delivered_to_resident_id"),
         ("service_orders", "requester_resident_id"),
         ("residents", "responsible_id"),
-        ("porta_a_porta_leads", "resident_id"),
         ("pix_learning_map", "resident_id"),
         ("resident_update_requests", "resident_id"),
     ]:
