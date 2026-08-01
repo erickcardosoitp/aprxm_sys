@@ -48,6 +48,7 @@ BRONZE_NAMES = {
     "packages":              "encomendas",
     "daily_tasks":           "tarefas",
     "service_orders":        "ordens_servico",
+    "api_request_logs":      "logs_acesso",
 }
 
 SILVER_NAMES = {
@@ -99,6 +100,11 @@ GOLD_PATHS = {
     "tarefas_semanal":               ("equipe",     "tarefas_semanal"),
     "score_operador_semanal":        ("operacional","score_operadores_semanal"),
     "retencao_semanal":              ("financeiro", "retencao_semanal"),
+    "tempo_medio_sessao_operador":   ("operacional","tempo_medio_sessao"),
+    "receita_por_rua":               ("financeiro", "receita_por_rua"),
+    "churn_associados_mensal":       ("moradores",  "churn_mensal"),
+    "novos_visitantes_diario":       ("moradores",  "novos_visitantes_diario"),
+    "aging_inadimplencia":           ("financeiro", "aging_inadimplencia"),
 }
 
 
@@ -349,7 +355,16 @@ async def export_bronze(session: AsyncSession, today: str,
             FROM service_orders
             WHERE status NOT IN ('cancelled','archived') {delta_filter}
         """,
+        # Tempo medio de sessao (indice de operadores, painel presidencia) --
+        # sem log de login/logout, usa MIN/MAX(created_at) por usuario/dia como proxy
+        "api_request_logs": f"""
+            SELECT id, user_id, created_at
+            FROM api_request_logs
+            WHERE user_id IS NOT NULL {delta_filter_created}
+        """,
     }
+    # Log imutavel (nunca tem updated_at) -- merge usa created_at, nao o default "updated_at"
+    _merge_ts_overrides = {"api_request_logs": "created_at"}
 
     # Particionamento de data para historico: YYYY/MM/DD
     date_parts = today.replace("-", "/")  # 2026-06-01 -> 2026/06/01
@@ -377,7 +392,8 @@ async def export_bronze(session: AsyncSession, today: str,
         else:
             existing = _download_df(client, consolidated_key)
             logger.info("Bronze atual  %-25s %d linhas no R2", pt, len(existing))
-            consolidated = _merge_bronze(existing, delta_df)
+            ts_col = _merge_ts_overrides.get(name, "updated_at")
+            consolidated = _merge_bronze(existing, delta_df, ts_col=ts_col)
 
         frames[name] = consolidated
 
@@ -1523,6 +1539,102 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 "total_members": "total_membros",
             })
             up(df_ret_sem, "retencao_semanal")
+
+    # ── Indicadores novos do painel da presidencia (2026-08-01) ───────────────
+    _assoc_map_novo = frames.get("associations", pd.DataFrame())
+    _assoc_map_novo = _assoc_map_novo.set_index("id")["name"].to_dict() if not _assoc_map_novo.empty else {}
+
+    # 34. Tempo medio de sessao por operador -- proxy MIN/MAX(created_at) por dia,
+    # ja que nao existe log de login/logout (so' JWT com expiracao)
+    logs = frames.get("api_request_logs", pd.DataFrame())
+    if not logs.empty:
+        users_df = frames.get("users", pd.DataFrame())
+        ops_ids = set(users_df[users_df["role"] == "operator"]["id"].tolist()) if not users_df.empty else set()
+        logs_op = logs[logs["user_id"].isin(ops_ids)].copy()
+        if not logs_op.empty:
+            logs_op["dia"] = _to_dt(logs_op["created_at"]).dt.date
+            sess = logs_op.groupby(["user_id", "dia"]).agg(
+                inicio=("created_at", "min"), fim=("created_at", "max"),
+            ).reset_index()
+            sess["duracao_min"] = (_to_dt(sess["fim"]) - _to_dt(sess["inicio"])).dt.total_seconds() / 60
+            agg_sess = sess.groupby("user_id").agg(
+                tempo_medio_sessao_min=("duracao_min", "mean"),
+                dias_ativos=("dia", "count"),
+            ).reset_index()
+            if not users_df.empty:
+                agg_sess = agg_sess.merge(
+                    users_df[["id", "full_name", "association_id"]],
+                    left_on="user_id", right_on="id", how="left",
+                )
+                agg_sess["association_name"] = agg_sess["association_id"].map(_assoc_map_novo)
+            agg_sess["tempo_medio_sessao_min"] = agg_sess["tempo_medio_sessao_min"].round(1)
+            df_tempo = agg_sess.rename(columns={
+                "full_name": "nome_operador", "association_id": "id_associacao",
+                "association_name": "nome_associacao",
+            })
+            cols_tempo = ["nome_operador", "id_associacao", "nome_associacao", "tempo_medio_sessao_min", "dias_ativos"]
+            up(df_tempo[[c for c in cols_tempo if c in df_tempo.columns]], "tempo_medio_sessao_operador")
+
+    # 35. Receita por rua
+    if not tx.empty and not res.empty:
+        res_addr = res[res["status"] == "active"].copy()
+        res_addr["street_norm"] = _normalize_street(res_addr["address_street"])
+        street_map = res_addr.set_index("id")["street_norm"].to_dict()
+        tx_r = tx[tx["resident_id"].notna() & (tx["type"] == "income")].copy()
+        tx_r["street"] = tx_r["resident_id"].map(street_map)
+        tx_r = tx_r[tx_r["street"].notna()]
+        if not tx_r.empty:
+            agg_rua = tx_r.groupby(["street", "association_id", "association_name"]).agg(
+                receita_total=("amount", "sum"), qtd_transacoes=("id", "count"),
+            ).reset_index().sort_values("receita_total", ascending=False)
+            df_rua_receita = agg_rua.rename(columns={
+                "street": "rua", "association_id": "id_associacao", "association_name": "nome_associacao",
+            })
+            up(df_rua_receita, "receita_por_rua")
+
+    # 36. Churn de associados mensal -- saida = move_out_date preenchido
+    if not res.empty and "move_out_date" in res.columns:
+        saiu = res[(res["type"] == "member") & (res["move_out_date"].notna())].copy()
+        if not saiu.empty:
+            saiu["mes"] = _month(saiu["move_out_date"]).dt.strftime("%Y-%m")
+            saiu["association_name"] = saiu["association_id"].map(_assoc_map_novo)
+            df_churn = saiu.groupby(["mes", "association_id", "association_name"]).size().reset_index(name="saidas")
+            df_churn = df_churn.rename(columns={
+                "association_id": "id_associacao", "association_name": "nome_associacao",
+            })
+            up(df_churn, "churn_associados_mensal")
+
+    # 37. Novos visitantes por dia
+    if not res.empty:
+        visitantes = res[res["type"] == "guest"].copy()
+        if not visitantes.empty:
+            visitantes["dia"] = _to_dt(visitantes["created_at"]).dt.date
+            visitantes["association_name"] = visitantes["association_id"].map(_assoc_map_novo)
+            df_novos_vis = visitantes.groupby(["dia", "association_id", "association_name"]).size().reset_index(name="novos_visitantes")
+            df_novos_vis = df_novos_vis.rename(columns={
+                "association_id": "id_associacao", "association_name": "nome_associacao",
+            })
+            up(df_novos_vis, "novos_visitantes_diario")
+
+    # 38. Aging de inadimplencia (0-30/30-60/60+)
+    if not mens.empty:
+        pend = mens[mens["status"] == "pending"].copy()
+        if not pend.empty:
+            pend["dias_atraso"] = (pd.Timestamp.now() - _to_dt(pend["due_date"])).dt.days
+            pend = pend[pend["dias_atraso"] > 0]
+            if not pend.empty:
+                pend["faixa"] = pd.cut(
+                    pend["dias_atraso"], bins=[0, 30, 60, float("inf")],
+                    labels=["0-30", "30-60", "60+"],
+                )
+                pend["association_name"] = pend["association_id"].map(_assoc_map_novo)
+                agg_aging = pend.groupby(["faixa", "association_id", "association_name"], observed=True).agg(
+                    qtd=("id", "count"), valor=("amount", "sum"),
+                ).reset_index()
+                df_aging = agg_aging.rename(columns={
+                    "association_id": "id_associacao", "association_name": "nome_associacao",
+                })
+                up(df_aging, "aging_inadimplencia")
 
     return stats, gold_frames
 
