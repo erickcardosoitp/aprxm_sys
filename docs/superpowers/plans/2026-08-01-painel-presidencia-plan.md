@@ -41,11 +41,11 @@ Indicadores (glossário): [2026-08-01-glossario-indicadores-presidencia.md](../r
       6 meses. Snapshot (lista), não série mensal.
 - [x] Gold `novos_visitantes_diario` — residents type=guest por dia de cadastro.
 - [x] Gold `aging_inadimplencia` — mensalidades pending em 3 faixas (0-30/30-60/60+).
-- [ ] **Bloqueado — precisa de decisão de produto, não é ETL:** coleta de "feedback"
-      pro índice de operadores (peso 20% da fórmula) — não existe nenhuma coleta hoje.
-      Índice roda com 4/5 métricas até essa feature existir (renormalizar pesos:
-      tarefas 37,5%/faturamento 31,25%/vendas 18,75%/tempo 12,5% ≈ pesos originais
-      escalados pra somar 100% sem o feedback).
+- [x] Gold `feedback_operador` — definição do usuário: qtd de tarefas do operador com
+      status != done e != pending (em_andamento/bloqueada, teve alguma posição). Proxy de
+      engajamento, não satisfação. Validado em produção (2026-08-01). Índice de
+      operadores roda com as 5 métricas originais (tarefas 30%/faturamento 25%/
+      feedback 20%/vendas 15%/tempo 10%) — nenhum bloqueio restante.
 - [ ] Opcional: backfill único de `tempo_medio_sessao_operador` com os ~26 dias de
       `api_request_logs` já existentes (hoje só acumula pra frente).
 - [ ] Mapa por CEP (Senso) — geocodificação via ViaCEP + cache. Não é ETL, é serviço
@@ -91,8 +91,6 @@ Indicadores (glossário): [2026-08-01-glossario-indicadores-presidencia.md](../r
 ## Riscos conhecidos
 
 - Filtro de unidade: decidir "todas por padrão + filtro opcional" antes da Fase 3/4.
-- Índice de operadores nasce com 4/5 métricas — comunicar isso na UI (não esconder que
-  falta "feedback"), não fingir que o índice está completo.
-- `churn_associados_mensal`/`tempo_medio_sessao_operador` vazios hoje — endpoints devem
+- `churn_associados`/`tempo_medio_sessao_operador` vazios hoje — endpoints devem
   tratar tabela vazia com graça (retornar `null`/lista vazia, não erro), não travar o
   `/moradores` ou `/operadores` por causa disso.

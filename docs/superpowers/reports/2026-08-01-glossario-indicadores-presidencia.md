@@ -151,14 +151,16 @@ efetivo", já que o sistema não tem um botão de "bater ponto".
 **Tarefas diárias concluídas** — quantas tarefas do dia a dia (checklist, manutenção)
 esse operador finaliza.
 
-**Feedback** — *ainda não existe* — seria uma avaliação de qualidade do atendimento
-desse operador (por exemplo, morador avalia depois de receber uma encomenda ou resolver
-um problema). Precisa de uma feature nova pra coletar isso.
+**Feedback** — quantidade de tarefas atribuídas a esse operador que tiveram alguma
+posição/movimento (estão "em andamento" ou "bloqueada"), mas ainda não foram concluídas.
+Não é uma nota de satisfação do morador — é uma proxy de engajamento: mostra se o
+operador está trabalhando as tarefas atribuídas (mesmo sem terminar) ou se estão
+simplesmente paradas em "pendente" sem nenhum movimento.
 
 **Índice de calor de performance** — um número de 0 a 100 que resume tudo (tarefas +
-faturamento + vendas + tempo, e no futuro + feedback) num só valor, com uma faixa de
-cor (vermelho=crítico, amarelo=regular, verde=bom) — serve pra comparar operadores de
-forma justa, sem precisar olhar 5 números separados.
+faturamento + vendas + tempo + feedback, as 5 métricas já disponíveis) num só valor, com
+uma faixa de cor (vermelho=crítico, amarelo=regular, verde=bom) — serve pra comparar
+operadores de forma justa, sem precisar olhar 5 números separados.
 
 **Ranking de operadores** — lista ordenada de todos os operadores pelo índice de calor,
 com um resumo de cada um — serve pra reconhecer quem está performando bem e identificar
