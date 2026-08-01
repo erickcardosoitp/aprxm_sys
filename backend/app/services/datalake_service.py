@@ -656,7 +656,9 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         df["month"] = _month(mens["reference_month"].fillna(mens["due_date"]).fillna(mens["created_at"]))
         now_month = pd.Timestamp.now().to_period("M").to_timestamp()
         df = df[df["month"] <= now_month]
-        df["association_name"] = df["association_id"].map(assoc_map)
+        df["association_name"] = df["association_id"].map(
+            _assocs_emp.set_index("id")["name"].to_dict() if not _assocs_emp.empty else {}
+        )
         agg = df.groupby(["month","association_id","association_name"]).apply(lambda g: pd.Series({
             "paid":        (g["status"]=="paid").sum(),
             "total":       len(g),
