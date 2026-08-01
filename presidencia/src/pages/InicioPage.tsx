@@ -5,10 +5,16 @@ import { StatTile } from '../components/StatTile'
 import { useUnidade } from '../lib/UnidadeContext'
 import { nomeAssociacaoFor } from '../lib/unidade'
 import { usePeriodo } from '../lib/PeriodoContext'
+import { PERIODOS } from '../lib/periodo'
 import { takeInicioCache } from '../lib/prefetchCache'
 
 function formatBRL(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function pctDelta(atual: number | null, anterior: number | null): number | null {
+  if (atual === null || anterior === null || anterior === 0) return null
+  return ((atual - anterior) / anterior) * 100
 }
 
 export function InicioPage() {
@@ -53,6 +59,8 @@ export function InicioPage() {
   if (error) return <p className="rounded bg-red-100 px-3 py-2 text-sm text-red-700">{error}</p>
   if (!data) return null
 
+  const periodoLabelCurto = PERIODOS.find((p) => p.key === periodo)?.label.toLowerCase() ?? 'período'
+
   return (
     <div className="space-y-6">
       {freshness?.stale && (
@@ -63,38 +71,45 @@ export function InicioPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatTile
-          label="Receita do mês"
+          label="Receita"
           value={formatBRL(data.financeiro.receita_mes_atual)}
+          hint={`vs ${periodoLabelCurto} anterior`}
+          delta={{ pct: pctDelta(data.financeiro.receita_mes_atual, data.financeiro.receita_mes_anterior) }}
           icon={<Wallet size={18} className="text-marque-500" />}
         />
         <StatTile
           label="Taxa de cobrança"
           value={data.financeiro.taxa_cobranca !== null ? `${data.financeiro.taxa_cobranca}%` : '—'}
-          hint="do que foi gerado este mês"
+          hint={`vs ${periodoLabelCurto} anterior`}
+          delta={{ pct: pctDelta(data.financeiro.taxa_cobranca, data.financeiro.taxa_cobranca_anterior) }}
           icon={<Percent size={18} className="text-marque-500" />}
         />
         <StatTile
           label="Inadimplência"
           value={formatBRL(data.financeiro.total_inadimplente)}
-          hint="em aberto agora"
+          hint="valor em aberto neste momento"
+          badge="agora"
           icon={<Warning size={18} className="text-marque-500" />}
         />
         <StatTile
           label="Moradores ativos"
           value={String(data.moradores.total)}
           hint={`${data.moradores.associados} associados · ${data.moradores.dependentes} dependentes · ${data.moradores.visitantes} visitantes`}
+          badge="agora"
           icon={<Users size={18} className="text-marque-500" />}
         />
         <StatTile
-          label="Pacotes recebidos (mês)"
+          label="Pacotes recebidos"
           value={String(data.pacotes_os.pacotes_recebidos)}
-          hint={data.pacotes_os.tempo_medio_entrega_dias !== null ? `${data.pacotes_os.tempo_medio_entrega_dias} dias até retirada, em média` : undefined}
+          hint={data.pacotes_os.tempo_medio_entrega_dias !== null ? `${data.pacotes_os.tempo_medio_entrega_dias} dias até retirada, em média` : `vs ${periodoLabelCurto} anterior`}
+          delta={{ pct: pctDelta(data.pacotes_os.pacotes_recebidos, data.pacotes_os.pacotes_recebidos_anterior) }}
           icon={<Package size={18} className="text-marque-500" />}
         />
         <StatTile
-          label="Ordens de serviço (mês)"
+          label="Ordens de serviço"
           value={`${data.pacotes_os.os_fechadas}/${data.pacotes_os.os_abertas + data.pacotes_os.os_fechadas}`}
-          hint="fechadas / total"
+          hint={`fechadas / total · vs ${periodoLabelCurto} anterior`}
+          delta={{ pct: pctDelta(data.pacotes_os.os_fechadas, data.pacotes_os.os_fechadas_anterior) }}
           icon={<Wrench size={18} className="text-marque-500" />}
         />
       </div>

@@ -52,7 +52,9 @@ export interface FreshnessInfo {
 export interface InicioData {
   financeiro: {
     receita_mes_atual: number
+    receita_mes_anterior: number
     taxa_cobranca: number | null
+    taxa_cobranca_anterior: number | null
     total_inadimplente: number
   }
   moradores: {
@@ -63,9 +65,11 @@ export interface InicioData {
   }
   pacotes_os: {
     pacotes_recebidos: number
+    pacotes_recebidos_anterior: number
     tempo_medio_entrega_dias: number | null
     os_abertas: number
     os_fechadas: number
+    os_fechadas_anterior: number
   }
   alertas: string[]
 }

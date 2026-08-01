@@ -19,6 +19,12 @@ from app.config import get_settings
 settings = get_settings()
 
 
+def _shift_yyyymm(yyyymm: str, delta_meses: int) -> str:
+    ano, mes = (int(p) for p in yyyymm.split("-"))
+    total = ano * 12 + (mes - 1) + delta_meses
+    return f"{total // 12:04d}-{total % 12 + 1:02d}"
+
+
 def _ultimos_meses_yyyymm(n: int, ate: str | None = None) -> list[str]:
     """Lista de 'YYYY-MM' dos ultimos n meses a partir de `ate` (ou do mes
     atual se omitido), incluindo o proprio `ate`."""
@@ -106,11 +112,10 @@ class PresidenciaService:
 
     # ── /inicio ──────────────────────────────────────────────────────────
 
-    async def get_inicio(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
-        unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
-        meses_atras = {"mes": 1, "trimestre": 3, "semestre": 6, "ano": 12}.get(periodo, 1)
-        meses_alvo = _ultimos_meses_yyyymm(meses_atras, ate)
-        params = {"unidade": unidade, "meses": meses_alvo} if unidade else {"meses": meses_alvo}
+    async def _metricas_periodo(self, meses: list[str], unidade_filter: str, unidade: str | None) -> dict:
+        """Metricas com dimensao de mes (comparaveis entre periodos) -- usado
+        pro periodo atual e pro periodo anterior (comparativo dos cards)."""
+        params = {"unidade": unidade, "meses": meses} if unidade else {"meses": meses}
 
         receita_mes = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(receita_total), 0) FROM receita_diaria
@@ -124,6 +129,35 @@ class PresidenciaService:
         pagas, total_cob = cob[0] or 0, cob[1] or 0
         taxa_cobranca = round(100.0 * pagas / total_cob, 1) if total_cob else None
 
+        pacotes = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(recebidos),0), AVG(media_dias_permanencia)
+            FROM encomendas_mensal WHERE mes = ANY(:meses) {unidade_filter}
+        """), params)).fetchone()
+
+        os_row = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(abertas),0), COALESCE(SUM(fechadas),0)
+            FROM ordens_servico_mensal WHERE mes = ANY(:meses) {unidade_filter}
+        """), params)).fetchone()
+
+        return {
+            "receita": float(receita_mes or 0),
+            "taxa_cobranca": taxa_cobranca,
+            "pacotes_recebidos": pacotes[0] or 0,
+            "tempo_medio_entrega_dias": round(pacotes[1], 1) if pacotes[1] else None,
+            "os_abertas": os_row[0] or 0,
+            "os_fechadas": os_row[1] or 0,
+        }
+
+    async def get_inicio(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
+        unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
+        meses_atras = {"mes": 1, "trimestre": 3, "semestre": 6, "ano": 12}.get(periodo, 1)
+        meses_alvo = _ultimos_meses_yyyymm(meses_atras, ate)
+        meses_anteriores = _ultimos_meses_yyyymm(meses_atras, _shift_yyyymm(meses_alvo[-1], -1))
+        params = {"unidade": unidade, "meses": meses_alvo} if unidade else {"meses": meses_alvo}
+
+        atual = await self._metricas_periodo(meses_alvo, unidade_filter, unidade)
+        anterior = await self._metricas_periodo(meses_anteriores, unidade_filter, unidade)
+
         inadimplente = (await self.dw.execute(text(
             f"SELECT COALESCE(SUM(valor_devido), 0) FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter}"
         ), params)).scalar()
@@ -134,19 +168,9 @@ class PresidenciaService:
             FROM panorama_moradores WHERE 1=1 {unidade_filter}
         """), params)).fetchone()
 
-        pacotes = (await self.dw.execute(text(f"""
-            SELECT COALESCE(SUM(recebidos),0), AVG(media_dias_permanencia)
-            FROM encomendas_mensal WHERE mes = ANY(:meses) {unidade_filter}
-        """), params)).fetchone()
-
         parados = (await self.dw.execute(text(
             f"SELECT COALESCE(SUM(paradas_3d), 0) FROM encomendas_paradas WHERE 1=1 {unidade_filter}"
         ), params)).scalar() or 0
-
-        os_row = (await self.dw.execute(text(f"""
-            SELECT COALESCE(SUM(abertas),0), COALESCE(SUM(fechadas),0)
-            FROM ordens_servico_mensal WHERE mes = ANY(:meses) {unidade_filter}
-        """), params)).fetchone()
 
         caixas_unidade_filter = "AND a.name = :unidade" if unidade else ""
         caixas_abertos = (await self.session.execute(text(f"""
@@ -158,15 +182,17 @@ class PresidenciaService:
         alertas = []
         if parados > 0:
             alertas.append(f"{parados} pacotes parados há mais de 3 dias")
-        if taxa_cobranca is not None and taxa_cobranca < 60:
-            alertas.append(f"Taxa de cobrança {taxa_cobranca}% — abaixo de 60%")
+        if atual["taxa_cobranca"] is not None and atual["taxa_cobranca"] < 60:
+            alertas.append(f"Taxa de cobrança {atual['taxa_cobranca']}% — abaixo de 60%")
         if caixas_abertos > 0:
             alertas.append(f"{caixas_abertos} caixas abertos sem fechamento")
 
         return {
             "financeiro": {
-                "receita_mes_atual": float(receita_mes or 0),
-                "taxa_cobranca": taxa_cobranca,
+                "receita_mes_atual": atual["receita"],
+                "receita_mes_anterior": anterior["receita"],
+                "taxa_cobranca": atual["taxa_cobranca"],
+                "taxa_cobranca_anterior": anterior["taxa_cobranca"],
                 "total_inadimplente": float(inadimplente or 0),
             },
             "moradores": {
@@ -174,9 +200,12 @@ class PresidenciaService:
                 "dependentes": moradores[2] or 0, "visitantes": moradores[3] or 0,
             },
             "pacotes_os": {
-                "pacotes_recebidos": pacotes[0] or 0,
-                "tempo_medio_entrega_dias": round(pacotes[1], 1) if pacotes[1] else None,
-                "os_abertas": os_row[0] or 0, "os_fechadas": os_row[1] or 0,
+                "pacotes_recebidos": atual["pacotes_recebidos"],
+                "pacotes_recebidos_anterior": anterior["pacotes_recebidos"],
+                "tempo_medio_entrega_dias": atual["tempo_medio_entrega_dias"],
+                "os_abertas": atual["os_abertas"],
+                "os_fechadas": atual["os_fechadas"],
+                "os_fechadas_anterior": anterior["os_fechadas"],
             },
             "alertas": alertas,
         }

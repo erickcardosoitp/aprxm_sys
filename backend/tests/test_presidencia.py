@@ -98,16 +98,20 @@ class TestGetInicio:
             r.fetchone.return_value = v
             return r
 
-        # ordem em get_inicio: receita_mes(scalar), cob(fetchone), inadimplente(scalar),
-        # moradores(fetchone), pacotes(fetchone), parados(scalar), os_row(fetchone)
+        # ordem em get_inicio: _metricas_periodo(atual) = receita/cob/pacotes/os,
+        # _metricas_periodo(anterior) = idem, depois inadimplente, moradores, parados.
         dw.execute = AsyncMock(side_effect=[
-            make(7312.51),               # receita_mes
-            make((132, 393)),            # cob: pagas, total
+            make(7312.51),               # atual: receita_mes
+            make((132, 393)),            # atual: cob pagas, total
+            make((1556, 2.0)),           # atual: pacotes recebidos, media_dias_permanencia
+            make((2, 0)),                # atual: os abertas, fechadas
+            make(6800.0),                # anterior: receita_mes
+            make((120, 380)),            # anterior: cob pagas, total
+            make((1400, 2.5)),           # anterior: pacotes recebidos, media_dias_permanencia
+            make((3, 1)),                # anterior: os abertas, fechadas
             make(5220.0),                # inadimplente
             make((1426, 408, 69, 949)),  # moradores: total, associados, dependentes, visitantes
-            make((1556, 2.0)),           # pacotes: recebidos, media_dias_permanencia
             make(312),                   # parados
-            make((2, 0)),                # os: abertas, fechadas
         ])
         svc = PresidenciaService(session, dw)
 
