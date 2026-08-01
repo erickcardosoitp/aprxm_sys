@@ -98,7 +98,7 @@ class PresidenciaService:
 
         cob = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(pagas), 0), COALESCE(SUM(total), 0)
-            FROM taxa_cobranca WHERE mes = to_char(now(), 'YYYY-MM') {unidade_filter}
+            FROM taxa_cobranca WHERE to_char(mes, 'YYYY-MM') = to_char(now(), 'YYYY-MM') {unidade_filter}
         """), params)).fetchone()
         pagas, total_cob = cob[0] or 0, cob[1] or 0
         taxa_cobranca = round(100.0 * pagas / total_cob, 1) if total_cob else None
