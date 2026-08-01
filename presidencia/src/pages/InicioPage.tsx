@@ -33,7 +33,16 @@ export function InicioPage() {
         setData(res.data)
         setFreshness({ generated_at: res.generated_at, stale: res.stale })
       })
-      .catch(() => !cancelled && setError('Não foi possível carregar os indicadores.'))
+      .catch((err) => {
+        if (cancelled) return
+        const status = err?.response?.status
+        const detail = err?.response?.data?.detail
+        setError(
+          status
+            ? `Erro ${status}${detail ? `: ${detail}` : ''}`
+            : `Falha de rede: ${err?.message ?? 'desconhecida'}`,
+        )
+      })
       .finally(() => !cancelled && setLoading(false))
     return () => { cancelled = true }
   }, [unidade])
