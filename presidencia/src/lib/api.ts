@@ -70,9 +70,15 @@ export interface InicioData {
   alertas: string[]
 }
 
-export async function getInicio(nomeAssociacao?: string | null): Promise<FreshnessInfo & { data: InicioData }> {
+export async function getInicio(
+  nomeAssociacao?: string | null,
+  periodo?: string,
+): Promise<FreshnessInfo & { data: InicioData }> {
   const { data } = await api.get<FreshnessInfo & { data: InicioData }>('/presidencia/inicio', {
-    params: nomeAssociacao ? { unidade: nomeAssociacao } : {},
+    params: {
+      ...(nomeAssociacao ? { unidade: nomeAssociacao } : {}),
+      ...(periodo ? { periodo } : {}),
+    },
   })
   return data
 }

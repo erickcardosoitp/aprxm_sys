@@ -4,6 +4,7 @@ import { getInicio, type FreshnessInfo, type InicioData } from '../lib/api'
 import { StatTile } from '../components/StatTile'
 import { useUnidade } from '../lib/UnidadeContext'
 import { nomeAssociacaoFor } from '../lib/unidade'
+import { usePeriodo } from '../lib/PeriodoContext'
 import { takeInicioCache } from '../lib/prefetchCache'
 
 function formatBRL(v: number): string {
@@ -16,10 +17,11 @@ export function InicioPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const { unidade } = useUnidade()
+  const { periodo } = usePeriodo()
 
   useEffect(() => {
     const cached = takeInicioCache()
-    if (cached && unidade === 'todos') {
+    if (cached && unidade === 'todos' && periodo === 'mes') {
       setData(cached.data)
       setFreshness({ generated_at: cached.generated_at, stale: cached.stale })
       setLoading(false)
@@ -27,7 +29,7 @@ export function InicioPage() {
     }
     let cancelled = false
     setLoading(true)
-    getInicio(nomeAssociacaoFor(unidade))
+    getInicio(nomeAssociacaoFor(unidade), periodo)
       .then((res) => {
         if (cancelled) return
         setData(res.data)
@@ -45,7 +47,7 @@ export function InicioPage() {
       })
       .finally(() => !cancelled && setLoading(false))
     return () => { cancelled = true }
-  }, [unidade])
+  }, [unidade, periodo])
 
   if (loading) return <p className="text-sm text-ink-muted">Carregando...</p>
   if (error) return <p className="rounded bg-red-100 px-3 py-2 text-sm text-red-700">{error}</p>
