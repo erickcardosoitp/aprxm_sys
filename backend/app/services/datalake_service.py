@@ -1599,12 +1599,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         membros = res[(res["type"] == "member") & (res["status"] == "active")].copy()
         if not membros.empty:
             pagas = mens[mens["status"] == "paid"].copy()
-            ultimo_pagamento = (
-                pagas.groupby("resident_id")["paid_at"].max()
-                if "paid_at" in pagas.columns and not pagas.empty
-                else pd.Series(dtype="object")
-            )
-            membros["ultimo_pagamento"] = membros["id"].map(ultimo_pagamento)
+            if "paid_at" in pagas.columns and not pagas.empty:
+                pagas["resident_id"] = pagas["resident_id"].astype(str)
+                ultimo_pagamento = pagas.groupby("resident_id")["paid_at"].max()
+            else:
+                ultimo_pagamento = pd.Series(dtype="object")
+            membros["ultimo_pagamento"] = membros["id"].astype(str).map(ultimo_pagamento)
             cutoff_6m = pd.Timestamp.now() - pd.DateOffset(months=6)
             sem_pagar = membros[
                 membros["ultimo_pagamento"].isna() | (_to_dt(membros["ultimo_pagamento"]) < cutoff_6m)
