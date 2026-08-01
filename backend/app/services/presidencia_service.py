@@ -19,11 +19,15 @@ from app.config import get_settings
 settings = get_settings()
 
 
-def _ultimos_meses_yyyymm(n: int) -> list[str]:
-    """Lista de 'YYYY-MM' dos ultimos n meses, incluindo o atual."""
-    hoje = date.today()
+def _ultimos_meses_yyyymm(n: int, ate: str | None = None) -> list[str]:
+    """Lista de 'YYYY-MM' dos ultimos n meses a partir de `ate` (ou do mes
+    atual se omitido), incluindo o proprio `ate`."""
+    if ate:
+        ano, mes = (int(p) for p in ate.split("-"))
+    else:
+        hoje = date.today()
+        ano, mes = hoje.year, hoje.month
     meses = []
-    ano, mes = hoje.year, hoje.month
     for _ in range(n):
         meses.append(f"{ano:04d}-{mes:02d}")
         mes -= 1
@@ -102,10 +106,10 @@ class PresidenciaService:
 
     # ── /inicio ──────────────────────────────────────────────────────────
 
-    async def get_inicio(self, unidade: str | None = None, periodo: str = "mes") -> dict:
+    async def get_inicio(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
         unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
         meses_atras = {"mes": 1, "trimestre": 3, "semestre": 6, "ano": 12}.get(periodo, 1)
-        meses_alvo = _ultimos_meses_yyyymm(meses_atras)
+        meses_alvo = _ultimos_meses_yyyymm(meses_atras, ate)
         params = {"unidade": unidade, "meses": meses_alvo} if unidade else {"meses": meses_alvo}
 
         receita_mes = (await self.dw.execute(text(f"""

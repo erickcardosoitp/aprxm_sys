@@ -38,11 +38,12 @@ async def get_status(
 async def get_inicio(
     unidade: str | None = Query(default=None, description="Nome da associacao (Congonha/Vaz Lobo) ou omitido para Todos"),
     periodo: str = Query(default="mes", pattern="^(mes|trimestre|semestre|ano)$"),
+    ate: str | None = Query(default=None, pattern="^[0-9]{4}-[0-9]{2}$", description="Mes-ancora YYYY-MM, omitido = mes atual"),
     current: CurrentUser = Depends(require_presidencia_access),
     svc: PresidenciaService = Depends(_get_service),
 ) -> dict:
     freshness = await svc.freshness()
-    data = await svc.get_inicio(unidade, periodo)
+    data = await svc.get_inicio(unidade, periodo, ate)
     return {**freshness, "data": data}
 
 
