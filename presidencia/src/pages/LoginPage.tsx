@@ -1,22 +1,20 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { EnvelopeSimple, LockSimple, CircleNotch } from '@phosphor-icons/react'
 import { listAssociationsForEmail, login, type OrgOption } from '../lib/api'
 import { useAuthStore } from '../lib/authStore'
 
-type Step = 'email' | 'org' | 'password'
-
 export function LoginPage() {
-  const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [orgs, setOrgs] = useState<OrgOption[]>([])
-  const [selectedOrg, setSelectedOrg] = useState<OrgOption | null>(null)
+  const [remember, setRemember] = useState(true)
+  const [orgs, setOrgs] = useState<OrgOption[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const setToken = useAuthStore((s) => s.setToken)
   const navigate = useNavigate()
 
-  async function handleEmailSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
@@ -26,33 +24,26 @@ export function LoginPage() {
         setError('Nenhuma organização encontrada para este e-mail.')
         return
       }
-      setOrgs(found)
-      if (found.length === 1) {
-        setSelectedOrg(found[0])
-        setStep('password')
-      } else {
-        setStep('org')
+      if (found.length > 1) {
+        setOrgs(found)
+        return
       }
+      const token = await login(email, password, found[0].id)
+      setToken(token, remember)
+      navigate('/inicio')
     } catch {
-      setError('Erro ao buscar organizações.')
+      setError('Credenciais inválidas ou sem acesso ao painel da presidência.')
     } finally {
       setLoading(false)
     }
   }
 
-  function handleOrgSelect(org: OrgOption) {
-    setSelectedOrg(org)
-    setStep('password')
-  }
-
-  async function handlePasswordSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!selectedOrg) return
+  async function handleOrgSelect(org: OrgOption) {
     setError(null)
     setLoading(true)
     try {
-      const token = await login(email, password, selectedOrg.id)
-      setToken(token)
+      const token = await login(email, password, org.id)
+      setToken(token, remember)
       navigate('/inicio')
     } catch {
       setError('Credenciais inválidas ou sem acesso ao painel da presidência.')
@@ -62,75 +53,105 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-muted">
-      <div className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-surface p-8">
-        <div>
-          <h1 className="text-xl font-semibold text-marque-500">Painel da Presidência</h1>
-          <p className="text-sm text-ink-muted">Instituto Tia Pretinha</p>
-        </div>
-        {error && <p className="rounded bg-red-100 px-3 py-2 text-sm text-red-700">{error}</p>}
+    <div className="relative flex min-h-screen items-center justify-center bg-[#0f0a1e] p-4">
+      <div
+        className="absolute inset-0 opacity-10"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle at 25% 25%, #7c6dec 0%, transparent 50%), radial-gradient(circle at 75% 75%, #4f3fe0 0%, transparent 50%)',
+        }}
+      />
 
-        {step === 'email' && (
-          <form onSubmit={handleEmailSubmit} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-sm text-ink-muted">E-mail</label>
-              <input
-                type="email"
-                required
-                autoFocus
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-marque-500"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-md bg-marque-500 px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {loading ? 'Buscando...' : 'Continuar'}
-            </button>
-          </form>
-        )}
-
-        {step === 'org' && (
-          <div className="space-y-2">
-            <p className="text-sm text-ink-muted">Escolha a associação:</p>
-            {orgs.map((org) => (
-              <button
-                key={org.id}
-                onClick={() => handleOrgSelect(org)}
-                className="w-full rounded-md border border-border px-3 py-2 text-left text-sm hover:border-marque-500"
-              >
-                {org.name}
-              </button>
-            ))}
+      <div className="relative w-full max-w-sm">
+        <div className="overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="bg-[#1a1030] px-8 py-7 text-center">
+            <img src="/logo.png" alt="APRXM" className="mx-auto mb-2 h-10 w-auto object-contain" />
+            <p className="text-xs text-marque-300/70">Painel da Presidência</p>
           </div>
-        )}
 
-        {step === 'password' && (
-          <form onSubmit={handlePasswordSubmit} className="space-y-4">
-            <p className="text-sm text-ink-muted">{selectedOrg?.name}</p>
-            <div className="space-y-1">
-              <label className="text-sm text-ink-muted">Senha</label>
-              <input
-                type="password"
-                required
-                autoFocus
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-marque-500"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-md bg-marque-500 px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {loading ? 'Entrando...' : 'Entrar'}
-            </button>
-          </form>
-        )}
+          <div className="px-8 py-7">
+            {error && (
+              <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
+            )}
+
+            {orgs ? (
+              <div className="flex flex-col gap-3">
+                <div className="mb-1 flex items-center gap-2">
+                  <button onClick={() => setOrgs(null)} className="text-xs text-gray-400 hover:text-gray-600">← voltar</button>
+                  <p className="text-sm font-semibold text-gray-700">Selecione a organização</p>
+                </div>
+                {orgs.map((org) => (
+                  <button
+                    key={org.id}
+                    onClick={() => handleOrgSelect(org)}
+                    disabled={loading}
+                    className="group flex items-center gap-3 rounded-xl border border-gray-200 p-4 text-left transition hover:border-[#4f3fe0] hover:bg-marque-50 disabled:opacity-50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold leading-tight text-gray-800">{org.name}</p>
+                      <p className="mt-0.5 text-xs capitalize text-gray-400">{org.role}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                <div>
+                  <p className="mb-1 text-xs text-gray-500">E-mail</p>
+                  <div className="relative">
+                    <EnvelopeSimple className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="email"
+                      required
+                      autoFocus
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="seu@email.com"
+                      className="w-full rounded-xl border border-gray-200 py-3 pl-10 pr-4 text-sm focus:border-[#4f3fe0] focus:outline-none focus:ring-2 focus:ring-[#4f3fe0]/30"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-1 text-xs text-gray-500">Senha</p>
+                  <div className="relative">
+                    <LockSimple className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Senha"
+                      className="w-full rounded-xl border border-gray-200 py-3 pl-10 pr-4 text-sm focus:border-[#4f3fe0] focus:outline-none focus:ring-2 focus:ring-[#4f3fe0]/30"
+                    />
+                  </div>
+                </div>
+
+                <label className="flex cursor-pointer select-none items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                    className="h-4 w-4 rounded accent-[#4f3fe0]"
+                  />
+                  <span className="text-xs text-gray-500">Lembrar de mim neste dispositivo</span>
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={loading || !email || !password}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#4f3fe0] py-3 font-semibold text-white transition hover:bg-[#3d2fb8] disabled:opacity-50"
+                >
+                  {loading ? <CircleNotch className="h-4 w-4 animate-spin" /> : 'Entrar'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        <p className="mt-5 text-center text-xs text-marque-300/40">
+          Painel da Presidência · Instituto Tia Pretinha
+        </p>
       </div>
     </div>
   )
