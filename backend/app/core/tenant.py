@@ -205,6 +205,16 @@ def assert_same_empresa(current: CurrentUser, target_empresa_id: UUID | None) ->
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem acesso a essa empresa.")
 
 
+async def empresa_assoc_ids(session: AsyncSession, empresa_id: UUID) -> list[UUID]:
+    """Todas as associacoes de uma empresa. Movido de EscService pra ca (2026-08-01)
+    pra ser reaproveitado tambem pelo ETL (datalake_service.py), sem import circular
+    — EscService continua expondo o metodo de mesmo nome como wrapper fino."""
+    rows = (await session.execute(
+        text("SELECT id FROM associations WHERE empresa_id = :eid"), {"eid": str(empresa_id)}
+    )).fetchall()
+    return [r[0] for r in rows]
+
+
 # Template padrao exibido quando a empresa ainda nao configurou permissoes
 # (empresas.access_groups vazio). O admin ve um ponto de partida e salva.
 # Vive aqui (nao em esc.py) para poder ser consultado por require_esc_module

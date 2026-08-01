@@ -61,12 +61,22 @@ class Settings(BaseSettings):
     r2_secret_access_key: str = ""
     r2_bucket_name: str = "aprxm-datalake"
 
-    # Neon Analytics (OLAP — Power BI)
+    # Neon Analytics (OLAP — Power BI) — LEGADO, aponta pro schema analytics.* do
+    # banco operacional. Substituido por datawarehouse_aprxm_database_url (projeto
+    # Neon dedicado "aprxm-analytics"). Remover apos Fase 4 do plano de reestruturacao
+    # do ETL (docs/superpowers/plans/2026-08-01-etl-empresa-aware-plan.md).
     analytics_database_url: str = ""
 
     @property
     def analytics_db_url(self) -> str:
         return self.analytics_database_url.strip()
+
+    # Neon "aprxm-analytics" — data warehouse dedicado (gold: dim_/fact_, empresa-aware)
+    datawarehouse_aprxm_database_url: str = ""
+
+    @property
+    def datawarehouse_db_url(self) -> str:
+        return self.datawarehouse_aprxm_database_url.strip()
 
     # WebAuthn
     webauthn_rp_id: str = "localhost"

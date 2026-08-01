@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
+from app.core.tenant import empresa_assoc_ids as _empresa_assoc_ids
 from app.db.helpers import PROD_ASSOC_FILTER
 
 # tabelas de "movimentacao" que impedem exclusao definitiva de usuario
@@ -44,10 +45,7 @@ class EscService:
             raise ForbiddenError("Associação fora da sua empresa.")
 
     async def empresa_assoc_ids(self, empresa_id: UUID) -> list[UUID]:
-        rows = (await self.session.execute(
-            text("SELECT id FROM associations WHERE empresa_id = :eid"), {"eid": str(empresa_id)}
-        )).fetchall()
-        return [r[0] for r in rows]
+        return await _empresa_assoc_ids(self.session, empresa_id)
 
     # ── Cadastros ────────────────────────────────────────────────────────
 
