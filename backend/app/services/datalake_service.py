@@ -101,6 +101,7 @@ GOLD_PATHS = {
     "score_operador_semanal":        ("operacional","score_operadores_semanal"),
     "retencao_semanal":              ("financeiro", "retencao_semanal"),
     "tempo_medio_sessao_operador":   ("operacional","tempo_medio_sessao"),
+    "feedback_operador":             ("operacional","feedback_operador"),
     "receita_por_rua":               ("financeiro", "receita_por_rua"),
     "churn_associados":              ("moradores",  "churn_associados"),
     "novos_visitantes_diario":       ("moradores",  "novos_visitantes_diario"),
@@ -1574,6 +1575,23 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             })
             cols_tempo = ["nome_operador", "id_associacao", "nome_associacao", "tempo_medio_sessao_min", "dias_ativos"]
             up(df_tempo[[c for c in cols_tempo if c in df_tempo.columns]], "tempo_medio_sessao_operador")
+
+    # 34b. "Feedback" (indice de operadores) -- qtd de tarefas nao concluidas com
+    # status != pendente (ou seja, teve alguma posicao/movimento: em_andamento ou
+    # bloqueada) -- definicao do usuario, proxy de engajamento, nao satisfacao.
+    if not tsk.empty:
+        ativas = tsk[~tsk["is_deleted"]] if "is_deleted" in tsk.columns else tsk
+        com_posicao = ativas[
+            (ativas["status"] != "done") & (ativas["status"] != "pending")
+        ].copy()
+        if not com_posicao.empty:
+            df_feedback = com_posicao.groupby(
+                ["assigned_to_name", "association_id", "association_name"]
+            ).size().reset_index(name="feedback_qtd").rename(columns={
+                "assigned_to_name": "nome_operador", "association_id": "id_associacao",
+                "association_name": "nome_associacao",
+            })
+            up(df_feedback, "feedback_operador")
 
     # 35. Receita por rua
     if not tx.empty and not res.empty:
