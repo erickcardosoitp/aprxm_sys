@@ -47,11 +47,11 @@ Este spec cobre só a reestruturação do ETL — os KPIs em si (`docs/superpowe
    service_orders                    → marca empresa_id      │
                                     │                          ▼
                               Cloudflare R2            ──silver──► ──gold──►
-                              (bronze/silver, como já é hoje)
+                              (DATA LAKE — bronze/silver, como já é hoje)
                                                                     │
                                                                     ▼
                                                     Neon "aprxm-analytics"
-                                                    (projeto dedicado, hoje vazio)
+                                                    (DATA WAREHOUSE — projeto dedicado, hoje vazio)
                                                     dim_date, dim_resident,
                                                     dim_association, fact_*
                                                     (todas com empresa_id)
@@ -81,16 +81,17 @@ Este spec cobre só a reestruturação do ETL — os KPIs em si (`docs/superpowe
 ### Load (destino)
 
 - `_write_gold_sync`/`load_gold_to_analytics`: connection string passa a ser a do projeto
-  `aprxm-analytics` (nova env var ou reaproveitar `ANALYTICS_DATABASE_URL` com o valor
-  trocado — **decisão operacional, não de código**: atualizar a env var no Vercel e no
-  `.env` local, valor não vai commitado no repo).
+  `aprxm-analytics`, via a nova env var `DATAWAREHOUSE_APRXM_DATABASE_URL` (substitui
+  `ANALYTICS_DATABASE_URL`) — **decisão operacional, não de código**: criar a env var no
+  Vercel e no `.env` local, valor não vai commitado no repo.
 - Primeira carga é `CREATE TABLE` (via `to_sql(..., if_exists="replace")`, já é o
   comportamento do código pra tabela inexistente) — não precisa de migração de dado, é
   banco vazio recebendo carga nova.
 
 ## Plano de corte (sem downtime real, é OLAP read-only)
 
-1. Trocar a env var `ANALYTICS_DATABASE_URL` pro projeto `aprxm-analytics`.
+1. Criar `DATAWAREHOUSE_APRXM_DATABASE_URL` (Vercel + `.env` local) apontando pro projeto
+   `aprxm-analytics`; código passa a ler essa env var em vez de `ANALYTICS_DATABASE_URL`.
 2. Rodar ETL manual (`POST /datalake/run/manual`, `force_full=true`) — popula do zero no
    destino novo, já com `empresa_id`.
 3. Validar: `SELECT DISTINCT empresa_id FROM analytics.fact_transactions` (ou schema
@@ -109,12 +110,14 @@ Este spec cobre só a reestruturação do ETL — os KPIs em si (`docs/superpowe
 - Smoke pós-corte: `/presidencia/status` retorna `analytics_reachable: true` e
   `/presidencia/inicio` retorna números não-zero pro mês corrente.
 
-## Decisões em aberto
+## Decisões — confirmadas
 
-- `empresa_assoc_ids()` hoje vive em `esc_service.py` — mover pra `tenant.py` (onde já
-  vivem os outros helpers de escopo) ou importar de `esc_service` mesmo no ETL? Recomendo
-  mover pra `tenant.py`, já é o padrão dos outros 5 mecanismos de escopo documentados lá.
-- Nome da env var: manter `ANALYTICS_DATABASE_URL` (só trocar valor) ou renomear pra deixar
-  explícito que agora é um projeto de verdade (ex. `DATALAKE_APRXM_DATABASE_URL`)? Manter o
-  nome atual é menos churn; renomear é mais honesto sobre o que mudou. Decidir na fase de
-  plano.
+- **`empresa_assoc_ids()`** move de `esc_service.py` pra `tenant.py` (mesmo lugar dos outros
+  mecanismos de escopo já documentados lá).
+- **Nomenclatura (terminologia corrigida):** Cloudflare R2 (bronze/silver) é o **data lake**
+  — bruto/semi-estruturado. O projeto Neon dedicado (gold, schema dimensional `dim_`/`fact_`)
+  é o **data warehouse** — estruturado, otimizado pra BI/relatório. `datalake_service.py` e
+  `/datalake/*` continuam com esse nome (são o pipeline completo, ponta a ponta, não só a
+  camada R2 — renomear o arquivo é um refactor separado, fora de escopo aqui). A env var que
+  aponta pro destino do gold é renomeada pra deixar a camada explícita:
+  `DATAWAREHOUSE_APRXM_DATABASE_URL` (substitui `ANALYTICS_DATABASE_URL`).
