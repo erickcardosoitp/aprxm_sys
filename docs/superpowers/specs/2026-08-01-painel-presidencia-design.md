@@ -129,7 +129,7 @@ implementação, 4/9 já implementados).
 | Indicador | Forma | Fonte |
 |---|---|---|
 | Total/crescimento/ranking/censo | stat tile / ranking | `panorama_moradores`, `crescimento_associados_semanal`, `censo_por_rua` |
-| **Churn de associados** *novo* | stat tile + tendência | precisa de extração nova (saída de member ativo → inativo/move_out) |
+| **Churn de associados** *novo* — sem pagamento há 6+ meses (não usa `move_out_date`, quase nunca preenchido) | tabela/lista | `churn_associados` — já implementado |
 | **Qualidade de cadastro** (% sem CEP/telefone) *novo* | barra segmentada ou stat tile | `residents` (operacional, não gold — dado de qualidade, não histórico) |
 | **Funil: Moradores → Visitantes → Associados** *novo* | funil de conversão (rampa violeta, claro→escuro) | `panorama_moradores` (contagens por tipo) |
 | **Novos visitantes por dia** *novo* | bar chart diário (rampa violeta, barra fina) | precisa de extração nova (residents.created_at onde type='guest') |
@@ -296,7 +296,7 @@ mostrar 2-3 meses de dado) — usa `overflow-x-auto` se não couber na largura d
 | Indicador | O que falta |
 |---|---|
 | Receita por rua (Financeiro) | Nova agregação gold — join residents+transactions por rua não existe hoje |
-| Churn de associados (Moradores) | Extração de saída (member → inativo/move_out) — hoje só temos entrada |
+| Churn de associados (Moradores) | ✅ implementado — associado sem pagamento há 6+ meses (`churn_associados`) |
 | Novos visitantes por dia (Moradores) | Extração diária de `residents.created_at` onde `type='guest'` |
 | Aging de inadimplência (Mensalidades) | Bucket 0-30/30-60/60+ — dado bruto existe (`days_overdue` em `mensalidades`), falta agregação gold |
 | Índice de calor de operadores (Operadores) | Módulo inteiro novo — participação faturamento já existe (`receita_por_operador`), tempo médio/feedback/qtd vendas por produto não existem em nenhuma tabela hoje |

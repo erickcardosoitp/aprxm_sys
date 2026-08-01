@@ -102,7 +102,7 @@ GOLD_PATHS = {
     "retencao_semanal":              ("financeiro", "retencao_semanal"),
     "tempo_medio_sessao_operador":   ("operacional","tempo_medio_sessao"),
     "receita_por_rua":               ("financeiro", "receita_por_rua"),
-    "churn_associados_mensal":       ("moradores",  "churn_mensal"),
+    "churn_associados":              ("moradores",  "churn_associados"),
     "novos_visitantes_diario":       ("moradores",  "novos_visitantes_diario"),
     "aging_inadimplencia":           ("financeiro", "aging_inadimplencia"),
 }
@@ -1592,17 +1592,36 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             })
             up(df_rua_receita, "receita_por_rua")
 
-    # 36. Churn de associados mensal -- saida = move_out_date preenchido
-    if not res.empty and "move_out_date" in res.columns:
-        saiu = res[(res["type"] == "member") & (res["move_out_date"].notna())].copy()
-        if not saiu.empty:
-            saiu["mes"] = _month(saiu["move_out_date"]).dt.strftime("%Y-%m")
-            saiu["association_name"] = saiu["association_id"].map(_assoc_map_novo)
-            df_churn = saiu.groupby(["mes", "association_id", "association_name"]).size().reset_index(name="saidas")
-            df_churn = df_churn.rename(columns={
-                "association_id": "id_associacao", "association_name": "nome_associacao",
-            })
-            up(df_churn, "churn_associados_mensal")
+    # 36. Churn de associados -- nao usa move_out_date (na pratica nunca preenchido).
+    # "Churn" aqui = associado ativo sem NENHUM pagamento de mensalidade nos ultimos
+    # 6 meses -- abandono de fato, mesmo sem baixa formal do cadastro.
+    if not res.empty and not mens.empty:
+        membros = res[(res["type"] == "member") & (res["status"] == "active")].copy()
+        if not membros.empty:
+            pagas = mens[mens["status"] == "paid"].copy()
+            ultimo_pagamento = (
+                pagas.groupby("resident_id")["paid_at"].max()
+                if "paid_at" in pagas.columns and not pagas.empty
+                else pd.Series(dtype="object")
+            )
+            membros["ultimo_pagamento"] = membros["id"].map(ultimo_pagamento)
+            cutoff_6m = pd.Timestamp.now() - pd.DateOffset(months=6)
+            sem_pagar = membros[
+                membros["ultimo_pagamento"].isna() | (_to_dt(membros["ultimo_pagamento"]) < cutoff_6m)
+            ].copy()
+            if not sem_pagar.empty:
+                sem_pagar["meses_sem_pagar"] = sem_pagar["ultimo_pagamento"].apply(
+                    lambda d: round((pd.Timestamp.now() - pd.Timestamp(d)).days / 30, 1) if pd.notna(d) else None
+                )
+                sem_pagar["association_name"] = sem_pagar["association_id"].map(_assoc_map_novo)
+                df_churn = sem_pagar[[
+                    "full_name", "association_id", "association_name",
+                    "ultimo_pagamento", "meses_sem_pagar",
+                ]].rename(columns={
+                    "full_name": "nome_completo", "association_id": "id_associacao",
+                    "association_name": "nome_associacao",
+                }).sort_values("meses_sem_pagar", ascending=False, na_position="first")
+                up(df_churn, "churn_associados")
 
     # 37. Novos visitantes por dia
     if not res.empty:
