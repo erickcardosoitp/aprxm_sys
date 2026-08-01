@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { RequireAuth } from './components/RequireAuth'
 import { Layout } from './components/Layout'
 import { LoginPage } from './pages/LoginPage'
+import { BootPage } from './pages/BootPage'
 import { InicioPage } from './pages/InicioPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { UnidadeProvider } from './lib/UnidadeContext'
@@ -13,6 +14,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<RequireAuth />}>
+            <Route path="/carregando" element={<BootPage />} />
             <Route element={<Layout />}>
               <Route path="/inicio" element={<InicioPage />} />
               <Route path="/resumo" element={<PlaceholderPage title="Resumo" />} />

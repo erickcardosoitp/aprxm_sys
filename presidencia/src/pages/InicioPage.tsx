@@ -4,6 +4,7 @@ import { getInicio, type FreshnessInfo, type InicioData } from '../lib/api'
 import { StatTile } from '../components/StatTile'
 import { useUnidade } from '../lib/UnidadeContext'
 import { nomeAssociacaoFor } from '../lib/unidade'
+import { takeInicioCache } from '../lib/prefetchCache'
 
 function formatBRL(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -17,6 +18,13 @@ export function InicioPage() {
   const { unidade } = useUnidade()
 
   useEffect(() => {
+    const cached = takeInicioCache()
+    if (cached && unidade === 'todos') {
+      setData(cached.data)
+      setFreshness({ generated_at: cached.generated_at, stale: cached.stale })
+      setLoading(false)
+      return
+    }
     let cancelled = false
     setLoading(true)
     getInicio(nomeAssociacaoFor(unidade))
