@@ -100,9 +100,9 @@ class PresidenciaService:
         moradores = (await self.analytics.execute(text("""
             SELECT
                 COUNT(*) AS total,
-                COUNT(*) FILTER (WHERE resident_type = 'member') AS associados,
-                COUNT(*) FILTER (WHERE resident_type = 'dependent') AS dependentes,
-                COUNT(*) FILTER (WHERE resident_type = 'guest') AS visitantes
+                COUNT(*) FILTER (WHERE type = 'member') AS associados,
+                COUNT(*) FILTER (WHERE type = 'dependent') AS dependentes,
+                COUNT(*) FILTER (WHERE type = 'guest') AS visitantes
             FROM analytics.dim_resident
             WHERE status = 'active' AND move_out_date IS NULL
         """))).fetchone()
