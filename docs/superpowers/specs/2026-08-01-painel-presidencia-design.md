@@ -57,6 +57,33 @@ de ponta a ponta em produção** (ver plano de implementação, Fases 0-3 conclu
 request de `/presidencia/*` lê `etl_runs` e retorna `generated_at`/`stale` junto do
 payload — `stale: true` quando o último run não foi `success`.
 
+## Identidade visual (restaurado da v1, sem mudança)
+
+Paleta violeta de referência "Marque" (Uiverse), validada com `scripts/validate_palette.js`
+do skill dataviz — não copiada no olho.
+
+| Token | Hex (claro) | Papel |
+|---|---|---|
+| `pres-surface` | `#FCFCFB` | fundo da página |
+| `pres-veil` | `#E3DBF7` | fundo de card / seção alternada (não entra na rampa de dado) |
+| `pres-100` (Halo) | `#A594F5` | rampa sequencial — degrau mais claro |
+| `pres-300` (Indigo) | `#4F3FE0` | rampa sequencial — acento primário, títulos de seção, barra ativa |
+| `pres-600` (Royal) | `#241259` | rampa sequencial — degrau escuro |
+| `pres-900` (Ink) | `#0F0A1E` | rampa sequencial — texto de alto contraste / degrau mais escuro |
+
+Modo escuro tem **rampa própria** (não é o claro invertido): `#7C6DEC → #9C8FF7 → #BEB4F8 →
+#E2DBFC` sobre superfície `#1a1a19`. Validador: `ALL CHECKS PASS` nos dois modos
+(contraste 2.51:1 claro / 4.36:1 escuro, hue spread 15°/10°).
+
+Status (reservado, nunca vira "5º degrau" da rampa violeta): bom = verde-700, atenção =
+âmbar-600, crítico = vermelho-600. Categórico (ranking por rua/operador/produto): paleta
+de 8 cores já validada em `unidadeColor()` (`EscDataTable.tsx`) — a rampa violeta é 1 hue
+só, não serve pra identidade categórica.
+
+**Ícones:** `@phosphor-icons/react` (1.248+ ícones, MIT, tree-shakable) — peso **Regular**
+como padrão, **Fill** pra estados ativos/selecionados (aba atual, filtro marcado). App
+principal continua com `lucide-react`, sem migração — escolha isolada deste mini-app.
+
 ---
 
 ## Indicadores por tela (consolidado do brainstorm)
@@ -86,11 +113,12 @@ implementação, 4/9 já implementados).
 
 | Indicador | Forma | Fonte |
 |---|---|---|
-| Receita diária | série temporal (bruto fino + MM7 por cima) | `receita_diaria` |
+| **Gráfico de Faturamento** *novo, componente principal* — substitui a série simples de receita diária (ver §Componentes) | big number + secundários + linha/MM/projeção | `receita_diaria` |
 | Taxa de cobrança | número/série | `taxa_cobranca` |
 | Inadimplência por pessoa | tabela | `relatorio_inadimplencia` |
 | **Receita por rua** *novo* | tabela/ranking | join `residents`+`transactions` (agregação nova, não está em gold ainda — avaliar na Fase de implementação) |
-| **Receita por tipo (mensalidade/entrega/comprovante/outras)** *novo* | **barra horizontal ordenada** (não funil — categorias não são sequenciais) | `receita_diaria` (colunas já existem) |
+| **Faturamento por produto** *novo* (mensalidade/entrega/comprovante, extensível) | multi-série área+linha (ver §Componentes) | `receita_diaria` (colunas já existem) |
+| **Receita por tipo (breakdown total do período)** *novo* | **barra horizontal ordenada** (não funil — categorias não são sequenciais) | `receita_diaria` (colunas já existem) |
 | **Margem líquida %** *novo* | **barra segmentada de progresso** (ver §Componentes) | `margem_mensal.margem_pct` |
 | **Comparativo Vaz Lobo vs Congonha lado a lado** *novo* | 2 colunas de stat tiles espelhados | qualquer tabela com `id_associacao`, filtrado por associação |
 | **Calendário de calor — receita por dia** *novo* | heatmap (ver §Componentes), períodos: 7 dias/Mês/Trimestre/Semestre/Ano | `receita_diaria` |
@@ -184,6 +212,28 @@ Referência: headline number + delta período (verde/vermelho) + barra horizonta
 benchmark (média) + ranking em lista (ícone+nome+valor) + barra de faixas coloridas
 (índice de calor, vermelho→amarelo→verde — uso legítimo de status reservado pra escala
 ordinal, não é "arco-íris" arbitrário).
+
+### Gráfico de Faturamento (componente principal do Financeiro)
+Substitui a série simples de receita diária especificada na v1. Consolida num único
+componente:
+- **Big number**: total do período selecionado + delta % vs período anterior.
+- **Linha secundária**: total hoje, total semana, média do período, **badge de banda**
+  (Excelente/OK/Regular/Abaixo) — reaproveita os 4 níveis do status reservado do dataviz
+  skill (bom/atenção/sério/crítico), só troca o rótulo pro nosso contexto de negócio.
+- **Gráfico**: linha bruta (violeta) + MM7 sobreposta + linha/faixa de referência da média.
+- **2 checkboxes independentes** (não mutuamente exclusivos):
+  - "Hoje" — marca a posição de hoje no período (linha vertical pontilhada) +
+    **projeção até fim do período** (tendência linear comparando com meses anteriores).
+  - "Cruzamento com a média" — marca o(s) ponto(s) onde a série cruza a linha de média.
+- **Filtro de período**: Mês / Trimestre / Semestre / Ano.
+
+### Faturamento por produto (multi-série)
+Referência visual: 2+ áreas sobrepostas com preenchimento em degradê. Adaptado pra
+**3 categorias por padrão** (mensalidade, taxa de entrega, comprovante de residência),
+cada uma **togável via checkbox** — extensível se novos tipos de receita aparecerem.
+Cor **categórica fixa** (reaproveita a paleta de 8 cores já validada em `unidadeColor()`,
+`EscDataTable.tsx`) — nunca recalculada quando o usuário desmarca uma série (regra do
+dataviz: "cor segue a entidade, nunca o rank/filtro").
 
 ### Bar chart de faturamento mensal
 Barras neutras (cinza) por padrão; **mês atual** ganha o acento violeta (`pres-300`);
