@@ -59,42 +59,46 @@ SILVER_NAMES = {
 }
 
 # Gold: (nome_interno, dominio, nome_arquivo)
+# Chaves = nome da tabela gold (o "name" passado pra up()), ja em portugues
+# (renomeado de 2026-08-01 junto com as colunas -- ver docs/superpowers/plans/
+# 2026-08-01-etl-empresa-aware-plan.md). Valores = pasta/arquivo no R2, ja eram
+# em portugues na maioria.
 GOLD_PATHS = {
-    "daily_revenue":             ("financeiro", "receita_diaria"),
-    "collection_rate":           ("financeiro", "taxa_cobranca"),
-    "cash_breaks":               ("financeiro", "quebras_caixa"),
-    "sangria_reasons":           ("financeiro", "motivos_baixas"),
-    "delinquency_report":        ("financeiro", "inadimplencia"),
-    "resident_overview":         ("moradores",  "visao_geral"),
-    "member_growth_weekly":      ("moradores",  "crescimento_semanal"),
-    "census_by_street":          ("moradores",  "censo_por_rua"),
-    "community_problems":        ("moradores",  "problemas_comunidade"),
-    "sla_by_type":               ("encomendas", "sla_por_tipo"),
-    "packages_by_street":        ("encomendas", "encomendas_por_rua"),
-    "packages_stuck":            ("encomendas", "encomendas_paradas"),
-    "resident_package_ranking":  ("encomendas", "ranking_moradores"),
-    "operator_performance":      ("operacional","desempenho_operadores"),
-    "operator_revenue":          ("operacional","receita_por_operador"),
-    "operational_kpis":          ("operacional","kpis_operacionais"),
-    "tasks_weekly":              ("equipe",     "tarefas_semanais"),
-    "tasks_by_collaborator":     ("equipe",     "ranking_colaboradores"),
-    "runway":                    ("financeiro", "runway"),
-    "receita_por_operador_tipo":  ("financeiro", "receita_por_operador_tipo"),
-    "cobranca_por_rua":           ("financeiro", "cobranca_por_rua"),
-    "cash_session_anomalies":     ("operacional","anomalias_caixa"),
-    "resident_monthly":           ("moradores",  "moradores_por_mes"),
-    "packages_monthly":           ("operacional","pacotes_por_mes"),
-    "os_monthly":                 ("operacional","os_por_mes"),
-    "retention_monthly":          ("financeiro", "retencao_mensal"),
-    "tasks_monthly":              ("equipe",     "tarefas_por_mes"),
-    "operator_score_monthly":     ("operacional","score_operadores"),
-    "margem_mensal":              ("financeiro", "margem_mensal"),
-    "receita_semanal":            ("financeiro", "receita_semanal"),
-    "taxa_semanal":               ("financeiro", "taxa_semanal"),
-    "pacotes_semanal":            ("encomendas", "pacotes_semanal"),
-    "tarefas_semanal":            ("equipe",     "tarefas_semanal"),
-    "op_score_semanal":           ("operacional","score_operadores_semanal"),
-    "retencao_semanal":           ("financeiro", "retencao_semanal"),
+    "receita_diaria":                ("financeiro", "receita_diaria"),
+    "taxa_cobranca":                 ("financeiro", "taxa_cobranca"),
+    "quebras_caixa":                 ("financeiro", "quebras_caixa"),
+    "motivos_sangria":               ("financeiro", "motivos_baixas"),
+    "relatorio_inadimplencia":       ("financeiro", "inadimplencia"),
+    "panorama_moradores":            ("moradores",  "visao_geral"),
+    "crescimento_associados_semanal":("moradores",  "crescimento_semanal"),
+    "censo_por_rua":                 ("moradores",  "censo_por_rua"),
+    "problemas_comunidade":          ("moradores",  "problemas_comunidade"),
+    "sla_por_tipo":                  ("encomendas", "sla_por_tipo"),
+    "encomendas_por_rua":            ("encomendas", "encomendas_por_rua"),
+    "encomendas_paradas":            ("encomendas", "encomendas_paradas"),
+    "ranking_encomendas_morador":    ("encomendas", "ranking_moradores"),
+    "desempenho_operador":           ("operacional","desempenho_operadores"),
+    "receita_por_operador":          ("operacional","receita_por_operador"),
+    "kpis_operacionais":             ("operacional","kpis_operacionais"),
+    "status_tarefas_semanal":        ("equipe",     "tarefas_semanais"),
+    "ranking_tarefas_colaborador":   ("equipe",     "ranking_colaboradores"),
+    "runway_financeiro":             ("financeiro", "runway"),
+    "receita_por_operador_tipo":     ("financeiro", "receita_por_operador_tipo"),
+    "cobranca_por_rua":              ("financeiro", "cobranca_por_rua"),
+    "anomalias_caixa":               ("operacional","anomalias_caixa"),
+    "moradores_mensal":              ("moradores",  "moradores_por_mes"),
+    "encomendas_mensal":             ("operacional","pacotes_por_mes"),
+    "ordens_servico_mensal":         ("operacional","os_por_mes"),
+    "retencao_mensal":               ("financeiro", "retencao_mensal"),
+    "tarefas_mensal":                ("equipe",     "tarefas_por_mes"),
+    "score_operador_mensal":         ("operacional","score_operadores"),
+    "margem_mensal":                 ("financeiro", "margem_mensal"),
+    "receita_semanal":               ("financeiro", "receita_semanal"),
+    "taxa_semanal":                  ("financeiro", "taxa_semanal"),
+    "pacotes_semanal":               ("encomendas", "pacotes_semanal"),
+    "tarefas_semanal":               ("equipe",     "tarefas_semanal"),
+    "score_operador_semanal":        ("operacional","score_operadores_semanal"),
+    "retencao_semanal":              ("financeiro", "retencao_semanal"),
 }
 
 
@@ -569,7 +573,16 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             })
         df = tx.groupby(["date","week","month","association_id","association_name"]).apply(agg_tx).reset_index()
         df["net"] = df["total_income"] - df["total_expense"]
-        up(df, "daily_revenue")
+        df = df.rename(columns={
+            "date": "data", "week": "semana", "month": "mes",
+            "association_id": "id_associacao", "association_name": "nome_associacao",
+            "total_income": "receita_total", "total_expense": "despesa_total",
+            "delivery_fee": "taxa_entrega", "proof_of_residence": "comprovante_residencia",
+            "other_income": "outras_receitas", "uncategorized": "sem_categoria",
+            "sangria_total": "total_sangria", "income_count": "qtd_receitas",
+            "expense_count": "qtd_despesas", "net": "saldo_liquido",
+        })
+        up(df, "receita_diaria")
 
     # 2. Crescimento semanal de associados
     if not res.empty:
@@ -577,7 +590,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             ["created_week","association_id","association_name","type"]
         ).agg(novos=("id","count")).reset_index().rename(columns={"created_week":"week"})
         df = df[df["week"] < _closed_week_cutoff]
-        up(df, "member_growth_weekly")
+        df = df.rename(columns={
+            "week": "semana", "association_id": "id_associacao",
+            "association_name": "nome_associacao", "type": "tipo",
+        })
+        up(df, "crescimento_associados_semanal")
 
     # 3. Snapshot de moradores
     if not res.empty:
@@ -595,7 +612,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "novos_semana":  (_to_dt(g["created_at"]) >= week0).sum(),
             "novos_mes":     (_to_dt(g["created_at"]) >= month0).sum(),
         })).reset_index()
-        up(df, "resident_overview")
+        df = df.rename(columns={
+            "association_id": "id_associacao", "association_name": "nome_associacao",
+            "members": "associados", "guests": "visitantes", "dependents": "dependentes",
+            "confirmed": "confirmados",
+        })
+        up(df, "panorama_moradores")
 
     # 4. Taxa de cobranca — denominador = cobranças geradas no mês
     if not mens.empty:
@@ -611,7 +633,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         })).reset_index()
         agg["pendentes"] = (agg["total"] - agg["paid"]).clip(lower=0)
         agg["taxa_pct"]  = (agg["paid"] / agg["total"].replace(0, pd.NA) * 100).round(1)
-        up(agg, "collection_rate")
+        agg = agg.rename(columns={
+            "month": "mes", "association_id": "id_associacao", "paid": "pagas",
+        })
+        up(agg, "taxa_cobranca")
 
     # 5. Inadimplencia — apenas members ativos (alinhado com logica do sistema)
     if not res.empty and "overdue_months" in res.columns:
@@ -624,7 +649,13 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "address_street","association_id","association_name",
             "overdue_months","total_owed"
         ]].sort_values("total_owed", ascending=False)
-        up(df, "delinquency_report")
+        df = df.rename(columns={
+            "full_name": "nome_completo", "phone_primary": "telefone", "type": "tipo",
+            "address_street": "rua", "association_id": "id_associacao",
+            "association_name": "nome_associacao", "overdue_months": "meses_atraso",
+            "total_owed": "valor_devido",
+        })
+        up(df, "relatorio_inadimplencia")
 
     # 6. SLA por tipo de morador — exclui wait_hours=0 (entregue no mesmo momento, dado espúrio)
     if not pkgs.empty:
@@ -635,17 +666,25 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             med_wait_hours=("wait_hours","median"),
         ).reset_index().rename(columns={"received_week":"week"})
         df[["avg_wait_hours","med_wait_hours"]] = df[["avg_wait_hours","med_wait_hours"]].round(1)
-        up(df, "sla_by_type")
+        df = df.rename(columns={
+            "week": "semana", "association_id": "id_associacao",
+            "association_name": "nome_associacao", "resident_type": "tipo_morador",
+            "avg_wait_hours": "media_horas_espera", "med_wait_hours": "mediana_horas_espera",
+        })
+        up(df, "sla_por_tipo")
 
         # Encomendas paradas
         pending = pkgs[pkgs["status"].isin(["received","notified"])].copy()
         if not pending.empty:
             now = pd.Timestamp.now()
             pending["dias_parada"] = (now - pending["received_at"]).dt.days
-            up(pending.groupby(["association_id","association_name"]).agg(
+            df_parados = pending.groupby(["association_id","association_name"]).agg(
                 paradas_3d=("dias_parada", lambda x: (x>=3).sum()),
                 paradas_7d=("dias_parada", lambda x: (x>=7).sum()),
-            ).reset_index(), "packages_stuck")
+            ).reset_index().rename(columns={
+                "association_id": "id_associacao", "association_name": "nome_associacao",
+            })
+            up(df_parados, "encomendas_paradas")
 
     # 7. Ranking de moradores
     if not pkgs.empty:
@@ -657,19 +696,31 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             pending_now   =("status", lambda x: x.isin(["received","notified"]).sum()),
         ).reset_index()
         df["avg_wait_hours"] = df["avg_wait_hours"].round(1)
-        up(df.sort_values("total_packages",ascending=False).head(200), "resident_package_ranking")
+        df = df.rename(columns={
+            "resident_id": "id_morador", "resident_name": "nome_morador",
+            "resident_type": "tipo_morador", "address_street": "rua",
+            "association_id": "id_associacao", "association_name": "nome_associacao",
+            "total_packages": "total_encomendas", "avg_wait_hours": "media_horas_espera",
+            "delivered": "entregues", "pending_now": "pendentes_agora",
+        })
+        up(df.sort_values("total_encomendas",ascending=False).head(200), "ranking_encomendas_morador")
 
     # 8. Encomendas por rua
     if not pkgs.empty:
         df = pkgs.copy()
         df["street"] = _normalize_street(df["address_street"])
-        up(df.groupby(["street","association_id","association_name"]).agg(
+        df_rua_pk = df.groupby(["street","association_id","association_name"]).agg(
             total=("id","count"),
             distinct_res=("resident_id","nunique"),
             guests      =("resident_type", lambda x: (x=="guest").sum()),
             members     =("resident_type", lambda x: (x=="member").sum()),
             avg_wait    =("wait_hours","mean"),
-        ).reset_index().sort_values("total",ascending=False), "packages_by_street")
+        ).reset_index().sort_values("total",ascending=False).rename(columns={
+            "street": "rua", "association_id": "id_associacao",
+            "association_name": "nome_associacao", "distinct_res": "moradores_distintos",
+            "guests": "visitantes", "members": "associados", "avg_wait": "media_espera",
+        })
+        up(df_rua_pk, "encomendas_por_rua")
 
     # 9. Performance operadores — usa Bronze diretamente (received_by/delivered_by intactos)
     pkgs_bronze = frames.get("packages", pd.DataFrame())
@@ -686,8 +737,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             assoc_map = frames.get("associations", pd.DataFrame())
             assoc_map = assoc_map.set_index("id")["name"].to_dict() if not assoc_map.empty else {}
             df["association_name"] = df["association_id"].map(assoc_map)
-            up(df[["full_name","association_id","association_name","sessoes","enc_recv","enc_delv"]].fillna(0),
-               "operator_performance")
+            df_op_perf = df[["full_name","association_id","association_name","sessoes","enc_recv","enc_delv"]].fillna(0).rename(columns={
+                "full_name": "nome_completo", "association_id": "id_associacao",
+                "association_name": "nome_associacao", "enc_recv": "encomendas_recebidas",
+                "enc_delv": "encomendas_entregues",
+            })
+            up(df_op_perf, "desempenho_operador")
 
     # 10. Receita por operador — exclui sangrias de repasse interno (movim. entre caixas)
     if not tx.empty:
@@ -701,7 +756,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "saidas":      g.loc[(g["type"]=="expense") | ((g["type"]=="sangria") & ~is_repasse_op.reindex(g.index, fill_value=False)),"amount"].sum(),
             "n_transacoes":len(g),
         })).reset_index()
-        up(df, "operator_revenue")
+        df = df.rename(columns={
+            "created_by_name": "nome_operador", "association_id": "id_associacao",
+            "association_name": "nome_associacao", "week": "semana",
+            "n_transacoes": "qtd_transacoes",
+        })
+        up(df, "receita_por_operador")
 
     # 11. Quebra de caixa
     if not cs.empty:
@@ -713,7 +773,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             total_quebra   =("quebra_caixa", lambda x: x.abs().sum()),
         ).reset_index()
         df["pct_diferenca"] = (df["com_diferenca"]/df["total"].replace(0,pd.NA)*100).round(1)
-        up(df, "cash_breaks")
+        df = df.rename(columns={
+            "week": "semana", "association_id": "id_associacao",
+            "association_name": "nome_associacao", "operador_name": "nome_operador",
+        })
+        up(df, "quebras_caixa")
 
     # 12. Motivos de baixas — exclui repassse interno para caixinha (movimento extinto)
     if not tx.empty:
@@ -724,9 +788,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         if not sangrias.empty:
             sangrias["motivo"]  = sangrias["sangria_reason"].fillna("Nao informado").str.strip().replace("","Nao informado")
             sangrias["destino"] = sangrias["sangria_destination"].fillna("Nao informado").str.strip().replace("","Nao informado")
-            up(sangrias.groupby(["motivo","destino","month","association_id","association_name"]).agg(
+            df_motivos = sangrias.groupby(["motivo","destino","month","association_id","association_name"]).agg(
                 ocorrencias=("id","count"), valor=("amount","sum")
-            ).reset_index().sort_values("valor",ascending=False), "sangria_reasons")
+            ).reset_index().sort_values("valor",ascending=False).rename(columns={
+                "month": "mes", "association_id": "id_associacao", "association_name": "nome_associacao",
+            })
+            up(df_motivos, "motivos_sangria")
 
     # 13. Tarefas semanais
     if not tsk.empty:
@@ -740,7 +807,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "em_atraso":   g["overdue"].sum(),
         })).reset_index()
         df["pct_conclusao"] = (df["concluidas"]/df["total"].replace(0,pd.NA)*100).round(1)
-        up(df, "tasks_weekly")
+        df = df.rename(columns={
+            "week": "semana", "association_id": "id_associacao", "association_name": "nome_associacao",
+        })
+        up(df, "status_tarefas_semanal")
 
     # 14. Ranking colaboradores
     if not tsk.empty:
@@ -752,7 +822,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "em_atraso":  g["overdue"].sum(),
         })).reset_index()
         df["pct_conclusao"] = (df["concluidas"]/df["total"].replace(0,pd.NA)*100).round(1)
-        up(df.sort_values("concluidas",ascending=False), "tasks_by_collaborator")
+        df = df.rename(columns={
+            "assigned_to_name": "nome_colaborador", "association_id": "id_associacao",
+            "association_name": "nome_associacao",
+        })
+        up(df.sort_values("concluidas",ascending=False), "ranking_tarefas_colaborador")
 
     # 15. Censo por rua
     if not res.empty:
@@ -762,14 +836,17 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         for bcol in ["has_pests","has_sewage","uses_public_transport","sem_internet","has_problems"]:
             if bcol in active.columns:
                 active[bcol] = pd.to_numeric(active[bcol].fillna(False), errors="coerce").fillna(0).astype(int)
-        up(active.groupby(["street","association_id","association_name"]).agg(
+        df_censo = active.groupby(["street","association_id","association_name"]).agg(
             total        =("id","count"),
             associados   =("type", lambda x: (x=="member").sum()),
             visitantes   =("type", lambda x: (x=="guest").sum()),
             com_pragas   =("has_pests","sum"),
             sem_internet =("sem_internet","sum"),
             com_problemas=("has_problems","sum"),
-        ).reset_index().sort_values("total",ascending=False), "census_by_street")
+        ).reset_index().sort_values("total",ascending=False).rename(columns={
+            "street": "rua", "association_id": "id_associacao", "association_name": "nome_associacao",
+        })
+        up(df_censo, "censo_por_rua")
 
     # 16. Problemas da comunidade
     if not res.empty:
@@ -784,8 +861,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 ocorrencias=("resident_type","count"),
                 associados =("resident_type", lambda x: (x=="member").sum()),
                 visitantes =("resident_type", lambda x: (x=="guest").sum()),
-            ).reset_index().sort_values("ocorrencias",ascending=False)
-            up(df, "community_problems")
+            ).reset_index().sort_values("ocorrencias",ascending=False).rename(columns={
+                "problem": "problema", "association_id": "id_associacao", "association_name": "nome_associacao",
+            })
+            up(df, "problemas_comunidade")
 
     # 17. KPIs operacionais (snapshot)
     assocs_df = frames.get("associations", pd.DataFrame())
@@ -795,7 +874,9 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         rows_kpi = []
         for _, assoc in assocs_df.iterrows():
             aid, name = assoc["id"], assoc["name"]
-            if "Teste" in name:
+            # Mesmo conceito do PROD_ASSOC_FILTER (app/db/helpers.py): fora do OLAP
+            # ficam associações de teste e as marcadas para exclusão.
+            if "Teste" in name or "DELETADO" in name:
                 continue
             # Somente membros ativos para KPIs de associados
             r_members  = res[(res["association_id"]==aid)&(res["status"]=="active")&(res["type"]=="member")] if not res.empty else pd.DataFrame()
@@ -861,7 +942,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 "snapshot_at":      now.isoformat(),
             })
         if rows_kpi:
-            up(pd.DataFrame(rows_kpi), "operational_kpis")
+            df_kpi = pd.DataFrame(rows_kpi).rename(columns={
+                "association_id": "id_associacao", "association_name": "nome_associacao",
+                "enc_pendentes": "encomendas_pendentes", "enc_paradas_3d": "encomendas_paradas_3d",
+                "avg_dwell_dias": "media_dias_permanencia", "snapshot_at": "capturado_em",
+            })
+            up(df_kpi, "kpis_operacionais")
 
     # ── 18. ANOMALIAS DE CAIXA ─────────────────────────────────────────────────
     if not cs.empty:
@@ -892,7 +978,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 cols = ["association_id","association_name","operador_name",
                         "dia","hora_abertura","hora_fechamento","duracao_min","anomalia"]
                 available = [c for c in cols if c in anom.columns]
-                up(anom[available].reset_index(drop=True), "cash_session_anomalies")
+                df_anom = anom[available].reset_index(drop=True).rename(columns={
+                    "association_id": "id_associacao", "association_name": "nome_associacao",
+                    "operador_name": "nome_operador",
+                })
+                up(df_anom, "anomalias_caixa")
 
     # ── 19. RUNWAY FINANCEIRO ────────────────────────────────────────────────
     # Quanto tempo (em semanas) a associacao consegue operar com o saldo atual
@@ -978,7 +1068,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             })
 
         if rows_runway:
-            up(pd.DataFrame(rows_runway), "runway")
+            df_runway = pd.DataFrame(rows_runway).rename(columns={
+                "association_id": "id_associacao", "association_name": "nome_associacao",
+            })
+            up(df_runway, "runway_financeiro")
 
     # 19. Receita por operador × tipo de receita (para aba FINANCEIRO do consolidado)
     # Exclui sangrias e despesas; exclui repassos internos (caixinha)
@@ -997,6 +1090,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 "total":              g["amount"].sum(),
                 "n_transacoes":       len(g),
             })).reset_index()
+            df_op = df_op.rename(columns={
+                "created_by_name": "nome_operador", "association_id": "id_associacao",
+                "association_name": "nome_associacao", "week": "semana", "month": "mes",
+                "delivery_fee": "taxa_entrega", "proof_of_residence": "comprovante_residencia",
+                "other_income": "outras_receitas", "n_transacoes": "qtd_transacoes",
+            })
             up(df_op, "receita_por_operador_tipo")
 
     # 20. Cobrança por rua — cobranças geradas (mensalidades a pagar, excl. isenção)
@@ -1026,6 +1125,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         df_rua["taxa_pct"] = (
             df_rua["pagas"] / df_rua["total"].replace(0, pd.NA) * 100
         ).round(1)
+        df_rua = df_rua.rename(columns={
+            "street": "rua", "month": "mes", "association_id": "id_associacao",
+            "association_name": "nome_associacao",
+        })
         up(df_rua.sort_values("valor_total", ascending=False), "cobranca_por_rua")
 
     # 21. Moradores por mês — contagem acumulada por mês de cadastro
@@ -1052,7 +1155,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                     "guests":           int((snap["type"] == "guest").sum()),
                 })
         if rows_rm:
-            up(pd.DataFrame(rows_rm), "resident_monthly")
+            df_rm = pd.DataFrame(rows_rm).rename(columns={
+                "month": "mes", "association_id": "id_associacao", "association_name": "nome_associacao",
+                "members": "associados", "dependents": "dependentes", "guests": "visitantes",
+            })
+            up(df_rm, "moradores_mensal")
 
     # 22. Pacotes por mês
     if not pkgs.empty:
@@ -1068,7 +1175,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 (_to_dt(g["delivered_at"]) - _to_dt(g["received_at"])).dt.total_seconds() / 86400
             ).dropna().mean().__round__(1) if (g["status"] == "delivered").any() else None,
         })).reset_index()
-        up(agg_pk, "packages_monthly")
+        agg_pk = agg_pk.rename(columns={
+            "month": "mes", "association_id": "id_associacao", "association_name": "nome_associacao",
+            "avg_dwell_dias": "media_dias_permanencia",
+        })
+        up(agg_pk, "encomendas_mensal")
 
     # 23. Ordens de serviço por mês
     sos = frames.get("service_orders", pd.DataFrame())
@@ -1081,7 +1192,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "fechadas":  g["status"].isin(["resolved", "closed", "done"]).sum(),
             "pendentes": g["status"].isin(["open", "in_progress"]).sum(),
         })).reset_index()
-        up(agg_so, "os_monthly")
+        agg_so = agg_so.rename(columns={
+            "month": "mes", "association_id": "id_associacao", "association_name": "nome_associacao",
+        })
+        up(agg_so, "ordens_servico_mensal")
 
     # 24. Retenção mensal — % de pagadores do mês N que pagaram em N+1
     if not mens.empty:
@@ -1118,7 +1232,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                     "taxa_retencao":    round(retidos / len(pagantes_m) * 100, 1) if pagantes_m else None,
                 })
         if rows_ret:
-            up(pd.DataFrame(rows_ret), "retention_monthly")
+            df_ret = pd.DataFrame(rows_ret).rename(columns={
+                "month": "mes", "association_id": "id_associacao", "association_name": "nome_associacao",
+            })
+            up(df_ret, "retencao_mensal")
 
     # 25. Tarefas por mês — % concluídas no prazo
     if not tsk.empty:
@@ -1140,7 +1257,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 max((g["status"] == "done").sum(), 1) * 100, 1
             ),
         }), include_groups=False).reset_index()
-        up(agg_tk, "tasks_monthly")
+        agg_tk = agg_tk.rename(columns={
+            "month": "mes", "association_id": "id_associacao", "association_name": "nome_associacao",
+            "no_prazo": "no_prazo", "pct_on_time": "pct_no_prazo",
+        })
+        up(agg_tk, "tarefas_mensal")
 
     # 26. Score de performance por operador por mês
     if not tx.empty and not tsk.empty:
@@ -1209,8 +1330,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         ).clip(lower=0, upper=100).round(1)
 
         base["total_acoes"] = base["tarefas_total"] + base["entregas"]
-        up(base[["month", "association_id", "association_name", "op_name",
-                  "score", "estornos", "tarefas_atraso", "entregas", "total_acoes"]], "operator_score_monthly")
+        df_score = base[["month", "association_id", "association_name", "op_name",
+                  "score", "estornos", "tarefas_atraso", "entregas", "total_acoes"]].rename(columns={
+            "month": "mes", "association_id": "id_associacao", "association_name": "nome_associacao",
+            "op_name": "nome_operador",
+        })
+        up(df_score, "score_operador_mensal")
 
     # 27. Margem mensal — receita, despesa, margem líquida por mês
     if not tx.empty:
@@ -1228,6 +1353,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         }), include_groups=False).reset_index()
         mg["net"] = mg["total_income"] - mg["total_expense"]
         mg["margem_pct"] = (mg["net"] / mg["total_income"].replace(0, pd.NA) * 100).round(1)
+        mg = mg.rename(columns={
+            "month": "mes", "association_id": "id_associacao", "association_name": "nome_associacao",
+            "total_income": "receita_total", "total_expense": "despesa_total", "net": "saldo_liquido",
+        })
         up(mg, "margem_mensal")
 
     # 28. Receita semanal — income/expense/net por semana
@@ -1244,6 +1373,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "total_expense": g.loc[g["type"].isin(["expense", "sangria"]), "amount_f"].sum(),
         }), include_groups=False).reset_index()
         rw["net"] = rw["total_income"] - rw["total_expense"]
+        rw = rw.rename(columns={
+            "week": "semana", "association_id": "id_associacao", "association_name": "nome_associacao",
+            "total_income": "receita_total", "total_expense": "despesa_total", "net": "saldo_liquido",
+        })
         up(rw, "receita_semanal")
 
     # 29. Taxa de cobrança semanal — mensalidades pagas na semana / total do mês
@@ -1271,7 +1404,11 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             wk_tax["pct_paid"] = (wk_tax["n_paid"] / wk_tax["n_total_mes"].replace(0, pd.NA) * 100).round(1).clip(upper=100)
             wk_tax["pct_pendente"] = (100 - wk_tax["pct_paid"]).clip(lower=0).round(1)
             wk_tax["association_name"] = wk_tax["association_id"].map(assoc_map)
-            up(wk_tax[["week", "association_id", "association_name", "n_paid", "n_total_mes", "pct_paid", "pct_pendente"]], "taxa_semanal")
+            df_taxa_sem = wk_tax[["week", "association_id", "association_name", "n_paid", "n_total_mes", "pct_paid", "pct_pendente"]].rename(columns={
+                "week": "semana", "association_id": "id_associacao", "association_name": "nome_associacao",
+                "n_paid": "pagas", "n_total_mes": "total_mes",
+            })
+            up(df_taxa_sem, "taxa_semanal")
 
     # 30. Pacotes semanal — recebidos, entregues, avg dwell por semana
     if not pkgs.empty:
@@ -1292,6 +1429,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "avg_dwell_dias": round(g.loc[g["status"] == "delivered", "dwell_days"].dropna().mean(), 1)
                               if (g["status"] == "delivered").any() else 0,
         }), include_groups=False).reset_index()
+        pk_grp = pk_grp.rename(columns={
+            "week": "semana", "association_id": "id_associacao", "association_name": "nome_associacao",
+            "avg_dwell_dias": "media_dias_permanencia",
+        })
         up(pk_grp, "pacotes_semanal")
 
     # 31. Tarefas semanal — concluídas no prazo por semana
@@ -1310,6 +1451,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
                 "no_prazo":         (g["done_dt"] <= g["due_dt"]).sum(),
                 "pct_on_time":      round((g["done_dt"] <= g["due_dt"]).sum() / max(len(g), 1) * 100, 1),
             }), include_groups=False).reset_index()
+            tk_wk = tk_wk.rename(columns={
+                "week": "semana", "association_id": "id_associacao", "association_name": "nome_associacao",
+                "pct_on_time": "pct_no_prazo",
+            })
             up(tk_wk, "tarefas_semanal")
 
     # 32. Score operadores semanal — score agregado por associação/semana
@@ -1341,7 +1486,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             - sc_base["tarefas_atraso"] * 3
             + (sc_base["entregas"] * 0.5).clip(upper=10)
         ).clip(lower=0, upper=100).round(1)
-        up(sc_base[["week", "association_id", "association_name", "score", "tarefas_atraso", "entregas"]], "op_score_semanal")
+        df_op_score = sc_base[["week", "association_id", "association_name", "score", "tarefas_atraso", "entregas"]].rename(columns={
+            "week": "semana", "association_id": "id_associacao", "association_name": "nome_associacao",
+        })
+        up(df_op_score, "score_operador_semanal")
 
     # 33. Retenção semanal — % de membros com mensalidade paga na semana
     if not mens.empty and not res.empty:
@@ -1356,23 +1504,32 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             wk_ret = wk_ret.merge(tot_mem, on="association_id", how="left")
             wk_ret["taxa_retencao"] = (wk_ret["membros_pagantes"] / wk_ret["total_members"].replace(0, pd.NA) * 100).round(1)
             wk_ret["association_name"] = wk_ret["association_id"].map(assoc_map)
-            up(wk_ret[["week", "association_id", "association_name", "membros_pagantes", "total_members", "taxa_retencao"]], "retencao_semanal")
+            df_ret_sem = wk_ret[["week", "association_id", "association_name", "membros_pagantes", "total_members", "taxa_retencao"]].rename(columns={
+                "week": "semana", "association_id": "id_associacao", "association_name": "nome_associacao",
+                "total_members": "total_membros",
+            })
+            up(df_ret_sem, "retencao_semanal")
 
     return stats, gold_frames
 
 
 # ── Analytics Loader ──────────────────────────────────────────────────────────
 
-def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> int:
+def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> tuple[int, list[str]]:
     """Escreve todos os DataFrames Gold no Neon Analytics via SQLAlchemy sync.
 
     Cada tabela roda em transação independente. Usa TRUNCATE + INSERT para
     evitar DROP/CREATE que gera WAL excessivo no Neon. Na primeira execução
     (tabela inexistente), cai para replace automaticamente.
+
+    Retorna (linhas_escritas, falhas) — as falhas sobem para o orquestrador
+    marcar o run como degradado; antes eram só logadas e o ETL reportava
+    sucesso mesmo sem ter atualizado nada no OLAP.
     """
     from sqlalchemy import create_engine, text
     engine = create_engine(settings.analytics_db_url, pool_pre_ping=True)
     total = 0
+    failures: list[str] = []
     try:
         for table_name, df in gold_frames.items():
             if df.empty:
@@ -1403,17 +1560,24 @@ def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> int:
                 total += len(df_clean)
                 logger.info("Analytics %-35s %5d rows", table_name, len(df_clean))
             except Exception as e:
-                logger.warning("Analytics: falha em %s: %s", table_name, e)
+                logger.exception("Analytics: falha em %s", table_name)
+                failures.append(f"{table_name}: {e}")
+    except Exception as e:
+        logger.exception("Analytics: falha ao conectar no destino OLAP")
+        failures.append(f"conexao: {e}")
     finally:
         engine.dispose()
-    return total
+    return total, failures
 
 
-async def load_gold_to_analytics(gold_frames: dict[str, pd.DataFrame]) -> int:
+async def load_gold_to_analytics(
+    gold_frames: dict[str, pd.DataFrame],
+) -> tuple[int, list[str]]:
     """Task 5: carrega camada Gold no Neon Analytics (OLAP para Power BI)."""
     if not settings.analytics_database_url:
-        logger.info("ANALYTICS_DATABASE_URL nao configurado — pulando carga OLAP")
-        return 0
+        msg = "ANALYTICS_DATABASE_URL nao configurado — carga OLAP nao executada"
+        logger.warning(msg)
+        return 0, [msg]
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     loop = asyncio.get_event_loop()
@@ -1519,6 +1683,7 @@ async def run_full_etl(session: AsyncSession, force_full: bool = False,
         logger.warning("Falha ao limpar logs antigos: %s", e)
 
     error_msg = None
+    degraded = False
     bronze_stats = silver_stats = gold_stats = {}
     bronze_frames: dict = {}
     silver_frames: dict = {}
@@ -1551,19 +1716,27 @@ async def run_full_etl(session: AsyncSession, force_full: bool = False,
 
         # ── Task 4: ANALYTICS (Neon OLAP) ───────────────────────────────────
         t4_analytics = datetime.now(timezone.utc)
-        analytics_rows = await load_gold_to_analytics(gold_frames_result)
+        analytics_rows, analytics_failures = await load_gold_to_analytics(gold_frames_result)
         if run_id:
-            await _log_task(session, run_id, "analytics_load", "success", t4_analytics,
-                            rows_in=gold_files, rows_out=analytics_rows)
+            await _log_task(session, run_id, "analytics_load",
+                            "failed" if analytics_failures else "success", t4_analytics,
+                            rows_in=gold_files, rows_out=analytics_rows,
+                            detail={"failures": analytics_failures})
 
         # ── Task 5: VALIDATE ────────────────────────────────────────────────
         t5 = datetime.now(timezone.utc)
         validation_errors = _validate_gold(silver_frames, gold_stats)
+        validation_errors += analytics_failures
+        if gold_frames_result and not analytics_rows and not analytics_failures:
+            validation_errors.append(
+                "carga OLAP escreveu 0 linhas apesar de haver frames Gold"
+            )
         v_status = "warning" if validation_errors else "success"
         if run_id:
             await _log_task(session, run_id, "validate", v_status, t5,
                             detail={"errors": validation_errors})
         if validation_errors:
+            degraded = True
             logger.warning("Validacao com avisos: %s", validation_errors)
 
         # ── Metadata ─────────────────────────────────────────────────────────
@@ -1600,7 +1773,7 @@ async def run_full_etl(session: AsyncSession, force_full: bool = False,
                         error_msg    = :err
                     WHERE id = :rid
                 """), {
-                    "s":   "failed" if error_msg else "success",
+                    "s":   "failed" if error_msg else ("warning" if degraded else "success"),
                     "d":   duration,
                     "br":  sum(len(v) for v in bronze_frames.values() if isinstance(v, pd.DataFrame)),
                     "sr":  sum(len(v) for v in silver_frames.values() if isinstance(v, pd.DataFrame)),
@@ -1617,7 +1790,7 @@ async def run_full_etl(session: AsyncSession, force_full: bool = False,
                       if isinstance(v, int) and v > 0 and "delta_rows" not in k)
 
     return {
-        "status":      "failed" if error_msg else "success",
+        "status":      "failed" if error_msg else ("warning" if degraded else "success"),
         "run_id":      run_id,
         "mode":        mode_label,
         "date":        today,
