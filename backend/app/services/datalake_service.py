@@ -276,7 +276,7 @@ async def export_bronze(session: AsyncSession, today: str,
 
     # Tabelas SEMPRE full (pequenas, < 10 KB): associations, users, payment_methods, categories
     small_tables = {
-        "associations": "SELECT id, name, slug, is_active, simplifica_enabled, created_at FROM associations WHERE is_active = TRUE",
+        "associations": "SELECT id, name, slug, is_active, simplifica_enabled, empresa_id, created_at FROM associations WHERE is_active = TRUE",
         "users": "SELECT id, full_name, email, role, association_id, is_active, created_at FROM users WHERE is_active = TRUE",
         "payment_methods": "SELECT id, name, is_active, association_id FROM payment_methods WHERE is_active = TRUE",
         "transaction_categories": "SELECT id, name, type, association_id FROM transaction_categories WHERE is_active = TRUE",
@@ -549,7 +549,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     # docs/superpowers/plans/2026-08-01-etl-empresa-aware-plan.md).
     _assocs_emp = frames.get("associations", pd.DataFrame())
     assoc_empresa_map = (
-        _assocs_emp.set_index("id")["empresa_id"].to_dict()
+        {str(k): v for k, v in _assocs_emp.set_index("id")["empresa_id"].astype(str).to_dict().items()}
         if not _assocs_emp.empty and "empresa_id" in _assocs_emp.columns
         else {}
     )
@@ -557,7 +557,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     def up(df, name):
         if not df.empty and "id_associacao" in df.columns and "empresa_id" not in df.columns:
             df = df.copy()
-            df["empresa_id"] = df["id_associacao"].map(assoc_empresa_map)
+            df["empresa_id"] = df["id_associacao"].astype(str).map(assoc_empresa_map)
         dominio, arquivo = GOLD_PATHS.get(name, ("outros", name))
         key = f"ouro/{dominio}/{arquivo}.parquet"
         stats[name] = _upload_df(client, df, key)
