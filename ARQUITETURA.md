@@ -165,29 +165,40 @@ Sem scripts externos. Cron em `backend/vercel.json`: `0 12 * * *` e `0 20 * * *`
 (09h/17h Brasília).
 
 ```
-Neon OLTP ──► bronze ──► silver ──► gold ──► schema analytics.* (dim_/fact_) ──► Power BI
-                       (Cloudflare R2)      (mesmo projeto Neon "APRXM", não um projeto separado)
+Neon OLTP ──► bronze ──► silver ──► gold (33 tabelas, pt-BR) ──► Neon "aprxm-analytics" ──► Power BI
+           (empresa-aware,      (Cloudflare R2)                  (projeto dedicado, DATAWAREHOUSE_APRXM_DATABASE_URL)
+            empresa_id)
 ```
 
-**Correção 2026-08-01 (Fase 1 do painel da presidência):** o nome "aprxm-analytics" sugeria
-um projeto Neon separado — na prática, `ANALYTICS_DATABASE_URL` aponta pro **mesmo projeto
-"APRXM"**, só que pro schema `analytics` (não `public`). Existe um projeto Neon chamado
-literalmente "aprxm-analytics" (`wispy-frost-54420468`), mas está **vazio** — não é o
-destino real do ETL. `analytics.dim_date/dim_resident/dim_association/fact_transactions/
-fact_packages/fact_mensalidades/fact_inadimplencia/fact_service_orders/fact_social` vivem
-todos em `shy-sun-98696640` (o banco operacional), schema `analytics`.
+**Reestruturação completa em 2026-08-01** (ver `docs/superpowers/plans/
+2026-08-01-etl-empresa-aware-plan.md`):
 
-**Incidente corrigido em 2026-08-01:** `_write_gold_sync` engolia falha de carga no
-Analytics como `warning` e o orquestrador logava `analytics_load` como `success`
-incondicionalmente — resultado: `etl_runs.status = 'success'` por ~2 meses enquanto as
-tabelas `dim_`/`fact_` não recebiam dado nenhum (congeladas desde 2026-05-28).
+1. **Achado inicial errado, corrigido:** eu tinha concluído que `aprxm-analytics`
+   (`wispy-frost-54420468`) estava vazio e que o destino real era um schema `analytics.*`
+   dentro do banco operacional. **Estava errado nos dois pontos.** O projeto
+   `aprxm-analytics` **sempre foi o destino real** — só nunca tinha sido checado além do
+   padrão `dim_/fact_` (que são tabelas órfãs sem nenhum código que as gere, criadas por
+   fora do pipeline). O schema `analytics.*` no banco operacional é outro artefato órfão
+   separado.
+2. As 33 tabelas gold reais (produzidas por `build_gold()`) foram renomeadas de inglês
+   pra português (tabela + coluna) e ganharam `empresa_id` — bronze de `associations`
+   agora seleciona essa coluna, propagada via mapeamento único no `up()`.
+3. **Causa raiz real da lacuna desde 2026-05-28:** não era confusão de destino — era o
+   driver `psycopg2` faltando (`_write_gold_sync` usa `create_engine()` sync, só `asyncpg`
+   estava instalado). Corrigido com `psycopg2-binary` no `requirements.txt`.
+4. Pipeline validado de ponta a ponta rodando o ETL manualmente contra produção:
+   bronze/silver/gold/analytics_load/validate — todos `success`, `empresa_id` correto em
+   toda tabela.
 
-Agora `_write_gold_sync` retorna `(linhas, falhas)`, a falha entra em
-`validation_errors`, e o run é marcado `warning`. Também detecta "0 linhas escritas
-apesar de haver frames Gold".
+**Incidente P0 (mantido, ainda relevante):** `_write_gold_sync` engolia falha de carga
+como `warning` e o orquestrador logava `analytics_load` como `success` incondicionalmente
+— por isso a lacuna ficou invisível por ~2 meses. Agora retorna `(linhas, falhas)` de
+verdade e o run é marcado `warning`/`failed` quando a carga falha.
 
-> **Pendência operacional:** validar se `ANALYTICS_DATABASE_URL` na Vercel ainda é
-> válida — hipótese nº1 para a lacuna (branch Neon Analytics pode ter sido pausada).
+> **Pendência operacional — resolvida:** causa raiz era `psycopg2` faltando, não a env var.
+> Env var nova `DATAWAREHOUSE_APRXM_DATABASE_URL` criada e validada, apontando pro projeto
+> `aprxm-analytics` de fato. `ANALYTICS_DATABASE_URL` (legado) ainda existe mas não é mais
+> lida pelo código — remover depois de confirmar que nada mais depende dela.
 
 ---
 
