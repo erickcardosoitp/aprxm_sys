@@ -48,8 +48,8 @@ class TestFreshness:
         mock_result = MagicMock()
         mock_result.fetchone.return_value = row
         session.execute = AsyncMock(return_value=mock_result)
-        analytics = AsyncMock()
-        return PresidenciaService(session, analytics)
+        dw = AsyncMock()
+        return PresidenciaService(session, dw)
 
     def test_success_run_is_not_stale(self):
         import datetime
@@ -90,7 +90,7 @@ class TestGetInicio:
         session_result = MagicMock(); session_result.scalar.return_value = 2  # caixas abertos
         session.execute = AsyncMock(return_value=session_result)
 
-        analytics = AsyncMock()
+        dw = AsyncMock()
 
         def make(v):
             r = MagicMock()
@@ -98,15 +98,18 @@ class TestGetInicio:
             r.fetchone.return_value = v
             return r
 
-        analytics.execute = AsyncMock(side_effect=[
-            make(7312.51),          # receita_mes
-            make((132, 261)),        # mensalidades pagas/vencidas
-            make(5220.0),            # inadimplente
-            make((1426, 408, 69, 949)),  # moradores
-            make((1556, 48.0, 312)),     # pacotes
-            make((2, 0)),                 # os
+        # ordem em get_inicio: receita_mes(scalar), cob(fetchone), inadimplente(scalar),
+        # moradores(fetchone), pacotes(fetchone), parados(scalar), os_row(fetchone)
+        dw.execute = AsyncMock(side_effect=[
+            make(7312.51),               # receita_mes
+            make((132, 393)),            # cob: pagas, total
+            make(5220.0),                # inadimplente
+            make((1426, 408, 69, 949)),  # moradores: total, associados, dependentes, visitantes
+            make((1556, 2.0)),           # pacotes: recebidos, media_dias_permanencia
+            make(312),                   # parados
+            make((2, 0)),                # os: abertas, fechadas
         ])
-        svc = PresidenciaService(session, analytics)
+        svc = PresidenciaService(session, dw)
 
         async def run():
             data = await svc.get_inicio()
@@ -115,6 +118,7 @@ class TestGetInicio:
             assert data["pacotes_os"]["pacotes_recebidos"] == 1556
             assert "alertas" in data
             assert any("caixas abertos" in a for a in data["alertas"])
+            assert any("pacotes parados" in a for a in data["alertas"])
         asyncio.get_event_loop().run_until_complete(run())
 
 
@@ -123,21 +127,21 @@ class TestGetResumo:
         from app.services.presidencia_service import PresidenciaService
 
         session = AsyncMock()
-        analytics = AsyncMock()
+        dw = AsyncMock()
 
-        def make(v):
+        def make_weeks(cur, prev):
             r = MagicMock()
-            r.scalar.return_value = v
+            r.fetchall.return_value = [("2026-07-27", cur), ("2026-07-20", prev)]
             return r
 
-        # 4 KPIs x (atual, anterior) = 8 chamadas
-        analytics.execute = AsyncMock(side_effect=[
-            make(1000.0), make(1400.0),   # receita
-            make(365), make(386),          # encomendas
-            make(9), make(18),             # crescimento
-            make(1.1), make(2.1),          # tempo entrega
+        # 1 chamada por KPI (_wow_semanal busca as 2 semanas mais recentes de uma vez)
+        dw.execute = AsyncMock(side_effect=[
+            make_weeks(1000.0, 1400.0),  # receita_liquida
+            make_weeks(365, 386),         # encomendas
+            make_weeks(9, 18),            # crescimento
+            make_weeks(1.1, 2.1),         # tempo_entrega
         ])
-        svc = PresidenciaService(session, analytics)
+        svc = PresidenciaService(session, dw)
 
         async def run():
             data = await svc.get_resumo()

@@ -1,5 +1,11 @@
 """
-Service do painel da presidencia — le do Neon Analytics (dim_/fact_), nunca escreve.
+Service do painel da presidencia — le do data warehouse dedicado
+(projeto Neon "aprxm-analytics"), nunca escreve. Consome as tabelas gold
+reais produzidas por datalake_service.build_gold() (nomes em portugues,
+ver docs/superpowers/plans/2026-08-01-etl-empresa-aware-plan.md) — nao
+existe schema "analytics.*" nesse projeto, as tabelas ficam no schema
+public padrao (mesmo destino que _write_gold_sync grava).
+
 Ver docs/superpowers/specs/2026-08-01-painel-presidencia-design.md.
 """
 from sqlalchemy import text
@@ -9,47 +15,47 @@ from app.config import get_settings
 
 settings = get_settings()
 
-_analytics_engine: AsyncEngine | None = None
-_AnalyticsSessionLocal: async_sessionmaker[AsyncSession] | None = None
+_dw_engine: AsyncEngine | None = None
+_DwSessionLocal: async_sessionmaker[AsyncSession] | None = None
 
 
-def _analytics_async_url() -> str:
-    url = settings.analytics_db_url
+def _dw_async_url() -> str:
+    url = settings.datawarehouse_db_url
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return url
 
 
-def get_analytics_engine() -> AsyncEngine:
+def get_dw_engine() -> AsyncEngine:
     """Engine async lazy, separada da engine principal — aponta pro projeto
-    aprxm-analytics (OLAP), nao pro banco operacional."""
-    global _analytics_engine, _AnalyticsSessionLocal
-    if _analytics_engine is None:
-        _analytics_engine = create_async_engine(
-            _analytics_async_url(),
+    aprxm-analytics (data warehouse dedicado, OLAP), nao pro banco operacional."""
+    global _dw_engine, _DwSessionLocal
+    if _dw_engine is None:
+        _dw_engine = create_async_engine(
+            _dw_async_url(),
             pool_pre_ping=True,
             pool_size=2,
             max_overflow=3,
             connect_args={"ssl": "require", "statement_cache_size": 0},
         )
-        _AnalyticsSessionLocal = async_sessionmaker(
-            bind=_analytics_engine, class_=AsyncSession, expire_on_commit=False,
+        _DwSessionLocal = async_sessionmaker(
+            bind=_dw_engine, class_=AsyncSession, expire_on_commit=False,
         )
-    return _analytics_engine
+    return _dw_engine
 
 
-async def get_analytics_session() -> AsyncSession:
-    """Dependency FastAPI: sessao read-only pro Neon Analytics."""
-    get_analytics_engine()
-    assert _AnalyticsSessionLocal is not None
-    async with _AnalyticsSessionLocal() as session:
+async def get_dw_session() -> AsyncSession:
+    """Dependency FastAPI: sessao read-only pro data warehouse."""
+    get_dw_engine()
+    assert _DwSessionLocal is not None
+    async with _DwSessionLocal() as session:
         yield session
 
 
 class PresidenciaService:
-    def __init__(self, session: AsyncSession, analytics: AsyncSession) -> None:
-        self.session = session          # banco operacional (etl_runs, etc.)
-        self.analytics = analytics      # aprxm-analytics (dim_/fact_)
+    def __init__(self, session: AsyncSession, dw: AsyncSession) -> None:
+        self.session = session   # banco operacional (etl_runs, cash_sessions, etc.)
+        self.dw = dw             # aprxm-analytics (tabelas gold, pt-BR)
 
     async def freshness(self) -> dict:
         """generated_at/stale baseados no ultimo etl_run — mesma logica pra
@@ -66,9 +72,9 @@ class PresidenciaService:
             "stale": status_ != "success",
         }
 
-    async def analytics_reachable(self) -> bool:
+    async def dw_reachable(self) -> bool:
         try:
-            await self.analytics.execute(text("SELECT 1"))
+            await self.dw.execute(text("SELECT 1"))
             return True
         except Exception:
             return False
@@ -76,50 +82,40 @@ class PresidenciaService:
     # ── /inicio ──────────────────────────────────────────────────────────
 
     async def get_inicio(self) -> dict:
-        receita_mes = (await self.analytics.execute(text("""
-            SELECT COALESCE(SUM(amount), 0) FROM analytics.fact_transactions
-            WHERE is_income AND to_char(transaction_at, 'YYYY-MM') = to_char(now(), 'YYYY-MM')
+        receita_mes = (await self.dw.execute(text("""
+            SELECT COALESCE(SUM(receita_total), 0) FROM receita_diaria
+            WHERE to_char(data, 'YYYY-MM') = to_char(now(), 'YYYY-MM')
         """))).scalar()
 
-        mens = (await self.analytics.execute(text("""
-            SELECT
-                COUNT(*) FILTER (WHERE is_paid) AS pagas,
-                COUNT(*) FILTER (WHERE is_overdue) AS vencidas
-            FROM analytics.fact_mensalidades
-            WHERE reference_month = to_char(now(), 'YYYY-MM')
+        cob = (await self.dw.execute(text("""
+            SELECT COALESCE(SUM(pagas), 0), COALESCE(SUM(total), 0)
+            FROM taxa_cobranca WHERE mes = to_char(now(), 'YYYY-MM')
         """))).fetchone()
-        pagas, vencidas = mens[0] or 0, mens[1] or 0
-        total_mens = pagas + vencidas
-        taxa_cobranca = round(100.0 * pagas / total_mens, 1) if total_mens else None
+        pagas, total_cob = cob[0] or 0, cob[1] or 0
+        taxa_cobranca = round(100.0 * pagas / total_cob, 1) if total_cob else None
 
-        inadimplente = (await self.analytics.execute(text("""
-            SELECT COALESCE(SUM(amount), 0) FROM analytics.fact_inadimplencia
-            WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM analytics.fact_inadimplencia)
-        """))).scalar()
+        inadimplente = (await self.dw.execute(text(
+            "SELECT COALESCE(SUM(valor_devido), 0) FROM relatorio_inadimplencia"
+        ))).scalar()
 
-        moradores = (await self.analytics.execute(text("""
-            SELECT
-                COUNT(*) AS total,
-                COUNT(*) FILTER (WHERE type = 'member') AS associados,
-                COUNT(*) FILTER (WHERE type = 'dependent') AS dependentes,
-                COUNT(*) FILTER (WHERE type = 'guest') AS visitantes
-            FROM analytics.dim_resident
-            WHERE status = 'active' AND move_out_date IS NULL
+        moradores = (await self.dw.execute(text("""
+            SELECT COALESCE(SUM(total_ativos),0), COALESCE(SUM(associados),0),
+                   COALESCE(SUM(dependentes),0), COALESCE(SUM(visitantes),0)
+            FROM panorama_moradores
         """))).fetchone()
 
-        pacotes = (await self.analytics.execute(text("""
-            SELECT
-                COUNT(*) AS recebidos,
-                AVG(delivery_hours) FILTER (WHERE is_delivered) AS tempo_medio_h,
-                COUNT(*) FILTER (WHERE is_pending AND received_at < now() - INTERVAL '3 days') AS parados
-            FROM analytics.fact_packages
-            WHERE to_char(received_at, 'YYYY-MM') = to_char(now(), 'YYYY-MM')
+        pacotes = (await self.dw.execute(text("""
+            SELECT COALESCE(SUM(recebidos),0), AVG(media_dias_permanencia)
+            FROM encomendas_mensal WHERE mes = to_char(now(), 'YYYY-MM')
         """))).fetchone()
 
-        os_row = (await self.analytics.execute(text("""
-            SELECT COUNT(*) FILTER (WHERE is_open) AS abertas,
-                   COUNT(*) FILTER (WHERE is_resolved) AS fechadas
-            FROM analytics.fact_service_orders
+        parados = (await self.dw.execute(text(
+            "SELECT COALESCE(SUM(paradas_3d), 0) FROM encomendas_paradas"
+        ))).scalar() or 0
+
+        os_row = (await self.dw.execute(text("""
+            SELECT COALESCE(SUM(abertas),0), COALESCE(SUM(fechadas),0)
+            FROM ordens_servico_mensal WHERE mes = to_char(now(), 'YYYY-MM')
         """))).fetchone()
 
         caixas_abertos = (await self.session.execute(text(
@@ -127,7 +123,6 @@ class PresidenciaService:
         ))).scalar() or 0
 
         alertas = []
-        parados = pacotes[2] or 0
         if parados > 0:
             alertas.append(f"{parados} pacotes parados há mais de 3 dias")
         if taxa_cobranca is not None and taxa_cobranca < 60:
@@ -147,47 +142,36 @@ class PresidenciaService:
             },
             "pacotes_os": {
                 "pacotes_recebidos": pacotes[0] or 0,
-                "tempo_medio_entrega_dias": round(pacotes[1] / 24, 1) if pacotes[1] else None,
+                "tempo_medio_entrega_dias": round(pacotes[1], 1) if pacotes[1] else None,
                 "os_abertas": os_row[0] or 0, "os_fechadas": os_row[1] or 0,
             },
             "alertas": alertas,
         }
 
-    # ── /resumo (WoW/MoM) ────────────────────────────────────────────────
+    # ── /resumo (WoW) ────────────────────────────────────────────────────
+    # Reaproveita os rollups semanais que o proprio ETL ja fecha (exclui a
+    # semana em andamento) -- pega as 2 semanas mais recentes de cada tabela
+    # e compara, em vez de recalcular janela por now()-7d.
 
-    async def _wow(self, sql_current: str, sql_previous: str, executor) -> dict:
-        """Compara janela de 7 dias corrente vs anterior. YoY/ToT ficam None
-        ate' o painel ter historico suficiente (mesmo estado do Excel hoje)."""
-        cur = (await executor(sql_current)).scalar() or 0
-        prev = (await executor(sql_previous)).scalar() or 0
+    async def _wow_semanal(self, table: str, agg_sql: str) -> dict:
+        rows = (await self.dw.execute(text(f"""
+            SELECT semana, {agg_sql} AS valor
+            FROM {table}
+            GROUP BY semana
+            ORDER BY semana DESC
+            LIMIT 2
+        """))).fetchall()
+        cur = float(rows[0][1]) if len(rows) > 0 and rows[0][1] is not None else 0.0
+        prev = float(rows[1][1]) if len(rows) > 1 and rows[1][1] is not None else 0.0
         delta_pct = round(100.0 * (cur - prev) / prev, 1) if prev else None
-        return {"atual": float(cur), "anterior": float(prev), "wow_pct": delta_pct,
+        return {"atual": cur, "anterior": prev, "wow_pct": delta_pct,
                 "mom_pct": None, "yoy_pct": None, "tot_pct": None}
 
     async def get_resumo(self) -> dict:
-        async def a(sql: str):
-            return await self.analytics.execute(text(sql))
-
-        receita = await self._wow(
-            "SELECT COALESCE(SUM(amount),0) FROM analytics.fact_transactions WHERE is_income AND transaction_at >= now() - INTERVAL '7 days'",
-            "SELECT COALESCE(SUM(amount),0) FROM analytics.fact_transactions WHERE is_income AND transaction_at >= now() - INTERVAL '14 days' AND transaction_at < now() - INTERVAL '7 days'",
-            a,
-        )
-        encomendas = await self._wow(
-            "SELECT COUNT(*) FROM analytics.fact_packages WHERE received_at >= now() - INTERVAL '7 days'",
-            "SELECT COUNT(*) FROM analytics.fact_packages WHERE received_at >= now() - INTERVAL '14 days' AND received_at < now() - INTERVAL '7 days'",
-            a,
-        )
-        crescimento = await self._wow(
-            "SELECT COUNT(*) FROM analytics.dim_resident WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'",
-            "SELECT COUNT(*) FROM analytics.dim_resident WHERE created_at >= CURRENT_DATE - INTERVAL '14 days' AND created_at < CURRENT_DATE - INTERVAL '7 days'",
-            a,
-        )
-        tempo_entrega = await self._wow(
-            "SELECT AVG(delivery_hours)/24.0 FROM analytics.fact_packages WHERE is_delivered AND delivered_at >= now() - INTERVAL '7 days'",
-            "SELECT AVG(delivery_hours)/24.0 FROM analytics.fact_packages WHERE is_delivered AND delivered_at >= now() - INTERVAL '14 days' AND delivered_at < now() - INTERVAL '7 days'",
-            a,
-        )
+        receita = await self._wow_semanal("receita_semanal", "SUM(saldo_liquido)")
+        encomendas = await self._wow_semanal("pacotes_semanal", "SUM(recebidos)")
+        crescimento = await self._wow_semanal("crescimento_associados_semanal", "SUM(novos)")
+        tempo_entrega = await self._wow_semanal("pacotes_semanal", "AVG(media_dias_permanencia)")
 
         return {
             "receita_liquida": receita,
