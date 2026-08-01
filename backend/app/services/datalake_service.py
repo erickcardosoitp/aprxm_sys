@@ -613,6 +613,32 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "sangria_total": "total_sangria", "income_count": "qtd_receitas",
             "expense_count": "qtd_despesas", "net": "saldo_liquido",
         })
+
+        # Pagamentos historicos de migration_payments -- so' a partir de
+        # 2026-03 (decisao do usuario: registros antes disso, competencia ate
+        # 2025, sao 1-3/mes desde o ano 2000, aparentam ser placeholder/seed,
+        # nao migracao real). Sem data exata (so' "competencia" = mes), entram
+        # no dia 1 do mes como receita_total/mensalidade/saldo_liquido.
+        migr_gold = frames.get("migration_payments", pd.DataFrame())
+        if not migr_gold.empty and "competencia" in migr_gold.columns:
+            migr_gold = migr_gold[migr_gold["competencia"].astype(str) >= "2026-03"].copy()
+        if not migr_gold.empty:
+            migr_gold["association_name"] = migr_gold["association_id"].map(
+                _assocs_emp.set_index("id")["name"].to_dict() if not _assocs_emp.empty else {}
+            )
+            migr_agg = migr_gold.groupby(["competencia","association_id","association_name"])["valor_pago"].sum().reset_index()
+            migr_agg["data"] = pd.to_datetime(migr_agg["competencia"] + "-01")
+            migr_agg["semana"] = migr_agg["data"]
+            migr_agg["mes"] = migr_agg["data"].dt.to_period("M").dt.to_timestamp()
+            migr_agg = migr_agg.rename(columns={
+                "association_id": "id_associacao", "association_name": "nome_associacao",
+                "valor_pago": "receita_total",
+            })
+            migr_agg["mensalidade"] = migr_agg["receita_total"]
+            migr_agg["saldo_liquido"] = migr_agg["receita_total"]
+            migr_agg = migr_agg.drop(columns=["competencia"])
+            df = pd.concat([df, migr_agg], ignore_index=True)
+
         up(df, "receita_diaria")
 
     # 2. Crescimento semanal de associados
@@ -650,7 +676,10 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         })
         up(df, "panorama_moradores")
 
-    # 4. Taxa de cobranca — denominador = cobranças geradas no mês
+    # 4. Taxa de cobranca — denominador = cobranças geradas no mês. Tambem
+    # carrega vencidas (pending + due_date antes da tolerancia de 2 dias,
+    # mesma regra da inadimplencia) e taxa de retencao = pagas/(pagas+vencidas)
+    # -- definicao do usuario, indicadores novos do Inicio (2026-08-01).
     if not mens.empty:
         df = mens.copy()
         df["month"] = _month(mens["reference_month"].fillna(mens["due_date"]).fillna(mens["created_at"]))
@@ -659,14 +688,22 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         df["association_name"] = df["association_id"].map(
             _assocs_emp.set_index("id")["name"].to_dict() if not _assocs_emp.empty else {}
         )
+        grace_cutoff = pd.Timestamp.now() - pd.Timedelta(days=2)
+        vencida_mask = (df["status"] != "paid") & (_to_dt(df["due_date"]) < grace_cutoff)
+        df["vencida"] = vencida_mask
         agg = df.groupby(["month","association_id","association_name"]).apply(lambda g: pd.Series({
-            "paid":        (g["status"]=="paid").sum(),
-            "total":       len(g),
-            "valor_total": g["amount"].sum(),
-            "valor_pago":  g.loc[g["status"]=="paid","amount"].sum(),
+            "paid":         (g["status"]=="paid").sum(),
+            "total":        len(g),
+            "valor_total":  g["amount"].sum(),
+            "valor_pago":   g.loc[g["status"]=="paid","amount"].sum(),
+            "vencidas":     g["vencida"].sum(),
+            "valor_vencido": g.loc[g["vencida"],"amount"].sum(),
         })).reset_index()
         agg["pendentes"] = (agg["total"] - agg["paid"]).clip(lower=0)
         agg["taxa_pct"]  = (agg["paid"] / agg["total"].replace(0, pd.NA) * 100).round(1)
+        agg["retencao_pct"] = (
+            agg["paid"] / (agg["paid"] + agg["vencidas"]).replace(0, pd.NA) * 100
+        ).round(1)
         agg = agg.rename(columns={
             "month": "mes", "association_id": "id_associacao", "paid": "pagas",
             "association_name": "nome_associacao",

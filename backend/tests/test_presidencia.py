@@ -96,22 +96,29 @@ class TestGetInicio:
             r = MagicMock()
             r.scalar.return_value = v
             r.fetchone.return_value = v
+            r.fetchall.return_value = v if isinstance(v, list) else []
             return r
 
         # ordem em get_inicio: _metricas_periodo(atual) = receita/cob/pacotes/os,
-        # _metricas_periodo(anterior) = idem, depois inadimplente, moradores, parados.
+        # _metricas_periodo(anterior) = idem, _breakdown_por_unidade (5 fetchall,
+        # so' quando unidade=None) = receita/cob/pacotes/os/moradores, depois
+        # moradores (fetchone), parados.
         dw.execute = AsyncMock(side_effect=[
-            make(7312.51),               # atual: receita_mes
-            make((132, 393)),            # atual: cob pagas, total
-            make((1556, 2.0)),           # atual: pacotes recebidos, media_dias_permanencia
-            make((2, 0)),                # atual: os abertas, fechadas
-            make(6800.0),                # anterior: receita_mes
-            make((120, 380)),            # anterior: cob pagas, total
-            make((1400, 2.5)),           # anterior: pacotes recebidos, media_dias_permanencia
-            make((3, 1)),                # anterior: os abertas, fechadas
-            make(5220.0),                # inadimplente
-            make((1426, 408, 69, 949)),  # moradores: total, associados, dependentes, visitantes
-            make(312),                   # parados
+            make(7312.51),                    # atual: receita_mes
+            make((132, 393, 261, 5220.0)),    # atual: cob pagas, total, vencidas, valor_vencido
+            make((1556, 2.0)),                # atual: pacotes recebidos, media_dias_permanencia
+            make((2, 0)),                      # atual: os abertas, fechadas
+            make(6800.0),                      # anterior: receita_mes
+            make((120, 380, 240, 4800.0)),     # anterior: cob pagas, total, vencidas, valor_vencido
+            make((1400, 2.5)),                 # anterior: pacotes recebidos, media_dias_permanencia
+            make((3, 1)),                       # anterior: os abertas, fechadas
+            make([]),                           # breakdown: receita por unidade
+            make([]),                           # breakdown: cob por unidade
+            make([]),                           # breakdown: pacotes por unidade
+            make([]),                           # breakdown: os por unidade
+            make([]),                           # breakdown: moradores por unidade
+            make((1426, 408, 69, 949)),        # moradores: total, associados, dependentes, visitantes
+            make(312),                          # parados
         ])
         svc = PresidenciaService(session, dw)
 

@@ -56,6 +56,11 @@ export interface InicioData {
     taxa_cobranca: number | null
     taxa_cobranca_anterior: number | null
     total_inadimplente: number
+    total_inadimplente_anterior: number
+    mensalidades_pagas: number
+    mensalidades_vencidas: number
+    taxa_retencao: number | null
+    taxa_retencao_anterior: number | null
   }
   moradores: {
     total: number
@@ -72,6 +77,17 @@ export interface InicioData {
     os_fechadas_anterior: number
   }
   alertas: string[]
+  por_unidade: Record<string, {
+    receita?: number
+    taxa_cobranca?: number | null
+    mensalidades_pagas?: number
+    mensalidades_vencidas?: number
+    total_inadimplente?: number
+    taxa_retencao?: number | null
+    pacotes_recebidos?: number
+    os_fechadas?: number
+    moradores_total?: number
+  }> | null
 }
 
 export async function getStatus(): Promise<FreshnessInfo & { dw_reachable: boolean }> {

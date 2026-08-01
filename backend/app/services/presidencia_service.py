@@ -123,11 +123,13 @@ class PresidenciaService:
         """), params)).scalar()
 
         cob = (await self.dw.execute(text(f"""
-            SELECT COALESCE(SUM(pagas), 0), COALESCE(SUM(total), 0)
+            SELECT COALESCE(SUM(pagas), 0), COALESCE(SUM(total), 0), COALESCE(SUM(vencidas), 0),
+                   COALESCE(SUM(valor_vencido), 0)
             FROM taxa_cobranca WHERE to_char(mes, 'YYYY-MM') = ANY(:meses) {unidade_filter}
         """), params)).fetchone()
-        pagas, total_cob = cob[0] or 0, cob[1] or 0
+        pagas, total_cob, vencidas, valor_vencido = cob[0] or 0, cob[1] or 0, cob[2] or 0, cob[3] or 0
         taxa_cobranca = round(100.0 * pagas / total_cob, 1) if total_cob else None
+        retencao_pct = round(100.0 * pagas / (pagas + vencidas), 1) if (pagas + vencidas) else None
 
         pacotes = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(recebidos),0), AVG(media_dias_permanencia)
@@ -142,11 +144,69 @@ class PresidenciaService:
         return {
             "receita": float(receita_mes or 0),
             "taxa_cobranca": taxa_cobranca,
+            "mensalidades_pagas": pagas,
+            "mensalidades_vencidas": vencidas,
+            "valor_vencido": float(valor_vencido),
+            "taxa_retencao": retencao_pct,
             "pacotes_recebidos": pacotes[0] or 0,
             "tempo_medio_entrega_dias": round(pacotes[1], 1) if pacotes[1] else None,
             "os_abertas": os_row[0] or 0,
             "os_fechadas": os_row[1] or 0,
         }
+
+    async def _breakdown_por_unidade(self, meses: list[str]) -> dict:
+        """Quebra por associacao das metricas do Inicio -- so' roda quando
+        'Todos' esta selecionado (unidade=None), pra mostrar Congonha vs
+        Vaz Lobo dentro de cada card."""
+        params = {"meses": meses}
+
+        receita = (await self.dw.execute(text("""
+            SELECT nome_associacao, COALESCE(SUM(receita_total), 0)
+            FROM receita_diaria WHERE to_char(data, 'YYYY-MM') = ANY(:meses)
+            GROUP BY nome_associacao
+        """), params)).fetchall()
+
+        cob = (await self.dw.execute(text("""
+            SELECT nome_associacao, COALESCE(SUM(pagas),0), COALESCE(SUM(total),0),
+                   COALESCE(SUM(vencidas),0), COALESCE(SUM(valor_vencido),0)
+            FROM taxa_cobranca WHERE to_char(mes, 'YYYY-MM') = ANY(:meses)
+            GROUP BY nome_associacao
+        """), params)).fetchall()
+
+        pacotes = (await self.dw.execute(text("""
+            SELECT nome_associacao, COALESCE(SUM(recebidos),0)
+            FROM encomendas_mensal WHERE mes = ANY(:meses)
+            GROUP BY nome_associacao
+        """), params)).fetchall()
+
+        os_rows = (await self.dw.execute(text("""
+            SELECT nome_associacao, COALESCE(SUM(fechadas),0)
+            FROM ordens_servico_mensal WHERE mes = ANY(:meses)
+            GROUP BY nome_associacao
+        """), params)).fetchall()
+
+        moradores = (await self.dw.execute(text("""
+            SELECT nome_associacao, COALESCE(SUM(total_ativos),0)
+            FROM panorama_moradores GROUP BY nome_associacao
+        """))).fetchall()
+
+        out: dict[str, dict] = {}
+        for nome, receita_v in receita:
+            out.setdefault(nome, {})["receita"] = float(receita_v or 0)
+        for nome, pagas, total, vencidas, valor_vencido in cob:
+            d = out.setdefault(nome, {})
+            d["taxa_cobranca"] = round(100.0 * pagas / total, 1) if total else None
+            d["mensalidades_pagas"] = pagas
+            d["mensalidades_vencidas"] = vencidas
+            d["total_inadimplente"] = float(valor_vencido or 0)
+            d["taxa_retencao"] = round(100.0 * pagas / (pagas + vencidas), 1) if (pagas + vencidas) else None
+        for nome, recebidos in pacotes:
+            out.setdefault(nome, {})["pacotes_recebidos"] = recebidos
+        for nome, fechadas in os_rows:
+            out.setdefault(nome, {})["os_fechadas"] = fechadas
+        for nome, total_ativos in moradores:
+            out.setdefault(nome, {})["moradores_total"] = total_ativos
+        return out
 
     async def get_inicio(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
         unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
@@ -157,10 +217,7 @@ class PresidenciaService:
 
         atual = await self._metricas_periodo(meses_alvo, unidade_filter, unidade)
         anterior = await self._metricas_periodo(meses_anteriores, unidade_filter, unidade)
-
-        inadimplente = (await self.dw.execute(text(
-            f"SELECT COALESCE(SUM(valor_devido), 0) FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter}"
-        ), params)).scalar()
+        por_unidade = await self._breakdown_por_unidade(meses_alvo) if unidade is None else None
 
         moradores = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(total_ativos),0), COALESCE(SUM(associados),0),
@@ -193,7 +250,12 @@ class PresidenciaService:
                 "receita_mes_anterior": anterior["receita"],
                 "taxa_cobranca": atual["taxa_cobranca"],
                 "taxa_cobranca_anterior": anterior["taxa_cobranca"],
-                "total_inadimplente": float(inadimplente or 0),
+                "total_inadimplente": atual["valor_vencido"],
+                "total_inadimplente_anterior": anterior["valor_vencido"],
+                "mensalidades_pagas": atual["mensalidades_pagas"],
+                "mensalidades_vencidas": atual["mensalidades_vencidas"],
+                "taxa_retencao": atual["taxa_retencao"],
+                "taxa_retencao_anterior": anterior["taxa_retencao"],
             },
             "moradores": {
                 "total": moradores[0] or 0, "associados": moradores[1] or 0,
@@ -208,6 +270,7 @@ class PresidenciaService:
                 "os_fechadas_anterior": anterior["os_fechadas"],
             },
             "alertas": alertas,
+            "por_unidade": por_unidade,
         }
 
     # ── /resumo (WoW) ────────────────────────────────────────────────────

@@ -9,3 +9,7 @@ export const UNIDADES: { key: UnidadeKey; label: string; nomeAssociacao: string 
 export function nomeAssociacaoFor(key: UnidadeKey): string | null {
   return UNIDADES.find((u) => u.key === key)?.nomeAssociacao ?? null
 }
+
+export function labelForNomeAssociacao(nome: string): string {
+  return UNIDADES.find((u) => u.nomeAssociacao === nome)?.label ?? nome
+}
