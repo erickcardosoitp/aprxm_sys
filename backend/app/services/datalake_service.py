@@ -1541,7 +1541,7 @@ def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> tuple[int, list[st
     sucesso mesmo sem ter atualizado nada no OLAP.
     """
     from sqlalchemy import create_engine, text
-    engine = create_engine(settings.analytics_db_url, pool_pre_ping=True)
+    engine = create_engine(settings.datawarehouse_db_url, pool_pre_ping=True)
     total = 0
     failures: list[str] = []
     try:
@@ -1587,9 +1587,9 @@ def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> tuple[int, list[st
 async def load_gold_to_analytics(
     gold_frames: dict[str, pd.DataFrame],
 ) -> tuple[int, list[str]]:
-    """Task 5: carrega camada Gold no Neon Analytics (OLAP para Power BI)."""
-    if not settings.analytics_database_url:
-        msg = "ANALYTICS_DATABASE_URL nao configurado — carga OLAP nao executada"
+    """Task 5: carrega camada Gold no data warehouse dedicado (aprxm-analytics, OLAP p/ Power BI)."""
+    if not settings.datawarehouse_aprxm_database_url:
+        msg = "DATAWAREHOUSE_APRXM_DATABASE_URL nao configurado — carga OLAP nao executada"
         logger.warning(msg)
         return 0, [msg]
     import asyncio
