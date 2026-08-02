@@ -29,7 +29,7 @@ Indicadores (glossário): [2026-08-01-glossario-indicadores-presidencia.md](../r
 - [ ] Completar os 5 KPIs restantes do `/resumo` (taxa cobrança, inadimplência, retenção,
       tarefas no prazo, score operadores) — mesmo padrão `_wow_semanal()` já estabelecido.
 
-## Fase 2 — ETL: dados novos pros indicadores da revisão 2 ✅ maior parte concluída
+## Fase 2 — ETL: dados novos pros indicadores da revisão 2 ✅ concluída
 
 - [x] Bronze: extração incremental de `api_request_logs` (id/user_id/created_at) — proxy
       de sessão, já que não existe log de login/logout.
@@ -46,6 +46,10 @@ Indicadores (glossário): [2026-08-01-glossario-indicadores-presidencia.md](../r
       engajamento, não satisfação. Validado em produção (2026-08-01). Índice de
       operadores roda com as 5 métricas originais (tarefas 30%/faturamento 25%/
       feedback 20%/vendas 15%/tempo 10%) — nenhum bloqueio restante.
+- [x] Gold `recuperacao_inadimplencia` — recuperada (paga com atraso) / no prazo /
+      parcelamento / nunca recuperada, `taxa_recuperacao_pct`. Achado da análise de
+      negócio 2026-08-01: ~40% do que vence volta, resto fica em aberto pra sempre.
+      Validado em produção (Congonha 42%, Vaz Lobo 29,4%).
 - [ ] Opcional: backfill único de `tempo_medio_sessao_operador` com os ~26 dias de
       `api_request_logs` já existentes (hoje só acumula pra frente).
 - [ ] Mapa por CEP (Senso) — geocodificação via ViaCEP + cache. Não é ETL, é serviço
@@ -65,7 +69,9 @@ Indicadores (glossário): [2026-08-01-glossario-indicadores-presidencia.md](../r
 ## Fase 4 — `/mensalidades`, `/pacotes`, `/os`, `/senso`, `/operadores`
 
 - [ ] `GET /presidencia/mensalidades` — pagas/vencidas/retenção, aging de inadimplência,
-      ticket médio, tabela rica de inadimplência (badge+sparkline+probabilidade).
+      ticket médio, tabela rica de inadimplência (badge+sparkline+probabilidade),
+      **taxa de recuperação de inadimplência** (gold `recuperacao_inadimplencia`,
+      novo) e **parcelamentos em aberto** (coluna `acordos` em `taxa_cobranca`).
 - [ ] `GET /presidencia/pacotes` — recebidos/parados/SLA, streamgraph top moradores,
       custo por encomenda.
 - [ ] `GET /presidencia/os` — abertas/fechadas, tarefas no prazo (barra %).
@@ -73,19 +79,26 @@ Indicadores (glossário): [2026-08-01-glossario-indicadores-presidencia.md](../r
 - [ ] `GET /presidencia/operadores` — módulo novo, filtro por operador, card benchmark,
       índice de calor (4/5 métricas até feedback existir), ranking (tabela rica).
 
-## Fase 5 — Frontend (⏸ aguardar sinal do usuário antes de iniciar)
+## Fase 5 — Frontend ✅ scaffold + Início concluído, 8 abas restantes
 
-- [ ] Scaffold do mini-app (Vite/React), deploy Vercel separado.
-- [ ] Tema/paleta violeta "Marque" + ícones `@phosphor-icons/react` (peso Regular/Fill).
-- [ ] Login reaproveitando `/auth/login` existente (mesmo JWT do aprxm).
-- [ ] Layout base: header + 9 abas (Início/Resumo/Financeiro/Moradores/Mensalidades/
-      Pacotes/OS/Senso/Operadores), padrão `EscModulePage`.
-- [ ] Componentes: stat tile padrão, mini-gráfico de tendência (padrão do painel), card
-      de operador (benchmark), Gráfico de Faturamento, faturamento por produto (multi-
-      série togável), bar chart mensal (destaque mês atual+hover), tabela rica (badge+
-      sparkline+probabilidade), calendário de calor, funil de conversão, barra segmentada
-      de %, streamgraph, bar chart diário fino.
-- [ ] Responsivo (grid 3→1 coluna mobile), dark mode com rampa própria.
+- [x] Scaffold do mini-app (Vite/React/Tailwind4), deploy Vercel separado
+      (`aprxm-dash-prd.vercel.app`, projeto `aprxm-presidencia`).
+- [x] Tema/paleta violeta "Marque" + ícones `@phosphor-icons/react` (peso Regular/Fill).
+- [x] Login reaproveitando `/auth/login` existente (mesmo JWT do aprxm) — 1 passo só,
+      empresa-wide (sem seleção de associação, é estilo ESC).
+- [x] Layout base: header (logo texto + saudação + período navegável + filtro
+      Todos/Congonha/Vaz Lobo global + última atualização) + 9 abas.
+- [x] Componentes prontos: StatTile (com delta vs período anterior, breakdown por
+      unidade, legenda em hover, badge "agora" pra snapshot).
+- [x] Aba Início completa e validada (9 cards, breakdown por unidade, comparativo).
+- [ ] Componentes ainda não construídos: mini-gráfico de tendência, card de operador
+      (benchmark), Gráfico de Faturamento, faturamento por produto (multi-série
+      togável), bar chart mensal (destaque mês atual+hover), tabela rica (badge+
+      sparkline+probabilidade), calendário de calor, funil de conversão, barra
+      segmentada de %, streamgraph, bar chart diário fino.
+- [ ] 8 abas restantes (Resumo/Financeiro/Moradores/Mensalidades/Pacotes/OS/Senso/
+      Operadores) — hoje são placeholder "Em construção".
+- [ ] Responsivo (grid 3→1 coluna mobile) — Início não testado em mobile ainda.
 - [ ] Smoke test de cada aba + screenshot review contra os anti-patterns do spec.
 
 ## Riscos conhecidos
