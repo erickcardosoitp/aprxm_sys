@@ -168,11 +168,32 @@ export interface FinanceiroData {
   receita_total: number
   despesa_total: number
   saldo_liquido: number
+  receita_total_anterior: number
   margem_pct: number | null
   saldo_caixa: number
   runway_semanas: number | null
   total_inadimplente: number
   qtd_inadimplentes: number
+  inadimplentes: { nome: string; associacao: string; meses_atraso: number; valor_devido: number }[]
+  serie_diaria: {
+    data: string
+    receita_total: number
+    despesa_total: number
+    saldo_liquido: number
+    mensalidade: number
+    taxa_entrega: number
+    comprovante_residencia: number
+    outras_receitas: number
+  }[]
+  receita_por_rua: { rua: string; receita_total: number; qtd_transacoes: number }[]
+  comparativo_unidades: {
+    nome_associacao: string
+    receita_total: number
+    despesa_total: number
+    saldo_liquido: number
+    margem_pct: number | null
+    taxa_cobranca_pct: number | null
+  }[]
   recuperacao: {
     valor_recuperada: number
     valor_nunca_recuperada: number

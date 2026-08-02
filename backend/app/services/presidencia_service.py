@@ -461,6 +461,13 @@ class PresidenciaService:
         """), params)).fetchone()
         receita, despesa, saldo = float(margem[0] or 0), float(margem[1] or 0), float(margem[2] or 0)
 
+        meses_anteriores = _ultimos_meses_yyyymm(len(meses), _shift_yyyymm(meses[-1], -1)) if meses else []
+        params_ant = dict(params, meses=meses_anteriores)
+        margem_ant = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(receita_total),0) FROM margem_mensal WHERE mes = ANY(:meses) {unidade_filter} {ef}
+        """), params_ant)).scalar()
+        receita_anterior = float(margem_ant or 0)
+
         runway = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(saldo_atual),0), MIN(runway_semanas)
             FROM runway_financeiro WHERE 1=1 {unidade_filter} {ef}
@@ -469,6 +476,12 @@ class PresidenciaService:
         inadimplente = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(valor_devido),0), COUNT(*) FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter} {ef}
         """), params)).fetchone()
+
+        inadimplentes_rows = (await self.dw.execute(text(f"""
+            SELECT nome_completo, nome_associacao, meses_atraso, valor_devido
+            FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter} {ef}
+            ORDER BY valor_devido DESC LIMIT 10
+        """), params)).fetchall()
 
         recuperacao = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(valor_recuperada),0), COALESCE(SUM(valor_nunca_recuperada),0),
@@ -499,11 +512,44 @@ class PresidenciaService:
             ORDER BY semana DESC, total_quebra DESC LIMIT 50
         """), params)).fetchall()
 
+        # Serie diaria -- base pro Grafico de Faturamento, Faturamento por
+        # produto, Calendario de calor e a tabela dia x produto (todos usam a
+        # mesma granularidade, ver spec 2026-08-01-painel-presidencia-design.md §3)
+        serie_rows = (await self.dw.execute(text(f"""
+            SELECT data, SUM(receita_total), SUM(despesa_total), SUM(saldo_liquido),
+                   SUM(mensalidade), SUM(taxa_entrega), SUM(comprovante_residencia), SUM(outras_receitas)
+            FROM receita_diaria WHERE to_char(data,'YYYY-MM') = ANY(:meses) {unidade_filter} {ef}
+            GROUP BY data ORDER BY data
+        """), params)).fetchall()
+
+        receita_rua_rows = (await self.dw.execute(text(f"""
+            SELECT rua, SUM(receita_total), SUM(qtd_transacoes)
+            FROM receita_por_rua WHERE 1=1 {unidade_filter} {ef}
+            GROUP BY rua ORDER BY 2 DESC LIMIT 15
+        """), params)).fetchall()
+
+        comparativo_rows = (await self.dw.execute(text(f"""
+            SELECT nome_associacao, SUM(receita_total), SUM(despesa_total), SUM(saldo_liquido)
+            FROM margem_mensal WHERE mes = ANY(:meses) {ef}
+            GROUP BY nome_associacao
+        """), base_params)).fetchall()
+        cob_comparativo_rows = (await self.dw.execute(text(f"""
+            SELECT nome_associacao, SUM(pagas), SUM(total)
+            FROM taxa_cobranca WHERE to_char(mes,'YYYY-MM') = ANY(:meses) {ef}
+            GROUP BY nome_associacao
+        """), base_params)).fetchall()
+        cob_por_nome = {r[0]: (r[1] or 0, r[2] or 0) for r in cob_comparativo_rows}
+
         return {
             "receita_total": receita, "despesa_total": despesa, "saldo_liquido": saldo,
+            "receita_total_anterior": receita_anterior,
             "margem_pct": round(100.0 * saldo / receita, 1) if receita else None,
             "saldo_caixa": float(runway[0] or 0), "runway_semanas": float(runway[1]) if runway and runway[1] is not None else None,
             "total_inadimplente": float(inadimplente[0] or 0), "qtd_inadimplentes": int(inadimplente[1] or 0),
+            "inadimplentes": [
+                {"nome": r[0], "associacao": r[1], "meses_atraso": r[2], "valor_devido": float(r[3] or 0)}
+                for r in inadimplentes_rows
+            ],
             "recuperacao": {
                 "valor_recuperada": float(recuperacao[0] or 0), "valor_nunca_recuperada": float(recuperacao[1] or 0),
                 "valor_parcelamento": float(recuperacao[2] or 0),
@@ -523,6 +569,31 @@ class PresidenciaService:
                     for r in quebras_detalhe_rows
                 ],
             },
+            "serie_diaria": [
+                {
+                    "data": r[0].strftime("%Y-%m-%d") if r[0] else None,
+                    "receita_total": float(r[1] or 0), "despesa_total": float(r[2] or 0), "saldo_liquido": float(r[3] or 0),
+                    "mensalidade": float(r[4] or 0), "taxa_entrega": float(r[5] or 0),
+                    "comprovante_residencia": float(r[6] or 0), "outras_receitas": float(r[7] or 0),
+                }
+                for r in serie_rows
+            ],
+            "receita_por_rua": [
+                {"rua": r[0], "receita_total": float(r[1] or 0), "qtd_transacoes": int(r[2] or 0)}
+                for r in receita_rua_rows
+            ],
+            "comparativo_unidades": [
+                {
+                    "nome_associacao": r[0],
+                    "receita_total": float(r[1] or 0), "despesa_total": float(r[2] or 0), "saldo_liquido": float(r[3] or 0),
+                    "margem_pct": round(100.0 * (r[3] or 0) / r[1], 1) if r[1] else None,
+                    "taxa_cobranca_pct": (
+                        round(100.0 * cob_por_nome[r[0]][0] / cob_por_nome[r[0]][1], 1)
+                        if r[0] in cob_por_nome and cob_por_nome[r[0]][1] else None
+                    ),
+                }
+                for r in comparativo_rows if r[0]
+            ],
         }
 
     # ── /moradores ───────────────────────────────────────────────────────
