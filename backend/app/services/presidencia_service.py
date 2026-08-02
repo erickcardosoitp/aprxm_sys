@@ -25,9 +25,15 @@ def _shift_yyyymm(yyyymm: str, delta_meses: int) -> str:
     return f"{total // 12:04d}-{total % 12 + 1:02d}"
 
 
+_PISO_MES = "2026-03"  # antes disso e' so' handful de acordos retroativos
+                       # pre-lancamento (2-3 moradores), nao operacao real --
+                       # decisao do usuario 2026-08-02.
+
+
 def _ultimos_meses_yyyymm(n: int, ate: str | None = None) -> list[str]:
     """Lista de 'YYYY-MM' dos ultimos n meses a partir de `ate` (ou do mes
-    atual se omitido), incluindo o proprio `ate`."""
+    atual se omitido), incluindo o proprio `ate`. Nunca volta antes de
+    _PISO_MES."""
     if ate:
         ano, mes = (int(p) for p in ate.split("-"))
     else:
@@ -35,7 +41,10 @@ def _ultimos_meses_yyyymm(n: int, ate: str | None = None) -> list[str]:
         ano, mes = hoje.year, hoje.month
     meses = []
     for _ in range(n):
-        meses.append(f"{ano:04d}-{mes:02d}")
+        chave = f"{ano:04d}-{mes:02d}"
+        if chave < _PISO_MES:
+            break
+        meses.append(chave)
         mes -= 1
         if mes == 0:
             mes = 12
@@ -239,7 +248,10 @@ class PresidenciaService:
         unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
         meses_atras = {"mes": 1, "trimestre": 3, "semestre": 6, "ano": 12}.get(periodo, 1)
         meses_alvo = _ultimos_meses_yyyymm(meses_atras, ate)
-        meses_anteriores = _ultimos_meses_yyyymm(meses_atras, _shift_yyyymm(meses_alvo[-1], -1))
+        meses_anteriores = (
+            _ultimos_meses_yyyymm(meses_atras, _shift_yyyymm(meses_alvo[-1], -1))
+            if meses_alvo else []
+        )
         params = {"unidade": unidade, "meses": meses_alvo} if unidade else {"meses": meses_alvo}
         if self.empresa_id:
             params["empresa_id"] = self.empresa_id

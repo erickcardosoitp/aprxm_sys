@@ -1361,7 +1361,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         tk["association_id"] = tk["association_id"].astype(str)
         tk["month"] = _month(tk["due_date"]).dt.strftime("%Y-%m")
         tk["association_name"] = tk["association_id"].map(assoc_map)
-        tk["done_dt"] = _to_dt(tk["updated_at"])
+        # done_dt normalizado pra meia-noite: due_date e' DATE (sem hora), updated_at
+        # e' TIMESTAMP -- comparar timestamp cheio contra meia-noite fazia toda
+        # tarefa concluida no PROPRIO dia do vencimento (qualquer hora apos 00h00)
+        # contar como atraso. Bug real, achado 2026-08-02 ao validar tarefas_no_prazo
+        # e score_operadores (que usa esse mesmo em_atraso como penalidade).
+        tk["done_dt"] = _to_dt(tk["updated_at"]).dt.normalize()
         tk["due_dt"] = pd.to_datetime(tk["due_date"], errors="coerce")
         tk_valid = tk[tk["month"].notna() & (tk["deleted_at"].isna() if "deleted_at" in tk.columns else True)]
         agg_tk = tk_valid.groupby(["month", "association_id", "association_name"]).apply(lambda g: pd.Series({
@@ -1401,7 +1406,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         tk2 = tsk.copy()
         tk2["association_id"] = tk2["association_id"].astype(str)
         tk2["month"] = _month(tk2["due_date"]).dt.strftime("%Y-%m")
-        tk2["done_dt"] = _to_dt(tk2["updated_at"])
+        tk2["done_dt"] = _to_dt(tk2["updated_at"]).dt.normalize()
         tk2["due_dt"] = pd.to_datetime(tk2["due_date"], errors="coerce")
         tk2["em_atraso"] = (tk2["status"] == "done") & (tk2["done_dt"] > tk2["due_dt"])
         tk2["total_acoes"] = 1
@@ -1562,7 +1567,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         tk_w = tk_w[tk_w["week"] < _closed_week_cutoff]
         tk_done = tk_w[tk_w["status"] == "done"].copy()
         if not tk_done.empty:
-            tk_done["done_dt"] = _to_dt(tk_done["updated_at"])
+            tk_done["done_dt"] = _to_dt(tk_done["updated_at"]).dt.normalize()
             tk_done["due_dt"]  = pd.to_datetime(tk_done["due_date"], errors="coerce")
             tk_wk = tk_done.groupby(["week", "association_id", "association_name"]).apply(lambda g: pd.Series({
                 "total_concluidas": len(g),
@@ -1582,7 +1587,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         if "week" not in tk_s.columns:
             tk_s["week"] = _week(tk_s["updated_at"])
         tk_s = tk_s[tk_s["week"] < _closed_week_cutoff]
-        tk_s["done_dt"] = _to_dt(tk_s["updated_at"])
+        tk_s["done_dt"] = _to_dt(tk_s["updated_at"]).dt.normalize()
         tk_s["due_dt"]  = pd.to_datetime(tk_s["due_date"], errors="coerce")
         tk_s["em_atraso"] = (tk_s["status"] == "done") & (tk_s["done_dt"] > tk_s["due_dt"])
         sc_base = tk_s.groupby(["week", "association_id"]).agg(
