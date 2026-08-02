@@ -20,8 +20,11 @@ router = APIRouter(prefix="/presidencia", tags=["Presidência"])
 def _get_service(
     session: AsyncSession = Depends(get_session),
     dw: AsyncSession = Depends(get_dw_session),
+    current: CurrentUser = Depends(require_presidencia_access),
 ) -> PresidenciaService:
-    return PresidenciaService(session, dw)
+    # Isolamento multi-empresa: o painel so' pode ver a empresa do usuario
+    # logado, nunca as gold tables inteiras (compartilhadas entre empresas).
+    return PresidenciaService(session, dw, current.empresa_id)
 
 
 @router.get("/status", summary="Fundacao: frescor do dado + conectividade com o data warehouse")

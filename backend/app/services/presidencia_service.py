@@ -84,9 +84,17 @@ async def get_dw_session() -> AsyncSession:
 
 
 class PresidenciaService:
-    def __init__(self, session: AsyncSession, dw: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, dw: AsyncSession, empresa_id=None) -> None:
         self.session = session   # banco operacional (etl_runs, cash_sessions, etc.)
         self.dw = dw             # aprxm-analytics (tabelas gold, pt-BR)
+        # Isolamento multi-empresa: sem isso, no dia em que uma 2a empresa
+        # entrar na plataforma, o painel da presidencia da Sapê passaria a
+        # misturar dados de outra empresa (as gold tables sao compartilhadas,
+        # so' tem a coluna empresa_id como fronteira). None = sem camada
+        # empresa (conta legacy) -- nao filtra, mesmo fallback usado em
+        # app/core/tenant.py.
+        self.empresa_id = str(empresa_id) if empresa_id else None
+        self._empresa_filter = "AND empresa_id = :empresa_id" if self.empresa_id else ""
 
     async def freshness(self) -> dict:
         """generated_at/stale baseados no ultimo etl_run — mesma logica pra
@@ -116,16 +124,18 @@ class PresidenciaService:
         """Metricas com dimensao de mes (comparaveis entre periodos) -- usado
         pro periodo atual e pro periodo anterior (comparativo dos cards)."""
         params = {"unidade": unidade, "meses": meses} if unidade else {"meses": meses}
+        if self.empresa_id:
+            params["empresa_id"] = self.empresa_id
 
         receita_mes = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(receita_total), 0) FROM receita_diaria
-            WHERE to_char(data, 'YYYY-MM') = ANY(:meses) {unidade_filter}
+            WHERE to_char(data, 'YYYY-MM') = ANY(:meses) {unidade_filter} {self._empresa_filter}
         """), params)).scalar()
 
         cob = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(pagas), 0), COALESCE(SUM(total), 0), COALESCE(SUM(vencidas), 0),
                    COALESCE(SUM(valor_vencido), 0)
-            FROM taxa_cobranca WHERE to_char(mes, 'YYYY-MM') = ANY(:meses) {unidade_filter}
+            FROM taxa_cobranca WHERE to_char(mes, 'YYYY-MM') = ANY(:meses) {unidade_filter} {self._empresa_filter}
         """), params)).fetchone()
         pagas, total_cob, vencidas, valor_vencido = cob[0] or 0, cob[1] or 0, cob[2] or 0, cob[3] or 0
         taxa_cobranca = round(100.0 * pagas / total_cob, 1) if total_cob else None
@@ -133,12 +143,12 @@ class PresidenciaService:
 
         pacotes = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(recebidos),0), AVG(media_dias_permanencia)
-            FROM encomendas_mensal WHERE mes = ANY(:meses) {unidade_filter}
+            FROM encomendas_mensal WHERE mes = ANY(:meses) {unidade_filter} {self._empresa_filter}
         """), params)).fetchone()
 
         os_row = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(abertas),0), COALESCE(SUM(fechadas),0)
-            FROM ordens_servico_mensal WHERE mes = ANY(:meses) {unidade_filter}
+            FROM ordens_servico_mensal WHERE mes = ANY(:meses) {unidade_filter} {self._empresa_filter}
         """), params)).fetchone()
 
         return {
@@ -159,41 +169,43 @@ class PresidenciaService:
         'Todos' esta selecionado (unidade=None), pra mostrar Congonha vs
         Vaz Lobo dentro de cada card."""
         params = {"meses": meses}
+        if self.empresa_id:
+            params["empresa_id"] = self.empresa_id
 
-        receita = (await self.dw.execute(text("""
+        receita = (await self.dw.execute(text(f"""
             SELECT nome_associacao, COALESCE(SUM(receita_total), 0)
-            FROM receita_diaria WHERE to_char(data, 'YYYY-MM') = ANY(:meses)
+            FROM receita_diaria WHERE to_char(data, 'YYYY-MM') = ANY(:meses) {self._empresa_filter}
             GROUP BY nome_associacao
         """), params)).fetchall()
 
-        cob = (await self.dw.execute(text("""
+        cob = (await self.dw.execute(text(f"""
             SELECT nome_associacao, COALESCE(SUM(pagas),0), COALESCE(SUM(total),0),
                    COALESCE(SUM(vencidas),0), COALESCE(SUM(valor_vencido),0)
-            FROM taxa_cobranca WHERE to_char(mes, 'YYYY-MM') = ANY(:meses)
+            FROM taxa_cobranca WHERE to_char(mes, 'YYYY-MM') = ANY(:meses) {self._empresa_filter}
             GROUP BY nome_associacao
         """), params)).fetchall()
 
-        pacotes = (await self.dw.execute(text("""
+        pacotes = (await self.dw.execute(text(f"""
             SELECT nome_associacao, COALESCE(SUM(recebidos),0)
-            FROM encomendas_mensal WHERE mes = ANY(:meses)
+            FROM encomendas_mensal WHERE mes = ANY(:meses) {self._empresa_filter}
             GROUP BY nome_associacao
         """), params)).fetchall()
 
-        os_rows = (await self.dw.execute(text("""
+        os_rows = (await self.dw.execute(text(f"""
             SELECT nome_associacao, COALESCE(SUM(fechadas),0)
-            FROM ordens_servico_mensal WHERE mes = ANY(:meses)
+            FROM ordens_servico_mensal WHERE mes = ANY(:meses) {self._empresa_filter}
             GROUP BY nome_associacao
         """), params)).fetchall()
 
-        moradores = (await self.dw.execute(text("""
+        moradores = (await self.dw.execute(text(f"""
             SELECT nome_associacao, COALESCE(SUM(total_ativos),0)
-            FROM panorama_moradores GROUP BY nome_associacao
-        """))).fetchall()
+            FROM panorama_moradores WHERE 1=1 {self._empresa_filter} GROUP BY nome_associacao
+        """), params)).fetchall()
 
-        inadimplencia_agora = (await self.dw.execute(text("""
+        inadimplencia_agora = (await self.dw.execute(text(f"""
             SELECT nome_associacao, COALESCE(SUM(valor_devido),0)
-            FROM relatorio_inadimplencia GROUP BY nome_associacao
-        """))).fetchall()
+            FROM relatorio_inadimplencia WHERE 1=1 {self._empresa_filter} GROUP BY nome_associacao
+        """), params)).fetchall()
 
         # Associacoes orfas/inativas (fora do mapeamento ativo) aparecem com
         # nome_associacao NULL nos gold -- nao sao Congonha/Vaz Lobo, entram
@@ -229,6 +241,8 @@ class PresidenciaService:
         meses_alvo = _ultimos_meses_yyyymm(meses_atras, ate)
         meses_anteriores = _ultimos_meses_yyyymm(meses_atras, _shift_yyyymm(meses_alvo[-1], -1))
         params = {"unidade": unidade, "meses": meses_alvo} if unidade else {"meses": meses_alvo}
+        if self.empresa_id:
+            params["empresa_id"] = self.empresa_id
 
         atual = await self._metricas_periodo(meses_alvo, unidade_filter, unidade)
         anterior = await self._metricas_periodo(meses_anteriores, unidade_filter, unidade)
@@ -240,24 +254,25 @@ class PresidenciaService:
         # mensalidades_vencidas/taxa_retencao acima, que sao propositalmente
         # escopadas ao periodo selecionado.
         inadimplente_agora = (await self.dw.execute(text(
-            f"SELECT COALESCE(SUM(valor_devido), 0) FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter}"
+            f"SELECT COALESCE(SUM(valor_devido), 0) FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter} {self._empresa_filter}"
         ), params)).scalar()
 
         moradores = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(total_ativos),0), COALESCE(SUM(associados),0),
                    COALESCE(SUM(dependentes),0), COALESCE(SUM(visitantes),0)
-            FROM panorama_moradores WHERE 1=1 {unidade_filter}
+            FROM panorama_moradores WHERE 1=1 {unidade_filter} {self._empresa_filter}
         """), params)).fetchone()
 
         parados = (await self.dw.execute(text(
-            f"SELECT COALESCE(SUM(paradas_3d), 0) FROM encomendas_paradas WHERE 1=1 {unidade_filter}"
+            f"SELECT COALESCE(SUM(paradas_3d), 0) FROM encomendas_paradas WHERE 1=1 {unidade_filter} {self._empresa_filter}"
         ), params)).scalar() or 0
 
         caixas_unidade_filter = "AND a.name = :unidade" if unidade else ""
+        caixas_empresa_filter = "AND a.empresa_id = :empresa_id" if self.empresa_id else ""
         caixas_abertos = (await self.session.execute(text(f"""
             SELECT COUNT(*) FROM cash_sessions cs
             JOIN associations a ON a.id = cs.association_id
-            WHERE cs.status = 'open' {caixas_unidade_filter}
+            WHERE cs.status = 'open' {caixas_unidade_filter} {caixas_empresa_filter}
         """), params)).scalar() or 0
 
         alertas = []
@@ -355,10 +370,12 @@ class PresidenciaService:
         mes_expr = "to_char(mes, 'YYYY-MM')" if table in ("taxa_cobranca", "receita_diaria") else "mes"
         unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
         params = {"meses": meses, "unidade": unidade} if unidade else {"meses": meses}
+        if self.empresa_id:
+            params["empresa_id"] = self.empresa_id
         rows = (await self.dw.execute(text(f"""
             SELECT {mes_expr} AS mes_key, {agg_sql} AS valor
             FROM {table}
-            WHERE {mes_expr} = ANY(:meses) {unidade_filter}
+            WHERE {mes_expr} = ANY(:meses) {unidade_filter} {self._empresa_filter}
             GROUP BY {mes_expr}
             ORDER BY {mes_expr}
         """), params)).fetchall()
