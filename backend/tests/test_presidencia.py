@@ -100,9 +100,9 @@ class TestGetInicio:
             return r
 
         # ordem em get_inicio: _metricas_periodo(atual) = receita/cob/pacotes/os,
-        # _metricas_periodo(anterior) = idem, _breakdown_por_unidade (5 fetchall,
-        # so' quando unidade=None) = receita/cob/pacotes/os/moradores, depois
-        # moradores (fetchone), parados.
+        # _metricas_periodo(anterior) = idem, _breakdown_por_unidade (6 fetchall,
+        # so' quando unidade=None) = receita/cob/pacotes/os/moradores/inadimplencia,
+        # depois inadimplente_agora (scalar), moradores (fetchone), parados.
         dw.execute = AsyncMock(side_effect=[
             make(7312.51),                    # atual: receita_mes
             make((132, 393, 261, 5220.0)),    # atual: cob pagas, total, vencidas, valor_vencido
@@ -117,6 +117,8 @@ class TestGetInicio:
             make([]),                           # breakdown: pacotes por unidade
             make([]),                           # breakdown: os por unidade
             make([]),                           # breakdown: moradores por unidade
+            make([]),                           # breakdown: inadimplencia por unidade
+            make(5220.0),                        # inadimplente_agora
             make((1426, 408, 69, 949)),        # moradores: total, associados, dependentes, visitantes
             make(312),                          # parados
         ])

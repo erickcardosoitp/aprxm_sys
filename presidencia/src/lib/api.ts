@@ -56,9 +56,10 @@ export interface InicioData {
     taxa_cobranca: number | null
     taxa_cobranca_anterior: number | null
     total_inadimplente: number
-    total_inadimplente_anterior: number
     mensalidades_pagas: number
+    mensalidades_pagas_anterior: number
     mensalidades_vencidas: number
+    mensalidades_vencidas_anterior: number
     taxa_retencao: number | null
     taxa_retencao_anterior: number | null
   }

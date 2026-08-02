@@ -69,6 +69,11 @@ export function InicioPage() {
     })
   }
 
+  function anteriorLabel(anterior: number | null, formatter: (v: number) => string = String): string | undefined {
+    if (anterior === null) return undefined
+    return `${periodoLabelCurto} anterior: ${formatter(anterior)}`
+  }
+
   return (
     <div className="space-y-4">
       {freshness?.stale && (
@@ -81,52 +86,61 @@ export function InicioPage() {
         <StatTile
           label="Receita"
           value={formatBRL(data.financeiro.receita_mes_atual)}
+          legenda="Soma de tudo que entrou (mensalidade, taxa de entrega, comprovante de residência, outras) no período selecionado."
           hint={`vs ${periodoLabelCurto} anterior`}
-          delta={{ pct: pctDelta(data.financeiro.receita_mes_atual, data.financeiro.receita_mes_anterior) }}
+          delta={{ pct: pctDelta(data.financeiro.receita_mes_atual, data.financeiro.receita_mes_anterior), anteriorLabel: anteriorLabel(data.financeiro.receita_mes_anterior, formatBRL) }}
           breakdown={breakdownFor('receita', formatBRL)}
           icon={<Wallet size={16} className="text-marque-500" />}
         />
         <StatTile
           label="Taxa de cobrança"
           value={data.financeiro.taxa_cobranca !== null ? `${data.financeiro.taxa_cobranca}%` : '—'}
+          legenda="De tudo que foi gerado (mensalidades) no período, quanto % já foi pago."
           hint={`vs ${periodoLabelCurto} anterior`}
-          delta={{ pct: pctDelta(data.financeiro.taxa_cobranca, data.financeiro.taxa_cobranca_anterior) }}
+          delta={{ pct: pctDelta(data.financeiro.taxa_cobranca, data.financeiro.taxa_cobranca_anterior), anteriorLabel: anteriorLabel(data.financeiro.taxa_cobranca_anterior, (v) => `${v}%`) }}
           breakdown={breakdownFor('taxa_cobranca', (v) => `${v}%`)}
           icon={<Percent size={16} className="text-marque-500" />}
         />
         <StatTile
           label="Inadimplência"
           value={formatBRL(data.financeiro.total_inadimplente)}
-          hint={`vencido no ${periodoLabelCurto} · vs anterior`}
-          delta={{ pct: pctDelta(data.financeiro.total_inadimplente, data.financeiro.total_inadimplente_anterior), positiveIsGood: false }}
+          legenda="Quanto está em aberto (não pago) neste exato momento, considerando quem já passou do prazo de tolerância (2 dias). Não é escopado por período: é sempre o total atual."
+          hint="valor em aberto neste momento"
+          badge="agora"
           breakdown={breakdownFor('total_inadimplente', formatBRL)}
           icon={<Warning size={16} className="text-marque-500" />}
         />
         <StatTile
           label="Mensalidades pagas"
           value={String(data.financeiro.mensalidades_pagas)}
+          legenda="Quantidade de mensalidades geradas no período selecionado que já foram pagas."
           hint={`no ${periodoLabelCurto}`}
+          delta={{ pct: pctDelta(data.financeiro.mensalidades_pagas, data.financeiro.mensalidades_pagas_anterior), anteriorLabel: anteriorLabel(data.financeiro.mensalidades_pagas_anterior) }}
           breakdown={breakdownFor('mensalidades_pagas')}
           icon={<CheckCircle size={16} className="text-marque-500" />}
         />
         <StatTile
           label="Mensalidades vencidas"
           value={String(data.financeiro.mensalidades_vencidas)}
+          legenda="Quantidade de mensalidades do período que não foram pagas e já passaram do prazo de tolerância (2 dias)."
           hint={`no ${periodoLabelCurto}`}
+          delta={{ pct: pctDelta(data.financeiro.mensalidades_vencidas, data.financeiro.mensalidades_vencidas_anterior), positiveIsGood: false, anteriorLabel: anteriorLabel(data.financeiro.mensalidades_vencidas_anterior) }}
           breakdown={breakdownFor('mensalidades_vencidas')}
           icon={<Clock size={16} className="text-marque-500" />}
         />
         <StatTile
           label="Taxa de retenção"
           value={data.financeiro.taxa_retencao !== null ? `${data.financeiro.taxa_retencao}%` : '—'}
+          legenda="Mensalidades pagas ÷ (pagas + vencidas) do período. Mede quanto do que já venceu ou foi cobrado efetivamente foi honrado."
           hint={`vs ${periodoLabelCurto} anterior`}
-          delta={{ pct: pctDelta(data.financeiro.taxa_retencao, data.financeiro.taxa_retencao_anterior) }}
+          delta={{ pct: pctDelta(data.financeiro.taxa_retencao, data.financeiro.taxa_retencao_anterior), anteriorLabel: anteriorLabel(data.financeiro.taxa_retencao_anterior, (v) => `${v}%`) }}
           breakdown={breakdownFor('taxa_retencao', (v) => `${v}%`)}
           icon={<Percent size={16} className="text-marque-500" />}
         />
         <StatTile
           label="Moradores ativos"
           value={String(data.moradores.total)}
+          legenda="Total de pessoas cadastradas ativas agora (associados + dependentes + visitantes). Snapshot do momento, não varia por período."
           hint={`${data.moradores.associados} associados · ${data.moradores.dependentes} dependentes · ${data.moradores.visitantes} visitantes`}
           badge="agora"
           breakdown={breakdownFor('moradores_total')}
@@ -135,16 +149,18 @@ export function InicioPage() {
         <StatTile
           label="Pacotes recebidos"
           value={String(data.pacotes_os.pacotes_recebidos)}
+          legenda="Quantidade de encomendas recebidas no período selecionado."
           hint={data.pacotes_os.tempo_medio_entrega_dias !== null ? `${data.pacotes_os.tempo_medio_entrega_dias} dias até retirada, em média` : `vs ${periodoLabelCurto} anterior`}
-          delta={{ pct: pctDelta(data.pacotes_os.pacotes_recebidos, data.pacotes_os.pacotes_recebidos_anterior) }}
+          delta={{ pct: pctDelta(data.pacotes_os.pacotes_recebidos, data.pacotes_os.pacotes_recebidos_anterior), anteriorLabel: anteriorLabel(data.pacotes_os.pacotes_recebidos_anterior) }}
           breakdown={breakdownFor('pacotes_recebidos')}
           icon={<Package size={16} className="text-marque-500" />}
         />
         <StatTile
           label="Ordens de serviço"
-          value={`${data.pacotes_os.os_fechadas}/${data.pacotes_os.os_abertas + data.pacotes_os.os_fechadas}`}
+          value={`${Number(data.pacotes_os.os_fechadas) + Number(data.pacotes_os.os_abertas) > 0 ? `${data.pacotes_os.os_fechadas}/${Number(data.pacotes_os.os_abertas) + Number(data.pacotes_os.os_fechadas)}` : '0/0'}`}
+          legenda="Fechadas / total de ordens de serviço abertas no período selecionado."
           hint={`fechadas / total · vs ${periodoLabelCurto} anterior`}
-          delta={{ pct: pctDelta(data.pacotes_os.os_fechadas, data.pacotes_os.os_fechadas_anterior) }}
+          delta={{ pct: pctDelta(data.pacotes_os.os_fechadas, data.pacotes_os.os_fechadas_anterior), anteriorLabel: anteriorLabel(data.pacotes_os.os_fechadas_anterior) }}
           breakdown={breakdownFor('os_fechadas')}
           icon={<Wrench size={16} className="text-marque-500" />}
         />

@@ -144,14 +144,14 @@ class PresidenciaService:
         return {
             "receita": float(receita_mes or 0),
             "taxa_cobranca": taxa_cobranca,
-            "mensalidades_pagas": pagas,
-            "mensalidades_vencidas": vencidas,
+            "mensalidades_pagas": int(pagas),
+            "mensalidades_vencidas": int(vencidas),
             "valor_vencido": float(valor_vencido),
             "taxa_retencao": retencao_pct,
-            "pacotes_recebidos": pacotes[0] or 0,
+            "pacotes_recebidos": int(pacotes[0] or 0),
             "tempo_medio_entrega_dias": round(pacotes[1], 1) if pacotes[1] else None,
-            "os_abertas": os_row[0] or 0,
-            "os_fechadas": os_row[1] or 0,
+            "os_abertas": int(os_row[0] or 0),
+            "os_fechadas": int(os_row[1] or 0),
         }
 
     async def _breakdown_por_unidade(self, meses: list[str]) -> dict:
@@ -190,22 +190,28 @@ class PresidenciaService:
             FROM panorama_moradores GROUP BY nome_associacao
         """))).fetchall()
 
+        inadimplencia_agora = (await self.dw.execute(text("""
+            SELECT nome_associacao, COALESCE(SUM(valor_devido),0)
+            FROM relatorio_inadimplencia GROUP BY nome_associacao
+        """))).fetchall()
+
         out: dict[str, dict] = {}
         for nome, receita_v in receita:
             out.setdefault(nome, {})["receita"] = float(receita_v or 0)
         for nome, pagas, total, vencidas, valor_vencido in cob:
             d = out.setdefault(nome, {})
             d["taxa_cobranca"] = round(100.0 * pagas / total, 1) if total else None
-            d["mensalidades_pagas"] = pagas
-            d["mensalidades_vencidas"] = vencidas
-            d["total_inadimplente"] = float(valor_vencido or 0)
+            d["mensalidades_pagas"] = int(pagas)
+            d["mensalidades_vencidas"] = int(vencidas)
             d["taxa_retencao"] = round(100.0 * pagas / (pagas + vencidas), 1) if (pagas + vencidas) else None
+        for nome, valor_devido in inadimplencia_agora:
+            out.setdefault(nome, {})["total_inadimplente"] = float(valor_devido or 0)
         for nome, recebidos in pacotes:
-            out.setdefault(nome, {})["pacotes_recebidos"] = recebidos
+            out.setdefault(nome, {})["pacotes_recebidos"] = int(recebidos or 0)
         for nome, fechadas in os_rows:
-            out.setdefault(nome, {})["os_fechadas"] = fechadas
+            out.setdefault(nome, {})["os_fechadas"] = int(fechadas or 0)
         for nome, total_ativos in moradores:
-            out.setdefault(nome, {})["moradores_total"] = total_ativos
+            out.setdefault(nome, {})["moradores_total"] = int(total_ativos or 0)
         return out
 
     async def get_inicio(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
@@ -218,6 +224,15 @@ class PresidenciaService:
         atual = await self._metricas_periodo(meses_alvo, unidade_filter, unidade)
         anterior = await self._metricas_periodo(meses_anteriores, unidade_filter, unidade)
         por_unidade = await self._breakdown_por_unidade(meses_alvo) if unidade is None else None
+
+        # Inadimplencia = total em aberto AGORA (snapshot, so' filtra por
+        # unidade) -- nao por periodo, senao "mes atual" sempre mostra ~0
+        # (mensalidade do mes ainda nao venceu). Diferente de
+        # mensalidades_vencidas/taxa_retencao acima, que sao propositalmente
+        # escopadas ao periodo selecionado.
+        inadimplente_agora = (await self.dw.execute(text(
+            f"SELECT COALESCE(SUM(valor_devido), 0) FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter}"
+        ), params)).scalar()
 
         moradores = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(total_ativos),0), COALESCE(SUM(associados),0),
@@ -250,16 +265,17 @@ class PresidenciaService:
                 "receita_mes_anterior": anterior["receita"],
                 "taxa_cobranca": atual["taxa_cobranca"],
                 "taxa_cobranca_anterior": anterior["taxa_cobranca"],
-                "total_inadimplente": atual["valor_vencido"],
-                "total_inadimplente_anterior": anterior["valor_vencido"],
+                "total_inadimplente": float(inadimplente_agora or 0),
                 "mensalidades_pagas": atual["mensalidades_pagas"],
+                "mensalidades_pagas_anterior": anterior["mensalidades_pagas"],
                 "mensalidades_vencidas": atual["mensalidades_vencidas"],
+                "mensalidades_vencidas_anterior": anterior["mensalidades_vencidas"],
                 "taxa_retencao": atual["taxa_retencao"],
                 "taxa_retencao_anterior": anterior["taxa_retencao"],
             },
             "moradores": {
-                "total": moradores[0] or 0, "associados": moradores[1] or 0,
-                "dependentes": moradores[2] or 0, "visitantes": moradores[3] or 0,
+                "total": int(moradores[0] or 0), "associados": int(moradores[1] or 0),
+                "dependentes": int(moradores[2] or 0), "visitantes": int(moradores[3] or 0),
             },
             "pacotes_os": {
                 "pacotes_recebidos": atual["pacotes_recebidos"],
