@@ -671,7 +671,13 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             _assocs_emp.set_index("id")["name"].to_dict() if not _assocs_emp.empty else {}
         )
         grace_cutoff = pd.Timestamp.now() - pd.Timedelta(days=2)
-        vencida_mask = (df["status"] != "paid") & (_to_dt(df["due_date"]) < grace_cutoff)
+        # agreement (parcelamento/acordo) nao e' vencida -- morador esta
+        # honrando um acordo pra quitar atrasado, nao inadimplente. Mesmo
+        # tratamento que cobranca_por_rua ja da' (bucket "acordos" proprio).
+        vencida_mask = (
+            ~df["status"].isin(["paid", "agreement"])
+            & (_to_dt(df["due_date"]) < grace_cutoff)
+        )
         df["vencida"] = vencida_mask
         agg = df.groupby(["month","association_id","association_name"]).apply(lambda g: pd.Series({
             "paid":         (g["status"]=="paid").sum(),
@@ -680,6 +686,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "valor_pago":   g.loc[g["status"]=="paid","amount"].sum(),
             "vencidas":     g["vencida"].sum(),
             "valor_vencido": g.loc[g["vencida"],"amount"].sum(),
+            "acordos":      (g["status"]=="agreement").sum(),
         })).reset_index()
         agg["pendentes"] = (agg["total"] - agg["paid"]).clip(lower=0)
         agg["taxa_pct"]  = (agg["paid"] / agg["total"].replace(0, pd.NA) * 100).round(1)
