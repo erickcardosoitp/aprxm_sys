@@ -166,9 +166,9 @@ class TestGetResumo:
         async def run():
             data = await svc.get_resumo()
             assert data["receita_liquida"]["atual"] == 1000.0
-            assert data["receita_liquida"]["wow_pct"] == round(100 * (1000 - 1400) / 1400, 1)
+            assert data["receita_liquida"]["mom_pct"] == round(100 * (1000 - 1400) / 1400, 1)
             assert data["encomendas"]["anterior"] == 386
             assert len(data["receita_liquida"]["serie"]) == 2
-            assert data["receita_liquida"]["serie"][0]["label"] == "20/07"
+            assert data["receita_liquida"]["serie"][0]["label"] == "07/2026"
             assert data["score_operadores"]["atual"] == 70.0
         asyncio.get_event_loop().run_until_complete(run())

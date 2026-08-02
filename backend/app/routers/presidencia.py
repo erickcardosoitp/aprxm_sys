@@ -47,11 +47,13 @@ async def get_inicio(
     return {**freshness, "data": data}
 
 
-@router.get("/resumo", summary="9 KPIs com WoW/MoM/YoY/ToT")
+@router.get("/resumo", summary="9 KPIs mensais com comparativo mes a mes")
 async def get_resumo(
+    unidade: str | None = Query(default=None, description="Nome da associacao (Congonha/Vaz Lobo) ou omitido para Todos"),
+    periodo: str = Query(default="mes", pattern="^(mes|trimestre|semestre|ano)$", description="Controla quantos meses aparecem no mini-grafico"),
     current: CurrentUser = Depends(require_presidencia_access),
     svc: PresidenciaService = Depends(_get_service),
 ) -> dict:
     freshness = await svc.freshness()
-    data = await svc.get_resumo()
+    data = await svc.get_resumo(unidade, periodo)
     return {**freshness, "data": data}

@@ -327,20 +327,38 @@ class PresidenciaService:
             "serie": serie,
         }
 
-    async def _mom_mensal(self, table: str, agg_sql: str, n_meses: int = 6) -> dict:
-        """Mesmo formato de _wow_semanal, mas por mes -- pra metricas que sao
-        mensais por natureza (pagamento se espalha no mes todo, olhar semana
-        isolada da' fatia pequena e sem sentido). Decisao do usuario 2026-08-01."""
+    @staticmethod
+    def _mes_label(mes) -> str:
+        """`mes` vem como TEXT 'YYYY-MM' na maioria das gold tables, mas como
+        TIMESTAMP em taxa_cobranca -- aceita os dois formatos."""
+        if hasattr(mes, "strftime"):
+            return mes.strftime("%m/%Y")
+        s = str(mes)
+        if len(s) >= 7 and s[4] == "-":
+            return f"{s[5:7]}/{s[0:4]}"
+        return s
+
+    async def _mom_mensal(
+        self, table: str, agg_sql: str, unidade: str | None = None, n_meses: int = 6,
+    ) -> dict:
+        """Todo indicador do Resumo e' mensal por natureza (pagamento/tarefa/
+        crescimento se espalha no mes todo, olhar semana isolada da' fatia
+        pequena e sem sentido) -- comparacao e' sempre mes atual vs mes
+        anterior, `n_meses` so' controla quantos pontos aparecem no
+        mini-grafico de tendencia. Decisao do usuario 2026-08-01."""
+        unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
+        params = {"n": n_meses, "unidade": unidade} if unidade else {"n": n_meses}
         rows = (await self.dw.execute(text(f"""
             SELECT mes, {agg_sql} AS valor
             FROM {table}
+            WHERE 1=1 {unidade_filter}
             GROUP BY mes
             ORDER BY mes DESC
             LIMIT :n
-        """), {"n": n_meses})).fetchall()
+        """), params)).fetchall()
         rows = list(reversed(rows))
         serie = [
-            {"label": r[0].strftime("%m/%Y"), "value": float(r[1]) if r[1] is not None else 0.0}
+            {"label": self._mes_label(r[0]), "value": float(r[1]) if r[1] is not None else 0.0}
             for r in rows
         ]
         cur = serie[-1]["value"] if len(serie) >= 1 else 0.0
@@ -352,18 +370,18 @@ class PresidenciaService:
             "serie": serie,
         }
 
-    async def get_resumo(self) -> dict:
-        receita = await self._wow_semanal("receita_semanal", "SUM(saldo_liquido)")
-        encomendas = await self._wow_semanal("pacotes_semanal", "SUM(recebidos)")
-        crescimento = await self._wow_semanal("crescimento_associados_semanal", "SUM(novos)")
-        tempo_entrega = await self._wow_semanal("pacotes_semanal", "AVG(media_dias_permanencia)")
-        # taxa de cobranca/retencao sao mensais por natureza -- MoM, nao WoW
-        # (semana isolada mede so' uma fatia do mes, numero pequeno e ruidoso)
-        taxa_cobranca = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(total), 0) * 100")
-        inadimplencia = await self._mom_mensal("taxa_cobranca", "SUM(valor_vencido)")
-        retencao = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(pagas) + SUM(vencidas), 0) * 100")
-        tarefas_no_prazo = await self._wow_semanal("tarefas_semanal", "AVG(pct_no_prazo)")
-        score_operadores = await self._wow_semanal("score_operador_semanal", "AVG(score)")
+    async def get_resumo(self, unidade: str | None = None, periodo: str = "mes") -> dict:
+        n_meses = {"mes": 6, "trimestre": 9, "semestre": 12, "ano": 24}.get(periodo, 6)
+
+        receita = await self._mom_mensal("margem_mensal", "SUM(saldo_liquido)", unidade, n_meses)
+        encomendas = await self._mom_mensal("encomendas_mensal", "SUM(recebidos)", unidade, n_meses)
+        crescimento = await self._mom_mensal("moradores_mensal", "SUM(associados) - LAG(SUM(associados)) OVER (ORDER BY mes)", unidade, n_meses)
+        tempo_entrega = await self._mom_mensal("encomendas_mensal", "AVG(media_dias_permanencia)", unidade, n_meses)
+        taxa_cobranca = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(total), 0) * 100", unidade, n_meses)
+        inadimplencia = await self._mom_mensal("taxa_cobranca", "SUM(vencidas)::float / NULLIF(SUM(total), 0) * 100", unidade, n_meses)
+        retencao = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(pagas) + SUM(vencidas), 0) * 100", unidade, n_meses)
+        tarefas_no_prazo = await self._mom_mensal("tarefas_mensal", "AVG(pct_no_prazo)", unidade, n_meses)
+        score_operadores = await self._mom_mensal("score_operador_mensal", "AVG(score)", unidade, n_meses)
 
         return {
             "receita_liquida": receita,
