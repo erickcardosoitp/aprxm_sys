@@ -5,7 +5,13 @@ import { LoginPage } from './pages/LoginPage'
 import { BootPage } from './pages/BootPage'
 import { InicioPage } from './pages/InicioPage'
 import { ResumoPage } from './pages/ResumoPage'
-import { PlaceholderPage } from './pages/PlaceholderPage'
+import { FinanceiroPage } from './pages/FinanceiroPage'
+import { MoradoresPage } from './pages/MoradoresPage'
+import { MensalidadesPage } from './pages/MensalidadesPage'
+import { PacotesPage } from './pages/PacotesPage'
+import { OsPage } from './pages/OsPage'
+import { SensoPage } from './pages/SensoPage'
+import { OperadoresPage } from './pages/OperadoresPage'
 import { UnidadeProvider } from './lib/UnidadeContext'
 import { PeriodoProvider } from './lib/PeriodoContext'
 
@@ -21,13 +27,13 @@ function App() {
               <Route element={<Layout />}>
                 <Route path="/inicio" element={<InicioPage />} />
                 <Route path="/resumo" element={<ResumoPage />} />
-                <Route path="/financeiro" element={<PlaceholderPage title="Financeiro" />} />
-                <Route path="/moradores" element={<PlaceholderPage title="Moradores" />} />
-                <Route path="/mensalidades" element={<PlaceholderPage title="Mensalidades" />} />
-                <Route path="/pacotes" element={<PlaceholderPage title="Pacotes" />} />
-                <Route path="/os" element={<PlaceholderPage title="OS" />} />
-                <Route path="/senso" element={<PlaceholderPage title="Senso" />} />
-                <Route path="/operadores" element={<PlaceholderPage title="Operadores" />} />
+                <Route path="/financeiro" element={<FinanceiroPage />} />
+                <Route path="/moradores" element={<MoradoresPage />} />
+                <Route path="/mensalidades" element={<MensalidadesPage />} />
+                <Route path="/pacotes" element={<PacotesPage />} />
+                <Route path="/os" element={<OsPage />} />
+                <Route path="/senso" element={<SensoPage />} />
+                <Route path="/operadores" element={<OperadoresPage />} />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/inicio" replace />} />

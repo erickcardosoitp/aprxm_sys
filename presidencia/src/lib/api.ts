@@ -147,3 +147,125 @@ export async function getInicio(
   })
   return data
 }
+
+async function getDetalhe<T>(
+  path: string,
+  nomeAssociacao?: string | null,
+  periodo?: string,
+  ate?: string,
+): Promise<FreshnessInfo & { data: T }> {
+  const { data } = await api.get<FreshnessInfo & { data: T }>(`/presidencia/${path}`, {
+    params: {
+      ...(nomeAssociacao ? { unidade: nomeAssociacao } : {}),
+      ...(periodo ? { periodo } : {}),
+      ...(ate ? { ate } : {}),
+    },
+  })
+  return data
+}
+
+export interface FinanceiroData {
+  receita_total: number
+  despesa_total: number
+  saldo_liquido: number
+  margem_pct: number | null
+  saldo_caixa: number
+  runway_semanas: number | null
+  total_inadimplente: number
+  qtd_inadimplentes: number
+  recuperacao: {
+    valor_recuperada: number
+    valor_nunca_recuperada: number
+    valor_parcelamento: number
+    taxa_recuperacao_pct: number | null
+  }
+  aging: { faixa: string; qtd: number; valor: number }[]
+  motivos_sangria: { motivo: string; ocorrencias: number; valor: number }[]
+  quebras_caixa: {
+    com_quebra: number
+    valor_total: number
+    com_diferenca: number
+    detalhe: {
+      semana: string | null
+      operador: string
+      associacao: string
+      total_sessoes: number
+      com_quebra: number
+      com_diferenca: number
+      valor_quebra: number
+      valor_diferenca: number
+      pct_diferenca: number | null
+    }[]
+  }
+}
+export const getFinanceiro = (u?: string | null, p?: string, a?: string) => getDetalhe<FinanceiroData>('financeiro', u, p, a)
+
+export interface MoradoresData {
+  total: number
+  associados: number
+  dependentes: number
+  visitantes: number
+  sem_internet: number
+  novos_mes: number
+  crescimento_serie: { label: string; value: number }[]
+  churn: { nome: string; associacao: string; meses_sem_pagar: number | null; ultimo_pagamento: string | null }[]
+  por_rua: { rua: string; total: number; associados: number; visitantes: number; com_problemas: number; sem_internet: number }[]
+}
+export const getMoradores = (u?: string | null) => getDetalhe<MoradoresData>('moradores', u)
+
+export interface MensalidadesData {
+  pagas: number
+  total: number
+  vencidas: number
+  acordos: number
+  valor_vencido: number
+  taxa_cobranca_pct: number | null
+  recuperacao: {
+    valor_recuperada: number
+    valor_nunca_recuperada: number
+    valor_parcelamento: number
+    taxa_recuperacao_pct: number | null
+  }
+  devedores: { nome: string; associacao: string; tipo: string; rua: string; meses_atraso: number; valor_devido: number }[]
+  por_rua: { rua: string; total: number; pagas: number; vencidas: number; valor_total: number }[]
+}
+export const getMensalidades = (u?: string | null, p?: string, a?: string) => getDetalhe<MensalidadesData>('mensalidades', u, p, a)
+
+export interface PacotesData {
+  recebidos: number
+  entregues: number
+  devolvidos: number
+  pendentes: number
+  tempo_medio_dias: number | null
+  paradas_3d: number
+  paradas_7d: number
+  ranking_moradores: { nome: string; tipo: string; rua: string; associacao: string; total: number; media_horas_espera: number | null; entregues: number; pendentes_agora: number }[]
+  por_rua: { rua: string; total: number; moradores_distintos: number; media_espera_horas: number | null }[]
+}
+export const getPacotes = (u?: string | null, p?: string, a?: string) => getDetalhe<PacotesData>('pacotes', u, p, a)
+
+export interface OsData {
+  abertas: number
+  fechadas: number
+  pendentes: number
+  serie: { label: string; abertas: number; fechadas: number }[]
+  sla_por_tipo: { tipo: string; entregues: number; media_horas_espera: number | null }[]
+}
+export const getOs = (u?: string | null, p?: string, a?: string) => getDetalhe<OsData>('os', u, p, a)
+
+export interface OperadoresData {
+  score_medio: number | null
+  ranking: { nome: string; score: number | null; estornos: number; tarefas_atraso: number; entregas: number }[]
+  desempenho: { nome: string; sessoes: number; encomendas_recebidas: number; encomendas_entregues: number }[]
+  feedback: { nome: string; qtd: number }[]
+}
+export const getOperadores = (u?: string | null, p?: string, a?: string) => getDetalhe<OperadoresData>('operadores', u, p, a)
+
+export interface SensoData {
+  total_moradores: number
+  com_pragas: number
+  sem_internet: number
+  com_problemas: number
+  por_rua: { rua: string; total: number; associados: number; visitantes: number; com_pragas: number; sem_internet: number; com_problemas: number }[]
+}
+export const getSenso = (u?: string | null, p?: string, a?: string) => getDetalhe<SensoData>('senso', u, p, a)

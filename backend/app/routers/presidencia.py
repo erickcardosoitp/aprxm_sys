@@ -83,16 +83,14 @@ async def get_financeiro(
     return {**freshness, "data": data}
 
 
-@router.get("/moradores", summary="Moradores: panorama, crescimento, nunca pagaram, por rua")
+@router.get("/moradores", summary="Moradores: panorama, crescimento, nunca pagaram, por rua (informacional, sem filtro de periodo)")
 async def get_moradores(
     unidade: str | None = _PERIODO_PARAMS["unidade"],
-    periodo: str = _PERIODO_PARAMS["periodo"],
-    ate: str | None = _PERIODO_PARAMS["ate"],
     current: CurrentUser = Depends(require_presidencia_access),
     svc: PresidenciaService = Depends(_get_service),
 ) -> dict:
     freshness = await svc.freshness()
-    data = await svc.get_moradores(unidade, periodo, ate)
+    data = await svc.get_moradores(unidade)
     return {**freshness, "data": data}
 
 

@@ -493,6 +493,12 @@ class PresidenciaService:
             FROM quebras_caixa WHERE 1=1 {unidade_filter} {ef}
         """), params)).fetchone()
 
+        quebras_detalhe_rows = (await self.dw.execute(text(f"""
+            SELECT semana, nome_operador, nome_associacao, total, com_quebra, com_diferenca, total_quebra, total_diferenca, pct_diferenca
+            FROM quebras_caixa WHERE (com_quebra > 0 OR com_diferenca > 0) {unidade_filter} {ef}
+            ORDER BY semana DESC, total_quebra DESC LIMIT 50
+        """), params)).fetchall()
+
         return {
             "receita_total": receita, "despesa_total": despesa, "saldo_liquido": saldo,
             "margem_pct": round(100.0 * saldo / receita, 1) if receita else None,
@@ -505,13 +511,30 @@ class PresidenciaService:
             },
             "aging": [{"faixa": r[0], "qtd": int(r[1] or 0), "valor": float(r[2] or 0)} for r in aging_rows],
             "motivos_sangria": [{"motivo": r[0], "ocorrencias": int(r[1] or 0), "valor": float(r[2] or 0)} for r in sangria_rows],
-            "quebras_caixa": {"com_quebra": int(quebras[0] or 0), "valor_total": float(quebras[1] or 0), "com_diferenca": int(quebras[2] or 0)},
+            "quebras_caixa": {
+                "com_quebra": int(quebras[0] or 0), "valor_total": float(quebras[1] or 0), "com_diferenca": int(quebras[2] or 0),
+                "detalhe": [
+                    {
+                        "semana": r[0].strftime("%d/%m/%Y") if r[0] else None, "operador": r[1], "associacao": r[2],
+                        "total_sessoes": int(r[3] or 0), "com_quebra": int(r[4] or 0), "com_diferenca": int(r[5] or 0),
+                        "valor_quebra": float(r[6] or 0), "valor_diferenca": float(r[7] or 0),
+                        "pct_diferenca": round(r[8], 1) if r[8] is not None else None,
+                    }
+                    for r in quebras_detalhe_rows
+                ],
+            },
         }
 
     # ── /moradores ───────────────────────────────────────────────────────
 
-    async def get_moradores(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
-        meses, base_params = self._janela(periodo, ate)
+    async def get_moradores(self, unidade: str | None = None) -> dict:
+        # Tela informacional (snapshot) -- nao usa o filtro global de periodo do
+        # header, so' unidade. Crescimento sempre mostra a serie completa
+        # disponivel (piso em _PISO_MES ja limita o inicio real).
+        meses = _ultimos_meses_yyyymm(24, None)
+        base_params = {"meses": meses}
+        if self.empresa_id:
+            base_params["empresa_id"] = self.empresa_id
         params, unidade_filter = self._params_unidade(base_params, unidade)
         ef = self._empresa_filter
 

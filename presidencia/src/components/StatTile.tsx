@@ -16,15 +16,21 @@ interface StatTileProps {
   delta?: DeltaInfo
   badge?: string
   breakdown?: { label: string; value: string }[]
+  onClick?: () => void
 }
 
-export function StatTile({ label, value, hint, icon, legenda, delta, badge, breakdown }: StatTileProps) {
+export function StatTile({ label, value, hint, icon, legenda, delta, badge, breakdown, onClick }: StatTileProps) {
   const hasDelta = delta && delta.pct !== null
   const isUp = hasDelta && (delta!.pct as number) >= 0
   const isGood = hasDelta && (delta!.positiveIsGood ?? true ? isUp : !isUp)
 
   return (
-    <div className="group rounded-lg border border-border bg-surface p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-marque-300 hover:shadow-md">
+    <div
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick() } : undefined}
+      className={`group rounded-lg border border-border bg-surface p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-marque-300 hover:shadow-md ${onClick ? 'cursor-pointer' : ''}`}>
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1 text-xs text-ink-muted">
           {label}

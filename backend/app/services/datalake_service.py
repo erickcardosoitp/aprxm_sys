@@ -321,9 +321,9 @@ async def export_bronze(session: AsyncSession, today: str,
                    payment_method_id, category_id, resident_id,
                    is_reversal, reversed_at,
                    sangria_reason, sangria_destination,
-                   approval_status, created_by, created_at
+                   approval_status, created_by, created_at, updated_at
             FROM transactions
-            WHERE TRUE {delta_filter_created}
+            WHERE TRUE {delta_filter}
         """,
         "cash_sessions": f"""
             SELECT id, association_id, opened_by, closed_by, status,
@@ -1121,15 +1121,16 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             cs_assoc = cs[cs["association_id"] == aid] if not cs.empty else pd.DataFrame()
             tx_assoc_all = tx[tx["association_id"] == aid] if not tx.empty else pd.DataFrame()
 
-            # Saldo = receita - despesa acumulada (faturamento líquido das últimas 8 semanas)
-            # Sessões de caixa são isoladas e não refletem o saldo real da associação.
-            cutoff_saldo = pd.Timestamp.now() - pd.Timedelta(weeks=8)
+            # Saldo = receita - despesa - sangria ACUMULADA desde sempre (balanco, nao
+            # fluxo) -- antes filtrava so as ultimas 8 semanas, o que media um FLUXO
+            # recente e chamava de "saldo atual", subestimando o caixa real acumulado
+            # (achado ao validar Runway com o usuario, 2026-08-02). Sessoes de caixa
+            # sao isoladas e nao refletem o saldo real da associacao.
             saldo_atual = 0.0
             if not tx_assoc_all.empty:
-                tx_periodo = tx_assoc_all[_to_dt(tx_assoc_all["transaction_at"]) >= cutoff_saldo]
-                income_total  = float(tx_periodo[tx_periodo["type"] == "income"]["amount"].sum() or 0)
-                expense_total = float(tx_periodo[tx_periodo["type"] == "expense"]["amount"].sum() or 0)
-                saldo_atual = income_total - expense_total
+                income_total  = float(tx_assoc_all[tx_assoc_all["type"] == "income"]["amount"].sum() or 0)
+                saida_total   = float(tx_assoc_all[tx_assoc_all["type"].isin(["expense", "sangria"])]["amount"].sum() or 0)
+                saldo_atual = income_total - saida_total
 
             # Despesa media semanal (ultimas 8 semanas)
             # Exclui sangrias de repasse interno para caixinha (movimentacao interna,
