@@ -1,6 +1,6 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceDot,
+  ResponsiveContainer, ReferenceDot, LabelList,
 } from 'recharts'
 
 export interface TrendPoint {
@@ -12,9 +12,16 @@ interface MiniTrendChartProps {
   data: TrendPoint[]
   height?: number
   valueFormatter?: (v: number) => string
+  showDataLabels?: boolean
 }
 
-export function MiniTrendChart({ data, height = 100, valueFormatter = (v) => String(v) }: MiniTrendChartProps) {
+function compactLabel(v: number): string {
+  const abs = Math.abs(v)
+  if (abs >= 1000) return `${(v / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  return Number.isInteger(v) ? String(v) : v.toFixed(1)
+}
+
+export function MiniTrendChart({ data, height = 100, valueFormatter = (v) => String(v), showDataLabels = false }: MiniTrendChartProps) {
   if (data.length === 0) {
     return <div className="flex items-center justify-center text-xs text-ink-muted" style={{ height }}>Sem dado</div>
   }
@@ -24,7 +31,7 @@ export function MiniTrendChart({ data, height = 100, valueFormatter = (v) => Str
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: showDataLabels ? 18 : 8, right: 8, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="marqueFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-marque-500)" stopOpacity={0.3} />
@@ -41,7 +48,16 @@ export function MiniTrendChart({ data, height = 100, valueFormatter = (v) => Str
           stroke="var(--color-marque-500)"
           strokeWidth={2}
           fill="url(#marqueFill)"
-        />
+        >
+          {showDataLabels && (
+            <LabelList
+              dataKey="value"
+              position="top"
+              formatter={(v: unknown) => compactLabel(Number(v))}
+              style={{ fontSize: 9, fill: 'var(--color-ink-muted)' }}
+            />
+          )}
+        </Area>
         <ReferenceDot x={maxPoint.label} y={maxPoint.value} r={4} fill="var(--color-marque-500)" stroke="none" />
         {lastPoint.label !== maxPoint.label && (
           <ReferenceDot x={lastPoint.label} y={lastPoint.value} r={4} fill="var(--color-marque-700)" stroke="none" />
