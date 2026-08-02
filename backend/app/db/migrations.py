@@ -28,7 +28,7 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 async def _create_base_schema(session) -> None:
     """Cria o schema do zero num banco 100% vazio (sem o dump de referencia).
@@ -1564,6 +1564,50 @@ async def _apply_versioned_migrations(session) -> None:
     except Exception as exc:
         await session.rollback()
         print(f"[MIGRATION v23] falhou (nao-fatal): {exc}")
+
+    # v24: migration_payments (538 pagamentos historicos de mensalidade,
+    # importados durante a migracao pro sistema) passam a existir tambem
+    # como transactions reais -- decisao do usuario (2026-08-01): "tudo em
+    # transactions, so' ajeita o tipo pra manual". data_pagamento (nao
+    # competencia, que e' so' o mes da divida quitada -- por isso tinha
+    # registro com competencia='2000-01') vira transaction_at. Idempotente
+    # via reference_number='MIGR-<id>' (nao duplica se reexecutar).
+    # migration_payments em si NAO e' apagada (arquivo historico).
+    try:
+        await session.execute(text("""
+            INSERT INTO transactions (
+                id, association_id, resident_id, type, income_subtype, origem,
+                category_id, amount, description, reference_number,
+                created_by, transaction_at, created_at, updated_at
+            )
+            SELECT
+                gen_random_uuid(), mp.association_id, mp.resident_id, 'income',
+                CAST('mensalidade' AS income_subtype), 'manual',
+                (SELECT tc.id FROM transaction_categories tc
+                 WHERE tc.association_id = mp.association_id AND tc.name = 'Mensalidade'
+                 LIMIT 1),
+                mp.valor_pago,
+                'Migração — competência ' || mp.competencia,
+                'MIGR-' || mp.id::text,
+                COALESCE(mp.created_by, (
+                    SELECT id FROM users WHERE association_id = mp.association_id
+                    AND role IN ('admin','superadmin','admin_master') AND is_active = TRUE LIMIT 1
+                )),
+                mp.data_pagamento::timestamp, mp.created_at, now()
+            FROM migration_payments mp
+            WHERE NOT EXISTS (
+                SELECT 1 FROM transactions t WHERE t.reference_number = 'MIGR-' || mp.id::text
+            )
+        """))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (24, 'v24: migration_payments -> transactions (origem=manual, idempotente)') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v24] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:

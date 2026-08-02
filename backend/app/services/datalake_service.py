@@ -106,6 +106,7 @@ GOLD_PATHS = {
     "churn_associados":              ("moradores",  "churn_associados"),
     "novos_visitantes_diario":       ("moradores",  "novos_visitantes_diario"),
     "aging_inadimplencia":           ("financeiro", "aging_inadimplencia"),
+    "mensalidades_pagas_mensal":     ("financeiro", "mensalidades_pagas_mensal"),
 }
 
 
@@ -614,31 +615,12 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "expense_count": "qtd_despesas", "net": "saldo_liquido",
         })
 
-        # Pagamentos historicos de migration_payments -- so' a partir de
-        # 2026-03 (decisao do usuario: registros antes disso, competencia ate
-        # 2025, sao 1-3/mes desde o ano 2000, aparentam ser placeholder/seed,
-        # nao migracao real). Sem data exata (so' "competencia" = mes), entram
-        # no dia 1 do mes como receita_total/mensalidade/saldo_liquido.
-        migr_gold = frames.get("migration_payments", pd.DataFrame())
-        if not migr_gold.empty and "competencia" in migr_gold.columns:
-            migr_gold = migr_gold[migr_gold["competencia"].astype(str) >= "2026-03"].copy()
-        if not migr_gold.empty:
-            migr_gold["association_name"] = migr_gold["association_id"].map(
-                _assocs_emp.set_index("id")["name"].to_dict() if not _assocs_emp.empty else {}
-            )
-            migr_agg = migr_gold.groupby(["competencia","association_id","association_name"])["valor_pago"].sum().reset_index()
-            migr_agg["data"] = pd.to_datetime(migr_agg["competencia"] + "-01")
-            migr_agg["semana"] = migr_agg["data"]
-            migr_agg["mes"] = migr_agg["data"].dt.to_period("M").dt.to_timestamp()
-            migr_agg = migr_agg.rename(columns={
-                "association_id": "id_associacao", "association_name": "nome_associacao",
-                "valor_pago": "receita_total",
-            })
-            migr_agg["mensalidade"] = migr_agg["receita_total"]
-            migr_agg["saldo_liquido"] = migr_agg["receita_total"]
-            migr_agg = migr_agg.drop(columns=["competencia"])
-            df = pd.concat([df, migr_agg], ignore_index=True)
-
+        # migration_payments NAO entra mais aqui em separado (2026-08-01): a
+        # migration v24 (app/db/migrations.py) inseriu os 538 pagamentos
+        # historicos direto em `transactions` (origem=manual, transaction_at=
+        # data_pagamento real, nao a "competencia" que e' so' o mes da divida
+        # quitada). `tx` acima ja e' a fonte unica -- somar migration_payments
+        # aqui de novo duplicaria a receita.
         up(df, "receita_diaria")
 
     # 2. Crescimento semanal de associados
