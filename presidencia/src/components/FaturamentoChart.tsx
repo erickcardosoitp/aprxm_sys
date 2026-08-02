@@ -27,26 +27,13 @@ function formatCompacto(v: number): string {
   return String(Math.round(v))
 }
 
-function mm7(serie: number[]): (number | null)[] {
-  return serie.map((_, i) => {
-    if (i < 6) return null
-    const janela = serie.slice(i - 6, i + 1)
-    return janela.reduce((a, b) => a + b, 0) / 7
-  })
-}
-
 export function FaturamentoChart({ serie, totalPeriodo, totalAnterior, formatter = formatBRLDefault }: FaturamentoChartProps) {
-  const [mostrarMedia, setMostrarMedia] = useState(false)
+  const [marcarCruzamento, setMarcarCruzamento] = useState(false)
 
-  const dados = useMemo(() => {
-    const valores = serie.map((p) => p.receita_total)
-    const media7 = mm7(valores)
-    return serie.map((p, i) => ({
-      label: new Date(p.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-      valor: p.receita_total,
-      mm7: media7[i],
-    }))
-  }, [serie])
+  const dados = useMemo(() => serie.map((p) => ({
+    label: new Date(p.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+    valor: p.receita_total,
+  })), [serie])
 
   const mediaGeral = useMemo(() => {
     if (!dados.length) return 0
@@ -59,7 +46,7 @@ export function FaturamentoChart({ serie, totalPeriodo, totalAnterior, formatter
   const lastPoint = dados.length ? dados[dados.length - 1] : null
 
   const cruzamentos = useMemo(() => {
-    if (!mostrarMedia) return []
+    if (!marcarCruzamento) return []
     const pontos: { label: string; valor: number }[] = []
     for (let i = 1; i < dados.length; i++) {
       const prevAcima = dados[i - 1].valor >= mediaGeral
@@ -67,11 +54,10 @@ export function FaturamentoChart({ serie, totalPeriodo, totalAnterior, formatter
       if (prevAcima !== curAcima) pontos.push({ label: dados[i].label, valor: dados[i].valor })
     }
     return pontos
-  }, [dados, mediaGeral, mostrarMedia])
+  }, [dados, mediaGeral, marcarCruzamento])
 
   const delta = totalAnterior ? ((totalPeriodo - totalAnterior) / totalAnterior) * 100 : null
   const totalHoje = serie.length ? serie[serie.length - 1].receita_total : 0
-  const mediaDia = dados.length ? totalPeriodo / dados.length : 0
 
   const banda = mediaGeral === 0 ? null
     : totalHoje >= mediaGeral * 1.2 ? { label: 'Excelente', cls: 'bg-emerald-100 text-emerald-700' }
@@ -83,7 +69,7 @@ export function FaturamentoChart({ serie, totalPeriodo, totalAnterior, formatter
     <div className="rounded-xl border border-border bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-xs text-ink-muted">Gráfico de Faturamento</div>
+          <div className="text-xs text-ink-muted">Faturamento bruto diário</div>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-2xl font-semibold text-ink">{formatter(totalPeriodo)}</span>
             {delta !== null && (
@@ -95,13 +81,13 @@ export function FaturamentoChart({ serie, totalPeriodo, totalAnterior, formatter
           </div>
           <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-ink-muted">
             <span>hoje: {formatter(totalHoje)}</span>
-            <span>média/dia: {formatter(mediaDia)}</span>
+            <span>média do faturamento bruto diário: {formatter(mediaGeral)}</span>
             {banda && <span className={`rounded-full px-1.5 py-0.5 font-medium ${banda.cls}`}>{banda.label}</span>}
           </div>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-ink-muted">
-          <input type="checkbox" checked={mostrarMedia} onChange={(e) => setMostrarMedia(e.target.checked)} />
-          Cruzamento com a média
+          <input type="checkbox" checked={marcarCruzamento} onChange={(e) => setMarcarCruzamento(e.target.checked)} />
+          Marcar cruzamento com a média
         </label>
       </div>
 
@@ -112,7 +98,7 @@ export function FaturamentoChart({ serie, totalPeriodo, totalAnterior, formatter
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--color-ink-muted)' }} axisLine={false} tickLine={false} />
             <YAxis hide />
             <Tooltip formatter={(v: unknown) => (v === null || v === undefined ? '—' : formatter(Number(v)))} contentStyle={{ fontSize: 12 }} />
-            {mostrarMedia && <ReferenceLine y={mediaGeral} stroke="var(--color-marque-300)" strokeDasharray="4 4" label={{ value: 'média', fontSize: 10, fill: 'var(--color-ink-muted)' }} />}
+            <ReferenceLine y={mediaGeral} stroke="var(--color-marque-300)" strokeDasharray="4 4" label={{ value: 'média', position: 'insideTopLeft', fontSize: 10, fill: 'var(--color-ink-muted)' }} />
             <Line type="monotone" dataKey="valor" stroke="var(--color-marque-500)" strokeWidth={2} dot={false} connectNulls>
               <LabelList
                 dataKey="valor"
@@ -130,18 +116,17 @@ export function FaturamentoChart({ serie, totalPeriodo, totalAnterior, formatter
                 }}
               />
             </Line>
-            <Line type="monotone" dataKey="mm7" stroke="var(--color-marque-700)" strokeWidth={1.5} dot={false} connectNulls />
             {maxPoint && <ReferenceDot x={maxPoint.label} y={maxPoint.valor} r={4} fill="var(--color-marque-500)" stroke="none" />}
             {lastPoint && lastPoint.label !== maxPoint?.label && <ReferenceDot x={lastPoint.label} y={lastPoint.valor} r={4} fill="var(--color-marque-700)" stroke="none" />}
-            {mostrarMedia && cruzamentos.map((c) => (
+            {marcarCruzamento && cruzamentos.map((c) => (
               <ReferenceDot key={c.label} x={c.label} y={c.valor} r={3} fill="var(--color-marque-700)" stroke="none" />
             ))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
       <div className="mt-1 flex gap-3 text-[10px] text-ink-muted">
-        <span>— linha bruta</span>
-        <span>— MM7 (média móvel 7 dias)</span>
+        <span>— faturamento bruto diário</span>
+        <span>‐ ‐ média do período</span>
       </div>
     </div>
   )
