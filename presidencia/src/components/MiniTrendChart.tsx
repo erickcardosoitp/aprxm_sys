@@ -31,7 +31,7 @@ export function MiniTrendChart({ data, height = 100, valueFormatter = (v) => Str
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: showDataLabels ? 18 : 8, right: 8, left: 0, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: showDataLabels ? 18 : 8, right: 16, left: 16, bottom: 0 }}>
         <defs>
           <linearGradient id="marqueFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-marque-500)" stopOpacity={0.3} />
@@ -39,7 +39,7 @@ export function MiniTrendChart({ data, height = 100, valueFormatter = (v) => Str
           </linearGradient>
         </defs>
         <CartesianGrid vertical={false} stroke="var(--color-border)" strokeDasharray="3 3" />
-        <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--color-ink-muted)' }} axisLine={false} tickLine={false} />
+        <XAxis dataKey="label" padding={{ left: 12, right: 12 }} tick={{ fontSize: 10, fill: 'var(--color-ink-muted)' }} axisLine={false} tickLine={false} />
         <YAxis hide domain={['dataMin', 'dataMax']} />
         <Tooltip formatter={(v) => valueFormatter(Number(v))} contentStyle={{ fontSize: 12 }} />
         <Area
