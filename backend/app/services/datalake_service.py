@@ -512,9 +512,10 @@ def build_silver(frames: dict[str, pd.DataFrame], today: str, client) -> tuple[d
         silver["residents_clean"] = df
         stats["residents_clean"] = _upload_df(client, df, f"prata/{today}/{SILVER_NAMES['residents_clean']}.parquet")
 
-    # cash_sessions_enriched
+    # cash_sessions_enriched -- sessao cancelada nao e' caixa real, nao entra
+    # em quebra/anomalia/saldo (mesma regra: cancelado nao conta pra calculo)
     if not cs.empty:
-        df = cs.copy()
+        df = cs[cs["status"] != "cancelled"].copy()
         df["association_name"] = df["association_id"].map(assoc_map)
         df["operador_name"]    = df["opened_by"].map(user_map)
         df["tem_quebra"]       = df["quebra_caixa"].notna() & (df["quebra_caixa"] != 0)
@@ -560,6 +561,22 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
     cs   = silver.get("cash_sessions_enriched", pd.DataFrame())
     tsk  = silver.get("daily_tasks_enriched", pd.DataFrame())
     mens = frames.get("mensalidades", pd.DataFrame())
+
+    # Suspenso/inativo/cancelado nao entra em NENHUM calculo -- filtro
+    # centralizado aqui (nao por bloco) pra nao repetir o bug de esquecer em
+    # algum lugar novo (achado em taxa_cobranca, aging_inadimplencia e
+    # cobranca_por_rua faltando isso -- 2026-08-01). `res`/`mens` ja sao o
+    # snapshot completo consolidado (bronze faz merge incremental+historico,
+    # nao e' so' o delta do dia), entao filtrar aqui e' seguro mesmo em
+    # carga incremental.
+    if not res.empty:
+        _active_member_ids = set(
+            res.loc[(res["type"] == "member") & (res["status"] == "active"), "id"].astype(str)
+        )
+        if not mens.empty:
+            mens = mens[mens["resident_id"].astype(str).isin(_active_member_ids)].copy()
+    else:
+        _active_member_ids = set()
 
     # empresa_id e' 1:1 com id_associacao (uma associacao pertence a 1 empresa) --
     # em vez de propagar pelos ~33 groupby/agg abaixo, mapeia direto no gargalo
@@ -1673,7 +1690,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 
     # 37. Novos visitantes por dia
     if not res.empty:
-        visitantes = res[res["type"] == "guest"].copy()
+        visitantes = res[(res["type"] == "guest") & (res["status"] == "active")].copy()
         if not visitantes.empty:
             visitantes["dia"] = _to_dt(visitantes["created_at"]).dt.date
             visitantes["association_name"] = visitantes["association_id"].map(_assoc_map_novo)
