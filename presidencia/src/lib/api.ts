@@ -118,8 +118,16 @@ export interface ResumoData {
   score_operadores: KpiWow
 }
 
-export async function getResumo(): Promise<FreshnessInfo & { data: ResumoData }> {
-  const { data } = await api.get<FreshnessInfo & { data: ResumoData }>('/presidencia/resumo')
+export async function getResumo(
+  nomeAssociacao?: string | null,
+  periodo?: string,
+): Promise<FreshnessInfo & { data: ResumoData }> {
+  const { data } = await api.get<FreshnessInfo & { data: ResumoData }>('/presidencia/resumo', {
+    params: {
+      ...(nomeAssociacao ? { unidade: nomeAssociacao } : {}),
+      ...(periodo ? { periodo } : {}),
+    },
+  })
   return data
 }
 
