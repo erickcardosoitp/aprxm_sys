@@ -72,6 +72,18 @@ interface PaidItem {
 interface PaymentMethod { id: string; name: string }
 interface Resident { id: string; full_name: string; cpf?: string }
 
+interface Parcelamento {
+  resident_id: string
+  full_name: string
+  phone_primary: string | null
+  unidade: string
+  qtd_parcelas: number
+  valor_total: number
+  periodo_de: string
+  periodo_ate: string
+  ultimo_pagamento: string | null
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#26619c]/40 focus:border-[#26619c]'
@@ -110,7 +122,7 @@ function daysAgo(iso: string | null): string {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Tab = 'associados' | 'pendentes' | 'inadimplentes' | 'pagos' | 'agentes'
+type Tab = 'associados' | 'pendentes' | 'inadimplentes' | 'pagos' | 'parcelamentos' | 'agentes'
 
 export default function CRMPage() {
   const role = useAuthStore(s => s.role)
@@ -160,6 +172,9 @@ export default function CRMPage() {
   const [paidItems, setPaidItems] = useState<PaidItem[]>([])
   const [paidMonth, setPaidMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [loadingPaid, setLoadingPaid] = useState(false)
+
+  const [parcelamentos, setParcelamentos] = useState<Parcelamento[]>([])
+  const [loadingParcelamentos, setLoadingParcelamentos] = useState(false)
 
   // create / generate forms
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -217,9 +232,18 @@ export default function CRMPage() {
     } catch { setPaidItems([]) } finally { setLoadingPaid(false) }
   }
 
+  const loadParcelamentos = async () => {
+    setLoadingParcelamentos(true)
+    try {
+      const res = await api.get<Parcelamento[]>('/crm/parcelamentos')
+      setParcelamentos(res.data)
+    } catch { setParcelamentos([]) } finally { setLoadingParcelamentos(false) }
+  }
+
   useEffect(() => {
     if (tab === 'pendentes' || tab === 'inadimplentes') loadCobrancas()
     if (tab === 'pagos') loadPaid(paidMonth)
+    if (tab === 'parcelamentos') loadParcelamentos()
   }, [tab])
 
   const searchForCreate = async (q: string) => {
@@ -482,6 +506,7 @@ export default function CRMPage() {
     { key: 'pendentes' as Tab, label: 'A Receber' },
     { key: 'inadimplentes' as Tab, label: 'Inadimplentes' },
     { key: 'pagos' as Tab, label: 'Pagos' },
+    { key: 'parcelamentos' as Tab, label: 'Parcelamentos' },
     { key: 'agentes' as Tab, label: 'Agentes' },
   ]
 
@@ -975,6 +1000,60 @@ export default function CRMPage() {
               <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
                 <span className="text-xs text-gray-500">Total</span>
                 <span className="text-sm font-bold text-green-700">{fmt(paidItems.reduce((s, p) => s + parseFloat(p.amount), 0))}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* PARCELAMENTOS */}
+      {tab === 'parcelamentos' && (
+        <div className="flex flex-col gap-3">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-800">Parcelamentos (acordo) em aberto</p>
+              <span className="text-xs text-gray-400">
+                {loadingParcelamentos ? 'Carregando…' : `${parcelamentos.length} morador(es)`}
+              </span>
+            </div>
+            {!loadingParcelamentos && parcelamentos.length === 0 ? (
+              <div className="p-6 text-center text-gray-400 text-sm">Nenhum parcelamento em aberto.</div>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {parcelamentos.map(p => (
+                  <li key={p.resident_id} className="px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-800 truncate">{p.full_name}</p>
+                      <p className="text-xs text-gray-500">
+                        {p.unidade} · {p.qtd_parcelas} parcela(s) · {p.periodo_de} a {p.periodo_ate}
+                      </p>
+                      {p.ultimo_pagamento && (
+                        <p className="text-xs text-gray-400">Último pagamento: {fmtDate(p.ultimo_pagamento)}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() =>
+                        openProfile({
+                          id: p.resident_id, full_name: p.full_name, situacao: 'inadimplente',
+                          qtd_pendentes: p.qtd_parcelas, valor_atrasado: p.valor_total,
+                          address: '', phone_primary: p.phone_primary, created_at: '',
+                          ultima_entrega: null, enc_mes: 0,
+                        } as CRMMember)
+                      } className="text-xs text-[#26619c] hover:underline flex items-center gap-1">
+                        <Users className="w-3 h-3" /> Perfil
+                      </button>
+                      <span className="text-sm font-bold text-amber-700">{fmt(p.valor_total)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {parcelamentos.length > 0 && (
+              <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+                <span className="text-xs text-gray-500">Total</span>
+                <span className="text-sm font-bold text-amber-700">
+                  {fmt(parcelamentos.reduce((s, p) => s + p.valor_total, 0))}
+                </span>
               </div>
             )}
           </div>

@@ -403,6 +403,50 @@ async def remote_pay_batch(
     return {"paid": results, "errors": errors}
 
 
+# ─── GET /crm/parcelamentos ──────────────────────────────────────────────────
+
+@router.get("/parcelamentos", summary="Moradores com parcelamento (acordo) em aberto")
+async def list_parcelamentos(
+    unidade: UUID | None = Query(default=None),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Agrupa mensalidades status='agreement' por morador -- parcelamento e'
+    pra quitar atrasado (nao mais aceita mes futuro, ver finance_service.py),
+    entao toda linha 'agreement' aqui e' divida antiga ainda sendo honrada."""
+    _check_access(current)
+    ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
+
+    result = await session.execute(text("""
+        SELECT
+            r.id AS resident_id, r.full_name, r.phone_primary, a.name AS unidade,
+            COUNT(*) AS qtd_parcelas, SUM(m.amount) AS valor_total,
+            MIN(m.reference_month) AS de, MAX(m.reference_month) AS ate,
+            MAX(m.paid_at) AS ultimo_pagamento
+        FROM mensalidades m
+        JOIN residents r ON r.id = m.resident_id
+        JOIN associations a ON a.id = m.association_id
+        WHERE m.association_id = ANY(:ids) AND m.status = 'agreement'
+        GROUP BY r.id, r.full_name, r.phone_primary, a.name
+        ORDER BY valor_total DESC
+    """), {"ids": ids})
+
+    return [
+        {
+            "resident_id": str(row.resident_id),
+            "full_name": row.full_name,
+            "phone_primary": row.phone_primary,
+            "unidade": row.unidade,
+            "qtd_parcelas": row.qtd_parcelas,
+            "valor_total": float(row.valor_total),
+            "periodo_de": row.de,
+            "periodo_ate": row.ate,
+            "ultimo_pagamento": row.ultimo_pagamento.isoformat() if row.ultimo_pagamento else None,
+        }
+        for row in result.fetchall()
+    ]
+
+
 # ─── POST /crm/cron-scoring ──────────────────────────────────────────────────
 
 @router.post("/cron-scoring", include_in_schema=False)
