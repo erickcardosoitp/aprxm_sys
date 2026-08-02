@@ -22,7 +22,7 @@ interface KpiDef {
 }
 
 const KPIS: KpiDef[] = [
-  { key: 'receita_liquida', label: 'Resultado líquido', icon: <Wallet size={16} className="text-marque-500" />, formatter: formatBRL, positiveIsGood: true },
+  { key: 'receita_liquida', label: 'Faturamento', icon: <Wallet size={16} className="text-marque-500" />, formatter: formatBRL, positiveIsGood: true },
   { key: 'encomendas', label: 'Encomendas recebidas', icon: <Package size={16} className="text-marque-500" />, formatter: (v) => String(Math.round(v)), positiveIsGood: true },
   { key: 'crescimento', label: 'Crescimento de associados', icon: <TrendUp size={16} className="text-marque-500" />, formatter: (v) => String(Math.round(v)), positiveIsGood: true },
   { key: 'tempo_entrega', label: 'Tempo médio de entrega (dias)', icon: <Clock size={16} className="text-marque-500" />, formatter: (v) => v.toFixed(1), positiveIsGood: false },

@@ -350,8 +350,9 @@ class PresidenciaService:
         `ate` (YYYY-MM) ancora a janela -- sem isso a navegacao de periodo no
         header (goPrev/goNext) nao tinha efeito nenhum aqui."""
         meses = _ultimos_meses_yyyymm(n_meses, ate)
-        # taxa_cobranca.mes e' TIMESTAMP, as demais gold tables sao TEXT 'YYYY-MM'
-        mes_expr = "to_char(mes, 'YYYY-MM')" if table == "taxa_cobranca" else "mes"
+        # taxa_cobranca.mes e receita_diaria.mes sao TIMESTAMP, as demais gold
+        # tables sao TEXT 'YYYY-MM'
+        mes_expr = "to_char(mes, 'YYYY-MM')" if table in ("taxa_cobranca", "receita_diaria") else "mes"
         unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
         params = {"meses": meses, "unidade": unidade} if unidade else {"meses": meses}
         rows = (await self.dw.execute(text(f"""
@@ -379,7 +380,7 @@ class PresidenciaService:
     ) -> dict:
         n_meses = {"mes": 6, "trimestre": 9, "semestre": 12, "ano": 24}.get(periodo, 6)
 
-        receita = await self._mom_mensal("margem_mensal", "SUM(saldo_liquido)", unidade, n_meses, ate)
+        receita = await self._mom_mensal("receita_diaria", "SUM(receita_total)", unidade, n_meses, ate)
         encomendas = await self._mom_mensal("encomendas_mensal", "SUM(recebidos)", unidade, n_meses, ate)
         crescimento = await self._mom_mensal("moradores_mensal", "SUM(associados) - LAG(SUM(associados)) OVER (ORDER BY mes)", unidade, n_meses, ate)
         tempo_entrega = await self._mom_mensal("encomendas_mensal", "AVG(media_dias_permanencia)", unidade, n_meses, ate)
