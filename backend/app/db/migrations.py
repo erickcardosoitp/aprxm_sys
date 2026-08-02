@@ -1570,9 +1570,14 @@ async def _apply_versioned_migrations(session) -> None:
     # como transactions reais -- decisao do usuario (2026-08-01): "tudo em
     # transactions, so' ajeita o tipo pra manual". data_pagamento (nao
     # competencia, que e' so' o mes da divida quitada -- por isso tinha
-    # registro com competencia='2000-01') vira transaction_at. Idempotente
+    # registro com competencia='2000-01') vira transaction_at, com fallback
+    # pra created_at quando data_pagamento e' nulo (11 casos). 3 registros
+    # sem valor_pago sao pulados (nao da' pra inventar o valor). Idempotente
     # via reference_number='MIGR-<id>' (nao duplica se reexecutar).
-    # migration_payments em si NAO e' apagada (arquivo historico).
+    # migration_payments em si NAO e' apagada (arquivo historico). Aplicada
+    # manualmente via MCP em 2026-08-01 (535/538 linhas, ver
+    # schema_migrations.description) -- este bloco fica pra bater com o
+    # que rodou de fato e pra qualquer deploy futuro/banco novo.
     try:
         await session.execute(text("""
             INSERT INTO transactions (
@@ -1593,9 +1598,10 @@ async def _apply_versioned_migrations(session) -> None:
                     SELECT id FROM users WHERE association_id = mp.association_id
                     AND role IN ('admin','superadmin','admin_master') AND is_active = TRUE LIMIT 1
                 )),
-                mp.data_pagamento::timestamp, mp.created_at, now()
+                COALESCE(mp.data_pagamento::timestamp, mp.created_at), mp.created_at, now()
             FROM migration_payments mp
-            WHERE NOT EXISTS (
+            WHERE mp.valor_pago IS NOT NULL
+              AND NOT EXISTS (
                 SELECT 1 FROM transactions t WHERE t.reference_number = 'MIGR-' || mp.id::text
             )
         """))
