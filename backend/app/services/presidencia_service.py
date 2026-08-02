@@ -477,12 +477,6 @@ class PresidenciaService:
             SELECT COALESCE(SUM(valor_devido),0), COUNT(*) FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter} {ef}
         """), params)).fetchone()
 
-        inadimplentes_rows = (await self.dw.execute(text(f"""
-            SELECT nome_completo, nome_associacao, meses_atraso, valor_devido
-            FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter} {ef}
-            ORDER BY valor_devido DESC LIMIT 10
-        """), params)).fetchall()
-
         recuperacao = (await self.dw.execute(text(f"""
             SELECT COALESCE(SUM(valor_recuperada),0), COALESCE(SUM(valor_nunca_recuperada),0),
                    COALESCE(SUM(valor_parcelamento),0), AVG(taxa_recuperacao_pct)
@@ -522,12 +516,6 @@ class PresidenciaService:
             GROUP BY data ORDER BY data
         """), params)).fetchall()
 
-        receita_rua_rows = (await self.dw.execute(text(f"""
-            SELECT rua, SUM(receita_total), SUM(qtd_transacoes)
-            FROM receita_por_rua WHERE 1=1 {unidade_filter} {ef}
-            GROUP BY rua ORDER BY 2 DESC LIMIT 15
-        """), params)).fetchall()
-
         comparativo_rows = (await self.dw.execute(text(f"""
             SELECT nome_associacao, SUM(receita_total), SUM(despesa_total), SUM(saldo_liquido)
             FROM margem_mensal WHERE mes = ANY(:meses) {ef}
@@ -546,10 +534,6 @@ class PresidenciaService:
             "margem_pct": round(100.0 * saldo / receita, 1) if receita else None,
             "saldo_caixa": float(runway[0] or 0), "runway_semanas": float(runway[1]) if runway and runway[1] is not None else None,
             "total_inadimplente": float(inadimplente[0] or 0), "qtd_inadimplentes": int(inadimplente[1] or 0),
-            "inadimplentes": [
-                {"nome": r[0], "associacao": r[1], "meses_atraso": r[2], "valor_devido": float(r[3] or 0)}
-                for r in inadimplentes_rows
-            ],
             "recuperacao": {
                 "valor_recuperada": float(recuperacao[0] or 0), "valor_nunca_recuperada": float(recuperacao[1] or 0),
                 "valor_parcelamento": float(recuperacao[2] or 0),
@@ -577,10 +561,6 @@ class PresidenciaService:
                     "comprovante_residencia": float(r[6] or 0), "outras_receitas": float(r[7] or 0),
                 }
                 for r in serie_rows
-            ],
-            "receita_por_rua": [
-                {"rua": r[0], "receita_total": float(r[1] or 0), "qtd_transacoes": int(r[2] or 0)}
-                for r in receita_rua_rows
             ],
             "comparativo_unidades": [
                 {

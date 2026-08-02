@@ -1,15 +1,11 @@
-import { useMemo, useState } from 'react'
-import { TrendDown, PiggyBank, Warning, ArrowsClockwise, WarningCircle } from '@phosphor-icons/react'
+import { useState } from 'react'
+import { TrendDown, PiggyBank, Warning, WarningCircle } from '@phosphor-icons/react'
 import { getFinanceiro } from '../lib/api'
 import { StatTile } from '../components/StatTile'
 import { DataTable } from '../components/DataTable'
-import { SegmentedProgressBar } from '../components/SegmentedProgressBar'
-import { HorizontalBarRanked } from '../components/HorizontalBarRanked'
 import { FaturamentoChart } from '../components/FaturamentoChart'
 import { MultiSeriesArea } from '../components/MultiSeriesArea'
-import { HeatmapCalendar } from '../components/HeatmapCalendar'
 import { usePresidenciaData } from '../lib/usePresidenciaData'
-import { usePeriodo } from '../lib/PeriodoContext'
 import { labelForNomeAssociacao } from '../lib/unidade'
 
 function formatBRL(v: number): string {
@@ -18,28 +14,7 @@ function formatBRL(v: number): string {
 
 export function FinanceiroPage() {
   const { data, freshness, error, loading } = usePresidenciaData(getFinanceiro)
-  const { periodo } = usePeriodo()
   const [mostrarQuebras, setMostrarQuebras] = useState(false)
-
-  const receitaPorTipo = useMemo(() => {
-    if (!data) return []
-    const totais = data.serie_diaria.reduce(
-      (acc, d) => {
-        acc.mensalidade += d.mensalidade
-        acc.taxa_entrega += d.taxa_entrega
-        acc.comprovante_residencia += d.comprovante_residencia
-        acc.outras_receitas += d.outras_receitas
-        return acc
-      },
-      { mensalidade: 0, taxa_entrega: 0, comprovante_residencia: 0, outras_receitas: 0 },
-    )
-    return [
-      { label: 'Mensalidade', value: totais.mensalidade },
-      { label: 'Taxa de entrega', value: totais.taxa_entrega },
-      { label: 'Comprovante de residência', value: totais.comprovante_residencia },
-      { label: 'Outras', value: totais.outras_receitas },
-    ].sort((a, b) => b.value - a.value)
-  }, [data])
 
   if (loading) return <p className="text-sm text-ink-muted">Carregando...</p>
   if (error) return <p className="rounded bg-red-100 px-3 py-2 text-sm text-red-700">{error}</p>
@@ -59,7 +34,7 @@ export function FinanceiroPage() {
         totalAnterior={data.receita_total_anterior}
       />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
           label="Resultado líquido"
           value={formatBRL(data.saldo_liquido)}
@@ -78,17 +53,9 @@ export function FinanceiroPage() {
         <StatTile
           label="Inadimplência"
           value={formatBRL(data.total_inadimplente)}
-          hint={`${data.qtd_inadimplentes} mensalidades em aberto`}
+          hint={`${data.qtd_inadimplentes} mensalidades em aberto · recuperação: ${data.recuperacao.taxa_recuperacao_pct ?? '—'}%`}
           badge="agora"
           icon={<Warning size={16} className="text-marque-500" />}
-        />
-        <StatTile
-          label="Taxa de recuperação"
-          value={data.recuperacao.taxa_recuperacao_pct !== null ? `${data.recuperacao.taxa_recuperacao_pct}%` : '—'}
-          legenda="De tudo que já venceu, quanto acabou sendo pago (mesmo que atrasado)."
-          hint={`recuperado: ${formatBRL(data.recuperacao.valor_recuperada)} · nunca recuperado: ${formatBRL(data.recuperacao.valor_nunca_recuperada)}`}
-          badge="agora"
-          icon={<ArrowsClockwise size={16} className="text-marque-500" />}
         />
         <StatTile
           label="Quebras de caixa"
@@ -98,11 +65,6 @@ export function FinanceiroPage() {
           badge="agora"
           icon={<WarningCircle size={16} className="text-marque-500" />}
           onClick={() => setMostrarQuebras((v) => !v)}
-        />
-        <SegmentedProgressBar
-          label="Margem líquida"
-          pct={data.margem_pct}
-          legenda="Resultado líquido dividido pelo faturamento do período."
         />
       </div>
 
@@ -132,7 +94,6 @@ export function FinanceiroPage() {
               <div className="mb-2 text-sm font-medium text-ink">{labelForNomeAssociacao(u.nome_associacao)}</div>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div><span className="text-ink-muted">Faturamento</span><div className="font-semibold text-ink">{formatBRL(u.receita_total)}</div></div>
-                <div><span className="text-ink-muted">Despesa</span><div className="font-semibold text-ink">{formatBRL(u.despesa_total)}</div></div>
                 <div><span className="text-ink-muted">Resultado</span><div className="font-semibold text-ink">{formatBRL(u.saldo_liquido)}</div></div>
                 <div><span className="text-ink-muted">Margem</span><div className="font-semibold text-ink">{u.margem_pct !== null ? `${u.margem_pct}%` : '—'}</div></div>
                 <div><span className="text-ink-muted">Taxa de cobrança</span><div className="font-semibold text-ink">{u.taxa_cobranca_pct !== null ? `${u.taxa_cobranca_pct}%` : '—'}</div></div>
@@ -145,35 +106,6 @@ export function FinanceiroPage() {
       <MultiSeriesArea serie={data.serie_diaria} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <HorizontalBarRanked title="Receita por tipo (total do período)" items={receitaPorTipo} formatter={formatBRL} />
-        <DataTable
-          title="Receita por rua"
-          rows={data.receita_por_rua}
-          keyFn={(r) => r.rua}
-          columns={[
-            { header: 'Rua', render: (r) => r.rua },
-            { header: 'Receita', align: 'right', render: (r) => formatBRL(r.receita_total) },
-            { header: 'Transações', align: 'right', render: (r) => r.qtd_transacoes },
-          ]}
-        />
-      </div>
-
-      <HeatmapCalendar
-        serie={data.serie_diaria.map((d) => ({ data: d.data, valor: d.receita_total }))}
-        periodo={periodo}
-      />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <DataTable
-          title="Inadimplência por pessoa"
-          rows={data.inadimplentes}
-          keyFn={(r, i) => `${r.nome}-${i}`}
-          columns={[
-            { header: 'Nome', render: (r) => r.nome },
-            { header: 'Meses de atraso', align: 'right', render: (r) => r.meses_atraso },
-            { header: 'Valor devido', align: 'right', render: (r) => formatBRL(r.valor_devido) },
-          ]}
-        />
         <DataTable
           title="Aging de inadimplência"
           rows={data.aging}
@@ -184,32 +116,17 @@ export function FinanceiroPage() {
             { header: 'Valor', align: 'right', render: (r) => formatBRL(r.valor) },
           ]}
         />
+        <DataTable
+          title="Motivos de sangria"
+          rows={data.motivos_sangria}
+          keyFn={(r) => r.motivo}
+          columns={[
+            { header: 'Motivo', render: (r) => r.motivo },
+            { header: 'Ocorrências', align: 'right', render: (r) => r.ocorrencias },
+            { header: 'Valor', align: 'right', render: (r) => formatBRL(r.valor) },
+          ]}
+        />
       </div>
-
-      <DataTable
-        title="Motivos de sangria"
-        rows={data.motivos_sangria}
-        keyFn={(r) => r.motivo}
-        columns={[
-          { header: 'Motivo', render: (r) => r.motivo },
-          { header: 'Ocorrências', align: 'right', render: (r) => r.ocorrencias },
-          { header: 'Valor', align: 'right', render: (r) => formatBRL(r.valor) },
-        ]}
-      />
-
-      <DataTable
-        title="Detalhe dia × produto"
-        rows={[...data.serie_diaria].reverse()}
-        keyFn={(r) => r.data}
-        columns={[
-          { header: 'Data', render: (r) => new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR') },
-          { header: 'Mensalidade', align: 'right', render: (r) => formatBRL(r.mensalidade) },
-          { header: 'Taxa de entrega', align: 'right', render: (r) => formatBRL(r.taxa_entrega) },
-          { header: 'Comprovante residência', align: 'right', render: (r) => formatBRL(r.comprovante_residencia) },
-          { header: 'Outras', align: 'right', render: (r) => formatBRL(r.outras_receitas) },
-          { header: 'Total', align: 'right', render: (r) => formatBRL(r.receita_total) },
-        ]}
-      />
     </div>
   )
 }

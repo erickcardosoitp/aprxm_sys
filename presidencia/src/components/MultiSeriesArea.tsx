@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer,
+  ResponsiveContainer, LabelList,
 } from 'recharts'
 
 // Mesma paleta categórica de 8 cores já validada em unidadeColor() (EscDataTable.tsx,
@@ -35,6 +35,12 @@ interface MultiSeriesAreaProps {
 
 function formatBRLDefault(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function formatCompacto(v: number): string {
+  const abs = Math.abs(v)
+  if (abs >= 1000) return `${(v / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  return String(Math.round(v))
 }
 
 const CATEGORIAS = ['mensalidade', 'taxa_entrega', 'comprovante_residencia'] as const
@@ -96,7 +102,22 @@ export function MultiSeriesArea({ serie, formatter = formatBRLDefault }: MultiSe
               stroke={CATEGORIA_CORES[cat]}
               fill={`url(#grad-${cat})`}
               strokeWidth={2}
-            />
+            >
+              {/* Rotulo seletivo: so' o ultimo ponto de cada serie (valor atual) --
+                  com 3 series sobrepostas, marcar mais que isso vira ilegivel. */}
+              <LabelList
+                dataKey={cat}
+                content={(props) => {
+                  const { x, y, value, index } = props as { x?: number; y?: number; value?: number; index?: number }
+                  if (index === undefined || index !== dados.length - 1 || value === undefined || x === undefined || y === undefined) return null
+                  return (
+                    <text x={x} y={y - 6} textAnchor="end" fontSize={9} fill={CATEGORIA_CORES[cat]} fontWeight={600}>
+                      {formatCompacto(value)}
+                    </text>
+                  )
+                }}
+              />
+            </Area>
           ))}
         </AreaChart>
       </ResponsiveContainer>

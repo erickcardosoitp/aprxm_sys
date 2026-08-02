@@ -174,7 +174,6 @@ export interface FinanceiroData {
   runway_semanas: number | null
   total_inadimplente: number
   qtd_inadimplentes: number
-  inadimplentes: { nome: string; associacao: string; meses_atraso: number; valor_devido: number }[]
   serie_diaria: {
     data: string
     receita_total: number
@@ -185,7 +184,6 @@ export interface FinanceiroData {
     comprovante_residencia: number
     outras_receitas: number
   }[]
-  receita_por_rua: { rua: string; receita_total: number; qtd_transacoes: number }[]
   comparativo_unidades: {
     nome_associacao: string
     receita_total: number
