@@ -100,7 +100,7 @@ export function InicioPage() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <StatTile
-          label="Receita"
+          label="Faturamento"
           value={formatBRL(data.financeiro.receita_mes_atual)}
           legenda="Soma de tudo que entrou (mensalidade, taxa de entrega, comprovante de residência, outras) no período selecionado."
           hint={hintComparacao(`vs ${periodoLabelCurto} anterior`)}
