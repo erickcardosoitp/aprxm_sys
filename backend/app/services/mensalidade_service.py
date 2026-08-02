@@ -182,19 +182,23 @@ class MensalidadeService:
         return m
 
     async def _create_next_month(self, current: Mensalidade, created_by: UUID) -> Mensalidade | None:
-        year, month = map(int, current.reference_month.split("-"))
-        if month == 12:
-            next_year, next_month = year + 1, 1
-        else:
-            next_year, next_month = year, month + 1
+        """Gera a proxima cobranca do morador -- ciclo rolante: vencimento =
+        data do pagamento + 15 dias (decisao do usuario, 2026-08-01), nao mais
+        "mesmo dia do mes seguinte" (calendario fixo). reference_month vira
+        so' um rotulo informativo (mes em que o vencimento cai), nao mais uma
+        competencia de calendario rigida -- por isso o dedup abaixo usa
+        due_date, nao reference_month (2 cobrancas do mesmo morador podem
+        cair no mesmo mes calendario num ciclo rolante)."""
+        paid_at = current.paid_at or datetime.utcnow()
+        next_due = (paid_at + timedelta(days=15)).date()
+        next_ref = f"{next_due.year:04d}-{next_due.month:02d}"
 
-        next_ref = f"{next_year:04d}-{next_month:02d}"
-
-        # Check if already exists in mensalidades or migration_payments
+        # Dedup por due_date (ciclo rolante pode gerar 2 cobrancas no mesmo
+        # mes calendario -- reference_month sozinho nao e' mais unico o suficiente)
         stmt = select(Mensalidade).where(
             Mensalidade.association_id == current.association_id,
             Mensalidade.resident_id == current.resident_id,
-            Mensalidade.reference_month == next_ref,
+            Mensalidade.due_date == next_due,
         )
         result = await self._session.execute(stmt)
         if result.scalar_one_or_none():
@@ -204,11 +208,6 @@ class MensalidadeService:
         mig_svc = MigrationPaymentService(self._session)
         if await mig_svc.exists(current.association_id, current.resident_id, next_ref):
             return None
-
-        # Due date: same day of month as current, next month
-        day = current.due_date.day
-        last_day = monthrange(next_year, next_month)[1]
-        next_due = date(next_year, next_month, min(day, last_day))
 
         next_m = Mensalidade(
             association_id=current.association_id,

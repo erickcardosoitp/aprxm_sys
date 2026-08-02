@@ -28,7 +28,7 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 async def _create_base_schema(session) -> None:
     """Cria o schema do zero num banco 100% vazio (sem o dump de referencia).
@@ -1497,6 +1497,38 @@ async def _apply_versioned_migrations(session) -> None:
     except Exception as exc:
         await session.rollback()
         print(f"[MIGRATION v21] falhou (nao-fatal): {exc}")
+
+    # v22: cobranca vira ciclo rolante (vencimento = pagamento + 15 dias, nao
+    # mais "mesmo dia, mes calendario seguinte") -- 2 cobrancas do mesmo
+    # morador podem cair no mesmo mes calendario agora, entao
+    # UNIQUE(association_id, resident_id, reference_month) fica curta demais.
+    # Troca por UNIQUE(association_id, resident_id, due_date), que e' o que
+    # o gerador (_create_next_month) agora usa pra deduplicar.
+    try:
+        exists_old = (await session.execute(text(
+            "SELECT 1 FROM pg_constraint WHERE conname = 'uq_mensalidade_period'"
+        ))).scalar()
+        if exists_old:
+            await session.execute(text(
+                "ALTER TABLE mensalidades DROP CONSTRAINT uq_mensalidade_period"
+            ))
+        exists_new = (await session.execute(text(
+            "SELECT 1 FROM pg_constraint WHERE conname = 'uq_mensalidade_resident_due'"
+        ))).scalar()
+        if not exists_new:
+            await session.execute(text(
+                "ALTER TABLE mensalidades ADD CONSTRAINT uq_mensalidade_resident_due "
+                "UNIQUE (association_id, resident_id, due_date)"
+            ))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (22, 'v22: mensalidades ciclo rolante -- unique por due_date, nao reference_month') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v22] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:

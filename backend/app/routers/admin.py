@@ -349,13 +349,6 @@ BUILT_IN_TASKS = [
         "schedule_label": "Diariamente às 08h",
     },
     {
-        "task_key": "generate_monthly_mensalidades",
-        "name": "Gerar Mensalidades do Mês",
-        "description": "Toda segunda-feira às 08h, gera mensalidades pendentes para todos os associados ativos do mês corrente.",
-        "schedule_cron": "0 8 * * 1",
-        "schedule_label": "Toda segunda-feira às 08h",
-    },
-    {
         "task_key": "vacuum_dead_rows",
         "name": "Limpeza de Dead Rows (VACUUM)",
         "description": "Toda domingo às 02h, limpa registros obsoletos das tabelas mais ativas (notifications, transactions, packages, chat_message_reads, residents). Libera espaço e mantém performance das queries.",
@@ -456,66 +449,15 @@ async def run_task_now(
             result_msg = f"{count} entrada(s) PIX sincronizadas."
 
         elif task_key == "generate_monthly_mensalidades":
-            from app.services.mensalidade_service import MensalidadeService
-            from decimal import Decimal
-            from datetime import date
-            from uuid import UUID as _UUID
-
-            ref_month = date.today().strftime("%Y-%m")
-            default_due_day = 10
-
-            # Se agregador (escritório), roda para todas as associações vinculadas
-            if current.is_aggregator:
-                target_ids = [str(i) for i in current.linked_association_ids]
-            else:
-                target_ids = [aid]
-
-            total_created = 0
-            skipped_assocs = []
-            svc = MensalidadeService(session)
-
-            for target_aid in target_ids:
-                settings_row = (await session.execute(text("""
-                    SELECT COALESCE(default_mensalidade_amount, 0)
-                    FROM association_settings WHERE association_id = :aid
-                """), {"aid": target_aid})).fetchone()
-                configured_amount = Decimal(str(settings_row[0])) if settings_row else Decimal("0")
-
-                if not configured_amount or configured_amount <= 0:
-                    last_row = (await session.execute(text("""
-                        SELECT amount FROM mensalidades WHERE association_id = :aid
-                        ORDER BY created_at DESC LIMIT 1
-                    """), {"aid": target_aid})).fetchone()
-                    configured_amount = Decimal(str(last_row[0])) if last_row else None
-
-                # Inclui admins empresa-wide (estacionados no ESC): apos a Fase 9 a
-                # unidade pode nao ter admin local. Prefere admin local se houver.
-                cb_row = (await session.execute(text("""
-                    SELECT id FROM users
-                     WHERE (association_id = :aid
-                            OR association_id = (SELECT empresa_id FROM associations WHERE id = :aid))
-                       AND role IN ('admin','superadmin','admin_master','diretoria','conferente')
-                       AND is_active = TRUE
-                     ORDER BY (association_id = :aid) DESC
-                     LIMIT 1
-                """), {"aid": target_aid})).fetchone()
-                created_by = cb_row[0] if cb_row else None
-
-                if configured_amount and configured_amount > 0 and created_by:
-                    gen_result = await svc.generate_month(
-                        association_id=_UUID(target_aid),
-                        reference_month=ref_month,
-                        due_day=default_due_day,
-                        amount=configured_amount,
-                        created_by=created_by,
-                    )
-                    total_created += gen_result.get("created", 0)
-                else:
-                    skipped_assocs.append(target_aid)
-
-            result_msg = f"{total_created} mensalidade(s) gerada(s) para {ref_month}."
-            if skipped_assocs:
-                result_msg += f" {len(skipped_assocs)} associação(ões) sem valor configurado."
+            # Desativado (2026-08-01): cobranca virou ciclo rolante -- gerada
+            # no cadastro do morador (1a cobranca) e 15 dias apos cada
+            # pagamento (MensalidadeService._create_next_month), nao mais em
+            # lote por calendario. Task mantida so' pra scheduled_tasks
+            # antigos nao quebrarem se ainda apontarem pra esse task_key.
+            result_msg = (
+                "Tarefa desativada: geração de mensalidades agora é por evento "
+                "(cadastro do morador + 15 dias após pagamento), não mais em lote semanal."
+            )
         elif task_key == "vacuum_dead_rows":
             tables = [
                 "notifications", "transactions", "packages",

@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 from uuid import UUID
 
@@ -12,6 +13,7 @@ from app.database import get_session
 from app.models.resident import Resident, ResidentStatus, ResidentType
 
 router = APIRouter(prefix="/residents", tags=["Moradores"])
+logger = logging.getLogger(__name__)
 
 
 class CreateResidentRequest(BaseModel):
@@ -228,6 +230,36 @@ async def create_resident(
     )
     session.add(resident)
     await session.flush()
+
+    # 1a cobranca do morador -- ciclo rolante nao tem calendario/cron pra
+    # pegar quem nunca pagou ainda, entao o gatilho e' o proprio cadastro
+    # (decisao do usuario, 2026-08-01). Vencimento = hoje + 15 dias, mesma
+    # regra usada apos cada pagamento (MensalidadeService._create_next_month).
+    if resident.type == ResidentType.member and resident.status == ResidentStatus.active:
+        from datetime import timedelta
+        from app.services.mensalidade_service import MensalidadeService
+        settings_row = (await session.execute(text(
+            "SELECT default_mensalidade_amount FROM association_settings WHERE association_id = :aid"
+        ), {"aid": str(current.association_id)})).scalar()
+        if settings_row and settings_row > 0:
+            first_due = date.today() + timedelta(days=15)
+            try:
+                await MensalidadeService(session).create(
+                    association_id=current.association_id,
+                    resident_id=resident.id,
+                    reference_month=f"{first_due.year:04d}-{first_due.month:02d}",
+                    due_date=first_due,
+                    amount=settings_row,
+                    created_by=current.user_id,
+                )
+            except Exception:
+                # nao bloqueia o cadastro do morador por falha na 1a cobranca --
+                # fica visivel no log do servidor pra alguem gerar na mao depois.
+                logger.exception(
+                    "Falha ao gerar 1a mensalidade do morador %s (association %s)",
+                    resident.id, current.association_id,
+                )
+
     return _serialize(resident)
 
 
