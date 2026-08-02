@@ -272,10 +272,20 @@ class FinanceService:
         if is_mensalidade_income:
             from app.models.mensalidade import Mensalidade, MensalidadeStatus
             now_check = datetime.utcnow()
+            current_ref = f"{now_check.year:04d}-{now_check.month:02d}"
             months_to_cover = (
                 sorted(set(mensalidade_months)) if mensalidade_months
                 else [_month_offset(now_check, i) for i in range(acordo_months - 1, -1, -1)]
             )
+            # Parcelamento/acordo e' pra quitar atrasado, nao pra pre-pagar mes
+            # que ainda nem venceu -- decisao do usuario (2026-08-01), achado
+            # investigando um caso real onde 15 dos 16 meses cobertos eram
+            # futuros (transacao feita em abril/2026 cobrindo ate junho/2027).
+            months_to_cover = [m for m in months_to_cover if m <= current_ref]
+            if not months_to_cover:
+                raise UnprocessableError(
+                    "Parcelamento só pode cobrir meses já vencidos ou o mês atual, não meses futuros."
+                )
             existing_status = (await self._session.execute(
                 select(Mensalidade.reference_month, Mensalidade.status).where(
                     Mensalidade.association_id == association_id,
@@ -388,6 +398,24 @@ class FinanceService:
                 raise UnprocessableError(
                     "Mensalidade já paga para o(s) mês(es) selecionado(s). Nenhum lançamento foi registrado."
                 )
+
+            if claimed_months:
+                # Parcelamento tambem precisa continuar o ciclo rolante -- sem
+                # isso, o morador para de ser cobrado assim que o ultimo mes
+                # coberto vencer (achado investigando um caso real, 2026-08-01).
+                # Mesma regra do pagamento de 1 mes so: proxima cobranca em
+                # paid_at + 15 dias.
+                last_ref = max(claimed_months)
+                last_mens = (await self._session.execute(
+                    sq_sel(Mensalidade).where(
+                        Mensalidade.association_id == association_id,
+                        Mensalidade.resident_id == resident_id,
+                        Mensalidade.reference_month == last_ref,
+                    )
+                )).scalar_one_or_none()
+                if last_mens:
+                    from app.services.mensalidade_service import MensalidadeService
+                    await MensalidadeService(self._session)._create_next_month(last_mens, created_by)
 
         return tx
 
