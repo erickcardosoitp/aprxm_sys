@@ -107,6 +107,7 @@ GOLD_PATHS = {
     "novos_visitantes_diario":       ("moradores",  "novos_visitantes_diario"),
     "aging_inadimplencia":           ("financeiro", "aging_inadimplencia"),
     "mensalidades_pagas_mensal":     ("financeiro", "mensalidades_pagas_mensal"),
+    "recuperacao_inadimplencia":     ("financeiro", "recuperacao_inadimplencia"),
 }
 
 
@@ -715,6 +716,45 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "association_name": "nome_associacao",
         })
         up(agg, "taxa_cobranca")
+
+    # 4b. Taxa de recuperacao de inadimplencia -- de tudo que ja venceu (nao
+    # conta o que ainda esta dentro do prazo), quanto acaba sendo recuperado
+    # (pago com atraso) vs fica em aberto pra sempre. Snapshot (nao serie
+    # mensal) -- pergunta do usuario 2026-08-01, achado na analise de negocio:
+    # so' ~40% do que vence volta.
+    if not mens.empty:
+        rec = mens.copy()
+        rec["due_dt"] = _to_dt(rec["due_date"])
+        ja_venceu = rec[rec["due_dt"] < grace_cutoff].copy()
+        if not ja_venceu.empty:
+            paid_at_dt = _to_dt(ja_venceu["paid_at"]) if "paid_at" in ja_venceu.columns else pd.Series(pd.NaT, index=ja_venceu.index)
+            recuperada_mask = (ja_venceu["status"] == "paid") & (paid_at_dt > (ja_venceu["due_dt"] + pd.Timedelta(days=2)))
+            no_prazo_mask   = (ja_venceu["status"] == "paid") & ~recuperada_mask
+            parcelamento_mask = ja_venceu["status"] == "agreement"
+            nunca_mask      = ja_venceu["status"] == "pending"
+            ja_venceu["situacao"] = "outro"
+            ja_venceu.loc[recuperada_mask, "situacao"]    = "recuperada"
+            ja_venceu.loc[no_prazo_mask, "situacao"]      = "no_prazo"
+            ja_venceu.loc[parcelamento_mask, "situacao"]  = "parcelamento"
+            ja_venceu.loc[nunca_mask, "situacao"]         = "nunca_recuperada"
+            ja_venceu["association_name"] = ja_venceu["association_id"].map(_assocs_emp.set_index("id")["name"].to_dict() if not _assocs_emp.empty else {})
+            piv = ja_venceu.groupby(["association_id","association_name","situacao"]).agg(
+                qtd=("id","count"), valor=("amount","sum"),
+            ).reset_index()
+            wide = piv.pivot_table(index=["association_id","association_name"], columns="situacao", values=["qtd","valor"], fill_value=0)
+            wide.columns = [f"{a}_{b}" for a, b in wide.columns]
+            wide = wide.reset_index()
+            for col in ["qtd_recuperada","qtd_no_prazo","qtd_parcelamento","qtd_nunca_recuperada",
+                        "valor_recuperada","valor_no_prazo","valor_parcelamento","valor_nunca_recuperada"]:
+                if col not in wide.columns:
+                    wide[col] = 0
+            wide["taxa_recuperacao_pct"] = (
+                wide["valor_recuperada"] /
+                (wide["valor_recuperada"] + wide["valor_nunca_recuperada"] + wide["valor_parcelamento"]).replace(0, pd.NA)
+                * 100
+            ).round(1)
+            wide = wide.rename(columns={"association_id": "id_associacao", "association_name": "nome_associacao"})
+            up(wide, "recuperacao_inadimplencia")
 
     # 5. Inadimplencia — apenas members ativos (alinhado com logica do sistema)
     if not res.empty and "overdue_months" in res.columns:
