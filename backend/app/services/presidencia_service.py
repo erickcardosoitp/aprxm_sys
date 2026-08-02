@@ -195,22 +195,31 @@ class PresidenciaService:
             FROM relatorio_inadimplencia GROUP BY nome_associacao
         """))).fetchall()
 
+        # Associacoes orfas/inativas (fora do mapeamento ativo) aparecem com
+        # nome_associacao NULL nos gold -- nao sao Congonha/Vaz Lobo, entram
+        # no total geral mas nao viram um 3o grupo fantasma no breakdown.
         out: dict[str, dict] = {}
         for nome, receita_v in receita:
+            if not nome: continue
             out.setdefault(nome, {})["receita"] = float(receita_v or 0)
         for nome, pagas, total, vencidas, valor_vencido in cob:
+            if not nome: continue
             d = out.setdefault(nome, {})
             d["taxa_cobranca"] = round(100.0 * pagas / total, 1) if total else None
             d["mensalidades_pagas"] = int(pagas)
             d["mensalidades_vencidas"] = int(vencidas)
             d["taxa_retencao"] = round(100.0 * pagas / (pagas + vencidas), 1) if (pagas + vencidas) else None
         for nome, valor_devido in inadimplencia_agora:
+            if not nome: continue
             out.setdefault(nome, {})["total_inadimplente"] = float(valor_devido or 0)
         for nome, recebidos in pacotes:
+            if not nome: continue
             out.setdefault(nome, {})["pacotes_recebidos"] = int(recebidos or 0)
         for nome, fechadas in os_rows:
+            if not nome: continue
             out.setdefault(nome, {})["os_fechadas"] = int(fechadas or 0)
         for nome, total_ativos in moradores:
+            if not nome: continue
             out.setdefault(nome, {})["moradores_total"] = int(total_ativos or 0)
         return out
 
