@@ -303,29 +303,76 @@ class PresidenciaService:
     # semana em andamento) -- pega as 2 semanas mais recentes de cada tabela
     # e compara, em vez de recalcular janela por now()-7d.
 
-    async def _wow_semanal(self, table: str, agg_sql: str) -> dict:
+    async def _wow_semanal(self, table: str, agg_sql: str, n_semanas: int = 8) -> dict:
+        """Serie das ultimas N semanas (pro mini-grafico de tendencia) + WoW
+        calculado sobre as 2 mais recentes."""
         rows = (await self.dw.execute(text(f"""
             SELECT semana, {agg_sql} AS valor
             FROM {table}
             GROUP BY semana
             ORDER BY semana DESC
-            LIMIT 2
-        """))).fetchall()
-        cur = float(rows[0][1]) if len(rows) > 0 and rows[0][1] is not None else 0.0
-        prev = float(rows[1][1]) if len(rows) > 1 and rows[1][1] is not None else 0.0
+            LIMIT :n
+        """), {"n": n_semanas})).fetchall()
+        rows = list(reversed(rows))  # cronologico (mais antiga primeiro) pro grafico
+        serie = [
+            {"label": r[0].strftime("%d/%m"), "value": float(r[1]) if r[1] is not None else 0.0}
+            for r in rows
+        ]
+        cur = serie[-1]["value"] if len(serie) >= 1 else 0.0
+        prev = serie[-2]["value"] if len(serie) >= 2 else 0.0
         delta_pct = round(100.0 * (cur - prev) / prev, 1) if prev else None
-        return {"atual": cur, "anterior": prev, "wow_pct": delta_pct,
-                "mom_pct": None, "yoy_pct": None, "tot_pct": None}
+        return {
+            "atual": cur, "anterior": prev, "wow_pct": delta_pct,
+            "mom_pct": None, "yoy_pct": None, "tot_pct": None,
+            "serie": serie,
+        }
+
+    async def _mom_mensal(self, table: str, agg_sql: str, n_meses: int = 6) -> dict:
+        """Mesmo formato de _wow_semanal, mas por mes -- pra metricas que sao
+        mensais por natureza (pagamento se espalha no mes todo, olhar semana
+        isolada da' fatia pequena e sem sentido). Decisao do usuario 2026-08-01."""
+        rows = (await self.dw.execute(text(f"""
+            SELECT mes, {agg_sql} AS valor
+            FROM {table}
+            GROUP BY mes
+            ORDER BY mes DESC
+            LIMIT :n
+        """), {"n": n_meses})).fetchall()
+        rows = list(reversed(rows))
+        serie = [
+            {"label": r[0].strftime("%m/%Y"), "value": float(r[1]) if r[1] is not None else 0.0}
+            for r in rows
+        ]
+        cur = serie[-1]["value"] if len(serie) >= 1 else 0.0
+        prev = serie[-2]["value"] if len(serie) >= 2 else 0.0
+        delta_pct = round(100.0 * (cur - prev) / prev, 1) if prev else None
+        return {
+            "atual": cur, "anterior": prev, "wow_pct": delta_pct,
+            "mom_pct": delta_pct, "yoy_pct": None, "tot_pct": None,
+            "serie": serie,
+        }
 
     async def get_resumo(self) -> dict:
         receita = await self._wow_semanal("receita_semanal", "SUM(saldo_liquido)")
         encomendas = await self._wow_semanal("pacotes_semanal", "SUM(recebidos)")
         crescimento = await self._wow_semanal("crescimento_associados_semanal", "SUM(novos)")
         tempo_entrega = await self._wow_semanal("pacotes_semanal", "AVG(media_dias_permanencia)")
+        # taxa de cobranca/retencao sao mensais por natureza -- MoM, nao WoW
+        # (semana isolada mede so' uma fatia do mes, numero pequeno e ruidoso)
+        taxa_cobranca = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(total), 0) * 100")
+        inadimplencia = await self._mom_mensal("taxa_cobranca", "SUM(valor_vencido)")
+        retencao = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(pagas) + SUM(vencidas), 0) * 100")
+        tarefas_no_prazo = await self._wow_semanal("tarefas_semanal", "AVG(pct_no_prazo)")
+        score_operadores = await self._wow_semanal("score_operador_semanal", "AVG(score)")
 
         return {
             "receita_liquida": receita,
             "encomendas": encomendas,
             "crescimento": crescimento,
             "tempo_entrega": tempo_entrega,
+            "taxa_cobranca": taxa_cobranca,
+            "inadimplencia": inadimplencia,
+            "retencao": retencao,
+            "tarefas_no_prazo": tarefas_no_prazo,
+            "score_operadores": score_operadores,
         }

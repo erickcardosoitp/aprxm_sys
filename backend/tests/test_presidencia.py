@@ -3,6 +3,7 @@ Smoke tests do painel da presidencia — gate de acesso e helper de frescor.
 Run with: pytest backend/tests/test_presidencia.py -v
 """
 import asyncio
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -144,15 +145,21 @@ class TestGetResumo:
 
         def make_weeks(cur, prev):
             r = MagicMock()
-            r.fetchall.return_value = [("2026-07-27", cur), ("2026-07-20", prev)]
+            # _wow_semanal reverte pra ordem cronologica (mais antiga primeiro)
+            r.fetchall.return_value = [(date(2026, 7, 27), cur), (date(2026, 7, 20), prev)]
             return r
 
-        # 1 chamada por KPI (_wow_semanal busca as 2 semanas mais recentes de uma vez)
+        # 1 chamada por KPI (_wow_semanal busca as N semanas mais recentes de uma vez)
         dw.execute = AsyncMock(side_effect=[
             make_weeks(1000.0, 1400.0),  # receita_liquida
             make_weeks(365, 386),         # encomendas
             make_weeks(9, 18),            # crescimento
             make_weeks(1.1, 2.1),         # tempo_entrega
+            make_weeks(55.0, 50.0),       # taxa_cobranca
+            make_weeks(45.0, 50.0),       # inadimplencia
+            make_weeks(60.0, 58.0),       # retencao
+            make_weeks(80.0, 75.0),       # tarefas_no_prazo
+            make_weeks(70.0, 65.0),       # score_operadores
         ])
         svc = PresidenciaService(session, dw)
 
@@ -161,4 +168,7 @@ class TestGetResumo:
             assert data["receita_liquida"]["atual"] == 1000.0
             assert data["receita_liquida"]["wow_pct"] == round(100 * (1000 - 1400) / 1400, 1)
             assert data["encomendas"]["anterior"] == 386
+            assert len(data["receita_liquida"]["serie"]) == 2
+            assert data["receita_liquida"]["serie"][0]["label"] == "20/07"
+            assert data["score_operadores"]["atual"] == 70.0
         asyncio.get_event_loop().run_until_complete(run())

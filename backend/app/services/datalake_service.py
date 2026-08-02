@@ -1618,7 +1618,7 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             m_r["week"] = _week(m_r[paid_col_r])
             m_r = m_r[m_r["week"] < _closed_week_cutoff]
             wk_ret = m_r.groupby(["week", "association_id"])["resident_id"].nunique().reset_index(name="membros_pagantes")
-            tot_mem = res[res["status"] == "active"].groupby("association_id").size().reset_index(name="total_members")
+            tot_mem = res[(res["status"] == "active") & (res["type"] == "member")].groupby("association_id").size().reset_index(name="total_members")
             wk_ret = wk_ret.merge(tot_mem, on="association_id", how="left")
             wk_ret["taxa_retencao"] = (wk_ret["membros_pagantes"] / wk_ret["total_members"].replace(0, pd.NA) * 100).round(1)
             wk_ret["association_name"] = wk_ret["association_id"].map(assoc_map)
