@@ -430,3 +430,329 @@ class PresidenciaService:
             "tarefas_no_prazo": tarefas_no_prazo,
             "score_operadores": score_operadores,
         }
+
+    # ── helpers comuns as telas de detalhe (Financeiro/Moradores/... ) ──────
+
+    def _janela(self, periodo: str, ate: str | None) -> tuple[list[str], dict]:
+        meses_atras = {"mes": 1, "trimestre": 3, "semestre": 6, "ano": 12}.get(periodo, 1)
+        meses = _ultimos_meses_yyyymm(meses_atras, ate)
+        params = {"meses": meses}
+        if self.empresa_id:
+            params["empresa_id"] = self.empresa_id
+        return meses, params
+
+    def _params_unidade(self, params: dict, unidade: str | None) -> tuple[dict, str]:
+        p = dict(params)
+        unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
+        if unidade:
+            p["unidade"] = unidade
+        return p, unidade_filter
+
+    # ── /financeiro ──────────────────────────────────────────────────────
+
+    async def get_financeiro(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
+        meses, base_params = self._janela(periodo, ate)
+        params, unidade_filter = self._params_unidade(base_params, unidade)
+        ef = self._empresa_filter
+
+        margem = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(receita_total),0), COALESCE(SUM(despesa_total),0), COALESCE(SUM(saldo_liquido),0)
+            FROM margem_mensal WHERE mes = ANY(:meses) {unidade_filter} {ef}
+        """), params)).fetchone()
+        receita, despesa, saldo = float(margem[0] or 0), float(margem[1] or 0), float(margem[2] or 0)
+
+        runway = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(saldo_atual),0), MIN(runway_semanas)
+            FROM runway_financeiro WHERE 1=1 {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        inadimplente = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(valor_devido),0), COUNT(*) FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        recuperacao = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(valor_recuperada),0), COALESCE(SUM(valor_nunca_recuperada),0),
+                   COALESCE(SUM(valor_parcelamento),0), AVG(taxa_recuperacao_pct)
+            FROM recuperacao_inadimplencia WHERE 1=1 {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        aging_rows = (await self.dw.execute(text(f"""
+            SELECT faixa, COALESCE(SUM(qtd),0), COALESCE(SUM(valor),0)
+            FROM aging_inadimplencia WHERE 1=1 {unidade_filter} {ef}
+            GROUP BY faixa ORDER BY faixa
+        """), params)).fetchall()
+
+        sangria_rows = (await self.dw.execute(text(f"""
+            SELECT motivo, COALESCE(SUM(ocorrencias),0), COALESCE(SUM(valor),0)
+            FROM motivos_sangria WHERE to_char(mes,'YYYY-MM') = ANY(:meses) {unidade_filter} {ef}
+            GROUP BY motivo ORDER BY 3 DESC LIMIT 8
+        """), params)).fetchall()
+
+        quebras = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(com_quebra),0), COALESCE(SUM(total_quebra),0), COALESCE(SUM(com_diferenca),0)
+            FROM quebras_caixa WHERE 1=1 {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        return {
+            "receita_total": receita, "despesa_total": despesa, "saldo_liquido": saldo,
+            "margem_pct": round(100.0 * saldo / receita, 1) if receita else None,
+            "saldo_caixa": float(runway[0] or 0), "runway_semanas": float(runway[1]) if runway and runway[1] is not None else None,
+            "total_inadimplente": float(inadimplente[0] or 0), "qtd_inadimplentes": int(inadimplente[1] or 0),
+            "recuperacao": {
+                "valor_recuperada": float(recuperacao[0] or 0), "valor_nunca_recuperada": float(recuperacao[1] or 0),
+                "valor_parcelamento": float(recuperacao[2] or 0),
+                "taxa_recuperacao_pct": round(recuperacao[3], 1) if recuperacao and recuperacao[3] is not None else None,
+            },
+            "aging": [{"faixa": r[0], "qtd": int(r[1] or 0), "valor": float(r[2] or 0)} for r in aging_rows],
+            "motivos_sangria": [{"motivo": r[0], "ocorrencias": int(r[1] or 0), "valor": float(r[2] or 0)} for r in sangria_rows],
+            "quebras_caixa": {"com_quebra": int(quebras[0] or 0), "valor_total": float(quebras[1] or 0), "com_diferenca": int(quebras[2] or 0)},
+        }
+
+    # ── /moradores ───────────────────────────────────────────────────────
+
+    async def get_moradores(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
+        meses, base_params = self._janela(periodo, ate)
+        params, unidade_filter = self._params_unidade(base_params, unidade)
+        ef = self._empresa_filter
+
+        panorama = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(total_ativos),0), COALESCE(SUM(associados),0), COALESCE(SUM(dependentes),0),
+                   COALESCE(SUM(visitantes),0), COALESCE(SUM(sem_internet),0), COALESCE(SUM(novos_mes),0)
+            FROM panorama_moradores WHERE 1=1 {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        cresc_rows = (await self.dw.execute(text(f"""
+            SELECT mes, SUM(associados) FROM moradores_mensal WHERE mes = ANY(:meses) {unidade_filter} {ef}
+            GROUP BY mes ORDER BY mes
+        """), params)).fetchall()
+
+        # meses_sem_pagar so' e' preenchido se ha' pagamento anterior (cutoff de
+        # 6 meses sem pagar) -- lancamento foi em 03-2026, ainda nao existe
+        # ninguem "parou de pagar ha 6 meses". Hoje a lista e' 100% quem nunca
+        # pagou nenhuma mensalidade (ultimo_pagamento NULL), nao "churn" classico.
+        churn_rows = (await self.dw.execute(text(f"""
+            SELECT nome_completo, nome_associacao, meses_sem_pagar, ultimo_pagamento
+            FROM churn_associados WHERE 1=1 {unidade_filter} {ef}
+            ORDER BY ultimo_pagamento ASC NULLS FIRST, nome_completo LIMIT 15
+        """), params)).fetchall()
+
+        censo_rows = (await self.dw.execute(text(f"""
+            SELECT rua, SUM(total), SUM(associados), SUM(visitantes), SUM(com_problemas), SUM(sem_internet)
+            FROM censo_por_rua WHERE 1=1 {unidade_filter} {ef}
+            GROUP BY rua ORDER BY SUM(total) DESC LIMIT 15
+        """), params)).fetchall()
+
+        return {
+            "total": int(panorama[0] or 0), "associados": int(panorama[1] or 0),
+            "dependentes": int(panorama[2] or 0), "visitantes": int(panorama[3] or 0),
+            "sem_internet": int(panorama[4] or 0), "novos_mes": int(panorama[5] or 0),
+            "crescimento_serie": [
+                {"label": self._mes_label(r[0]), "value": int(r[1] or 0)} for r in cresc_rows
+            ],
+            "churn": [
+                {"nome": r[0], "associacao": r[1], "meses_sem_pagar": r[2], "ultimo_pagamento": r[3].isoformat() if r[3] else None}
+                for r in churn_rows
+            ],
+            "por_rua": [
+                {"rua": r[0], "total": int(r[1] or 0), "associados": int(r[2] or 0), "visitantes": int(r[3] or 0),
+                 "com_problemas": int(r[4] or 0), "sem_internet": int(r[5] or 0)}
+                for r in censo_rows
+            ],
+        }
+
+    # ── /mensalidades ────────────────────────────────────────────────────
+
+    async def get_mensalidades(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
+        meses, base_params = self._janela(periodo, ate)
+        params, unidade_filter = self._params_unidade(base_params, unidade)
+        ef = self._empresa_filter
+
+        cob = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(pagas),0), COALESCE(SUM(total),0), COALESCE(SUM(vencidas),0),
+                   COALESCE(SUM(acordos),0), COALESCE(SUM(valor_vencido),0)
+            FROM taxa_cobranca WHERE to_char(mes,'YYYY-MM') = ANY(:meses) {unidade_filter} {ef}
+        """), params)).fetchone()
+        pagas, total, vencidas, acordos, valor_vencido = (cob[0] or 0, cob[1] or 0, cob[2] or 0, cob[3] or 0, cob[4] or 0)
+
+        recuperacao = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(valor_recuperada),0), COALESCE(SUM(valor_nunca_recuperada),0),
+                   COALESCE(SUM(valor_parcelamento),0), AVG(taxa_recuperacao_pct)
+            FROM recuperacao_inadimplencia WHERE 1=1 {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        devedores = (await self.dw.execute(text(f"""
+            SELECT nome_completo, nome_associacao, tipo, rua, meses_atraso, valor_devido
+            FROM relatorio_inadimplencia WHERE 1=1 {unidade_filter} {ef}
+            ORDER BY valor_devido DESC LIMIT 15
+        """), params)).fetchall()
+
+        por_rua = (await self.dw.execute(text(f"""
+            SELECT rua, SUM(total), SUM(pagas), SUM(vencidas), SUM(valor_total)
+            FROM cobranca_por_rua WHERE to_char(mes,'YYYY-MM') = ANY(:meses) {unidade_filter} {ef}
+            GROUP BY rua ORDER BY SUM(valor_total) DESC LIMIT 15
+        """), params)).fetchall()
+
+        return {
+            "pagas": int(pagas), "total": int(total), "vencidas": int(vencidas), "acordos": int(acordos),
+            "valor_vencido": float(valor_vencido),
+            "taxa_cobranca_pct": round(100.0 * pagas / total, 1) if total else None,
+            "recuperacao": {
+                "valor_recuperada": float(recuperacao[0] or 0), "valor_nunca_recuperada": float(recuperacao[1] or 0),
+                "valor_parcelamento": float(recuperacao[2] or 0),
+                "taxa_recuperacao_pct": round(recuperacao[3], 1) if recuperacao and recuperacao[3] is not None else None,
+            },
+            "devedores": [
+                {"nome": r[0], "associacao": r[1], "tipo": r[2], "rua": r[3], "meses_atraso": r[4], "valor_devido": float(r[5] or 0)}
+                for r in devedores
+            ],
+            "por_rua": [
+                {"rua": r[0], "total": int(r[1] or 0), "pagas": int(r[2] or 0), "vencidas": int(r[3] or 0), "valor_total": float(r[4] or 0)}
+                for r in por_rua
+            ],
+        }
+
+    # ── /pacotes ─────────────────────────────────────────────────────────
+
+    async def get_pacotes(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
+        meses, base_params = self._janela(periodo, ate)
+        params, unidade_filter = self._params_unidade(base_params, unidade)
+        ef = self._empresa_filter
+
+        enc = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(recebidos),0), COALESCE(SUM(entregues),0), COALESCE(SUM(devolvidos),0),
+                   COALESCE(SUM(pendentes),0), AVG(media_dias_permanencia)
+            FROM encomendas_mensal WHERE mes = ANY(:meses) {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        paradas = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(paradas_3d),0), COALESCE(SUM(paradas_7d),0)
+            FROM encomendas_paradas WHERE 1=1 {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        ranking = (await self.dw.execute(text(f"""
+            SELECT nome_morador, tipo_morador, rua, nome_associacao, total_encomendas, media_horas_espera, entregues, pendentes_agora
+            FROM ranking_encomendas_morador WHERE 1=1 {unidade_filter} {ef}
+            ORDER BY total_encomendas DESC LIMIT 15
+        """), params)).fetchall()
+
+        por_rua = (await self.dw.execute(text(f"""
+            SELECT rua, SUM(total), SUM(moradores_distintos), AVG(media_espera)
+            FROM encomendas_por_rua WHERE 1=1 {unidade_filter} {ef}
+            GROUP BY rua ORDER BY SUM(total) DESC LIMIT 15
+        """), params)).fetchall()
+
+        return {
+            "recebidos": int(enc[0] or 0), "entregues": int(enc[1] or 0), "devolvidos": int(enc[2] or 0),
+            "pendentes": int(enc[3] or 0), "tempo_medio_dias": round(enc[4], 1) if enc[4] is not None else None,
+            "paradas_3d": int(paradas[0] or 0), "paradas_7d": int(paradas[1] or 0),
+            "ranking_moradores": [
+                {"nome": r[0], "tipo": r[1], "rua": r[2], "associacao": r[3], "total": int(r[4] or 0),
+                 "media_horas_espera": round(r[5], 1) if r[5] is not None else None, "entregues": int(r[6] or 0), "pendentes_agora": int(r[7] or 0)}
+                for r in (ranking or [])
+            ],
+            "por_rua": [
+                {"rua": r[0], "total": int(r[1] or 0), "moradores_distintos": int(r[2] or 0),
+                 "media_espera_horas": round(r[3], 1) if r[3] is not None else None}
+                for r in por_rua
+            ],
+        }
+
+    # ── /os (ordens de servico) ──────────────────────────────────────────
+
+    async def get_os(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
+        meses, base_params = self._janela(periodo, ate)
+        params, unidade_filter = self._params_unidade(base_params, unidade)
+        ef = self._empresa_filter
+
+        os_row = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(abertas),0), COALESCE(SUM(fechadas),0), COALESCE(SUM(pendentes),0)
+            FROM ordens_servico_mensal WHERE mes = ANY(:meses) {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        serie_rows = (await self.dw.execute(text(f"""
+            SELECT mes, SUM(abertas), SUM(fechadas) FROM ordens_servico_mensal
+            WHERE mes = ANY(:meses) {unidade_filter} {ef} GROUP BY mes ORDER BY mes
+        """), params)).fetchall()
+
+        sla_rows = (await self.dw.execute(text(f"""
+            SELECT tipo_morador, SUM(entregues), AVG(media_horas_espera)
+            FROM sla_por_tipo WHERE 1=1 {unidade_filter} {ef}
+            GROUP BY tipo_morador
+        """), params)).fetchall()
+
+        return {
+            "abertas": int(os_row[0] or 0), "fechadas": int(os_row[1] or 0), "pendentes": int(os_row[2] or 0),
+            "serie": [
+                {"label": self._mes_label(r[0]), "abertas": int(r[1] or 0), "fechadas": int(r[2] or 0)} for r in serie_rows
+            ],
+            "sla_por_tipo": [
+                {"tipo": r[0], "entregues": int(r[1] or 0), "media_horas_espera": round(r[2], 1) if r[2] is not None else None}
+                for r in sla_rows
+            ],
+        }
+
+    # ── /operadores ──────────────────────────────────────────────────────
+
+    async def get_operadores(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
+        meses, base_params = self._janela(periodo, ate)
+        params, unidade_filter = self._params_unidade(base_params, unidade)
+        ef = self._empresa_filter
+
+        ranking = (await self.dw.execute(text(f"""
+            SELECT nome_operador, AVG(score), SUM(estornos), SUM(tarefas_atraso), SUM(entregas)
+            FROM score_operador_mensal WHERE mes = ANY(:meses) {unidade_filter} {ef}
+            GROUP BY nome_operador ORDER BY AVG(score) DESC
+        """), params)).fetchall()
+
+        desempenho = (await self.dw.execute(text(f"""
+            SELECT nome_completo, SUM(sessoes), SUM(encomendas_recebidas), SUM(encomendas_entregues)
+            FROM desempenho_operador WHERE 1=1 {unidade_filter} {ef}
+            GROUP BY nome_completo ORDER BY SUM(sessoes) DESC LIMIT 15
+        """), params)).fetchall()
+
+        feedback = (await self.dw.execute(text(f"""
+            SELECT nome_operador, SUM(feedback_qtd) FROM feedback_operador WHERE 1=1 {unidade_filter} {ef}
+            GROUP BY nome_operador ORDER BY SUM(feedback_qtd) DESC
+        """), params)).fetchall()
+
+        return {
+            "score_medio": round(sum(r[1] or 0 for r in ranking) / len(ranking), 1) if ranking else None,
+            "ranking": [
+                {"nome": r[0], "score": round(r[1], 1) if r[1] is not None else None, "estornos": int(r[2] or 0),
+                 "tarefas_atraso": int(r[3] or 0), "entregas": int(r[4] or 0)}
+                for r in ranking
+            ],
+            "desempenho": [
+                {"nome": r[0], "sessoes": int(r[1] or 0), "encomendas_recebidas": int(r[2] or 0), "encomendas_entregues": int(r[3] or 0)}
+                for r in desempenho
+            ],
+            "feedback": [{"nome": r[0], "qtd": int(r[1] or 0)} for r in feedback],
+        }
+
+    # ── /senso ───────────────────────────────────────────────────────────
+
+    async def get_senso(self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None) -> dict:
+        meses, base_params = self._janela(periodo, ate)
+        params, unidade_filter = self._params_unidade(base_params, unidade)
+        ef = self._empresa_filter
+
+        rows = (await self.dw.execute(text(f"""
+            SELECT rua, SUM(total), SUM(associados), SUM(visitantes), SUM(com_pragas), SUM(sem_internet), SUM(com_problemas)
+            FROM censo_por_rua WHERE 1=1 {unidade_filter} {ef}
+            GROUP BY rua ORDER BY SUM(total) DESC
+        """), params)).fetchall()
+
+        totais = (await self.dw.execute(text(f"""
+            SELECT COALESCE(SUM(total),0), COALESCE(SUM(com_pragas),0), COALESCE(SUM(sem_internet),0), COALESCE(SUM(com_problemas),0)
+            FROM censo_por_rua WHERE 1=1 {unidade_filter} {ef}
+        """), params)).fetchone()
+
+        return {
+            "total_moradores": int(totais[0] or 0), "com_pragas": int(totais[1] or 0),
+            "sem_internet": int(totais[2] or 0), "com_problemas": int(totais[3] or 0),
+            "por_rua": [
+                {"rua": r[0], "total": int(r[1] or 0), "associados": int(r[2] or 0), "visitantes": int(r[3] or 0),
+                 "com_pragas": int(r[4] or 0), "sem_internet": int(r[5] or 0), "com_problemas": int(r[6] or 0)}
+                for r in rows
+            ],
+        }
