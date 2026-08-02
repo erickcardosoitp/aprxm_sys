@@ -122,6 +122,13 @@ class Transaction(SQLModel, table=True):
 
     income_subtype: IncomeSubtype | None = Field(default=None, sa_column=Column(SAEnum(IncomeSubtype, name='income_subtype', create_type=False), nullable=True))
 
+    # origem: como o registro nasceu -- produto (fluxo estruturado: mensalidade
+    # paga, taxa de entrega, etc, sempre com vinculo rastreavel), manual
+    # (lancamento avulso do operador direto na tela financeira, sem vinculo
+    # estruturado), externo (migracao/importacao de outro sistema). Fase 1 da
+    # unificacao transactions/mensalidades (2026-08-01).
+    origem: str = Field(default="manual", max_length=20)
+
     # payer identification (structured — replaces free-text in description)
     payer_name: str | None = Field(default=None)
     payer_entity_id: UUID | None = Field(default=None, foreign_key="residents.id")

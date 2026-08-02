@@ -28,7 +28,7 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 async def _create_base_schema(session) -> None:
     """Cria o schema do zero num banco 100% vazio (sem o dump de referencia).
@@ -1529,6 +1529,41 @@ async def _apply_versioned_migrations(session) -> None:
     except Exception as exc:
         await session.rollback()
         print(f"[MIGRATION v22] falhou (nao-fatal): {exc}")
+
+    # v23: campo `origem` em transactions -- Fase 1 da unificacao
+    # transactions/mensalidades (2026-08-01). Aditivo, nao remove/renomeia
+    # nada (income_subtype continua existindo em paralelo por ora).
+    # produto = fluxo estruturado com vinculo rastreavel (mensalidade
+    # paga com transaction_id de volta, taxa de entrega ligada a um pacote,
+    # comprovante de residencia). manual = tudo o resto, inclusive
+    # lancamentos de mensalidade sem vinculo (a causa do gap achado em
+    # junho/2026: R$5.740 em transactions vs R$3.555 em mensalidades.valor_pago
+    # -- exatamente os R$2.185 que ficam visiveis agora como origem=manual).
+    try:
+        await session.execute(text(
+            "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS origem VARCHAR(20) NOT NULL DEFAULT 'manual'"
+        ))
+        await session.execute(text("""
+            UPDATE transactions SET origem = 'produto'
+            WHERE origem = 'manual' AND (
+                id IN (
+                    SELECT transaction_id FROM mensalidades WHERE transaction_id IS NOT NULL
+                    UNION
+                    SELECT transaction_id_2 FROM mensalidades WHERE transaction_id_2 IS NOT NULL
+                )
+                OR (income_subtype = 'delivery_fee' AND package_id IS NOT NULL)
+                OR income_subtype = 'proof_of_residence'
+            )
+        """))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (23, 'v23: transactions.origem (produto/manual/externo) + backfill historico') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v23] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:

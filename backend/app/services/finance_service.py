@@ -252,6 +252,7 @@ class FinanceService:
         payer_entity_id: UUID | None = None,
         mensalidade_months: list[str] | None = None,
         signature_url: str | None = None,
+        origem: str | None = None,
     ) -> Transaction:
         from datetime import datetime as _dt
         is_expense = tx_type == TransactionType.expense
@@ -288,6 +289,18 @@ class FinanceService:
                     "Mensalidade já paga para o(s) mês(es) selecionado(s). Nenhum lançamento foi registrado."
                 )
 
+        if origem is None:
+            # Fluxo estruturado com vinculo rastreavel = produto. Sem chamador
+            # explicito (ex: lancamento avulso via tela financeira) = manual,
+            # mesmo que o subtype "pareca" produto -- e' exatamente esse caso
+            # (mensalidade tageada sem resident_id/vinculo) que causava o gap
+            # entre transactions e mensalidades.valor_pago.
+            origem = "produto" if (
+                is_mensalidade_income
+                or (income_subtype == IncomeSubtype.delivery_fee and package_id is not None)
+                or income_subtype == IncomeSubtype.proof_of_residence
+            ) else "manual"
+
         tx = Transaction(
             association_id=association_id,
             cash_session_id=cash_session_id,
@@ -296,6 +309,7 @@ class FinanceService:
             resident_id=resident_id,
             type=tx_type,
             income_subtype=income_subtype,
+            origem=origem,
             amount=amount,
             description=description,
             reference_number=reference_number,
