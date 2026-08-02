@@ -145,11 +145,11 @@ class TestGetResumo:
 
         def make_weeks(cur, prev):
             r = MagicMock()
-            # _wow_semanal reverte pra ordem cronologica (mais antiga primeiro)
-            r.fetchall.return_value = [(date(2026, 7, 27), cur), (date(2026, 7, 20), prev)]
+            # _mom_mensal ordena ascendente por mes (mais antiga primeiro)
+            r.fetchall.return_value = [(date(2026, 6, 27), prev), (date(2026, 7, 27), cur)]
             return r
 
-        # 1 chamada por KPI (_wow_semanal busca as N semanas mais recentes de uma vez)
+        # 1 chamada por KPI (_mom_mensal busca os N meses mais recentes de uma vez)
         dw.execute = AsyncMock(side_effect=[
             make_weeks(1000.0, 1400.0),  # receita_liquida
             make_weeks(365, 386),         # encomendas
@@ -169,6 +169,6 @@ class TestGetResumo:
             assert data["receita_liquida"]["mom_pct"] == round(100 * (1000 - 1400) / 1400, 1)
             assert data["encomendas"]["anterior"] == 386
             assert len(data["receita_liquida"]["serie"]) == 2
-            assert data["receita_liquida"]["serie"][0]["label"] == "07/2026"
+            assert data["receita_liquida"]["serie"][-1]["label"] == "07/2026"
             assert data["score_operadores"]["atual"] == 70.0
         asyncio.get_event_loop().run_until_complete(run())

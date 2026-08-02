@@ -121,11 +121,13 @@ export interface ResumoData {
 export async function getResumo(
   nomeAssociacao?: string | null,
   periodo?: string,
+  ate?: string,
 ): Promise<FreshnessInfo & { data: ResumoData }> {
   const { data } = await api.get<FreshnessInfo & { data: ResumoData }>('/presidencia/resumo', {
     params: {
       ...(nomeAssociacao ? { unidade: nomeAssociacao } : {}),
       ...(periodo ? { periodo } : {}),
+      ...(ate ? { ate } : {}),
     },
   })
   return data

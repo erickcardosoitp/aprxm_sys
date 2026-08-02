@@ -22,7 +22,7 @@ interface KpiDef {
 }
 
 const KPIS: KpiDef[] = [
-  { key: 'receita_liquida', label: 'Faturamento', icon: <Wallet size={16} className="text-marque-500" />, formatter: formatBRL, positiveIsGood: true },
+  { key: 'receita_liquida', label: 'Resultado líquido', icon: <Wallet size={16} className="text-marque-500" />, formatter: formatBRL, positiveIsGood: true },
   { key: 'encomendas', label: 'Encomendas recebidas', icon: <Package size={16} className="text-marque-500" />, formatter: (v) => String(Math.round(v)), positiveIsGood: true },
   { key: 'crescimento', label: 'Crescimento de associados', icon: <TrendUp size={16} className="text-marque-500" />, formatter: (v) => String(Math.round(v)), positiveIsGood: true },
   { key: 'tempo_entrega', label: 'Tempo médio de entrega (dias)', icon: <Clock size={16} className="text-marque-500" />, formatter: (v) => v.toFixed(1), positiveIsGood: false },
@@ -70,12 +70,12 @@ export function ResumoPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const { unidade } = useUnidade()
-  const { periodo } = usePeriodo()
+  const { periodo, ate } = usePeriodo()
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    getResumo(nomeAssociacaoFor(unidade), periodo)
+    getResumo(nomeAssociacaoFor(unidade), periodo, ate)
       .then((res) => {
         if (cancelled) return
         setData(res.data)
@@ -89,7 +89,7 @@ export function ResumoPage() {
       })
       .finally(() => !cancelled && setLoading(false))
     return () => { cancelled = true }
-  }, [unidade, periodo])
+  }, [unidade, periodo, ate])
 
   if (loading) return <p className="text-sm text-ink-muted">Carregando...</p>
   if (error) return <p className="rounded bg-red-100 px-3 py-2 text-sm text-red-700">{error}</p>

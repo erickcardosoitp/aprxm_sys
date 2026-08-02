@@ -51,9 +51,10 @@ async def get_inicio(
 async def get_resumo(
     unidade: str | None = Query(default=None, description="Nome da associacao (Congonha/Vaz Lobo) ou omitido para Todos"),
     periodo: str = Query(default="mes", pattern="^(mes|trimestre|semestre|ano)$", description="Controla quantos meses aparecem no mini-grafico"),
+    ate: str | None = Query(default=None, pattern="^[0-9]{4}-[0-9]{2}$", description="Mes-ancora YYYY-MM, omitido = mes atual"),
     current: CurrentUser = Depends(require_presidencia_access),
     svc: PresidenciaService = Depends(_get_service),
 ) -> dict:
     freshness = await svc.freshness()
-    data = await svc.get_resumo(unidade, periodo)
+    data = await svc.get_resumo(unidade, periodo, ate)
     return {**freshness, "data": data}

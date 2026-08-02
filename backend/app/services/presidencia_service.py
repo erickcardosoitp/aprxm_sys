@@ -340,23 +340,27 @@ class PresidenciaService:
 
     async def _mom_mensal(
         self, table: str, agg_sql: str, unidade: str | None = None, n_meses: int = 6,
+        ate: str | None = None,
     ) -> dict:
         """Todo indicador do Resumo e' mensal por natureza (pagamento/tarefa/
         crescimento se espalha no mes todo, olhar semana isolada da' fatia
         pequena e sem sentido) -- comparacao e' sempre mes atual vs mes
         anterior, `n_meses` so' controla quantos pontos aparecem no
-        mini-grafico de tendencia. Decisao do usuario 2026-08-01."""
+        mini-grafico de tendencia. Decisao do usuario 2026-08-01.
+        `ate` (YYYY-MM) ancora a janela -- sem isso a navegacao de periodo no
+        header (goPrev/goNext) nao tinha efeito nenhum aqui."""
+        meses = _ultimos_meses_yyyymm(n_meses, ate)
+        # taxa_cobranca.mes e' TIMESTAMP, as demais gold tables sao TEXT 'YYYY-MM'
+        mes_expr = "to_char(mes, 'YYYY-MM')" if table == "taxa_cobranca" else "mes"
         unidade_filter = "AND nome_associacao = :unidade" if unidade else ""
-        params = {"n": n_meses, "unidade": unidade} if unidade else {"n": n_meses}
+        params = {"meses": meses, "unidade": unidade} if unidade else {"meses": meses}
         rows = (await self.dw.execute(text(f"""
-            SELECT mes, {agg_sql} AS valor
+            SELECT {mes_expr} AS mes_key, {agg_sql} AS valor
             FROM {table}
-            WHERE 1=1 {unidade_filter}
-            GROUP BY mes
-            ORDER BY mes DESC
-            LIMIT :n
+            WHERE {mes_expr} = ANY(:meses) {unidade_filter}
+            GROUP BY {mes_expr}
+            ORDER BY {mes_expr}
         """), params)).fetchall()
-        rows = list(reversed(rows))
         serie = [
             {"label": self._mes_label(r[0]), "value": float(r[1]) if r[1] is not None else 0.0}
             for r in rows
@@ -370,18 +374,20 @@ class PresidenciaService:
             "serie": serie,
         }
 
-    async def get_resumo(self, unidade: str | None = None, periodo: str = "mes") -> dict:
+    async def get_resumo(
+        self, unidade: str | None = None, periodo: str = "mes", ate: str | None = None,
+    ) -> dict:
         n_meses = {"mes": 6, "trimestre": 9, "semestre": 12, "ano": 24}.get(periodo, 6)
 
-        receita = await self._mom_mensal("margem_mensal", "SUM(saldo_liquido)", unidade, n_meses)
-        encomendas = await self._mom_mensal("encomendas_mensal", "SUM(recebidos)", unidade, n_meses)
-        crescimento = await self._mom_mensal("moradores_mensal", "SUM(associados) - LAG(SUM(associados)) OVER (ORDER BY mes)", unidade, n_meses)
-        tempo_entrega = await self._mom_mensal("encomendas_mensal", "AVG(media_dias_permanencia)", unidade, n_meses)
-        taxa_cobranca = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(total), 0) * 100", unidade, n_meses)
-        inadimplencia = await self._mom_mensal("taxa_cobranca", "SUM(vencidas)::float / NULLIF(SUM(total), 0) * 100", unidade, n_meses)
-        retencao = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(pagas) + SUM(vencidas), 0) * 100", unidade, n_meses)
-        tarefas_no_prazo = await self._mom_mensal("tarefas_mensal", "AVG(pct_no_prazo)", unidade, n_meses)
-        score_operadores = await self._mom_mensal("score_operador_mensal", "AVG(score)", unidade, n_meses)
+        receita = await self._mom_mensal("margem_mensal", "SUM(saldo_liquido)", unidade, n_meses, ate)
+        encomendas = await self._mom_mensal("encomendas_mensal", "SUM(recebidos)", unidade, n_meses, ate)
+        crescimento = await self._mom_mensal("moradores_mensal", "SUM(associados) - LAG(SUM(associados)) OVER (ORDER BY mes)", unidade, n_meses, ate)
+        tempo_entrega = await self._mom_mensal("encomendas_mensal", "AVG(media_dias_permanencia)", unidade, n_meses, ate)
+        taxa_cobranca = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(total), 0) * 100", unidade, n_meses, ate)
+        inadimplencia = await self._mom_mensal("taxa_cobranca", "SUM(vencidas)::float / NULLIF(SUM(total), 0) * 100", unidade, n_meses, ate)
+        retencao = await self._mom_mensal("taxa_cobranca", "SUM(pagas)::float / NULLIF(SUM(pagas) + SUM(vencidas), 0) * 100", unidade, n_meses, ate)
+        tarefas_no_prazo = await self._mom_mensal("tarefas_mensal", "AVG(pct_no_prazo)", unidade, n_meses, ate)
+        score_operadores = await self._mom_mensal("score_operador_mensal", "AVG(score)", unidade, n_meses, ate)
 
         return {
             "receita_liquida": receita,
