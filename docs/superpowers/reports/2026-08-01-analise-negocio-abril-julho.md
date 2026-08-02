@@ -110,19 +110,40 @@ Piora levemente vs a análise anterior (58% → 56,5%) porque a correção dos
 estornos/parcelamento **reduziu** a receita de alguns meses que estavam
 artificialmente infladas, não porque a operação piorou de fato.
 
+### Taxa de recuperação da inadimplência
+
+"Taxa de cobrança no fechamento" (47,4%) **subestima** a cobrança real: não
+dá tempo pro atraso virar pagamento. Olhando tudo que já venceu (pagou no
+prazo não conta, isso não é inadimplência):
+
+| Situação | Qtd | Valor | % |
+|---|---|---|---|
+| Recuperada (paga com atraso) | 469 | R$ 8.612,82 | 40,6% |
+| Em recuperação (parcelamento ativo) | 19 | R$ 419,98 | 2,0% |
+| Nunca recuperada (ainda vencida) | 624 | R$ 12.170,54 | 57,4% |
+
+**Taxa de recuperação da inadimplência: ~40,6%** — de cada R$100 que vira
+atraso, ~R$41 volta; o resto (R$57 de cada R$100) fica em aberto pra sempre.
+
+Isso muda a taxa de cobrança **efetiva** (pago no prazo + recuperado depois
++ parcelamento, sobre tudo que já teve chance de resolver): **56,7%**, não
+47,4%.
+
 ### Mensalidade necessária pra cobrir a folha sozinha
 
-Base: 499 associados ativos, taxa de cobrança média do período (47,4%).
+Base: 499 associados ativos.
 
-| Cenário | Taxa de cobrança | Mensalidade necessária |
+| Cenário | Taxa | Mensalidade necessária |
 |---|---|---|
-| Realista (taxa média atual, 47,4%) | 47,4% | **≈ R$ 48,23** |
-| Moderado (65%) | 65% | **≈ R$ 35,17** |
-| Ideal (100%) | 100% | **≈ R$ 22,86** |
+| "No fechamento" (subestima, não espera recuperação) | 47,4% | R$ 48,23 |
+| **Efetiva atual** (já conta quem paga atrasado) | 56,7% | **≈ R$ 40,32** |
+| Se a recuperação de atraso melhorar de 40,6% → 60% | 69,8% | ≈ R$ 32,75 |
+| Ideal (100% recuperado, mesmo atrasado) | 100% | ≈ R$ 22,86 |
 
-Mensalidade padrão hoje é R$20 — pra cobrir a folha inteira sem melhorar a
-taxa de cobrança, precisaria mais que dobrar. Consistente com a análise
-anterior; a correção de dados não muda a conclusão de fundo.
+**R$ 40,32 é a resposta correta pro cenário atual** — R$48,23 penalizava
+inadimplência que, na prática, acaba sendo recuperada. Mensalidade padrão
+hoje é R$20 — mesmo no cenário efetivo (mais favorável), precisaria dobrar
+pra cobrir a folha sozinha.
 
 ---
 
@@ -134,6 +155,10 @@ anterior; a correção de dados não muda a conclusão de fundo.
 2. **56,5% de cobertura da folha** é insuficiente — aumento de mensalidade
    e/ou taxa de associação (estudo já feito no relatório anterior) continua
    sendo a alavanca principal, taxa de cobrança sozinha não fecha a conta.
+5. **Taxa de recuperação de atraso (40,6%) é baixa** — mais de metade do
+   que vence nunca volta. Melhorar cobrança ativa (agente/CRM) sobre os
+   624 casos "nunca recuperados" (R$12.170,54) tem mais alavancagem
+   imediata que só subir o valor da mensalidade.
 3. **1.199 visitantes vs 499 associados** — funil de conversão é a maior
    oportunidade de receita não explorada (mais gente pra converter em
    associado do que já é).
