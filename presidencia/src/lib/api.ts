@@ -96,6 +96,33 @@ export async function getStatus(): Promise<FreshnessInfo & { dw_reachable: boole
   return data
 }
 
+export interface KpiWow {
+  atual: number
+  anterior: number
+  wow_pct: number | null
+  mom_pct: number | null
+  yoy_pct: number | null
+  tot_pct: number | null
+  serie: { label: string; value: number }[]
+}
+
+export interface ResumoData {
+  receita_liquida: KpiWow
+  encomendas: KpiWow
+  crescimento: KpiWow
+  tempo_entrega: KpiWow
+  taxa_cobranca: KpiWow
+  inadimplencia: KpiWow
+  retencao: KpiWow
+  tarefas_no_prazo: KpiWow
+  score_operadores: KpiWow
+}
+
+export async function getResumo(): Promise<FreshnessInfo & { data: ResumoData }> {
+  const { data } = await api.get<FreshnessInfo & { data: ResumoData }>('/presidencia/resumo')
+  return data
+}
+
 export async function getInicio(
   nomeAssociacao?: string | null,
   periodo?: string,
