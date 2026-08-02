@@ -226,6 +226,15 @@ export interface MoradoresData {
   visitantes: number
   sem_internet: number
   novos_mes: number
+  novos_visitantes_dia: { label: string; value: number }[]
+  qualidade_cadastro: {
+    com_cpf_pct: number | null
+    com_telefone_pct: number | null
+    com_cep_pct: number | null
+    membros_sem_cpf: number
+    sem_telefone: number
+    sem_cep: number
+  }
   crescimento_serie: { label: string; value: number }[]
   churn: { nome: string; associacao: string; meses_sem_pagar: number | null; ultimo_pagamento: string | null }[]
   por_rua: { rua: string; total: number; associados: number; visitantes: number; com_problemas: number; sem_internet: number }[]

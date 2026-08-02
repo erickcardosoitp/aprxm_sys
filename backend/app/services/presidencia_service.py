@@ -616,10 +616,48 @@ class PresidenciaService:
             GROUP BY rua ORDER BY SUM(total) DESC LIMIT 15
         """), params)).fetchall()
 
+        # Ultimos 60 dias de entrada de visitantes (bar chart diario fino do spec)
+        visitantes_dia_rows = (await self.dw.execute(text(f"""
+            SELECT dia, SUM(novos_visitantes) FROM novos_visitantes_diario
+            WHERE dia >= CURRENT_DATE - INTERVAL '60 days' {unidade_filter} {ef}
+            GROUP BY dia ORDER BY dia
+        """), params)).fetchall()
+
+        # Qualidade de cadastro: dado de "agora", vem do OPERACIONAL (nao gold) --
+        # decisao do spec §Achados: qualidade nao e' historico, e' estado atual.
+        qual_unidade_filter = "AND a.name = :unidade" if unidade else ""
+        qual_empresa_filter = "AND a.empresa_id = :empresa_id" if self.empresa_id else ""
+        qual = (await self.session.execute(text(f"""
+            SELECT
+              COUNT(*) FILTER (WHERE r.type='member' AND (r.cpf IS NULL OR r.cpf='')) AS membros_sem_cpf,
+              COUNT(*) FILTER (WHERE r.type='member') AS membros,
+              COUNT(*) FILTER (WHERE r.phone_primary IS NULL OR r.phone_primary='') AS sem_telefone,
+              COUNT(*) FILTER (WHERE r.address_cep IS NULL OR r.address_cep='') AS sem_cep,
+              COUNT(*) AS total
+            FROM residents r
+            JOIN associations a ON a.id = r.association_id
+            WHERE r.status = 'active' {qual_unidade_filter} {qual_empresa_filter}
+        """), params)).fetchone()
+        membros_sem_cpf, membros, sem_telefone, sem_cep, total_ativos = (
+            qual[0] or 0, qual[1] or 0, qual[2] or 0, qual[3] or 0, qual[4] or 0,
+        )
+
         return {
             "total": int(panorama[0] or 0), "associados": int(panorama[1] or 0),
             "dependentes": int(panorama[2] or 0), "visitantes": int(panorama[3] or 0),
             "sem_internet": int(panorama[4] or 0), "novos_mes": int(panorama[5] or 0),
+            "novos_visitantes_dia": [
+                {"label": r[0].strftime("%d/%m") if hasattr(r[0], "strftime") else str(r[0]), "value": int(r[1] or 0)}
+                for r in visitantes_dia_rows
+            ],
+            "qualidade_cadastro": {
+                "com_cpf_pct": round(100.0 * (membros - membros_sem_cpf) / membros, 1) if membros else None,
+                "com_telefone_pct": round(100.0 * (total_ativos - sem_telefone) / total_ativos, 1) if total_ativos else None,
+                "com_cep_pct": round(100.0 * (total_ativos - sem_cep) / total_ativos, 1) if total_ativos else None,
+                "membros_sem_cpf": int(membros_sem_cpf),
+                "sem_telefone": int(sem_telefone),
+                "sem_cep": int(sem_cep),
+            },
             "crescimento_serie": [
                 {"label": self._mes_label(r[0]), "value": int(r[1] or 0)} for r in cresc_rows
             ],

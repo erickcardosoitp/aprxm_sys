@@ -3,6 +3,9 @@ import { getMoradores } from '../lib/api'
 import { StatTile } from '../components/StatTile'
 import { DataTable } from '../components/DataTable'
 import { MiniTrendChart } from '../components/MiniTrendChart'
+import { FunnelChart } from '../components/FunnelChart'
+import { ThinBarChart } from '../components/ThinBarChart'
+import { SegmentedProgressBar } from '../components/SegmentedProgressBar'
 import { usePresidenciaDataSemPeriodo } from '../lib/usePresidenciaData'
 
 export function MoradoresPage() {
@@ -42,11 +45,49 @@ export function MoradoresPage() {
         />
       </div>
 
-      <div className="rounded-lg border border-border bg-surface p-3">
-        <div className="mb-2 flex items-center gap-1.5 text-xs text-ink-muted">
-          <TrendUp size={14} className="text-marque-500" /> Crescimento de associados
+      <FunnelChart
+        title="Perfil de moradores por categoria"
+        legenda="Não é um funil de conversão — visitante não vira associado com o tempo, são categorias distintas de cadastro. Mostra o tamanho relativo de cada categoria dentro do total ativo."
+        stages={[
+          { label: 'Total ativos', value: data.total },
+          { label: 'Visitantes', value: data.visitantes },
+          { label: 'Associados', value: data.associados },
+        ]}
+      />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border border-border bg-surface p-3">
+          <div className="mb-2 flex items-center gap-1.5 text-xs text-ink-muted">
+            <TrendUp size={14} className="text-marque-500" /> Crescimento de associados
+          </div>
+          <MiniTrendChart data={data.crescimento_serie} height={120} showDataLabels />
         </div>
-        <MiniTrendChart data={data.crescimento_serie} height={120} showDataLabels />
+        <ThinBarChart
+          title="Novos visitantes por dia"
+          legenda="Últimos 60 dias"
+          data={data.novos_visitantes_dia}
+        />
+      </div>
+
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <h2 className="mb-3 text-sm font-semibold text-ink">Qualidade de cadastro</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <SegmentedProgressBar
+            label="Associados com CPF"
+            pct={data.qualidade_cadastro.com_cpf_pct}
+            hint={data.qualidade_cadastro.membros_sem_cpf > 0 ? `${data.qualidade_cadastro.membros_sem_cpf} sem CPF` : undefined}
+          />
+          <SegmentedProgressBar
+            label="Ativos com telefone"
+            pct={data.qualidade_cadastro.com_telefone_pct}
+            hint={data.qualidade_cadastro.sem_telefone > 0 ? `${data.qualidade_cadastro.sem_telefone} sem telefone` : undefined}
+          />
+          <SegmentedProgressBar
+            label="Ativos com CEP"
+            pct={data.qualidade_cadastro.com_cep_pct}
+            hint={data.qualidade_cadastro.sem_cep > 0 ? `${data.qualidade_cadastro.sem_cep} sem CEP` : undefined}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
