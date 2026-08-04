@@ -218,8 +218,15 @@ class MensalidadeService:
             status=MensalidadeStatus.pending,
             created_by=created_by,
         )
-        self._session.add(next_m)
-        await self._session.flush()
+        try:
+            async with self._session.begin_nested():
+                self._session.add(next_m)
+                await self._session.flush()
+        except IntegrityError:
+            # ja existe mensalidade nesse reference_month (constraint uq_mensalidade_period)
+            # mesmo com due_date diferente no ciclo rolante -- nao ha o que fazer alem de pular,
+            # a proxima cobranca real ja esta coberta pelo registro existente.
+            return None
         return next_m
 
     async def list_by_resident(
