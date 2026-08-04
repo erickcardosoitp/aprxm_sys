@@ -253,8 +253,17 @@ class FinanceService:
         mensalidade_months: list[str] | None = None,
         signature_url: str | None = None,
         origem: str | None = None,
+        payment_method_id_2: UUID | None = None,
+        amount_2: Decimal | None = None,
     ) -> Transaction:
         from datetime import datetime as _dt
+        is_split = payment_method_id_2 is not None and amount_2 is not None and amount_2 > Decimal("0")
+        if is_split:
+            if amount_2 >= amount:
+                raise UnprocessableError("O valor da 2ª forma de pagamento deve ser menor que o total.")
+            amount_1 = amount - amount_2
+        else:
+            amount_1 = amount
         is_expense = tx_type == TransactionType.expense
         is_mensalidade_income = (
             tx_type == TransactionType.income
@@ -311,6 +320,7 @@ class FinanceService:
                 or income_subtype == IncomeSubtype.proof_of_residence
             ) else "manual"
 
+        desc_1 = f"{description} (1/2)" if is_split else description
         tx = Transaction(
             association_id=association_id,
             cash_session_id=cash_session_id,
@@ -320,8 +330,8 @@ class FinanceService:
             type=tx_type,
             income_subtype=income_subtype,
             origem=origem,
-            amount=amount,
-            description=description,
+            amount=amount_1,
+            description=desc_1,
             reference_number=reference_number,
             package_id=package_id,
             created_by=created_by,
@@ -334,6 +344,28 @@ class FinanceService:
         )
         self._session.add(tx)
         await self._session.flush()
+
+        tx2: Transaction | None = None
+        if is_split:
+            tx2 = Transaction(
+                association_id=association_id,
+                cash_session_id=cash_session_id,
+                category_id=category_id,
+                payment_method_id=payment_method_id_2,
+                resident_id=resident_id,
+                type=tx_type,
+                income_subtype=income_subtype,
+                origem=origem,
+                amount=amount_2,
+                description=f"{description} (2/2)",
+                reference_number=reference_number,
+                package_id=package_id,
+                created_by=created_by,
+                payer_name=payer_name,
+                payer_entity_id=payer_entity_id,
+            )
+            self._session.add(tx2)
+            await self._session.flush()
 
         # Auto-create/update mensalidade record when subtype is mensalidade
         claimed_months: list[str] = []
@@ -354,14 +386,22 @@ class FinanceService:
                     )
                 )
                 mens = existing.scalar_one_or_none()
+                # split so' faz sentido linkado a competencia exata quando e' 1 mes so --
+                # com varios meses no mesmo lancamento, o valor da 2a forma nao mapeia
+                # 1:1 pra nenhum mes especifico, entao so' registramos no primeiro.
+                link_split = is_split and len(months_to_cover) == 1
                 if mens:
                     # Atomic claim: only settles if another concurrent request hasn't
                     # already marked it paid — prevents double-submit from creating
                     # a phantom income transaction with no mensalidade behind it.
+                    values = {"status": target_status, "paid_at": now, "transaction_id": tx.id}
+                    if link_split:
+                        values["transaction_id_2"] = tx2.id
+                        values["amount_2"] = amount_2
                     claim = await self._session.execute(
                         sq_update(Mensalidade)
                         .where(Mensalidade.id == mens.id, Mensalidade.status != MensalidadeStatus.paid)
-                        .values(status=target_status, paid_at=now, transaction_id=tx.id)
+                        .values(**values)
                     )
                     if claim.rowcount:
                         claimed_months.append(ref_month)
@@ -372,10 +412,12 @@ class FinanceService:
                         sa_text("""
                             INSERT INTO mensalidades (
                                 id, association_id, resident_id, reference_month, due_date,
-                                amount, status, paid_at, transaction_id, created_by, created_at, updated_at
+                                amount, status, paid_at, transaction_id, transaction_id_2, amount_2,
+                                created_by, created_at, updated_at
                             ) VALUES (
                                 gen_random_uuid(), :aid, :rid, :ref_month, :due,
-                                :amount, CAST(:status AS mensalidade_status), :paid_at, :txid, :created_by, now(), now()
+                                :amount, CAST(:status AS mensalidade_status), :paid_at, :txid, :txid2, :amount2,
+                                :created_by, now(), now()
                             )
                             ON CONFLICT (association_id, resident_id, reference_month) DO NOTHING
                             RETURNING id
@@ -383,6 +425,8 @@ class FinanceService:
                         {
                             "aid": str(association_id), "rid": str(resident_id), "ref_month": ref_month,
                             "due": due, "amount": str(per_month_amount), "status": target_status.value,
+                            "txid2": str(tx2.id) if link_split else None,
+                            "amount2": str(amount_2) if link_split else None,
                             "paid_at": now, "txid": str(tx.id), "created_by": str(created_by),
                         },
                     )
@@ -392,8 +436,11 @@ class FinanceService:
             if months_to_cover and not claimed_months:
                 # Every requested month was already settled by a concurrent request
                 # (double-click / race) — undo this transaction instead of leaving a
-                # duplicate, unlinked income entry in the caixa.
+                # duplicate, unlinked income entry in the caixa. Split e' atomico:
+                # desfaz as 2 pernas juntas, nunca deixa uma sem a outra.
                 await self._session.delete(tx)
+                if tx2:
+                    await self._session.delete(tx2)
                 await self._session.flush()
                 raise UnprocessableError(
                     "Mensalidade já paga para o(s) mês(es) selecionado(s). Nenhum lançamento foi registrado."

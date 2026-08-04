@@ -100,6 +100,8 @@ class TransactionRequest(BaseModel):
     payer_entity_id: UUID | None = None
     mensalidade_months: list[str] | None = None
     signature_url: str | None = None
+    payment_method_id_2: UUID | None = None
+    amount_2: Decimal | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def _require_payment_method_for_mensalidade(self):
@@ -654,8 +656,10 @@ async def register_transaction(
             payer_entity_id=body.payer_entity_id,
             mensalidade_months=body.mensalidade_months,
             signature_url=body.signature_url,
+            payment_method_id_2=body.payment_method_id_2,
+            amount_2=body.amount_2,
         )
-        return {"id": str(tx.id), "type": tx.type, "amount": str(tx.amount)}
+        return {"id": str(tx.id), "type": tx.type, "amount": str(body.amount)}
 
     # First attempt uses the injected session (managed by get_session dependency)
     try:
