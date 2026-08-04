@@ -407,20 +407,21 @@ class MensalidadeService:
             effective_day = r_due_day if r_due_day else due_day
             effective_due = date(year, month, min(effective_day, last_day))
             try:
-                m = Mensalidade(
-                    association_id=association_id,
-                    resident_id=rid,
-                    reference_month=reference_month,
-                    due_date=effective_due,
-                    amount=amount,
-                    status=MensalidadeStatus.pending,
-                    created_by=created_by,
-                    product_id=product_id,
-                )
-                self._session.add(m)
-                await self._session.flush()
+                async with self._session.begin_nested():
+                    m = Mensalidade(
+                        association_id=association_id,
+                        resident_id=rid,
+                        reference_month=reference_month,
+                        due_date=effective_due,
+                        amount=amount,
+                        status=MensalidadeStatus.pending,
+                        created_by=created_by,
+                        product_id=product_id,
+                    )
+                    self._session.add(m)
+                    await self._session.flush()
                 created += 1
-            except Exception:
+            except IntegrityError:
                 skipped += 1
         return {"created": created, "skipped": skipped, "reference_month": reference_month}
 
