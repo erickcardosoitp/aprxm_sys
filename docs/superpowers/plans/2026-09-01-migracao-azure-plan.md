@@ -96,7 +96,12 @@ propagação rápida).
    `backend/.env` atual (ver `docker-compose.yml` do repo pra lista
    completa), com `DATABASE_URL` apontando pro `psql-aprxm-prod` — puxar via
    **Key Vault reference** (`@Microsoft.KeyVault(SecretUri=...)`), não texto
-   plano.
+   plano. **Importante:** o backend também usa `ANALYTICS_DATABASE_URL`
+   (`app/config.py`, `analytics_database_url`) pras rotas de
+   `presidencia`/`datalake` — essa var só pode apontar pro banco definitivo
+   depois que a 2.6 (DW) estiver pronta. Até lá, aponta pro Neon do DW
+   antigo (dual-run) pra não quebrar `presidencia`/`painel` durante o teste
+   do backend principal.
 6. **Deployment slots** → Add Slot → `staging`. Todo deploy futuro vai pro
    staging primeiro.
 7. Testar `https://app-aprxm-backend-staging.azurewebsites.net/docs`
@@ -114,12 +119,18 @@ propagação rápida).
 
 ### 2.4 Frontends internos (`presidencia/`, `painel/`)
 
-Mesmo padrão do 2.3, um Static Web App por pasta:
+Nenhum dos dois tem backend próprio — chamam o `app-aprxm-backend` (mesmo
+padrão de rewrite `/api/*` do `vercel.json` atual de cada um). `presidencia`
+em particular depende da rota de `datalake`/`presidencia`, que usa a conexão
+`ANALYTICS_DATABASE_URL` pro DW — **testar o dashboard de presidência só faz
+sentido depois da 2.6 estar migrada**, senão ele vai funcionar mas mostrando
+dado do DW antigo (não é bug, é dual-run esperado até o corte final).
 
 1. `swa-aprxm-presidencia` → fonte GitHub, pasta `presidencia/`.
 2. `swa-aprxm-painel` → fonte GitHub, pasta `painel/`.
-3. Ambos apontam pro `app-aprxm-backend` já validado na 2.2. Testar cada um
-   isoladamente em `*.azurestaticapps.net` antes do cutover.
+3. Testar cada um isoladamente em `*.azurestaticapps.net` — `painel` valida
+   já nessa etapa, `presidencia` só valida "de verdade" (dado do DW novo)
+   depois da 2.6.
 4. `simplifica-prototype/` fica de fora até confirmar se está em uso (não
    tem deploy Vercel ativo encontrado no levantamento).
 
@@ -156,6 +167,9 @@ Cloudinary como o CLAUDE.md do projeto sugere — confirmado em
    antes de migrar).
 4. Validar no Power BI que os relatórios continuam puxando dado correto do
    banco novo antes de desligar o Neon antigo.
+5. Atualizar `ANALYTICS_DATABASE_URL` no `app-aprxm-backend` (App Settings)
+   pro `psql-dw-prod` novo, testar `presidencia`/`painel` de novo (ver 2.4)
+   — só agora o dashboard de presidência mostra dado real pós-migração.
 
 ### 2.7 Cutover
 
