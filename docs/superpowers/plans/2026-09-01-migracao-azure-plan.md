@@ -85,10 +85,10 @@ propagação rápida).
 1. **App Service Plan** → Create: `asp-aprxm`, Linux, SKU **B1**.
 2. **App Service** → Create: `app-aprxm-backend`, runtime **Python 3.10**,
    plano `asp-aprxm`.
-3. **Deployment Center** → conectar ao GitHub, repo `aprxm_sys` (ou
-   `aprxm_sass`, confirmar nome real do repo), pasta `backend/`. Build via
-   Oryx (padrão do App Service pra Python) ou GitHub Actions gerado
-   automaticamente.
+3. **Deployment Center** → conectar ao GitHub, repo `erickcardosoitp/aprxm_sys`
+   (nome do repo no GitHub; a pasta local `c:\aprxm_sass` é só o nome do
+   clone), pasta `backend/`. Build via Oryx (padrão do App Service pra
+   Python) ou GitHub Actions gerado automaticamente.
 4. Startup command: `gunicorn -k uvicorn.workers.UvicornWorker
    -w 2 app.main:app --bind 0.0.0.0:8000` (ajustar workers depois de medir
    carga real).
@@ -112,16 +112,61 @@ propagação rápida).
 3. Testar fluxo completo em `*.azurestaticapps.net` + backend em
    `*.azurewebsites.net` antes do corte de DNS.
 
-### 2.4 Cutover
+### 2.4 Frontends internos (`presidencia/`, `painel/`)
+
+Mesmo padrão do 2.3, um Static Web App por pasta:
+
+1. `swa-aprxm-presidencia` → fonte GitHub, pasta `presidencia/`.
+2. `swa-aprxm-painel` → fonte GitHub, pasta `painel/`.
+3. Ambos apontam pro `app-aprxm-backend` já validado na 2.2. Testar cada um
+   isoladamente em `*.azurestaticapps.net` antes do cutover.
+4. `simplifica-prototype/` fica de fora até confirmar se está em uso (não
+   tem deploy Vercel ativo encontrado no levantamento).
+
+### 2.5 Storage de fotos (Supabase → Azure Blob Storage)
+
+O `aprxm_sys` usa Supabase Storage (bucket `aprxm-midia`) pra mídia, não
+Cloudinary como o CLAUDE.md do projeto sugere — confirmado em
+`backend/app/services/storage_service.py` e `backend/app/config.py`.
+
+1. **Storage Account** → Create: `staprxmmidia` (nomes de Storage Account
+   são globais e só aceitam minúsculo/número), Resource Group
+   `rg-itp-prod`, redundância **LRS** (suficiente pro volume atual).
+2. Criar um **Container** equivalente ao bucket `aprxm-midia`, acesso
+   privado (o app serve as URLs, não o storage direto público — replicar o
+   comportamento atual).
+3. Copiar os arquivos do bucket Supabase pro container Azure. Usar
+   `azcopy` ou script simples via SDK (Supabase Storage é compatível com
+   S3 API — `azcopy` consegue ler direto de um endpoint S3-compatible).
+4. Reescrever `storage_service.py` pra usar o SDK do Azure Blob
+   (`azure-storage-blob`) no lugar do client Supabase — troca de
+   implementação, mesma interface (`upload_file` retorna URL pública).
+5. `AZURE_STORAGE_CONNECTION_STRING` via Key Vault reference nas
+   Application Settings do `app-aprxm-backend`.
+6. Testar upload/download de foto no ambiente de staging antes do swap.
+
+### 2.6 DW / Analytics (camada gold do ETL)
+
+1. **Azure Database for PostgreSQL Flexible Server** → `psql-dw-prod`,
+   Burstable B1ms (banco pequeno, 9,7MB — SKU mínimo é suficiente).
+2. `pg_dump`/`restore` do Neon (`ep-floral-shadow...`) pro banco novo.
+3. Atualizar a connection string usada pelo Power BI / job de ETL que
+   popula essa camada gold (confirmar onde esse job roda — não identificado
+   neste levantamento, checar `docs/superpowers/plans/2026-08-01-etl-empresa-aware-plan.md`
+   antes de migrar).
+4. Validar no Power BI que os relatórios continuam puxando dado correto do
+   banco novo antes de desligar o Neon antigo.
+
+### 2.7 Cutover
 
 1. Trocar CNAME de produção (frontend e API, se houver subdomínio dedicado
    tipo `api.` ) pro Azure.
 2. Rodar checklist manual: login, cadastro de morador, lançamento
-   financeiro, upload de arquivo (Cloudinary).
-3. Manter Vercel + Neon do aprxm_sys de pé por 1-2 semanas.
+   financeiro, upload de arquivo (agora via Azure Blob Storage).
+3. Manter Vercel + Neon + Supabase do aprxm_sys de pé por 1-2 semanas.
 
-**Rollback**: reverter DNS; dados no Neon continuam intactos (não foi
-apagado, só copiado).
+**Rollback**: reverter DNS; dados no Neon/Supabase continuam intactos (não
+foi apagado, só copiado).
 
 ---
 
@@ -173,6 +218,57 @@ Mesmo padrão da Fase 2.1: `psql-erpitp-prod`, banco lógico `erp_itp_db`,
 4. Manter Vercel + Neon do erp_itp de pé por 1-2 semanas.
 
 **Rollback**: reverter DNS.
+
+---
+
+## Validação de segurança e performance (antes de cada swap/cutover, Fases 2 e 3)
+
+Trocar de Vercel Edge/serverless pra App Service atrás do load balancer da
+Azure muda comportamento de proxy — isso quebra coisa silenciosamente se não
+checar antes do corte. Rodar contra o slot `staging`, nunca direto em
+produção.
+
+**Middleware/segurança (checklist manual, uma vez por backend):**
+
+1. **Confiança de proxy** — App Service injeta `X-Forwarded-For` /
+   `X-Forwarded-Proto`. Confirmar que o app usa esse header pra IP real (não
+   `request.client.host` cru) — afeta rate limit por IP e logs de auditoria.
+   FastAPI: `ProxyHeadersMiddleware` do uvicorn ou `X-Forwarded-For` via
+   `trusted_hosts`. NestJS: `app.set('trust proxy', 1)`.
+2. **CORS** — testar preflight (`OPTIONS`) contra o domínio de staging real,
+   não só localhost. erp_itp tem lista hardcoded no `main.ts`, incluir os
+   domínios temporários de teste.
+3. **Cookies de sessão/refresh token** — `Secure`, `SameSite`, `Domain`
+   corretos pro novo domínio durante o período de dual-run (Vercel + Azure
+   simultâneos).
+4. **Rate limiting no login** (`slowapi`/`@nestjs/throttler`, ver spec seção
+   Segurança) — confirmar que dispara mesmo atrás do proxy da Azure (depende
+   do item 1 funcionar certo).
+5. **Headers de segurança** — HSTS, `X-Content-Type-Options: nosniff`,
+   `Content-Security-Policy` (se já existir) — replicar no App Service via
+   `web.config`/middleware, não assumir que o Azure adiciona sozinho.
+6. **TLS** — mínimo TLS 1.2 forçado na configuração do App Service (item já
+   do runbook de segurança da spec).
+
+**Latência (benchmark comparativo, não é preciso ferramenta pesada):**
+
+Usar `autocannon` (Node, `npx autocannon`) ou `hey` (binário único, sem
+instalação de framework) contra os endpoints críticos de cada sistema —
+login, listagem paginada principal, upload — comparando produção atual
+(Vercel) com o slot staging (Azure), mesma carga (`-c 10 -d 30`):
+
+1. Rodar o benchmark na produção Vercel atual → registrar p50/p95/p99.
+2. Rodar o mesmo benchmark no slot staging do Azure.
+3. Regressão aceitável: até ~20% de piora em p95 (cold start de App Service
+   Linux é maior que edge function da Vercel na primeira request após
+   idle — mitigar com **Always On** habilitado no App Service, que evita
+   cold start em troca de o app nunca dormir).
+4. Se p95 piorar mais que isso, investigar antes do swap — não migrar DNS
+   com regressão de latência não explicada.
+
+Critério de saída por sistema: checklist de middleware 100% ok + latência
+dentro do aceitável, **documentado** (print/log salvo) antes do passo de
+Cutover de cada fase.
 
 ---
 

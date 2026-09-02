@@ -7,19 +7,34 @@ for Nonprofits (~US$ 2.000/ano, ~US$ 166/mês). Objetivo: migrar os sistemas
 hoje descentralizados em Vercel + Neon para Azure, **sem falhas ou paradas**,
 com validação completa antes de cada corte.
 
-Escopo: 3 sistemas ativos. Fora de escopo: `systemcad` (legado, sem push desde
-04/2026) e `pesquisa-intencao-voto` (privado, projeto de pesquisa — não é
-sistema operacional do instituto). DW/`aprxm-analytics` (Power BI) é projeto
-separado, tratado depois.
+Escopo: 3 sistemas ativos + DW/analytics do aprxm_sys. Fora de escopo:
+`systemcad` (legado, sem push desde 04/2026) e `pesquisa-intencao-voto`
+(privado, projeto de pesquisa — não é sistema operacional do instituto).
 
 | Sistema | Stack real | Repo local |
 |---|---|---|
-| aprxm_sys | FastAPI (Python) + SQLModel · React/Vite | `c:\aprxm_sass` |
+| aprxm_sys | FastAPI (Python) + SQLModel · React/Vite (+ frontends extras `presidencia/` e `painel/`, deploy Vercel próprio cada) | `c:\aprxm_sass` |
 | erp_itp | NestJS + TypeORM (backend) · Next.js 15 (frontend), monorepo `apps/backend` + `apps/frontend` | `C:\Users\gonca\erp_itp` |
 | website_tia_pretinha | Vite/React estático, sem backend/banco | `C:\tia_pretinha` |
 
-Todos os 3 usam Postgres via Neon hoje (bancos Neon distintos, não
-compartilhados).
+Confirmado via Vercel CLI (time real `itp-aprxm`, não o pessoal) e `psql`
+direto contra os Neon de produção:
+
+| Banco (Neon) | Tamanho real | Observação |
+|---|---|---|
+| aprxm_sys (`ep-rough-tooth...`) | 89 MB | `api_request_logs` = 163.804 linhas — maior tabela de longe, checar retenção antes do dump |
+| erp_itp (`ep-wispy-tooth...`) | 20 MB | limpo |
+| aprxm-analytics / DW, camada gold do ETL (`ep-floral-shadow...`) | 9,7 MB | alimenta Power BI; entra no escopo desta migração |
+
+Todos pequenos — janela de manutenção de minutos é suficiente pra qualquer um
+dos 3 bancos.
+
+**Storage de arquivos (achado durante o levantamento, fora do desenho
+original):** `aprxm_sys` usa **Supabase Storage** (bucket `aprxm-midia`,
+project ref `tzkvwlqpzrzdmbkisliy`) pra fotos/mídia, não Cloudinary/R2 como o
+CLAUDE.md do projeto sugere — checar no código antes de assumir. Migração de
+storage (Supabase → Azure Blob Storage) é uma frente própria, separada da
+migração de banco, ver seção de Storage abaixo.
 
 ## Decisão de arquitetura: PaaS gerenciado, isolado por sistema
 
@@ -46,18 +61,25 @@ Resource Group único `rg-itp-prod`, região Brazil South.
 | App Service Plan Linux B1 | aprxm_sys | hospeda 1 App Service |
 | App Service (Python 3.10, runtime uvicorn) | aprxm_sys backend | slot `staging` |
 | Static Web App | aprxm_sys frontend (Vite build) | tier free |
+| Static Web App | aprxm_sys `presidencia/` | tier free, dashboard interno |
+| Static Web App | aprxm_sys `painel/` | tier free, dashboard interno |
 | App Service Plan Linux B1 | erp_itp | hospeda 2 App Services |
 | App Service (Node, NestJS) | erp_itp backend | slot `staging` |
 | App Service (Node, Next.js SSR) | erp_itp frontend | slot `staging` |
 | Static Web App | website_tia_pretinha | tier free, sem banco |
 | Azure Database for PostgreSQL Flexible Server (Burstable B1ms) | aprxm_sys | 1 banco lógico |
 | Azure Database for PostgreSQL Flexible Server (Burstable B1ms) | erp_itp | 1 banco lógico |
-| Key Vault | ambos | DATABASE_URL, JWT_SECRET, Cloudinary keys, API keys |
+| Azure Database for PostgreSQL Flexible Server (Burstable B1ms) | DW/analytics (gold ETL) | 1 banco lógico, alimenta Power BI |
+| Azure Blob Storage (Storage Account) | aprxm_sys | substitui Supabase Storage, bucket `aprxm-midia` |
+| Key Vault | todos | DATABASE_URL, JWT_SECRET, Cloudinary keys, Blob Storage connection string |
 
 Nenhum recurso de computação ou banco é compartilhado entre sistemas. Cada
 Postgres Flexible Server usa TLS obrigatório, backup automático (7 dias) e,
 como hardening recomendado (não bloqueante), autenticação via Entra ID em vez
 de senha em texto.
+
+`simplifica-prototype/` (terceiro frontend no repo aprxm_sys) não tem deploy
+Vercel ativo encontrado — não entra no escopo até confirmar se está em uso.
 
 `website_tia_pretinha` não tem banco nem backend — fica isolado, menor risco,
 usado como piloto da migração (ver ordem abaixo).
@@ -140,5 +162,8 @@ estar estável — não faz parte do corte inicial de cada sistema.
 - Provisionamento via Azure CLI/IaC (Bicep/Terraform) — usuário fará o
   provisionamento manual pelo portal Azure. Um runbook passo a passo
   separado cobre isso.
-- DW / `aprxm-analytics` (Power BI) — projeto independente.
+- `simplifica-prototype/` (frontend do aprxm_sys sem deploy ativo
+  confirmado) — reavaliar se estiver em uso.
 - Descomissionamento de `systemcad` e `pesquisa-intencao-voto`.
+- Migração do MCP Supabase em si (ferramenta de inspeção) — só a
+  infraestrutura de storage que ele acessa.
