@@ -156,6 +156,23 @@ Cloudinary como o CLAUDE.md do projeto sugere — confirmado em
    Application Settings do `app-aprxm-backend`.
 6. Testar upload/download de foto no ambiente de staging antes do swap.
 
+**R2 (bronze/silver do ETL)** — achado à parte, mesmo padrão:
+
+7. Criar um segundo **Container** no mesmo Storage Account (`staprxmmidia`),
+   ex. `datalake`, réplica da estrutura do bucket `aprxm-datalake`
+   (`bronze/atual/`, `bronze/historico/...`).
+8. Copiar os 180 objetos (18MB) via `azcopy` (R2 é S3-compatible, mesma
+   lógica do item 3 acima).
+9. Atualizar `backend/app/services/datalake_service.py` — troca o client
+   `boto3`/S3 (`r2_account_id`, `r2_access_key_id`, `r2_secret_access_key`,
+   `r2_bucket_name`) pelo SDK do Azure Blob, ou mantém `boto3` apontando
+   pro endpoint S3-compatible do Azure (Azure Blob não tem API S3 nativa —
+   confirmar se vale reescrever direto pro SDK nativo em vez de tentar
+   compatibilidade S3).
+10. Rodar o pipeline de ETL completo (`export_bronze` → `build_silver` →
+    gold) contra o container novo em staging antes de trocar em produção —
+    validar que os relatórios de `presidencia` continuam batendo.
+
 ### 2.6 DW / Analytics (camada gold do ETL)
 
 1. **Azure Database for PostgreSQL Flexible Server** → `psql-dw-prod`,

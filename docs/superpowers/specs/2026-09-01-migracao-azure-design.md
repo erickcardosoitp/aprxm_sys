@@ -36,6 +36,15 @@ CLAUDE.md do projeto sugere — checar no código antes de assumir. Migração d
 storage (Supabase → Azure Blob Storage) é uma frente própria, separada da
 migração de banco, ver seção de Storage abaixo.
 
+**Segundo storage, achado à parte: Cloudflare R2** (bucket `aprxm-datalake`,
+18 MB / 180 objetos) guarda as camadas **Bronze** (`bronze/atual/*.parquet`,
+`bronze/historico/...`) e intermediários de **Silver** do pipeline de ETL
+(`backend/app/services/datalake_service.py`) — pipeline real é
+`Neon → Bronze (R2) → Silver (pandas) → Gold (Postgres DW)`. Acesso via
+`boto3` S3-compatible (`r2_account_id`, `r2_access_key_id`,
+`r2_secret_access_key`, `r2_bucket_name` em `app/config.py`). Também entra
+no escopo — migra pro Azure Blob Storage junto com o Supabase Storage.
+
 ## Decisão de arquitetura: PaaS gerenciado, isolado por sistema
 
 Considerado e descartado: VM única + Docker Compose + Traefik + Postgres
