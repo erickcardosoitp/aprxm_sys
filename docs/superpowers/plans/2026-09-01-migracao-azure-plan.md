@@ -2,24 +2,35 @@
 
 Spec: [2026-09-01-migracao-azure-design.md](../specs/2026-09-01-migracao-azure-design.md)
 
+Due-diligence completo antes da execução, um relatório por sistema:
+[aprxm_sys](../reports/2026-09-01-due-diligence-aprxm-sys.md) ·
+[erp_itp](../reports/2026-09-01-due-diligence-erp-itp.md) ·
+[website_tia_pretinha](../reports/2026-09-01-due-diligence-website.md)
+
 Execução manual pelo Portal Azure (sem CLI/IaC). Subscription do grant
 nonprofit já ativa. 3 fases em ordem — cada fase só começa depois da anterior
 validada e cortada.
 
 ---
 
-## Fase 0 — Preparação (uma vez só)
+## Fase 0 — Preparação (uma vez só) — ✅ CONCLUÍDA em 2026-09-01
 
-1. Portal Azure → **Resource groups** → **Create** → nome `rg-itp-prod`,
+1. ✅ Portal Azure → **Resource groups** → **Create** → nome `rg-itp-prod`,
    região **Brazil South**.
-2. Portal Azure → **Cost Management + Billing** → confirmar que a
-   subscription do grant tem o teto de US$ 166/mês visível e alertas de
-   orçamento configurados (Budget: 50%, 80%, 100% do teto).
-3. **Key Vault** → Create → nome `kv-itp-prod`, mesmo Resource Group/região.
+2. ✅ Portal Azure → **Cost Management + Billing** → orçamento criado
+   (nome `orcamento-itp-prod`), teto US$ 166/mês, alertas de custo real em
+   50% (US$83) / 80% (US$132,8) / 100% (US$166).
+3. ✅ **Key Vault** → criado como `kv-itp-prod-01` (`kv-itp-prod` já estava
+   reservado por um cofre eliminado de forma recuperável — nome tem que ser
+   único globalmente na Azure). RBAC como modelo de permissão, eliminação
+   recuperável ativada (90 dias), proteção contra remoção **desativada**
+   deliberadamente por enquanto (é irreversível uma vez ligada — ativar
+   depois de o ambiente estabilizar em produção). Ponto final público.
    Vai guardar `DATABASE_URL`, `JWT_SECRET`, chaves Cloudinary de cada
    sistema (segredos entram aqui na Fase 2/3, ao configurar cada app).
 
-Critério de saída: Resource Group + Key Vault existem, orçamento configurado.
+Critério de saída: Resource Group + Key Vault existem, orçamento
+configurado. **Atingido.**
 
 ---
 
