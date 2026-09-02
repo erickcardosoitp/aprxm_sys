@@ -21,14 +21,40 @@ validada e cortada.
 
 Critério de saída: Resource Group + Key Vault existem, orçamento configurado.
 
-**Achado que afeta as 3 fases:** o DNS de `institutotiapretinha.org` é
-hospedado na própria Vercel (nameservers `ns1/ns2.vercel-dns.com`) — não tem
-provedor externo. Isso significa que **nenhum cutover troca nameservers**
-(trocaria o domínio inteiro de uma vez, derrubando sistemas que ainda não
-migraram); cada corte cria um registro **ALIAS/ANAME** dentro do próprio
-painel DNS do projeto na Vercel, apontando o subdomínio daquele sistema pro
-recurso Azure correspondente. Onde este plano diz "trocar CNAME de
-produção", ler como "criar/editar o registro no painel DNS da Vercel".
+---
+
+## Fase 0.5 — Migrar DNS pra fora da Vercel (uma vez só, antes da Fase 1)
+
+Confirmado nos 2 levantamentos (website e erp_itp): `institutotiapretinha.org`
+é registrado **e** tem DNS hospedado na própria Vercel (registrador Vercel,
+nameservers `ns1/ns2.vercel-dns.com`, domínio expira 20/02/2027). Não existe
+"provedor de DNS externo" pra trocar um CNAME — a Vercel é o provedor hoje.
+
+Duas rotas possíveis: (a) migrar nameservers pra fora da Vercel uma vez,
+antes de qualquer corte, e depois gerenciar cada subdomínio à vontade; (b)
+manter DNS na Vercel e criar registro por registro no painel dela a cada
+fase. **Escolhido: (a)** — evita depender do painel de DNS de terceiro
+durante 3 cortes separados e reduz a superfície de erro pra uma mudança em
+vez de três.
+
+1. **Exportar a zona DNS completa atual** antes de tocar em qualquer coisa —
+   Portal Vercel → domínio `institutotiapretinha.org` → DNS Records. Anotar
+   TODOS os registros (MX de e-mail, TXT de SPF/DKIM/verificação, os
+   CNAME/A existentes de cada sistema) — perder um registro de e-mail no
+   meio da troca de nameserver derruba e-mail do instituto inteiro, não só
+   os sites.
+2. **Azure DNS** → Create DNS zone → `institutotiapretinha.org`, mesmo
+   Resource Group `rg-itp-prod`. Recriar manualmente cada registro
+   exportado no passo 1.
+3. No painel da Vercel (Domains → `institutotiapretinha.org` →
+   Nameservers), trocar pros nameservers que o Azure DNS gerar. Propagação
+   pode levar até algumas horas — fazer isso num horário de baixo uso, **de
+   véspera** da Fase 1, não no mesmo dia do primeiro cutover de app.
+4. Validar com `nslookup`/`dig` que a zona responde certo pelos nameservers
+   novos antes de prosseguir pra Fase 1.
+
+Onde as fases abaixo dizem "trocar CNAME de produção" / "criar registro no
+painel DNS da Vercel", ler como "criar/editar o registro na zona Azure DNS".
 
 ---
 
@@ -270,52 +296,115 @@ foi apagado, só copiado).
 
 ## Fase 3 — erp_itp
 
-Mais complexo: 2 App Services (backend NestJS + frontend Next.js SSR), CORS
-hardcoded em `apps/backend/src/main.ts` apontando pra
-`itp.institutotiapretinha.org` / `api.itp.institutotiapretinha.org`.
+Mais complexo: 2 App Services (backend NestJS + frontend Next.js SSR).
+
+**Antes de tocar em qualquer coisa desta fase:** sincronizar o repo local
+(`git pull origin main`) — estava 8 commits atrás da produção real quando
+levantado (`SCHEMA_VERSION` local dizia 19, banco de produção já em 20).
+Qualquer decisão tomada olhando o checkout desatualizado é decisão sobre
+código errado. (Já sincronizado nesta sessão, mas confirmar de novo antes
+de iniciar a Fase 3 de verdade, pode ter avançado desde então.)
+
+**Entrypoint real de produção não é `src/main.ts`, é `apps/backend/api/main.ts`**
+— achado do levantamento, corrige suposição anterior deste plano. `api/main.ts`
+importa de `../src/*` e adiciona, além do bootstrap normal, um middleware
+`PayloadSizeInterceptor`/payload-guard que trunca respostas HTTP acima de 1MB
+— mitigação específica pro limite de 4.5MB de resposta serverless da Vercel,
+que não existe no App Service. Decisão pra esta fase: **portar `api/main.ts`
+como está** (não remover o payload-guard agora) — ele só é redundante no
+Azure, não é nocivo, e mudar comportamento de resposta durante uma migração
+de infra é risco desnecessário. Reavaliar remoção como limpeza técnica
+depois, não durante o corte.
+
+**CORS duplicado e inconsistente** — achado do levantamento, dois mecanismos
+diferentes dentro do mesmo `api/main.ts`: (1) o `setupApp` original com lista
+dinâmica pra `itp.institutotiapretinha.org`/`api.itp.institutotiapretinha.org`;
+(2) um bloco separado de headers CORS manuais (`CORS_ORIGIN = 'https://institutotiapretinha.org'`
+— **domínio apex, sem o `itp.`**, diferente do mecanismo 1). Consolidar isso
+numa lista única antes do cutover, não portar a inconsistência pro Azure sem
+entender por que existem os dois. Outros lugares com domínio hardcoded a
+revisar juntos: `vercel.json` do backend tem um redirect de `/` →
+`https://api.itp.institutotiapretinha.org/api` (308).
 
 ### 3.1 Banco
 
 Mesmo padrão da Fase 2.1: `psql-erpitp-prod`, banco lógico `erp_itp_db`,
-`pg_dump`/`restore` do Neon (`neondb`) atual.
+`pg_dump`/`restore` do Neon (`neondb`) atual. `pg_session_jwt` (extensão
+Neon) aparece disponível mas sem uso confirmado no código — mesma
+tratativa da Fase 2.1, seguro excluir do dump.
 
 ### 3.2 Backend (NestJS)
 
 1. `asp-erpitp` (App Service Plan Linux B1) hospeda os 2 App Services desta
    fase (backend + frontend, mas **não** compartilha plano com o aprxm_sys).
-2. `app-erpitp-backend`, runtime **Node 20**.
+2. `app-erpitp-backend`, runtime **Node 24.x** (produção real roda Node 24,
+   não Node 20 — não há `engines`/`.nvmrc` fixando isso no repo, então
+   confirmar antes de assumir; pinar explicitamente ao criar o App Service).
 3. Build: `npm run build:backend` (script já existe na raiz do monorepo).
-   Startup: `node apps/backend/dist/src/main.js`.
-4. **Importante**: o `main.ts` atual tem um branch `if (!process.env.VERCEL)`
-   pra decidir entre handler serverless e `bootstrapLocal()`. No App Service
-   (não é serverless) ele sempre cai no `bootstrapLocal()` — não precisa
-   mudar código, só garantir que `VERCEL` não esteja setado nas Application
-   Settings do Azure.
-5. Atualizar a lista de CORS em produção no `main.ts` (ou externalizar pra
-   env var, se preferir não hardcodear de novo a cada migração) incluindo os
-   domínios finais do Azure durante o período de teste.
-6. App settings: `DATABASE_URL` (Key Vault reference), demais secrets do
-   `.env` atual.
-7. Slot `staging`, testar, swap.
+   Startup: `node apps/backend/dist/api/main.js` (não `dist/src/main.js` —
+   ver correção de entrypoint acima).
+4. App settings: `DATABASE_URL` (Key Vault reference), `JWT_SECRET`,
+   `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`/`SUPABASE_BUCKET` (ver nota de
+   storage abaixo), `SMTP_*`, `CRON_SECRET`, `COLETOR_TOKEN`, `APP_URL`.
+   `WEBHOOK_SECRET` aparece configurado no Vercel mas sem leitura encontrada
+   no código (`WEKHOOK_SECRET`, com typo, órfã) — não precisa portar, mas
+   não apagar sem confirmar com quem mantém.
+5. **Hardening TLS**: `ssl: { rejectUnauthorized: false }` na conexão do
+   banco hoje contradiz `sslmode=verify-full` — trocar pra
+   `rejectUnauthorized: true` + CA correta ao configurar a conexão com o
+   `psql-erpitp-prod` novo (parte do hardening já previsto na spec).
+6. Slot `staging`, testar, swap.
+
+**Nota de storage:** `itp-erp-backend` também usa Supabase Storage
+(`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`) — confirmar se é
+o mesmo projeto Supabase do aprxm_sys (`tzkvwlqpzrzdmbkisliy`) ou um
+diferente antes de desenhar a Fase de storage; se for o mesmo projeto,
+migra junto na 2.5, se for outro, precisa de container Azure Blob próprio.
+
+### 3.2b Cron jobs (2 confirmados + 1 a confirmar)
+
+```
+"crons": [
+  { "path": "/api/auth/cron/verificar-senhas", "schedule": "0 8 * * *" },
+  { "path": "/api/supabase/cron/health-check", "schedule": "30 8 * * *" }
+]
+```
+
+Mesmo padrão da 2.2b: Azure Logic App (Consumption), Recurrence trigger +
+HTTP action com o header `CRON_SECRET` esperado pelo endpoint. Existe um
+**terceiro** endpoint protegido pelo mesmo `CRON_SECRET`
+(`captacao.controller.ts:261`) que não está na lista de crons do
+`vercel.json` — confirmar com quem mantém se é disparo manual ou cron
+órfão antes de decidir se precisa de agendamento no Azure também.
 
 ### 3.3 Frontend (Next.js)
 
-1. `app-erpitp-frontend`, runtime **Node 20**, SSR completo (não é estático
-   — precisa de App Service, não Static Web App).
+1. `app-erpitp-frontend`, runtime **Node 24.x** (mesma ressalva do 3.2),
+   SSR completo (não é estático — precisa de App Service, não Static Web
+   App).
 2. Build: `npm run build:frontend`. Startup: `npm start` (usa `next start`).
 3. `NEXT_PUBLIC_API_URL` apontando pro backend (produção, pós-swap 3.2).
 4. Slot `staging`, testar fluxo completo (matrícula, login), swap.
 
 ### 3.4 Cutover
 
-1. Atualizar CORS do backend pros domínios finais de produção antes do
-   corte de DNS (não depois).
-2. Trocar CNAME de `itp.institutotiapretinha.org` e
-   `api.itp.institutotiapretinha.org` pro Azure.
-3. Checklist manual: login, matrícula direta, geração de boleto, upload.
-4. Manter Vercel + Neon do erp_itp de pé por 1-2 semanas.
+1. Consolidar e atualizar CORS do backend (ver nota acima) pros domínios
+   finais de produção antes do corte de DNS (não depois).
+2. Criar/editar o registro na zona Azure DNS (Fase 0.5) pra
+   `itp.institutotiapretinha.org` e `api.itp.institutotiapretinha.org`
+   apontando pro Azure.
+3. **Atualizar os 2 scripts Google Apps Script** (`google-apps-script/formulario-candidato.gs`,
+   `formulario-funcionario.gs`) — vivem no Google Drive, fora do repo, com
+   a URL `https://api.itp.institutotiapretinha.org/api/...` hardcoded.
+   Como o domínio final não muda (só o que está por trás dele), esses
+   scripts não precisam de edição se o corte for feito certo — mas
+   **testar os webhooks de verdade** depois do corte, é fácil esquecer
+   porque não aparecem em nenhuma busca no repo.
+4. Checklist manual: login, matrícula direta, geração de boleto, upload
+   (Supabase Storage).
+5. Manter Vercel + Neon do erp_itp de pé por 1-2 semanas.
 
-**Rollback**: reverter DNS.
+**Rollback**: reverter o registro na zona Azure DNS.
 
 ---
 
