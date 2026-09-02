@@ -560,20 +560,13 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
 
       const txPayload = {
         ...basePayload,
-        amount: isSplit ? a1 : parseFloat(amount),
+        amount: parseFloat(amount),
         payment_method_id: paymentMethodId || undefined,
-        description: isSplit ? `${mensalidadeDesc} (1/2)` : mensalidadeDesc,
+        payment_method_id_2: isSplit ? paymentMethodId2 : undefined,
+        amount_2: isSplit ? a2 : undefined,
       }
       try {
         await financeService.registerTransaction(txPayload)
-        if (isSplit) {
-          await financeService.registerTransaction({
-            ...basePayload,
-            amount: a2,
-            payment_method_id: paymentMethodId2,
-            description: `${mensalidadeDesc} (2/2)`,
-          })
-        }
       } catch (e: any) {
         if (e.response?.data?.detail === 'NO_SESSION') {
           setSaving(false); submittingRef.current = false
