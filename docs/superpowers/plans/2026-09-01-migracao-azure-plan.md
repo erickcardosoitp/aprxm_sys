@@ -328,10 +328,18 @@ revisar juntos: `vercel.json` do backend tem um redirect de `/` →
 
 ### 3.1 Banco
 
-Mesmo padrão da Fase 2.1: `psql-erpitp-prod`, banco lógico `erp_itp_db`,
-`pg_dump`/`restore` do Neon (`neondb`) atual. `pg_session_jwt` (extensão
-Neon) aparece disponível mas sem uso confirmado no código — mesma
-tratativa da Fase 2.1, seguro excluir do dump.
+Mesmo padrão da Fase 2.1, com uma diferença importante: **o Neon de origem
+roda Postgres 17.11**, não 16 como aprxm_sys/DW (confirmado via `SHOW
+server_version` nos 3 bancos). Criar `psql-erpitp-prod` como **PostgreSQL
+17** — confirmar no Portal que a região Brazil South oferece essa versão
+pro Flexible Server antes de assumir; se não oferecer, decidir
+explicitamente entre esperar disponibilidade ou aceitar downgrade pra 16
+(dump/restore funciona entre versões maiores, mas fica sendo uma mudança
+de versão do banco no meio da migração de infra, não é neutro).
+
+Banco lógico `erp_itp_db`, `pg_dump`/`restore` do Neon (`neondb`) atual.
+`pg_session_jwt` (extensão Neon) aparece disponível mas sem uso confirmado
+no código — mesma tratativa da Fase 2.1, seguro excluir do dump.
 
 ### 3.2 Backend (NestJS)
 
