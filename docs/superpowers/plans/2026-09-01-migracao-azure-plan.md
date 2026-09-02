@@ -21,6 +21,15 @@ validada e cortada.
 
 Critério de saída: Resource Group + Key Vault existem, orçamento configurado.
 
+**Achado que afeta as 3 fases:** o DNS de `institutotiapretinha.org` é
+hospedado na própria Vercel (nameservers `ns1/ns2.vercel-dns.com`) — não tem
+provedor externo. Isso significa que **nenhum cutover troca nameservers**
+(trocaria o domínio inteiro de uma vez, derrubando sistemas que ainda não
+migraram); cada corte cria um registro **ALIAS/ANAME** dentro do próprio
+painel DNS do projeto na Vercel, apontando o subdomínio daquele sistema pro
+recurso Azure correspondente. Onde este plano diz "trocar CNAME de
+produção", ler como "criar/editar o registro no painel DNS da Vercel".
+
 ---
 
 ## Fase 1 — Piloto: website_tia_pretinha
@@ -74,17 +83,31 @@ propagação rápida).
 2. Criar o banco lógico (via **Query editor** do portal ou `psql` local
    contra o endpoint público): `CREATE DATABASE aprxm_db;`
 3. **Migração de dados** (janela agendada, fora do horário comercial):
+   - **Antes do dump**: excluir a extensão `pg_session_jwt` (proprietária do
+     Neon, sem equivalente no Azure — `pg_dump --exclude-extension=pg_session_jwt`
+     se disponível na versão do `pg_dump`, ou remover a linha `CREATE EXTENSION
+     pg_session_jwt` do dump antes do restore). Sem uso confirmado no código
+     — seguro excluir.
    - `pg_dump --format=custom` do Neon (`DATABASE_URL` atual do
      `backend/.env`)
    - `pg_restore` no `psql-aprxm-prod` / `aprxm_db`
    - Validar contagem de linhas nas tabelas principais (`residents`,
      `financial_transactions`, `packages`) entre origem e destino.
+   - `api_request_logs` é 53MB/156k linhas (~60% do banco de 89MB) — considerar
+     truncar antes do dump (log não é dado de negócio, e o cron #8 abaixo
+     recria a rotina de limpeza no destino de qualquer forma).
 
 ### 2.2 Backend (FastAPI)
 
 1. **App Service Plan** → Create: `asp-aprxm`, Linux, SKU **B1**.
-2. **App Service** → Create: `app-aprxm-backend`, runtime **Python 3.10**,
-   plano `asp-aprxm`.
+2. **App Service** → Create: `app-aprxm-backend`, runtime **Python** — versão
+   **a confirmar antes de criar**: `backend/vercel.json` usa `@vercel/python`
+   sem `.python-version` pinado, então a versão real em produção na Vercel
+   não está documentada em nenhum lugar (o `Dockerfile` diz 3.13, mas só é
+   usado no `docker-compose` de dev local, não no deploy Vercel). Confirmar
+   testando localmente com a versão candidata antes de assumir compatibilidade,
+   ou perguntar ao suporte Vercel/checar build logs do último deploy. App
+   Service criado no plano `asp-aprxm`.
 3. **Deployment Center** → conectar ao GitHub, repo `erickcardosoitp/aprxm_sys`
    (nome do repo no GitHub; a pasta local `c:\aprxm_sass` é só o nome do
    clone), pasta `backend/`. Build via Oryx (padrão do App Service pra
@@ -96,17 +119,47 @@ propagação rápida).
    `backend/.env` atual (ver `docker-compose.yml` do repo pra lista
    completa), com `DATABASE_URL` apontando pro `psql-aprxm-prod` — puxar via
    **Key Vault reference** (`@Microsoft.KeyVault(SecretUri=...)`), não texto
-   plano. **Importante:** o backend também usa `ANALYTICS_DATABASE_URL`
-   (`app/config.py`, `analytics_database_url`) pras rotas de
-   `presidencia`/`datalake` — essa var só pode apontar pro banco definitivo
-   depois que a 2.6 (DW) estiver pronta. Até lá, aponta pro Neon do DW
-   antigo (dual-run) pra não quebrar `presidencia`/`painel` durante o teste
-   do backend principal.
+   plano. **Importante:** o backend também usa `DATAWAREHOUSE_APRXM_DATABASE_URL`
+   (`app/config.py`, `datawarehouse_aprxm_database_url` —
+   `analytics_database_url` é campo residual sem uso, não confundir) pra
+   carga OLAP do `datalake_service.py`. Essa var só pode apontar pro banco
+   definitivo depois que a 2.6 (DW) estiver pronta. Até lá, aponta pro Neon
+   do DW antigo (dual-run) pra não quebrar `presidencia`/`painel` durante o
+   teste do backend principal.
 6. **Deployment slots** → Add Slot → `staging`. Todo deploy futuro vai pro
    staging primeiro.
 7. Testar `https://app-aprxm-backend-staging.azurewebsites.net/docs`
    (FastAPI expõe Swagger) — checar rotas de auth e uma rota de leitura.
 8. Swap staging → produção.
+
+### 2.2b Cron jobs (8 no Vercel, sem equivalente automático no App Service)
+
+`backend/vercel.json` define 8 crons que hoje o Vercel dispara batendo no
+endpoint HTTP correspondente — App Service não tem isso nativo. Endpoints
+reais a migrar:
+
+| Endpoint | Schedule | Função |
+|---|---|---|
+| `/api/v1/demands/reminders/trigger` | `0 11 * * *` | lembrete de demandas |
+| `/api/v1/daily-tasks/reminders/trigger` | `0 10 * * *` | lembrete de tarefas |
+| `/api/v1/mensalidades/cron-generate` | `0 8 1 * *` | gera mensalidade do mês |
+| `/api/v1/mensalidades/cron-check-overdue` | `0 9 * * *` | marca inadimplência |
+| `/api/v1/datalake/run` | `0 12 * * *` e `0 20 * * *` (2x/dia) | ETL bronze→silver→gold |
+| `/api/v1/ti/vacuum` | `0 3 * * 0` | manutenção semanal |
+| `/api/v1/crm/cron-scoring` | `0 6 * * *` | scoring de CRM |
+
+Solução recomendada: **Azure Logic App (Consumption)**, um "Recurrence
+trigger" + ação HTTP por cron, replicando o schedule 1:1 — não muda código
+da aplicação, menor risco pra uma migração que já tem muita coisa em
+paralelo. Custo é próximo de zero pra 8 execuções agendadas de baixo volume.
+(Alternativa mais elegante — mover pra `APScheduler` rodando dentro do
+próprio processo do App Service, já que ele fica sempre ativo ao contrário
+da função serverless da Vercel — fica registrada como melhoria futura, não
+fazer agora pra não misturar mudança de infra com mudança de arquitetura.)
+
+Critério de saída: os 8 crons validados rodando contra o slot staging antes
+do swap final da 2.2 (testar disparo manual do Logic App apontando pro
+`-staging` primeiro).
 
 ### 2.3 Frontend (Vite/React)
 
@@ -114,15 +167,29 @@ propagação rápida).
    GitHub, pasta `frontend/`, build Vite.
 2. `VITE_API_URL` apontando pro `app-aprxm-backend` (produção, depois do
    swap da 2.2).
-3. Testar fluxo completo em `*.azurestaticapps.net` + backend em
+3. **Rewrite `/api/*` está hardcoded** (não env var) no `vercel.json` de 3
+   dos 4 frontends do aprxm_sys (achado do levantamento) — o Azure Static
+   Web Apps usa `staticwebapp.config.json` em vez de `vercel.json`, então
+   isso não é "portar" o arquivo, é reescrever a regra de rota apontando
+   pro domínio novo do `app-aprxm-backend`. Fazer isso pros 3 frontends
+   (main, `presidencia`, `painel` — ver 2.4).
+4. Testar fluxo completo em `*.azurestaticapps.net` + backend em
    `*.azurewebsites.net` antes do corte de DNS.
+
+**Achado sem solução de infraestrutura — comunicar ao usuário:** login via
+**WebAuthn/passkey está amarrado à origem `aprxm.vercel.app`** (4
+credenciais reais cadastradas hoje). O protocolo WebAuthn não permite migrar
+essa credencial pra um novo domínio — quem usa passkey vai precisar
+**recadastrar depois do cutover**. Isso não é bug de migração, é limitação
+do protocolo; avisar os usuários afetados antes do corte de DNS pra não
+travarem o login no dia.
 
 ### 2.4 Frontends internos (`presidencia/`, `painel/`)
 
 Nenhum dos dois tem backend próprio — chamam o `app-aprxm-backend` (mesmo
 padrão de rewrite `/api/*` do `vercel.json` atual de cada um). `presidencia`
 em particular depende da rota de `datalake`/`presidencia`, que usa a conexão
-`ANALYTICS_DATABASE_URL` pro DW — **testar o dashboard de presidência só faz
+`DATAWAREHOUSE_APRXM_DATABASE_URL` pro DW — **testar o dashboard de presidência só faz
 sentido depois da 2.6 estar migrada**, senão ele vai funcionar mas mostrando
 dado do DW antigo (não é bug, é dual-run esperado até o corte final).
 
@@ -184,7 +251,7 @@ Cloudinary como o CLAUDE.md do projeto sugere — confirmado em
    antes de migrar).
 4. Validar no Power BI que os relatórios continuam puxando dado correto do
    banco novo antes de desligar o Neon antigo.
-5. Atualizar `ANALYTICS_DATABASE_URL` no `app-aprxm-backend` (App Settings)
+5. Atualizar `DATAWAREHOUSE_APRXM_DATABASE_URL` no `app-aprxm-backend` (App Settings)
    pro `psql-dw-prod` novo, testar `presidencia`/`painel` de novo (ver 2.4)
    — só agora o dashboard de presidência mostra dado real pós-migração.
 
