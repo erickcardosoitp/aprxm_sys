@@ -34,7 +34,7 @@ configurado. **Atingido.**
 
 ---
 
-## Fase 0.5 — Migrar DNS pra fora da Vercel (uma vez só, antes da Fase 1)
+## Fase 0.5 — Migrar DNS pra fora da Vercel (uma vez só, antes da Fase 1) — ⏳ EM ANDAMENTO (nameserver trocado em 2026-09-03, aguardando propagação)
 
 Confirmado nos 2 levantamentos (website e erp_itp): `institutotiapretinha.org`
 é registrado **e** tem DNS hospedado na própria Vercel (registrador Vercel,
@@ -98,15 +98,34 @@ vez de três.
    nova. Provedor de e-mail segue 100% Microsoft 365 — nenhum servidor novo
    de e-mail a configurar, só replicar MX/SPF/autodiscover/verificação
    `MS=` exatamente como estão hoje.
-2. **Azure DNS** → Create DNS zone → `institutotiapretinha.org`, mesmo
-   Resource Group `rg-itp-prod`. Recriar manualmente cada registro
-   exportado no passo 1.
-3. No painel da Vercel (Domains → `institutotiapretinha.org` →
-   Nameservers), trocar pros nameservers que o Azure DNS gerar. Propagação
-   pode levar até algumas horas — fazer isso num horário de baixo uso, **de
-   véspera** da Fase 1, não no mesmo dia do primeiro cutover de app.
-4. Validar com `nslookup`/`dig` que a zona responde certo pelos nameservers
-   novos antes de prosseguir pra Fase 1.
+2. ✅ **Azure DNS** → Create DNS zone → `institutotiapretinha.org`, criado
+   em `rg-itp-prod`, zona **pública**. Nameservers gerados:
+   `ns1-07.azure-dns.com.` / `ns2-07.azure-dns.net.` /
+   `ns3-07.azure-dns.org.` / `ns4-07.azure-dns.info.`
+3. ✅ Registros recriados na zona nova (todos confirmados criados em
+   2026-09-03):
+   - MX `@` → `institutotiapretinha-org.mail.protection.outlook.com.` (pref 0)
+   - TXT `@` → 2 valores: SPF (`v=spf1 include:spf.protection.outlook.com -all`) + `MS=ms97588793`
+   - CNAME `autodiscover` → `autodiscover.outlook.com.`
+   - CAA `@` → 4 valores: `pki.goog`, `sectigo.com`, `letsencrypt.org`, `digicert.com` (todos `issue`, flag 0)
+   - A `@` → 2 IPs: `216.150.1.1` e `216.150.16.193` (apex não aceita CNAME, por isso A)
+   - CNAME `itp` → `cname.vercel-dns-016.com.`
+   - CNAME `api.itp` → `cname.vercel-dns-016.com.`
+   - TXT `_vercel` → 3 valores de `vc-domain-verify=...` (apex, itp, api.itp)
+   - Google (`google._domainkey`, verificação, `google-site-verification`)
+     **não replicado** — decisão do usuário de abandonar Google (2026-09-03)
+   - ✅ Validado direto contra `ns1-07.azure-dns.com` antes da troca: MX, A,
+     CNAME `itp`, TXT todos batendo certo.
+4. ✅ **Nameservers trocados na Vercel** (Domains → `institutotiapretinha.org`
+   → Nameservers) em 2026-09-03, pros 4 nameservers do Azure acima.
+   Aguardando propagação (Vercel avisa até 48h; realista 1-4h pra maioria
+   dos resolvers). **Ainda mostrando nameserver antigo** nos testes via
+   8.8.8.8/1.1.1.1 logo após a troca — checar de novo antes de prosseguir
+   pra Fase 1 propriamente (o trabalho de build/deploy da Fase 1 não
+   depende da propagação, só o cutover final do domínio customizado).
+5. ⏳ Validar propagação completa (`nslookup -type=NS institutotiapretinha.org 8.8.8.8`
+   batendo com os 4 nameservers Azure) antes do cutover de domínio
+   customizado de qualquer fase.
 
 Onde as fases abaixo dizem "trocar CNAME de produção" / "criar registro no
 painel DNS da Vercel", ler como "criar/editar o registro na zona Azure DNS".
