@@ -54,6 +54,50 @@ vez de três.
    CNAME/A existentes de cada sistema) — perder um registro de e-mail no
    meio da troca de nameserver derruba e-mail do instituto inteiro, não só
    os sites.
+
+   **Zona exportada em 2026-09-03** (registros reais, replicar 1:1 na Azure
+   DNS antes de trocar nameserver):
+
+   | Tipo | Nome | Valor |
+   |---|---|---|
+   | TXT | @ | `v=spf1 include:spf.protection.outlook.com -all` |
+   | CNAME | `autodiscover` | `autodiscover.outlook.com.` |
+   | MX | @ | `institutotiapretinha-org.mail.protection.outlook.com.` |
+   | TXT | @ | `MS=ms97588793` |
+   | TXT | `_vercel` | `vc-domain-verify=api.itp.institutotiapretinha.org,...` |
+   | TXT | `_vercel` | `vc-domain-verify=itp.institutotiapretinha.org,...` |
+   | TXT | `_vercel` | `vc-domain-verify=institutotiapretinha.org,...` |
+   | ALIAS | @ | `6f060a2c92908857.vercel-dns-017.com` (gerenciado pela Vercel) |
+   | ALIAS | `*` (curinga) | `cname.vercel-dns-016.com.` (gerenciado pela Vercel) |
+   | TXT | `google._domainkey` | `v=DKIM1;k=rsa;p=...` |
+   | CNAME | `tr6x2dsrv2g2` | `gv-ax3cuukbjmj4cj.dv.googlehosted.com.` |
+   | TXT | @ | `google-site-verification=IDfh1rGz-P06D8NH940CvH_Ez4cNXoZUpmbbUqrllA0` |
+   | CAA | @ | `0 issue "pki.goog"` |
+   | CAA | @ | `0 issue "sectigo.com"` |
+   | CAA | @ | `0 issue "letsencrypt.org"` |
+
+   **3 achados que mudam como replicar isso na Azure DNS:**
+
+   - **E-mail é Microsoft 365** (MX + SPF + autodiscover + verificação
+     `MS=`) — o conjunto mais crítico da lista, precisa ir junto e idêntico,
+     senão o e-mail do instituto para de funcionar (não só os sites).
+   - **CAA restringe emissão de certificado a `pki.goog`/`sectigo.com`/
+     `letsencrypt.org`** — o certificado gerenciado do Azure App Service
+     normalmente é emitido por outra CA (DigiCert, a confirmar no momento
+     da emissão) — se não estiver no CAA, o HTTPS falha silenciosamente.
+     **Adicionar a CA do Azure ao CAA antes do primeiro cutover.**
+   - **O registro curinga `*` → Vercel** é o que hoje resolve `itp.` e
+     `api.itp.` sem registro explícito próprio. Isso não existe do mesmo
+     jeito na Azure DNS — cada subdomínio final (`itp.`, `api.itp.`, apex)
+     precisa de registro explícito próprio apontando pro recurso Azure
+     certo, não dá pra portar um curinga genérico.
+
+   **Pendente de confirmação com o usuário** (não presumir): os registros
+   de Google (`google._domainkey`, verificação de domínio, `google-site-
+   verification`) não batem com M365 sendo o provedor de e-mail atual —
+   confirmar se é resíduo de config antiga (ex. Google Workspace anterior)
+   ou se ainda há algo ativo no Google antes de decidir se replica ou
+   descarta na zona nova.
 2. **Azure DNS** → Create DNS zone → `institutotiapretinha.org`, mesmo
    Resource Group `rg-itp-prod`. Recriar manualmente cada registro
    exportado no passo 1.
