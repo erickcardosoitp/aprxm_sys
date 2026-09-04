@@ -22,7 +22,7 @@ de WAF consistente.
 
 ---
 
-## Fase A — SCA (Dependabot) — pode começar já, sem dependência de infra
+## Fase A — SCA (Dependabot) — ✅ `website_tia_pretinha` concluída em 2026-09-04 · `aprxm_sys`/`erp_itp` adiadas (fora de escopo desta rodada, focada só no site)
 
 Grátis em repo público ou privado. Detecta CVE em dependência antes de virar
 incidente (foi assim que achamos a vulnerabilidade do `react-router-dom` no
@@ -37,7 +37,14 @@ website, na mão, via `npm audit` — Dependabot automatiza isso).
        schedule:
          interval: "weekly"
    ```
-2. `aprxm_sys` — dois ecossistemas (backend Python + frontends npm):
+2. `aprxm_sys` — **achado (2026-09-04, não corrigido ainda)**: já existe
+   `.github/workflows/snyk.yml`, mas está `disabled_manually` desde
+   2026-05-30 (os 4 últimos runs antes disso falharam, provável token
+   inválido/ausente) — SCA não está rodando de fato neste repo há 3+ meses.
+   Ao executar esta fase pro `aprxm_sys`, substituir por Dependabot (grátis,
+   sem conta externa) e remover o `snyk.yml` morto, mesma decisão já tomada
+   e depois revertida (por escopo, não por estar errada) nesta sessão.
+   Dois ecossistemas a cobrir (backend Python + frontends npm):
    ```yaml
    version: 2
    updates:
@@ -70,7 +77,7 @@ primeiro scan semanal).
 
 ---
 
-## Fase B — SAST (CodeQL) — pode começar já
+## Fase B — SAST (CodeQL) — ✅ `website_tia_pretinha` concluída em 2026-09-04 · `aprxm_sys`/`erp_itp` adiadas
 
 1. Nos 3 repos: **Settings → Code security → Code scanning → CodeQL
    analysis → Set up (Default)**. GitHub detecta a linguagem automaticamente
@@ -94,21 +101,38 @@ dessa fase — triagem de findings é trabalho contínuo, não um "concluído").
 
 Prioridade do usuário — tratar como item importante, não "nice to have".
 
-### C.1 — `website_tia_pretinha` (pode fazer já, já está no Azure)
+### C.1 — `website_tia_pretinha` — ✅ CONCLUÍDA em 2026-09-04
 
-1. **Application Insights** → Create: `appi-website-itp`, `rg-itp-prod`,
-   workspace-based, região `East US 2` (mesma do Static Web App).
-2. Static Web Apps tem integração nativa com Application Insights (connection
-   string via app setting `APPLICATIONINSIGHTS_CONNECTION_STRING` no recurso
-   `swa-website-itp` → Configuração). Isso dá RUM automático (Core Web
-   Vitals, exceções JS no browser, geografia/dispositivo do visitante) sem
-   precisar instrumentar código React manualmente.
-3. **Availability test** (synthetic monitoring) dentro do próprio recurso
-   Application Insights → testa `https://institutotiapretinha.org` a cada
-   5 min de múltiplas regiões, alerta se cair — pega indisponibilidade antes
-   de um usuário reclamar.
-4. Custo: tier gratuito do Application Insights cobre until 5GB/mês de
-   ingestão — volume desse site fica bem abaixo disso.
+1. ✅ **Log Analytics Workspace** `law-itp-prod` (`rg-itp-prod`, East US 2),
+   com teto de ingestão (`dailyQuotaGb: 0.1`) pra garantir zero risco de
+   custo mesmo com pico de tráfego inesperado.
+2. ✅ **Application Insights** `appi-website-itp`, workspace-based, em cima
+   do `law-itp-prod`.
+3. ❌→✅ **Correção de rota**: a tentativa inicial foi configurar
+   `APPLICATIONINSIGHTS_CONNECTION_STRING` como app setting do Static Web
+   App, assumindo que o Azure injetaria o RUM automaticamente — **isso não
+   funciona pra conteúdo estático puro** (essa app setting só é exposta pra
+   Functions/API do recurso, e este site não tem API). Confirmado vazio via
+   `curl` na home (nenhum script de `monitor.azure` presente) e query sem
+   resultado no Log Analytics.
+4. ✅ Fix real: instalado `@microsoft/applicationinsights-web` via npm,
+   inicializado em `src/appInsights.js` (importado em `main.jsx`), com
+   `enableAutoRouteTracking: true` (necessário por causa do
+   `react-router-dom` — sem isso só a página inicial seria trackeada) e
+   `autoTrackPageVisitTime: true`. Connection string embutida no client é
+   seguro (não é segredo, mesmo padrão de um ID de Google Analytics).
+5. ✅ CSP (`staticwebapp.config.json`) ajustado: `connect-src` libera
+   `https://*.in.applicationinsights.azure.com` e
+   `https://*.livediagnostics.monitor.azure.com` (endpoints de ingestão e
+   live metrics). `script-src` não precisou de exceção — o SDK vem bundlado
+   via npm/Vite, não carrega de CDN externo.
+6. ✅ **Availability test** `website-availability` criado (Portal → recurso
+   Application Insights → Disponibilidade → Adicionar teste padrão),
+   ping em `https://institutotiapretinha.org` a cada 5 min, confirmado via
+   `az monitor app-insights web-test list`.
+7. Custo: tier gratuito do Application Insights cobre até 5GB/mês de
+   ingestão — volume desse site fica bem abaixo disso; teto de 0.1GB/dia no
+   workspace é uma segunda trava de segurança contra custo.
 
 ### C.2 — `aprxm_sys` (junto da Fase 2 da migração, não antes)
 
@@ -171,13 +195,14 @@ Não iniciar agora. Retomar depois que:
 
 ## Ordem de execução recomendada
 
-1. **Agora**: Fase A (Dependabot) + Fase B (CodeQL) nos 3 repos — zero
-   dependência de infra, zero custo, disponível imediatamente.
-2. **Agora**: Fase C.1 (Application Insights do website) — já está no
-   Azure, sem custo relevante.
-3. **Junto da Fase 2 do plano de migração**: Fase C.2 (observabilidade
-   aprxm_sys).
-4. **Junto da Fase 3 do plano de migração**: Fase C.3 (observabilidade
-   erp_itp).
-5. **Depois das Fases 2/3 estáveis**: revisitar Fase D (Front Door) com
+1. ✅ **Feito em 2026-09-04**: Fase A (Dependabot) + Fase B (CodeQL) +
+   Fase C.1 (Application Insights, RUM real + availability test) — só pro
+   `website_tia_pretinha`. Rodada explicitamente escopada só pro site
+   institucional a pedido do usuário; uma tentativa de estender Fase A/B pro
+   `aprxm_sys` foi revertida (commits locais desfeitos, nada chegou a ser
+   enviado ao GitHub) por estar fora do escopo pedido naquele momento.
+2. **Próxima vez, junto da Fase 2 do plano de migração**: Fase A/B/C.2
+   (Dependabot + CodeQL + observabilidade) do `aprxm_sys`.
+3. **Junto da Fase 3 do plano de migração**: Fase A/B/C.3 do `erp_itp`.
+4. **Depois das Fases 2/3 estáveis**: revisitar Fase D (Front Door) com
    orçamento real em mãos.
