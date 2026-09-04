@@ -11,6 +11,38 @@ Execução manual pelo Portal Azure (sem CLI/IaC). Subscription do grant
 nonprofit já ativa. 3 fases em ordem — cada fase só começa depois da anterior
 validada e cortada.
 
+## Notas gerais de execução no Portal (aprendidas na Fase 0.5, valem pra todas as fases)
+
+- **Nomes globais**: Key Vault e Storage Account têm nome único em **toda a
+  Azure**, não só no seu Resource Group — se o nome óbvio já estiver
+  ocupado (mesmo por recurso de outra empresa), o Portal recusa. Tenha um
+  sufixo alternativo pronto (`-01`, `-prod2`).
+- **TXT e CAA agrupam por nome**: ao criar um 2º registro TXT (ou CAA) com
+  o **mesmo nome** de um que já existe (ex. dois TXT em `@`), o Portal
+  recusa dizendo "já existe um conjunto de registos com o mesmo nome".
+  Isso é o esperado — DNS TXT/CAA de mesmo nome vivem **dentro do mesmo
+  registro**, não em registros separados. Solução: abrir o registro
+  existente e usar o botão **"+ adicionar valor"** pra incluir mais um
+  valor dentro dele, em vez de criar um novo.
+- **Apex (`@`) não aceita CNAME** — é regra do protocolo DNS, não
+  limitação do Azure. Pra apontar o domínio raiz pra um alvo externo
+  (Vercel, outro CDN), usa registro **A** com o(s) IP(s) reais — descubra
+  o IP atual com `nslookup dominio.com` antes de criar.
+- **Sempre terminar valores de CNAME/MX/ALIAS com ponto final** (`.`) — é
+  a notação de FQDN absoluto, o Portal às vezes aceita sem mas é a forma
+  correta.
+- **Campo "Metadados"** que aparece em vários formulários (Key Vault, DNS
+  records) é opcional, só tags/notas suas — pode deixar em branco sempre.
+- **Purge protection** (Key Vault) e qualquer opção descrita como
+  "irreversível" — deixar desligada durante a fase de montagem/teste,
+  ligar só depois do ambiente estabilizado em produção.
+- **Propagação de nameserver** demora mais no nível do *registrador* (a
+  Vercel precisar empurrar a mudança pro registro `.org`) do que no nível
+  de cache dos resolvers — testar com
+  `nslookup -type=NS dominio.com 8.8.8.8` (Google) e comparar com o
+  esperado; se ainda mostrar o nameserver antigo horas depois, o atraso
+  está do lado do registrador, não é "só esperar cache".
+
 ---
 
 ## Fase 0 — Preparação (uma vez só) — ✅ CONCLUÍDA em 2026-09-01
@@ -135,34 +167,115 @@ painel DNS da Vercel", ler como "criar/editar o registro na zona Azure DNS".
 ## Fase 1 — Piloto: website_tia_pretinha
 
 Sem banco, sem backend — objetivo é validar o pipeline de deploy/DNS com o
-menor risco antes de mexer em sistemas com dados.
+menor risco antes de mexer em sistemas com dados. Repo: `C:\tia_pretinha`
+(GitHub: confirmar nome exato do repo na conta `erickcardosoitp`, é o
+`website_tia_pretinha` ou nome equivalente).
 
-1. **Static Web Apps** → Create:
-   - Resource group: `rg-itp-prod`
+### 1.1 Criar o recurso
+
+1. Portal Azure → busca **"Aplicativos Web Estáticos"** (Static Web Apps)
+   → **+ Criar**.
+2. **Básico**:
+   - Assinatura: a do grant nonprofit
+   - Grupo de recursos: `rg-itp-prod`
    - Nome: `swa-website-itp`
-   - Plano: **Free**
-   - Fonte: GitHub → repo `website_tia_pretinha`, branch `main`
-   - Build presets: **Vite** (build command `vite build` / output `dist`,
-     conforme `vercel.json` atual)
-   - Isso já cria o workflow do GitHub Actions automaticamente no repo.
-2. Aguardar o primeiro deploy automático, testar em
-   `https://<gerado>.azurestaticapps.net` — navegar no site, checar
-   `/inscricao` (redirect existente no `vercel.json`) e rotas SPA (rewrite
-   pra `index.html`, replicar no `staticwebapp.config.json` se o Azure não
-   aplicar sozinho o rewrite do `vercel.json`).
-3. **Custom domain**: Static Web App → Custom domains → adicionar o domínio
-   do site. Gera um CNAME/TXT pra validar — configurar no provedor de DNS,
-   TTL baixo (300s) definido com antecedência.
-4. Validar HTTPS automático (Azure emite certificado free).
-5. **Cutover**: apontar o domínio de produção pro Azure (trocar o CNAME que
-   hoje aponta pra Vercel). Esperar propagação, testar produção.
-6. Manter o projeto na Vercel intacto por 1-2 semanas antes de remover.
+   - Plano de hospedagem: **Gratuito** (Free)
+   - Região da API/implantação: **East US 2** (ou a região disponível mais
+     próxima — nem toda região do Azure tem o tier Free de Static Web
+     Apps; se `Brazil South` não aparecer na lista, é por isso, normal).
+3. **Detalhes da implantação**:
+   - Origem: **GitHub** → clica em "Entrar com o GitHub" e autoriza,
+     depois seleciona Organização `erickcardosoitp`, Repositório
+     `website_tia_pretinha` (conferir nome exato na lista), Branch `main`.
+   - Predefinições de compilação: procurar **Vite** na lista; se não
+     existir like preset, escolher **Custom** e preencher manualmente:
+     - Local do código do aplicativo: `/`
+     - Local de saída da compilação: `dist`
+     - (não tem API/backend, deixar o campo de API vazio)
+4. **Revisar + criar** → **Criar**. Isso já cria automaticamente um
+   workflow do GitHub Actions dentro do repositório (arquivo
+   `.github/workflows/azure-static-web-apps-*.yml`) que builda e faz
+   deploy a cada push na branch `main`.
+
+### 1.2 Validar o primeiro deploy
+
+1. Aguardar alguns minutos — acompanhar o progresso na aba **Actions** do
+   repositório no GitHub, ou na aba **Visão geral** do recurso no Azure
+   (mostra o status do último deploy).
+2. Quando concluído, o Azure mostra uma URL tipo
+   `https://<nome-gerado>.azurestaticapps.net` — abrir e navegar:
+   - Página inicial carrega certo
+   - `/inscricao` funciona (hoje é redirect configurado no `vercel.json`
+     pra `https://itp.institutotiapretinha.org/inscricao` — no Azure isso
+     precisa existir num `staticwebapp.config.json` na raiz do repo, ver
+     abaixo)
+   - Navegar entre páginas via link interno (testa o roteamento de SPA)
+   - Recarregar a página (F5) numa rota interna tipo `/sobre` — se der 404,
+     falta o rewrite de SPA
+
+### 1.3 `staticwebapp.config.json` (só se o passo 1.2 mostrar problema)
+
+Se o redirect de `/inscricao` ou o F5 em rota interna derem erro, criar
+`staticwebapp.config.json` na raiz do repo `website_tia_pretinha` (mesmo
+nível do `vercel.json` atual):
+
+```json
+{
+  "routes": [
+    {
+      "route": "/matricula",
+      "redirect": "https://itp.institutotiapretinha.org/inscricao",
+      "statusCode": 302
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html"
+  }
+}
+```
+
+Commitar e dar push — o GitHub Actions já configurado builda e reaplica
+automaticamente.
+
+### 1.4 Domínio customizado
+
+1. No recurso Static Web App → **Domínios personalizados** → **+ Adicionar**.
+2. Digitar o domínio (apex `institutotiapretinha.org` ou o subdomínio que
+   o site usa hoje — confirmar qual é o real antes, pode ser só o apex).
+3. O Azure mostra um registro de validação (tipo TXT ou CNAME, específico
+   pra esse recurso) — criar esse registro na zona `institutotiapretinha.org`
+   do Azure DNS (mesmo processo da Fase 0.5: zona → "+ Registro conjunto").
+4. Voltar na tela de Domínios personalizados e clicar em **Validar** — pode
+   levar alguns minutos pra propagar dentro da própria infra do Azure
+   (mais rápido que propagação de internet, é tudo Azure→Azure).
+5. Depois de validado, o Azure pede o registro final (A ou CNAME/ALIAS,
+   dependendo se é apex ou subdomínio) apontando pro Static Web App —
+   criar esse registro na zona também.
+6. HTTPS é emitido automaticamente pelo Azure depois que o domínio valida
+   (não precisa de ação manual) — se falhar, o motivo mais provável é o
+   CAA da zona não incluir a CA que o Azure usa (ver Fase 0.5, já deixamos
+   `digicert.com` no CAA preventivamente).
+
+### 1.5 Cutover de verdade
+
+1. Só depois do passo 1.4 validado E testado no próprio subdomínio
+   temporário que o Azure ainda expõe (`*.azurestaticapps.net` continua
+   funcionando em paralelo).
+2. O registro final da 1.4 já FOI o cutover — diferente das Fases 2/3, o
+   Static Web App não tem conceito de "slot de staging" separado, então
+   validar bem antes do passo 1.4.3 é o que substitui o staging aqui.
+3. Testar o domínio de produção de verdade depois do DNS validado.
+4. Manter o projeto na Vercel intacto por 1-2 semanas antes de remover —
+   não precisa fazer nada ativo pra isso, só não deletar o projeto Vercel
+   ainda.
 
 Critério de saída: site em produção servido pelo Azure, Vercel como fallback
 não removido ainda.
 
-**Rollback**: reverter o CNAME de DNS pra Vercel (TTL baixo já garante
-propagação rápida).
+**Rollback**: editar o registro na zona Azure DNS de volta pro CNAME/ALIAS
+da Vercel (`cname.vercel-dns-016.com.` pro subdomínio, ou os IPs
+`216.150.1.1`/`216.150.16.193` pro apex — mesmos valores documentados na
+Fase 0.5).
 
 ---
 
