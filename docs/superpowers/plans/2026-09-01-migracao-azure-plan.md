@@ -522,6 +522,72 @@ Cutover de cada fase.
 
 ---
 
+## Fase 4 — Pós-migração: engenharia de dados, pipelines, IA, backup
+
+Só começa depois das Fases 1-3 estáveis em produção por pelo menos 1-2
+semanas (mesmo critério de "não empilhar mudança em cima de mudança" das
+fases anteriores). Itens de agenda, não runbook detalhado ainda — cada um
+vira seu próprio spec/plano quando for a vez.
+
+**Backup (o mais urgente dos 4, tratar primeiro):**
+- Confirmar que o backup automático do Postgres Flexible Server (7 dias,
+  já configurado nas Fases 2/3) está realmente restaurável — fazer um
+  **teste de restore de verdade** num banco descartável, não só confiar
+  que "tá configurado". Backup que nunca foi restaurado não é backup
+  testado.
+- Blob Storage (`staprxmmidia`): avaliar ativar **soft delete** de blob e
+  **versionamento** (baixo custo, protege contra apagar foto/parquet por
+  engano).
+- Documentar RTO/RPO alvo (quanto tempo até recuperar, quanto dado se pode
+  perder) — hoje não está definido em lugar nenhum, é a base pra qualquer
+  decisão de backup daqui pra frente.
+
+**Pipelines / engenharia de dados:**
+- Formalizar o pipeline bronze→silver→gold que já existe (`datalake_service.py`)
+  no ambiente novo — ele já funciona, a Fase 2.5 só troca o storage por
+  baixo (R2→Blob), não muda a lógica. Aqui é sobre *documentar* e colocar
+  monitoramento (alerta se o cron/Logic App do ETL falhar silenciosamente).
+- Reavaliar a sugestão já registrada na Fase 2.2b: mover os cron jobs do
+  Logic App pra `APScheduler` dentro do próprio processo do App Service —
+  só depois do ambiente estabilizado, não como parte da migração.
+- Ponytail: não introduzir Azure Data Factory/Synapse ou ferramenta pesada
+  de orquestração — o volume de dado é de poucos MB, o pipeline em
+  pandas/Python que já existe resolve. Trocar de ferramenta aqui seria
+  over-engineering sem necessidade real.
+
+**IA:** escopo ainda não definido — não vou especular o que entra aqui.
+Quando chegar a hora, trazer requisitos concretos (que problema resolve,
+que dado usa) pra brainstorming próprio, mesmo processo que usamos pra
+essa migração. Pontas soltas já conhecidas pra revisar nessa conversa:
+`@anthropic-ai/sdk` instalado no erp_itp sem uso encontrado no código, e
+integração Gemini/Tavily de captação sem chaves ativas em produção hoje.
+
+**Segurança adicional (já ficou registrada como "avaliar depois" na spec):**
+- Azure Front Door + WAF na frente dos App Services — reavaliar se o
+  tráfego público crescer (ex. matrícula aberta ao público) ou se aparecer
+  tráfego suspeito. Não incluído nas Fases 1-3 porque o ganho não
+  justificava o custo pro volume atual (7 usuários/dia).
+
+---
+
+## Checklist resumido (visão rápida, detalhe completo em cada fase acima)
+
+- [x] **Fase 0** — Resource Group, orçamento, Key Vault
+- [ ] **Fase 0.5** — Exportar zona DNS ✅ feito · criar Azure DNS zone ·
+      recriar registros (e-mail M365 + CAA com CA do Azure) · trocar
+      nameserver na Vercel · validar propagação
+- [ ] **Fase 1** — Piloto website_tia_pretinha (Static Web App → testar →
+      cutover → manter Vercel 1-2 semanas)
+- [ ] **Fase 2** — aprxm_sys: banco → backend+crons → frontends
+      (main/presidencia/painel) → storage (Supabase+R2→Blob) → DW → cutover
+- [ ] **Fase 3** — erp_itp: sincronizar repo → banco (PG17) →
+      backend+crons → frontend → Apps Script → cutover
+- [ ] **Validação de segurança/latência** — antes de CADA swap das Fases 2 e 3
+- [ ] **Fase 4** — pós-migração: teste de restore de backup, pipelines,
+      IA (escopo a definir), Front Door/WAF (se necessário)
+
+---
+
 ## Fora deste plano
 
 - CI/CD com Actions customizado (health check automatizado pré-swap) — o
