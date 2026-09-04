@@ -92,12 +92,12 @@ vez de três.
      precisa de registro explícito próprio apontando pro recurso Azure
      certo, não dá pra portar um curinga genérico.
 
-   **Pendente de confirmação com o usuário** (não presumir): os registros
-   de Google (`google._domainkey`, verificação de domínio, `google-site-
-   verification`) não batem com M365 sendo o provedor de e-mail atual —
-   confirmar se é resíduo de config antiga (ex. Google Workspace anterior)
-   ou se ainda há algo ativo no Google antes de decidir se replica ou
-   descarta na zona nova.
+   **Confirmado com o usuário (2026-09-03)**: Google está sendo abandonado
+   — os registros `google._domainkey`, verificação de domínio Google
+   (`tr6x2dsrv2g2`) e `google-site-verification` **não entram** na zona
+   nova. Provedor de e-mail segue 100% Microsoft 365 — nenhum servidor novo
+   de e-mail a configurar, só replicar MX/SPF/autodiscover/verificação
+   `MS=` exatamente como estão hoje.
 2. **Azure DNS** → Create DNS zone → `institutotiapretinha.org`, mesmo
    Resource Group `rg-itp-prod`. Recriar manualmente cada registro
    exportado no passo 1.
