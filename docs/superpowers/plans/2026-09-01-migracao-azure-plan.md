@@ -66,7 +66,7 @@ configurado. **Atingido.**
 
 ---
 
-## Fase 0.5 — Migrar DNS pra fora da Vercel (uma vez só, antes da Fase 1) — ⏳ EM ANDAMENTO (nameserver trocado em 2026-09-03, aguardando propagação)
+## Fase 0.5 — Migrar DNS pra fora da Vercel (uma vez só, antes da Fase 1) — ✅ CONCLUÍDA em 2026-09-04 (propagação NS validada em 8.8.8.8 e 1.1.1.1)
 
 Confirmado nos 2 levantamentos (website e erp_itp): `institutotiapretinha.org`
 é registrado **e** tem DNS hospedado na própria Vercel (registrador Vercel,
@@ -155,16 +155,16 @@ vez de três.
    8.8.8.8/1.1.1.1 logo após a troca — checar de novo antes de prosseguir
    pra Fase 1 propriamente (o trabalho de build/deploy da Fase 1 não
    depende da propagação, só o cutover final do domínio customizado).
-5. ⏳ Validar propagação completa (`nslookup -type=NS institutotiapretinha.org 8.8.8.8`
-   batendo com os 4 nameservers Azure) antes do cutover de domínio
-   customizado de qualquer fase.
+5. ✅ Propagação completa validada em 2026-09-04 (`nslookup -type=NS
+   institutotiapretinha.org 8.8.8.8` e `1.1.1.1` batendo com os 4
+   nameservers Azure).
 
 Onde as fases abaixo dizem "trocar CNAME de produção" / "criar registro no
 painel DNS da Vercel", ler como "criar/editar o registro na zona Azure DNS".
 
 ---
 
-## Fase 1 — Piloto: website_tia_pretinha
+## Fase 1 — Piloto: website_tia_pretinha — ✅ CONCLUÍDA em 2026-09-04
 
 Sem banco, sem backend — objetivo é validar o pipeline de deploy/DNS com o
 menor risco antes de mexer em sistemas com dados. Repo: `C:\tia_pretinha`
@@ -705,11 +705,12 @@ integração Gemini/Tavily de captação sem chaves ativas em produção hoje.
 ## Checklist resumido (visão rápida, detalhe completo em cada fase acima)
 
 - [x] **Fase 0** — Resource Group, orçamento, Key Vault
-- [ ] **Fase 0.5** — Exportar zona DNS ✅ feito · criar Azure DNS zone ·
-      recriar registros (e-mail M365 + CAA com CA do Azure) · trocar
-      nameserver na Vercel · validar propagação
-- [ ] **Fase 1** — Piloto website_tia_pretinha (Static Web App → testar →
-      cutover → manter Vercel 1-2 semanas)
+- [x] **Fase 0.5** — Exportar zona DNS · criar Azure DNS zone · recriar
+      registros (e-mail M365 + CAA com CA do Azure) · trocar nameserver na
+      Vercel · validar propagação
+- [x] **Fase 1** — Piloto website_tia_pretinha (Static Web App → testado →
+      cutover feito, domínio desvinculado do projeto Vercel em 2026-09-04 —
+      registrador segue na Vercel, sem impacto nas Fases 2/3)
 - [ ] **Fase 2** — aprxm_sys: banco → backend+crons → frontends
       (main/presidencia/painel) → storage (Supabase+R2→Blob) → DW → cutover
 - [ ] **Fase 3** — erp_itp: sincronizar repo → banco (PG17) →
