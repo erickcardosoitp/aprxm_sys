@@ -31,9 +31,9 @@ Convenção: `[x]` feito · `[~]` em andamento/parcial · `[ ]` não iniciado.
 - [x] Decisão: registros do Google **não replicados** (abandonando Google)
 - [x] Validar zona nova direto via nameserver Azure (antes da troca)
 - [x] Trocar nameservers na Vercel pros 4 do Azure
-- [ ] **Validar propagação completa** (checar de novo via 8.8.8.8/1.1.1.1 —
-      última checagem ainda mostrava nameserver antigo, esperado logo após
-      a troca)
+- [x] **Validar propagação completa** — confirmado 2026-09-04 via registro
+      `.org` direto + Google + Cloudflare, todos batendo com os 4
+      nameservers Azure. MX/A/CNAME testados e resolvendo certo.
 - [ ] Confirmar CA real do certificado gerenciado do Azure App Service
       (assumimos DigiCert no CAA, confirmar quando emitir o 1º certificado
       na Fase 1)
