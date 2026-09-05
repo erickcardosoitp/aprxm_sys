@@ -7,6 +7,7 @@
 # Ex.: ./pg-backup.sh erp_itp postgres:17-alpine
 #      ./pg-backup.sh aprxm_sys postgres:16-alpine   (default se omitir)
 set -euo pipefail
+export MSYS_NO_PATHCONV=1  # evita o Git Bash/MSYS traduzir "/backups" (caminho dentro do container) pra um caminho Windows
 
 SYSTEM="${1:?uso: pg-backup.sh <nome-sistema, ex: erp_itp> [imagem-postgres]}"
 PG_IMAGE="${2:-postgres:16-alpine}"

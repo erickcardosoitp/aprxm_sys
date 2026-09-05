@@ -3,6 +3,7 @@
 # depois do restore. Roda via Docker. Sai com codigo != 0 se divergir.
 # Uso: SOURCE_DATABASE_URL=... TARGET_DATABASE_URL=... ./pg-verify.sh [imagem]
 set -euo pipefail
+export MSYS_NO_PATHCONV=1  # evita o Git Bash/MSYS traduzir "/scripts" (caminho dentro do container) pra um caminho Windows
 
 PG_IMAGE="${1:-postgres:16-alpine}"
 : "${SOURCE_DATABASE_URL:?defina SOURCE_DATABASE_URL}"

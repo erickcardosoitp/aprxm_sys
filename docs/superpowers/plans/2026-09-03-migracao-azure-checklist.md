@@ -165,7 +165,13 @@ aprxm_sys"**.
 - [x] Scripts reutilizáveis criados (`docs/superpowers/plans/scripts/`:
       `pg-backup.sh`, `pg-restore.sh`, `pg-verify.sh`, `count_all.sql`) —
       rodam via Docker (`postgres:17-alpine`), sem instalar Postgres local
-- [ ] Rodar `pg-backup.sh erp_itp postgres:17-alpine` e validar o dump gerado
+- [x] Rodar `pg-backup.sh erp_itp postgres:17-alpine` e validar o dump gerado
+      — ✅ 2026-09-05, 3,6MB, 76 tabelas com dados. Achado: precisou de
+      `export MSYS_NO_PATHCONV=1` nos 3 scripts (Git Bash traduzia o
+      caminho `/backups` do container pra um caminho Windows errado),
+      corrigido e commitado. Extensões confirmadas no dump: `pg_session_jwt`
+      (será excluída no restore), `pgcrypto` e `uuid-ossp` (padrão, sem
+      problema no Azure).
 - [ ] Criar `psql-erpitp-prod` como **Postgres 17** (confirmar disponibilidade
       na região antes de assumir)
 - [ ] Criar banco lógico `erp_itp_db`

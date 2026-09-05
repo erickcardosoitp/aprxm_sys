@@ -5,6 +5,7 @@
 #
 # Uso: TARGET_DATABASE_URL='postgresql://...' ./pg-restore.sh <arquivo.dump> [imagem]
 set -euo pipefail
+export MSYS_NO_PATHCONV=1  # evita o Git Bash/MSYS traduzir "/backups" (caminho dentro do container) pra um caminho Windows
 
 DUMP_ARG="${1:?uso: pg-restore.sh <arquivo.dump> [imagem-postgres]}"
 PG_IMAGE="${2:-postgres:16-alpine}"
