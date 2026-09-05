@@ -279,6 +279,14 @@ Fase 0.5).
 
 ---
 
+## ⚠️ Ordem de execução real (decidido 2026-09-05): erp_itp antes do aprxm_sys
+
+As fases abaixo continuam numeradas Fase 2 (aprxm_sys) / Fase 3 (erp_itp)
+pra não reescrever todas as referências internas cruzadas, mas a
+**execução real segue Fase 3 (erp_itp) primeiro, Fase 2 (aprxm_sys)
+depois** — decisão do usuário, provavelmente por prioridade de negócio.
+Ao seguir este plano, pule direto pra "Fase 3 — erp_itp" agora.
+
 ## Fase 2 — aprxm_sys
 
 ### 2.1 Banco de dados

@@ -68,6 +68,12 @@ Detalhe completo: [plano de segurança/observabilidade](2026-09-04-seguranca-obs
 - [ ] Application Insights (backend + frontend SSR) — `erp_itp` (junto da Fase 3.2/3.3)
 - [ ] Front Door + WAF — adiado, revisitar com custo real medido pós Fases 2/3
 
+## ⚠️ Ordem real (2026-09-05): erp_itp primeiro, aprxm_sys depois
+
+Os títulos abaixo mantêm a numeração original (Fase 2 = aprxm_sys, Fase 3 =
+erp_itp), mas **execute a seção "Fase 3 — erp_itp" antes da "Fase 2 —
+aprxm_sys"**.
+
 ## Fase 2 — aprxm_sys
 
 ### Banco
