@@ -27,7 +27,7 @@
     "react-router-dom": "^7.18.3",
     "react-signature-canvas": "^1.0.6",
     "recharts": "^3.8.1",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
@@ -36,13 +36,13 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/react-signature-canvas": "^1.0.5",
-    "@vitejs/plugin-react": "^4.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.4.19",
     "eslint": "^9.3.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.4.5",
-    "vite": "^5.2.12"
+    "vite": "^8.2.2"
   },
   "overrides": {
     "follow-redirects": "^1.16.0"
