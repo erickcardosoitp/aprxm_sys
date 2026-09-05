@@ -1,10 +1,12 @@
 # Checklist de implementação — Migração ITP para Azure
 
 Checklist de execução, item por item. Detalhe/racional de cada item está no
-[plano completo](2026-09-01-migracao-azure-plan.md) e na
-[spec](../specs/2026-09-01-migracao-azure-design.md). Este documento é só
-pra marcar progresso e não deixar nada passar — atualizar a cada sessão de
-trabalho.
+[plano completo](2026-09-01-migracao-azure-plan.md), na
+[spec](../specs/2026-09-01-migracao-azure-design.md) e no
+[plano de segurança/observabilidade](2026-09-04-seguranca-observabilidade-plan.md).
+Este documento é só pra marcar progresso e não deixar nada passar —
+atualizar a cada sessão de trabalho, inclusive quando o trabalho vier de
+outra máquina/sessão (sempre `git pull` antes de confiar no estado daqui).
 
 Convenção: `[x]` feito · `[~]` em andamento/parcial · `[ ]` não iniciado.
 
@@ -34,21 +36,37 @@ Convenção: `[x]` feito · `[~]` em andamento/parcial · `[ ]` não iniciado.
 - [x] **Validar propagação completa** — confirmado 2026-09-04 via registro
       `.org` direto + Google + Cloudflare, todos batendo com os 4
       nameservers Azure. MX/A/CNAME testados e resolvendo certo.
-- [ ] Confirmar CA real do certificado gerenciado do Azure App Service
-      (assumimos DigiCert no CAA, confirmar quando emitir o 1º certificado
-      na Fase 1)
+- [x] Confirmar CA real do certificado gerenciado do Azure App Service —
+      HTTPS confirmado funcionando em produção (`https://institutotiapretinha.org`,
+      availability test ativo pingando essa URL), CAA não bloqueou a emissão.
 
-## Fase 1 — Piloto: website_tia_pretinha
+## Fase 1 — Piloto: website_tia_pretinha — ✅ CONCLUÍDA em 2026-09-04
 
-- [ ] Criar Static Web App `swa-website-itp` (Free, fonte GitHub, build Vite)
-- [ ] Validar workflow do GitHub Actions gerado automaticamente
-- [ ] Testar em `*.azurestaticapps.net` (navegação, redirect `/inscricao`, rotas SPA)
-- [ ] Escrever `staticwebapp.config.json` se o rewrite não vier automático
-- [ ] Configurar custom domain (depende de DNS propagado)
-- [ ] Validar HTTPS automático emitido
-- [ ] Cutover: apontar domínio de produção pro Azure
-- [ ] Checklist manual pós-cutover (navegação, redirect)
-- [ ] Manter projeto na Vercel intacto por 1-2 semanas
+- [x] Criar Static Web App `swa-website-itp` (Free, fonte GitHub, build Vite)
+- [x] Validar workflow do GitHub Actions gerado automaticamente
+- [x] Testar em `*.azurestaticapps.net` (navegação, redirect `/inscricao`, rotas SPA)
+- [x] `staticwebapp.config.json` — CSP ajustado pra liberar endpoints do Application Insights
+- [x] Configurar custom domain
+- [x] Validar HTTPS automático emitido
+- [x] Cutover: `institutotiapretinha.org` servido pelo Azure
+- [x] Checklist manual pós-cutover
+- [ ] Manter projeto na Vercel intacto por 1-2 semanas (em andamento, não remover ainda — prazo até ~2026-09-18)
+
+## Segurança/CI e Observabilidade (trilha paralela, não bloqueia as fases de migração)
+
+Detalhe completo: [plano de segurança/observabilidade](2026-09-04-seguranca-observabilidade-plan.md).
+
+- [x] Dependabot — `website_tia_pretinha`
+- [x] Dependabot — `aprxm_sys` (pip backend, npm frontend/presidencia/painel, docker, github-actions)
+- [ ] Dependabot — `erp_itp` (pendente, não depende de nenhuma fase da migração)
+- [x] CodeQL — `website_tia_pretinha`
+- [x] CodeQL — `aprxm_sys` (javascript-typescript + python)
+- [ ] CodeQL — `erp_itp` (pendente, idem)
+- [ ] Branch protection exigindo status check do CodeQL nos 3 repos (ainda não confirmado)
+- [x] Application Insights + RUM real + availability test — `website_tia_pretinha`
+- [ ] Application Insights (backend + 3 frontends) — `aprxm_sys` (junto da Fase 2.2/2.3)
+- [ ] Application Insights (backend + frontend SSR) — `erp_itp` (junto da Fase 3.2/3.3)
+- [ ] Front Door + WAF — adiado, revisitar com custo real medido pós Fases 2/3
 
 ## Fase 2 — aprxm_sys
 

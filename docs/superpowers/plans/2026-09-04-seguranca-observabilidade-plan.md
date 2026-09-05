@@ -22,7 +22,7 @@ de WAF consistente.
 
 ---
 
-## Fase A — SCA (Dependabot) — ✅ `website_tia_pretinha` concluída em 2026-09-04 · `aprxm_sys`/`erp_itp` adiadas (fora de escopo desta rodada, focada só no site)
+## Fase A — SCA (Dependabot) — ✅ `website_tia_pretinha` e `aprxm_sys` concluídas em 2026-09-04 · `erp_itp` pendente
 
 Grátis em repo público ou privado. Detecta CVE em dependência antes de virar
 incidente (foi assim que achamos a vulnerabilidade do `react-router-dom` no
@@ -37,39 +37,20 @@ website, na mão, via `npm audit` — Dependabot automatiza isso).
        schedule:
          interval: "weekly"
    ```
-2. `aprxm_sys` — **achado (2026-09-04, não corrigido ainda)**: já existe
-   `.github/workflows/snyk.yml`, mas está `disabled_manually` desde
-   2026-05-30 (os 4 últimos runs antes disso falharam, provável token
-   inválido/ausente) — SCA não está rodando de fato neste repo há 3+ meses.
-   Ao executar esta fase pro `aprxm_sys`, substituir por Dependabot (grátis,
-   sem conta externa) e remover o `snyk.yml` morto, mesma decisão já tomada
-   e depois revertida (por escopo, não por estar errada) nesta sessão.
-   Dois ecossistemas a cobrir (backend Python + frontends npm):
-   ```yaml
-   version: 2
-   updates:
-     - package-ecosystem: "pip"
-       directory: "/backend"
-       schedule:
-         interval: "weekly"
-     - package-ecosystem: "npm"
-       directory: "/frontend"
-       schedule:
-         interval: "weekly"
-     - package-ecosystem: "npm"
-       directory: "/presidencia"
-       schedule:
-         interval: "weekly"
-     - package-ecosystem: "npm"
-       directory: "/painel"
-       schedule:
-         interval: "weekly"
-   ```
-3. `erp_itp` — monorepo NestJS+Next.js, confirmar estrutura real de
-   diretórios antes de escrever o `dependabot.yml` (não assumir
+2. `aprxm_sys` — **✅ concluído em 2026-09-04**: o repo tinha
+   `.github/workflows/snyk.yml` `disabled_manually` desde 2026-05-30 (os 4
+   últimos runs antes disso falharam, token inválido/ausente) — SCA não
+   rodava de fato neste repo há 3+ meses, sem ninguém perceber. Removido e
+   substituído por `.github/dependabot.yml`, confirmado no repo cobrindo:
+   `pip` (`/backend`), `npm` (`/frontend`, `/presidencia`, `/painel`),
+   `docker` (`/backend`, `/frontend`) e `github-actions` (`/`).
+3. `erp_itp` — pendente. Monorepo NestJS+Next.js, confirmar estrutura real
+   de diretórios antes de escrever o `dependabot.yml` (não assumir
    `apps/backend`/`apps/frontend` sem checar `package.json` workspaces).
 4. Ativar também **Dependabot security updates** (auto-PR de fix, não só
-   alerta) nas 3 configs de repo (Settings → Code security).
+   alerta) nas 3 configs de repo (Settings → Code security) — confirmar se
+   já está ativo pro `aprxm_sys`/`website_tia_pretinha` ou se falta esse
+   passo específico.
 
 Critério de saída: os 3 repos com PR automático de dependência vulnerável
 funcionando (testar forçando um `npm outdated` conhecido ou aguardar o
@@ -77,19 +58,20 @@ primeiro scan semanal).
 
 ---
 
-## Fase B — SAST (CodeQL) — ✅ `website_tia_pretinha` concluída em 2026-09-04 · `aprxm_sys`/`erp_itp` adiadas
+## Fase B — SAST (CodeQL) — ✅ `website_tia_pretinha` e `aprxm_sys` concluídas em 2026-09-04 · `erp_itp` pendente
 
-1. Nos 3 repos: **Settings → Code security → Code scanning → CodeQL
-   analysis → Set up (Default)**. GitHub detecta a linguagem automaticamente
-   (JS/TS nos 3, + Python no `aprxm_sys`).
-2. Default setup basta pro início (roda em push/PR pra `main` + agendado
-   semanal) — só migrar pra "Advanced" (workflow customizado) se precisar de
-   query pack extra ou build step especial (não é o caso aqui, os 3 são
-   build padrão).
+1. `website_tia_pretinha` e `aprxm_sys` — **✅ concluído**: workflow
+   `.github/workflows/codeql.yml` (setup **Advanced**, não o Default
+   descrito originalmente aqui — confirmado no repo do `aprxm_sys`),
+   matrix `["javascript-typescript", "python"]`, roda em push/PR pra
+   `main` + agendado semanal (`0 6 * * 1`).
+2. `erp_itp` — pendente. GitHub detecta a linguagem automaticamente
+   (JS/TS) — usar o mesmo padrão Advanced já validado nos outros 2 repos
+   em vez de reinventar, ou o Default setup se não precisar do mesmo nível
+   de controle.
 3. Branch protection na `main` dos 3 repos: exigir status check do CodeQL
-   (e do CI/CD existente) passando antes de merge — impede que um push
-   direto (como quase aconteceu sem querer com a Vercel antes) pule a
-   checagem.
+   (e do CI/CD existente) passando antes de merge — **ainda não
+   confirmado se está ativo**, checar em Settings → Branches de cada repo.
 
 Critério de saída: CodeQL rodando nos 3 repos, pelo menos 1 scan completo
 sem erro de configuração (findings em si não bloqueiam o critério de saída
@@ -195,14 +177,17 @@ Não iniciar agora. Retomar depois que:
 
 ## Ordem de execução recomendada
 
-1. ✅ **Feito em 2026-09-04**: Fase A (Dependabot) + Fase B (CodeQL) +
-   Fase C.1 (Application Insights, RUM real + availability test) — só pro
-   `website_tia_pretinha`. Rodada explicitamente escopada só pro site
-   institucional a pedido do usuário; uma tentativa de estender Fase A/B pro
-   `aprxm_sys` foi revertida (commits locais desfeitos, nada chegou a ser
-   enviado ao GitHub) por estar fora do escopo pedido naquele momento.
-2. **Próxima vez, junto da Fase 2 do plano de migração**: Fase A/B/C.2
-   (Dependabot + CodeQL + observabilidade) do `aprxm_sys`.
-3. **Junto da Fase 3 do plano de migração**: Fase A/B/C.3 do `erp_itp`.
-4. **Depois das Fases 2/3 estáveis**: revisitar Fase D (Front Door) com
+1. ✅ **Feito em 2026-09-04**: Fase A (Dependabot) + Fase B (CodeQL) pros
+   dois repos `website_tia_pretinha` **e** `aprxm_sys` (confirmado
+   diretamente no repo, corrigindo uma nota anterior deste plano que dizia
+   "adiado" — não estava). Fase C.1 (Application Insights, RUM real +
+   availability test) só pro `website_tia_pretinha`.
+2. **Pendente, sem depender de nenhuma fase da migração**: Fase A/B do
+   `erp_itp` (Dependabot + CodeQL) — pode ser feito a qualquer momento,
+   não precisa esperar a Fase 3 da migração como as outras pendências.
+3. **Junto da Fase 2 do plano de migração**: Fase C.2 (observabilidade) do
+   `aprxm_sys` — essa sim depende dos recursos da Fase 2 existirem.
+4. **Junto da Fase 3 do plano de migração**: Fase C.3 (observabilidade) do
+   `erp_itp`.
+5. **Depois das Fases 2/3 estáveis**: revisitar Fase D (Front Door) com
    orçamento real em mãos.
