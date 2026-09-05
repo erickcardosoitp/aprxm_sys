@@ -18,7 +18,7 @@ pywebpush==2.3.0
 webauthn==2.2.0
 # Data Lake
 boto3==1.38.0
-pandas==2.2.3
+pandas==3.0.5
 pyarrow==25.0.1
 psycopg2-binary==2.9.10  # driver sync p/ carga do gold no data warehouse (pandas.to_sql)
 # pins Snyk — transitivos
