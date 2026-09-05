@@ -28,7 +28,7 @@
     "react-signature-canvas": "^1.0.6",
     "recharts": "^3.8.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-    "zustand": "^4.5.2"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@babel/core": "^7.29.6",
