@@ -536,6 +536,37 @@ Banco lógico `erp_itp_db`, `pg_dump`/`restore` do Neon (`neondb`) atual.
 `pg_session_jwt` (extensão Neon) aparece disponível mas sem uso confirmado
 no código — mesma tratativa da Fase 2.1, seguro excluir do dump.
 
+**⏳ EM ANDAMENTO (2026-09-05):** scripts reutilizáveis de backup/restore/
+verificação criados em `docs/superpowers/plans/scripts/` — pensados pra
+servir os 3 bancos (erp_itp, aprxm_sys, DW), não só este.
+
+- `pg-backup.sh <sistema> [imagem]` — dump `--format=custom` em
+  `scripts/backups/<sistema>_<timestamp>.dump`.
+- `pg-restore.sh <arquivo.dump> [imagem]` — restore excluindo
+  automaticamente extensões proprietárias do Neon sem equivalente no Azure
+  (hoje só `pg_session_jwt`, via filtro na TOC do `pg_restore -l`).
+- `pg-verify.sh [imagem]` + `count_all.sql` — compara contagem de linhas de
+  **todas** as tabelas entre origem e destino (não só as 3 citadas
+  originalmente), usando `SOURCE_DATABASE_URL`/`TARGET_DATABASE_URL`.
+
+**Achado ao testar (2026-09-05):** o `pg_dump` instalado localmente é
+**16.12**, mas o servidor de origem do erp_itp é **17.11** — Postgres
+recusa dump de servidor mais novo que o cliente (proteção do próprio
+Postgres, não é bug). Em vez de instalar PostgreSQL 17 completo na máquina
+(desnecessário — não precisamos de um servidor local, só do cliente),
+os 3 scripts rodam via **Docker** (`docker run --rm postgres:<versão>-alpine`),
+container descartável, nada fica instalado. Passar a imagem certa por
+sistema: `postgres:17-alpine` pro erp_itp, `postgres:16-alpine` (default)
+pro aprxm_sys/DW.
+
+Alternativa equivalente, se preferir não usar Docker na máquina local:
+rodar os mesmos comandos via **Azure Cloud Shell** — é a mesma operação
+(cliente psql conectando nos dois bancos), só muda onde roda.
+
+Pendente antes de fechar esta etapa: rodar `pg-backup.sh erp_itp
+postgres:17-alpine` de verdade (validar o dump), criar `psql-erpitp-prod`,
+depois `pg-restore.sh` + `pg-verify.sh` contra ele.
+
 ### 3.2 Backend (NestJS)
 
 1. `asp-erpitp` (App Service Plan Linux B1) hospeda os 2 App Services desta

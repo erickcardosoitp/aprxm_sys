@@ -81,10 +81,12 @@ aprxm_sys"**.
       sem `.python-version` — pendência aberta desde o levantamento)
 - [ ] Criar `psql-aprxm-prod` (Flexible Server, Postgres 16, Burstable B1ms)
 - [ ] Criar banco lógico `aprxm_db`
-- [ ] Excluir extensão `pg_session_jwt` antes do dump
 - [ ] Avaliar truncar `api_request_logs` antes do dump (53MB/156k linhas)
-- [ ] `pg_dump`/`pg_restore` Neon → Azure
-- [ ] Validar contagem de linhas (residents, financial_transactions, packages)
+- [ ] Rodar `pg-backup.sh aprxm_sys` (`docs/superpowers/plans/scripts/`,
+      já exclui `pg_session_jwt` automaticamente no restore, imagem
+      `postgres:16-alpine` default)
+- [ ] Rodar `pg-restore.sh` contra o `psql-aprxm-prod`
+- [ ] Rodar `pg-verify.sh` — contagem de linhas de todas as tabelas batendo
 
 ### Backend
 - [ ] Criar App Service Plan `asp-aprxm` (Linux B1)
@@ -127,7 +129,8 @@ aprxm_sys"**.
 
 ### DW / Analytics
 - [ ] Criar `psql-dw-prod` (Flexible Server, Postgres 16, Burstable B1ms)
-- [ ] `pg_dump`/`restore` do Neon (`ep-floral-shadow...`)
+- [ ] `pg-backup.sh dw` + `pg-restore.sh` + `pg-verify.sh` (mesmos scripts,
+      `postgres:16-alpine`) do Neon (`ep-floral-shadow...`)
 - [ ] Localizar e atualizar job/processo que popula a camada gold
 - [ ] Validar Power BI puxando do banco novo
 - [ ] Atualizar `DATAWAREHOUSE_APRXM_DATABASE_URL` no `app-aprxm-backend`
@@ -155,11 +158,15 @@ aprxm_sys"**.
 - [ ] Confirmar `WEBHOOK_SECRET`/`WEKHOOK_SECRET` órfã antes de decidir remover
 
 ### Banco
+- [x] Scripts reutilizáveis criados (`docs/superpowers/plans/scripts/`:
+      `pg-backup.sh`, `pg-restore.sh`, `pg-verify.sh`, `count_all.sql`) —
+      rodam via Docker (`postgres:17-alpine`), sem instalar Postgres local
+- [ ] Rodar `pg-backup.sh erp_itp postgres:17-alpine` e validar o dump gerado
 - [ ] Criar `psql-erpitp-prod` como **Postgres 17** (confirmar disponibilidade
       na região antes de assumir)
 - [ ] Criar banco lógico `erp_itp_db`
-- [ ] Excluir `pg_session_jwt` antes do dump
-- [ ] `pg_dump`/`restore` Neon → Azure
+- [ ] Rodar `pg-restore.sh` (já exclui `pg_session_jwt` automaticamente)
+- [ ] Rodar `pg-verify.sh` — contagem de linhas de todas as tabelas batendo
 
 ### Backend
 - [ ] Criar App Service Plan `asp-erpitp` (Linux B1, isolado do aprxm_sys)
