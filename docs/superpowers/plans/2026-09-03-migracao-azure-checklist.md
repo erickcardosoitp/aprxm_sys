@@ -58,6 +58,10 @@ Detalhe completo: [plano de segurança/observabilidade](2026-09-04-seguranca-obs
 
 - [x] Dependabot — `website_tia_pretinha`
 - [x] Dependabot — `aprxm_sys` (pip backend, npm frontend/presidencia/painel, docker, github-actions)
+- [x] **50/50 alertas Dependabot do `aprxm_sys` resolvidos em 2026-09-05** (6 PRs
+      mesclados + correções manuais: python-multipart, brace-expansion,
+      form-data, postcss-selector-parser, @babel/core, react-router v6→v7
+      nos 3 frontends, vite v5→v8, xlsx via CDN oficial SheetJS)
 - [ ] Dependabot — `erp_itp` (pendente, não depende de nenhuma fase da migração)
 - [x] CodeQL — `website_tia_pretinha`
 - [x] CodeQL — `aprxm_sys` (javascript-typescript + python)
