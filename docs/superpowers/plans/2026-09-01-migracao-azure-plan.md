@@ -538,6 +538,42 @@ Banco lógico `erp_itp_db`, `pg_dump`/`restore` do Neon (`neondb`) atual.
 `pg_session_jwt` (extensão Neon) aparece disponível mas sem uso confirmado
 no código — mesma tratativa da Fase 2.1, seguro excluir do dump.
 
+**✅ `psql-erpitp-prod` criado em 2026-09-06** — configuração completa,
+ponto a ponto, do assistente do Portal:
+
+- **Básico**: Resource group `rg-itp-prod`, região Brazil South, versão
+  **PostgreSQL 17** confirmada disponível.
+- **Computação + armazenamento**: assistente sugeriu por padrão General
+  Purpose `Standard_D4ds_v5` (4 vCores/16GiB) com Alta Disponibilidade —
+  custo previsto **US$756,86/mês**, muito acima do necessário pro volume
+  real (20MB, baixo tráfego). Corrigido em "Configurar servidor":
+  - Compute tier: **Expansível** (= Burstable) em vez de "Fins Gerais" —
+    esse tier **não suporta Alta Disponibilidade**, então a opção nem
+    aparece mais na tela, eliminando os US$378,43/mês daquele item sozinho.
+  - Tamanho: **Standard_B1ms** (1 vCore, 2GiB RAM).
+  - Armazenamento: **32 GiB** (mínimo oferecido, escalão de desempenho
+    **P4** automático) — reduzido dos 128GiB sugeridos por padrão.
+  - Redundância geográfica: **Desativada**.
+  - Custo final confirmado: **US$32,56/mês**.
+- **Workload type**: **Production** (não "Development" — é banco de
+  produção real; o rótulo não trava o SKU escolhido acima).
+- **Rede**: **Acesso público**, com regra de firewall liberando o IP do
+  cliente atual (via "+ Adicionar o endereço IP do cliente atual" no
+  Portal). **Sem** ponto final privado por enquanto (fica pra depois que o
+  App Service existir e puder integrar na mesma VNet — criar antes seria
+  recurso sem consumidor). **Sem** marcar "permitir acesso de qualquer
+  serviço Azure".
+- **Segurança/autenticação**: **PostgreSQL e Microsoft Entra ID** (as
+  duas juntas) — login nativo `erpitp_admin` + senha forte gerada e
+  guardada temporariamente fora do Azure até ir pro Key Vault; administrador
+  Entra ID = `erickcardoso@institutotiapretinha.org` (conta real do
+  domínio custom, não a `.onmicrosoft.com` de fallback). Chave de
+  encriptação de dados: **gerenciada pelo serviço** (não customer-managed —
+  sem exigência de compliance que justifique a complexidade extra).
+- **Backup**: retenção 7 dias (padrão).
+- **Etiquetas**: `Ambiente=Producao`, `Sistema=erp_itp`,
+  `Projeto=migracao-azure-itp` (aplicadas ao recurso "server").
+
 **⏳ EM ANDAMENTO (2026-09-05):** scripts reutilizáveis de backup/restore/
 verificação criados em `docs/superpowers/plans/scripts/` — pensados pra
 servir os 3 bancos (erp_itp, aprxm_sys, DW), não só este.
