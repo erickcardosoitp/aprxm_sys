@@ -172,8 +172,12 @@ aprxm_sys"**.
       corrigido e commitado. Extensões confirmadas no dump: `pg_session_jwt`
       (será excluída no restore), `pgcrypto` e `uuid-ossp` (padrão, sem
       problema no Azure).
-- [ ] Criar `psql-erpitp-prod` como **Postgres 17** (confirmar disponibilidade
-      na região antes de assumir)
+- [x] Criar `psql-erpitp-prod` como **Postgres 17** — ✅ 2026-09-06, Burstable
+      B1ms, 32GiB, HA desativado (Compute tier "Expansível"/Burstable não
+      suporta HA — corrigido de "Fins Gerais" que custava US$756/mês pra
+      US$32,56/mês), workload type Production (corrigido de Development),
+      autenticação PostgreSQL+Entra ID, acesso público + firewall no IP do
+      cliente atual, chave de encriptação gerenciada pelo serviço
 - [ ] Criar banco lógico `erp_itp_db`
 - [ ] Rodar `pg-restore.sh` (já exclui `pg_session_jwt` automaticamente)
 - [ ] Rodar `pg-verify.sh` — contagem de linhas de todas as tabelas batendo
