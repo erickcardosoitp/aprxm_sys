@@ -293,7 +293,9 @@ Ao seguir este plano, pule direto pra "Fase 3 — erp_itp" agora.
 
 1. **Azure Database for PostgreSQL Flexible Server** → Create:
    - Resource group: `rg-itp-prod`, nome `psql-aprxm-prod`
-   - Workload type: **Development** (ajustar depois se precisar) — SKU
+   - Workload type: **Production** (é banco de produção de verdade, não
+     ambiente de teste — o rótulo não trava o SKU, ainda dá pra escolher
+     Burstable manualmente mesmo assim) — SKU
      **Burstable B1ms**
    - Versão: **PostgreSQL 16** (mais recente que o `postgres:16-alpine` do
      compose dev atual — mantém paridade)
