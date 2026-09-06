@@ -36,6 +36,13 @@ validada e cortada.
 - **Purge protection** (Key Vault) e qualquer opção descrita como
   "irreversível" — deixar desligada durante a fase de montagem/teste,
   ligar só depois do ambiente estabilizado em produção.
+- **Extensões Postgres não vêm liberadas por padrão no Azure** — mesmo
+  extensões padrão como `pgcrypto`/`uuid-ossp` dão erro "not allow-listed"
+  no restore, e se alguma coluna usa `uuid_generate_v4()` como default, a
+  falha vira cascata (tabela inteira não é criada). Antes de restaurar,
+  checar `Parâmetros do servidor → azure.extensions` e liberar toda
+  extensão que o dump usa (exceto as proprietárias do Neon tipo
+  `pg_session_jwt`, que não têm equivalente e devem ser excluídas mesmo).
 - **Propagação de nameserver** demora mais no nível do *registrador* (a
   Vercel precisar empurrar a mudança pro registro `.org`) do que no nível
   de cache dos resolvers — testar com

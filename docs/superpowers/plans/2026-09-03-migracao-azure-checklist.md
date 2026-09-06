@@ -178,9 +178,18 @@ aprxm_sys"**.
       US$32,56/mês), workload type Production (corrigido de Development),
       autenticação PostgreSQL+Entra ID, acesso público + firewall no IP do
       cliente atual, chave de encriptação gerenciada pelo serviço
-- [ ] Criar banco lógico `erp_itp_db`
-- [ ] Rodar `pg-restore.sh` (já exclui `pg_session_jwt` automaticamente)
-- [ ] Rodar `pg-verify.sh` — contagem de linhas de todas as tabelas batendo
+- [x] Criar banco lógico `erp_itp_db`
+- [x] Rodar restore — ✅ 2026-09-06. Achado: `pgcrypto`/`uuid-ossp` não vêm
+      liberadas por padrão no Azure ("not allow-listed"), causando falha em
+      cascata (tabelas `materias`/`usuarios` dependem de `uuid_generate_v4()`).
+      Corrigido em **Parâmetros do servidor → `azure.extensions`**,
+      adicionando `PGCRYPTO` e `UUID-OSSP` à allow-list. Banco recriado e
+      restore refeito com dump fresco — só os 2 erros esperados de
+      `pg_session_jwt` (extensão Neon, sem equivalente no Azure, nada
+      depende dela).
+- [x] Verificação de contagem de linhas — ✅ **67 tabelas, contagem
+      idêntica** origem (Neon) x destino (Azure), validado via
+      `Compare-Object` no PowerShell.
 
 ### Backend
 - [ ] Criar App Service Plan `asp-erpitp` (Linux B1, isolado do aprxm_sys)
