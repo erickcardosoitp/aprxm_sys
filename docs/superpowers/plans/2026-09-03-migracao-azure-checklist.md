@@ -10,6 +10,14 @@ outra máquina/sessão (sempre `git pull` antes de confiar no estado daqui).
 
 Convenção: `[x]` feito · `[~]` em andamento/parcial · `[ ]` não iniciado.
 
+**⚠️ Reversão de arquitetura em 2026-09-06**: as Fases 2/3 abaixo (App
+Service/Flexible Server) foram substituídas por uma VM única (Oracle Linux
++ Docker Compose), a pedido do usuário — motivo e detalhe completo no
+[plano de VM](2026-09-06-migracao-vm-plan.md). As seções "Fase 2" e "Fase
+3" abaixo ficam como registro histórico de trabalho já feito (banco do
+erp_itp restaurado e validado, reaproveitado na VM) — **checklist ativo
+da VM está no final deste documento**.
+
 ---
 
 ## Fase 0 — Preparação
@@ -235,6 +243,39 @@ aprxm_sys"**.
 - [ ] Reavaliar mover crons pra APScheduler in-process (opcional)
 - [ ] Definir escopo de IA quando houver requisito concreto (não antecipar)
 - [ ] Reavaliar Front Door/WAF se tráfego público crescer
+
+## ✅ Checklist ativo — VM (Oracle Linux + Docker Compose)
+
+Detalhe completo: [2026-09-06-migracao-vm-plan.md](2026-09-06-migracao-vm-plan.md).
+
+### Fase VM.1 — Provisionar
+- [ ] Criar `vm-itp-prod` (Oracle Linux 9, Standard_B2ms, `rg-itp-prod`)
+- [ ] SSH funcionando, NSG restrito ao IP atual
+
+### Fase VM.2 — Configuração inicial
+- [ ] Docker + Docker Compose instalados
+- [ ] Cockpit instalado e acessível (porta 9090, só seu IP)
+- [ ] Portainer rodando e acessível (porta 9443, só seu IP)
+
+### Fase VM.3 — Postgres
+- [ ] Container Postgres 17 subindo, 2 bancos lógicos criados
+- [ ] Restore do erp_itp (reaproveita dump validado) — `pgcrypto`/`uuid-ossp`
+      não precisam de allow-list aqui (só era restrição do Azure Flexible Server)
+- [ ] Backup + restore do aprxm_sys (dump novo, ainda não feito)
+- [ ] Validar contagem de linhas dos 2 bancos
+- [ ] Decidir sobre `psql-erpitp-prod` (manter como backup ou desligar)
+
+### Fase VM.4 — Backends
+- [ ] Container erp_itp backend rodando, respondendo local
+- [ ] Container aprxm_sys backend rodando, respondendo local
+
+### Fase VM.5 — Traefik + domínios
+- [ ] Traefik configurado com HTTPS (Let's Encrypt)
+- [ ] Portas 80/443 abertas no NSG
+- [ ] Registro A na Azure DNS apontando pro IP da VM (erp_itp e aprxm_sys)
+
+### Fase VM.6 — Frontends
+- [ ] Decidir: Static Web App (como o site) ou dentro da VM também
 
 ## Limpeza final (depois de todas as fases estáveis)
 

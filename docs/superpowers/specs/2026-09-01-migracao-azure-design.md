@@ -45,7 +45,45 @@ migração de banco, ver seção de Storage abaixo.
 `r2_secret_access_key`, `r2_bucket_name` em `app/config.py`). Também entra
 no escopo — migra pro Azure Blob Storage junto com o Supabase Storage.
 
-## Decisão de arquitetura: PaaS gerenciado, isolado por sistema
+## ⚠️ REVERSÃO DE ARQUITETURA (2026-09-06): voltando pra VM
+
+A decisão abaixo (PaaS isolado por sistema) foi **revertida** a pedido
+explícito do usuário, depois de já termos: migrado o site institucional pro
+Static Web App (Fase 1, concluída, permanece como está — é conteúdo
+estático, não faz sentido numa VM) e criado + validado o
+`psql-erpitp-prod` (Flexible Server) com dado real restaurado do erp_itp
+(67 tabelas confirmadas idênticas à origem).
+
+**Motivo da reversão**: o usuário quer visibilidade e controle direto —
+"entrar no servidor", ver os dois sistemas (erp_itp e aprxm_sys) rodando
+visualmente, abrir o banco de dados localmente sem intermediário, instalar
+ferramentas de monitoramento dentro do próprio servidor. Isso não é
+alcançável com PaaS (App Service/Flexible Server não expõem o sistema
+operacional por baixo, por design). Ficou claro depois de 3 rodadas de
+esclarecimento que essa era a intenção desde a primeira mensagem desta
+conversa (o relatório original já propunha exatamente isso: VM Oracle
+Linux + Docker Compose).
+
+**Risco reaceito conscientemente**: volta a existir falha correlacionada
+(1 VM/1 Postgres pros 2 sistemas — se a VM cair, os dois caem juntos). Isso
+tinha sido o motivo original de descartar essa abordagem; o usuário optou
+por aceitar esse trade-off em troca do controle/visibilidade direta.
+
+**O que é reaproveitado, não refeito**: toda a Fase 0.5 (DNS migrado pra
+Azure DNS) continua valendo — DNS é independente de onde o compute roda,
+só muda o registro final apontar pra VM em vez de App Service. Due
+diligence dos 3 sistemas, correções de segurança (Dependabot/CodeQL),
+decisões de código (entrypoint do erp_itp, extensões Postgres) e o dump
+validado do erp_itp (`erp_itp_20260905_215242.dump`, 67 tabelas conferidas)
+também seguem válidos.
+
+**Plano de execução novo**: [2026-09-06-migracao-vm-plan.md](../plans/2026-09-06-migracao-vm-plan.md).
+As seções abaixo (Fase 2/3 originais, baseadas em App Service) ficam como
+**registro histórico da análise** — não são mais o runbook de execução.
+
+---
+
+## [HISTÓRICO — não é mais a decisão vigente] PaaS gerenciado, isolado por sistema
 
 Considerado e descartado: VM única + Docker Compose + Traefik + Postgres
 compartilhado (proposta inicial). Motivo do descarte: um único host e um
