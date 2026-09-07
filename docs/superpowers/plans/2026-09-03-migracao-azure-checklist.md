@@ -256,8 +256,12 @@ Detalhe completo: [2026-09-06-migracao-vm-plan.md](2026-09-06-migracao-vm-plan.m
       (East US 2, ~US$70/mês). `psql-erpitp-prod` eliminado antes disso
       (redundante após a reversão de arquitetura pra VM, economiza
       US$32,56/mês).
-- [ ] SSH funcionando, NSG restrito ao IP atual (`177.73.164.250/32`, porta
-      22 — aguardando implantação concluir pra testar)
+- [x] SSH funcionando, NSG restrito ao IP atual (`177.73.164.250/32`, porta
+      22) — ✅ 2026-09-07. Achados: extensão `LinuxDiagnostic` falhou
+      (depende de Python 2, não existe no Oracle Linux 9 — extensão
+      dispensável, não bloqueou a VM em si); permissão do arquivo `.pem`
+      no Windows precisou de `icacls` pra restringir acesso só ao usuário
+      (SSH recusa chave com permissão aberta).
 - [ ] Configurar Backup (não disponível no assistente de criação pra essa
       imagem/região, configurar depois na própria página da VM)
 
