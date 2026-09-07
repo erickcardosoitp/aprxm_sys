@@ -107,25 +107,25 @@ definitiva, substitui rascunhos anteriores deste documento):**
 
 | Pessoa | Cargo | Departamento | Tipo de empregado | Gestor | Status |
 |---|---|---|---|---|---|
-| Célia | Presidente | ITP-AM | Voluntário | — | [ ] |
-| Erick | Coordenador de Tecnologia | ITP-AM | Voluntário | Célia | [ ] |
-| Gabi Graciano | Coordenador do Instituto | ITP | Voluntário | Célia | [ ] |
-| Felipe Siqueira | Diretor da Associação | AM | Voluntário | Célia | [ ] |
-| Hanyelle | Diretor da Associação | ITP-AM | Voluntário | Célia | [ ] |
-| Gabi Barbosa | Gerente | ITP | Voluntário | Gabi Graciano | [ ] |
-| Carla | Gerente | AM | Voluntário | Felipe Siqueira | [ ] |
-| Vinicius Façan | Gerente | AM | Voluntário | Carla | [ ] |
-| Monique | Gerente | AM | Voluntário | Felipe Siqueira | [ ] |
-| Bruno Duarte | Analista de Dados | ITP-AM | Voluntário | Erick | [ ] |
-| Erica | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
-| Ellen | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
-| Tico | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
-| Lucas | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
-| Leo | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
-| Daiana | Chefe de Cozinha | ITP | Voluntário | Gabi Graciano | [ ] |
-| Danielly | Operador(a) | AM | Voluntário | Carla | [ ] |
-| Paulo Victor | Operador(a) | AM | Voluntário | Carla | [ ] |
-| Fernanda Siqueira | Operador(a) | AM | Voluntário | Carla | [ ] |
+| Célia | Presidente | ITP-AM | Voluntário | — | [x] |
+| Erick | Coordenador de Tecnologia | ITP-AM | Voluntário | Célia | [x] |
+| Gabi Graciano | Coordenador do Instituto | ITP | Voluntário | Célia | [x] |
+| Felipe Siqueira | Diretor da Associação | AM | Voluntário | Célia | [x] |
+| Hanyelle | Diretor da Associação | ITP-AM | Voluntário | Célia | [x] |
+| Gabi Barbosa | Gerente | ITP | Voluntário | Gabi Graciano | [x] |
+| Carla | Gerente | AM | Voluntário | Felipe Siqueira | [x] |
+| Vinicius Façan | Gerente | AM | Voluntário | Carla | [x] |
+| Monique | Gerente | AM | Voluntário | Felipe Siqueira | [x] |
+| Bruno Duarte | Analista de Dados | ITP-AM | Voluntário | Erick | [x] |
+| Erica | Professor(a) | ITP | Voluntário | Gabi Graciano | [x] |
+| Ellen | Professor(a) | ITP | Voluntário | Gabi Graciano | [x] |
+| Tico | Professor(a) | ITP | Voluntário | Gabi Graciano | [x] |
+| Lucas | Professor(a) | ITP | Voluntário | Gabi Graciano | [x] |
+| Leo | Professor(a) | ITP | Voluntário | Gabi Graciano | [x] |
+| Daiana | Chefe de Cozinha | ITP | Voluntário | Gabi Graciano | [x] |
+| Danielly | Operador(a) | AM | Voluntário | Carla | [x] |
+| Paulo Victor | Operador(a) | AM | Voluntário | Carla | [x] |
+| Fernanda Siqueira | Operador(a) | AM | Voluntário | Carla | [x] |
 
 **Telefone real (achado no banco do erp_itp, tabelas `usuarios`/`funcionarios`,
 2026-09-07)**, pra completar o cadastro no Entra ID:
