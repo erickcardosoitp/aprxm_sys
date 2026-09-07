@@ -102,34 +102,38 @@ Célia (Presidente)
 └── Hanyelle — Diretora (independente, sem área fixa)
 ```
 
-| Pessoa | Cargo | Gerente | Status |
-|---|---|---|---|
-| Célia | Presidente | — | [ ] |
-| Erick | Diretor | Célia | [ ] |
-| Gabi Graciano | Diretor | Célia | [ ] |
-| Felipe Siqueira | Diretor | Célia | [ ] |
-| Hanyelle | Diretora | Célia | [ ] |
-| Gabi Barbosa | Gerente | Gabi Graciano | [ ] |
-| Carla | Gerente | Felipe Siqueira | [ ] |
-| Vinicius Façan | Gerente | Carla | [ ] |
-| Monique | Gerente | Carla | [ ] |
-| Bruno Duarte | Voluntário | Erick | [ ] |
-| Erica | Voluntário | Gabi Graciano | [ ] |
-| Ellen | Voluntário | Gabi Graciano | [ ] |
-| Tico | Voluntário | Gabi Graciano | [ ] |
-| Lucas | Voluntário | Gabi Graciano | [ ] |
-| Leo | Voluntário | Gabi Graciano | [ ] |
-| Daiana | Voluntário | Gabi Graciano | [ ] |
-| Danielly | Voluntário | Carla | [ ] |
-| Paulo Victor | Voluntário | Carla | [ ] |
-| Fernanda Siqueira | Voluntário | Carla | [ ] |
+| Pessoa | Cargo | Departamento | Gestor | Status |
+|---|---|---|---|---|
+| Célia | Presidente | Presidência | — | [ ] |
+| Erick | Diretor | Tecnologia | Célia | [ ] |
+| Gabi Graciano | Diretor | Instituto | Célia | [ ] |
+| Felipe Siqueira | Diretor | Associação | Célia | [ ] |
+| Hanyelle | Diretora | Diretoria | Célia | [ ] |
+| Gabi Barbosa | Gerente | Instituto | Gabi Graciano | [ ] |
+| Carla | Gerente | Associação | Felipe Siqueira | [ ] |
+| Vinicius Façan | Gerente | Associação | Carla | [ ] |
+| Monique | Gerente | Associação | Carla | [ ] |
+| Bruno Duarte | Voluntário | Tecnologia | Erick | [ ] |
+| Erica | Voluntário | Instituto | Gabi Graciano | [ ] |
+| Ellen | Voluntário | Instituto | Gabi Graciano | [ ] |
+| Tico | Voluntário | Instituto | Gabi Graciano | [ ] |
+| Lucas | Voluntário | Instituto | Gabi Graciano | [ ] |
+| Leo | Voluntário | Instituto | Gabi Graciano | [ ] |
+| Daiana | Voluntário | Instituto | Gabi Graciano | [ ] |
+| Danielly | Voluntário | Associação | Carla | [ ] |
+| Paulo Victor | Voluntário | Associação | Carla | [ ] |
+| Fernanda Siqueira | Voluntário | Associação | Carla | [ ] |
 
-Preencher: **entra.microsoft.com → Users → [pessoa] → Properties → Job
-information** (Cargo/Job title) e **admin.microsoft.com → Active users →
-[pessoa] → Gerente → Editar gerente** (mais direto que o Entra pra esse
-campo especificamente). Ordem sugerida: de cima pra baixo na árvore (definir
-o Gerente de cada um só depois que a pessoa acima dela já foi processada,
-não é obrigatório mas evita confusão).
+Campos do painel "Editar propriedades" a **ignorar** em todo mundo (não
+necessários pro objetivo, são detalhamento de RH que não está em uso):
+Nome da empresa, ID do empregado, Tipo de empregado, Data de contratação,
+Gabinete, Patrocinadores.
+
+Preencher: **entra.microsoft.com → Users → [pessoa] → Properties → Editar
+propriedades** (painel lateral tem Cargo, Departamento e Gestor juntos).
+Ordem sugerida: de cima pra baixo na árvore (Gestor de cada um só depois
+que a pessoa acima dela já foi processada, evita ficar sem opção pra
+selecionar).
 
 ## 3. Teams (depois dos grupos prontos)
 
