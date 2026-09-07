@@ -64,7 +64,7 @@ originalmente — registrado como ficou de fato:
 | 2 | `ITP_AM_ADMIN_TEC` (função só Tecnologia) | Acesso administrativo global de TI, infraestrutura Azure, banco de dados e gestão técnica dos sistemas | Erick (`erickcardoso@`), Bruno Duarte | ✅ criado |
 | 3 | `ITP_AM_ADMINISTRACAO` (escopo ampliado: toda administração do Instituto **e** Associação, substitui o "Diretoria_Auxiliar" original) | Rotinas administrativas de ambas as entidades | Gabriela Barbosa (+ outros que fizerem sentido no escopo ampliado) | ✅ criado |
 | 4 | `AM_GERENCIA` | Acesso a relatórios de gestão, direcionamento operacional e indicadores da Associação de Moradores | Vinicius Façan, Monique | ✅ criado |
-| 5 | `AM_Operacao` | Acesso aos fluxos diários de atendimento, formulários e ferramentas operacionais da Associação | Danielly, Paulo Victor, Fernanda Siqueira | ⏳ a criar |
+| 5 | `AM_Operacao` | Acesso aos fluxos diários de atendimento, formulários e ferramentas operacionais da Associação | Danielly, Paulo Victor, Fernanda Siqueira | ✅ criado |
 | 6 | `ITP_DOCENTES` | Acesso exclusivo ao material didático, cronogramas das aulas de informática e pastas de turmas | Erica, Ellen, Tico, Lucas, Leo | ✅ criado |
 | 7 | `ITP_COZINHA` | Acesso restrito a avisos gerais, escalas e rotinas operacionais da cozinha do Instituto | Daiana | ✅ criado |
 
