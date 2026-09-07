@@ -76,6 +76,61 @@ não precisam de ação.
 
 ---
 
+## 2b. Hierarquia organizacional (Cargo + Gerente, campo por usuário)
+
+Importante: isso é **independente dos 7 grupos de segurança** acima — grupos
+são só permissão, não alimentam organograma. O organograma real do
+Teams/Outlook é desenhado só pela cadeia do campo **Gerente**; o campo
+**Cargo** é só rótulo visual, não cria hierarquia sozinho. Os dois precisam
+ser preenchidos por pessoa, sem atalho em massa pelo Portal (só via script).
+
+Árvore confirmada em 2026-09-07:
+
+```
+Célia (Presidente)
+├── Erick — Diretor (área Tecnologia)
+│   └── Bruno Duarte — Voluntário
+├── Gabi Graciano — Diretor (área Instituto)
+│   ├── Gabi Barbosa — Gerente
+│   ├── Erica, Ellen, Tico, Lucas, Leo — Voluntários
+│   └── Daiana — Voluntária
+├── Felipe Siqueira — Diretor (área Associação)
+│   └── Carla — Gerente
+│       ├── Vinicius Façan — Gerente
+│       ├── Monique — Gerente
+│       └── Danielly, Paulo Victor, Fernanda Siqueira — Voluntários
+└── Hanyelle — Diretora (independente, sem área fixa)
+```
+
+| Pessoa | Cargo | Gerente | Status |
+|---|---|---|---|
+| Célia | Presidente | — | [ ] |
+| Erick | Diretor | Célia | [ ] |
+| Gabi Graciano | Diretor | Célia | [ ] |
+| Felipe Siqueira | Diretor | Célia | [ ] |
+| Hanyelle | Diretora | Célia | [ ] |
+| Gabi Barbosa | Gerente | Gabi Graciano | [ ] |
+| Carla | Gerente | Felipe Siqueira | [ ] |
+| Vinicius Façan | Gerente | Carla | [ ] |
+| Monique | Gerente | Carla | [ ] |
+| Bruno Duarte | Voluntário | Erick | [ ] |
+| Erica | Voluntário | Gabi Graciano | [ ] |
+| Ellen | Voluntário | Gabi Graciano | [ ] |
+| Tico | Voluntário | Gabi Graciano | [ ] |
+| Lucas | Voluntário | Gabi Graciano | [ ] |
+| Leo | Voluntário | Gabi Graciano | [ ] |
+| Daiana | Voluntário | Gabi Graciano | [ ] |
+| Danielly | Voluntário | Carla | [ ] |
+| Paulo Victor | Voluntário | Carla | [ ] |
+| Fernanda Siqueira | Voluntário | Carla | [ ] |
+
+Preencher: **entra.microsoft.com → Users → [pessoa] → Properties → Job
+information** (Cargo/Job title) e **admin.microsoft.com → Active users →
+[pessoa] → Gerente → Editar gerente** (mais direto que o Entra pra esse
+campo especificamente). Ordem sugerida: de cima pra baixo na árvore (definir
+o Gerente de cada um só depois que a pessoa acima dela já foi processada,
+não é obrigatório mas evita confusão).
+
 ## 3. Teams (depois dos grupos prontos)
 
 4 Teams mapeados no relatório original (nomenclatura a confirmar se muda
