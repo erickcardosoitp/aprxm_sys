@@ -249,8 +249,17 @@ aprxm_sys"**.
 Detalhe completo: [2026-09-06-migracao-vm-plan.md](2026-09-06-migracao-vm-plan.md).
 
 ### Fase VM.1 — Provisionar
-- [ ] Criar `vm-itp-prod` (Oracle Linux 9, Standard_B2ms, `rg-itp-prod`)
-- [ ] SSH funcionando, NSG restrito ao IP atual
+- [x] Criar `vm-itp-prod` — ✅ 2026-09-07. Achados: cota zerada por padrão
+      (subscription nova/grant) bloqueou `Standard_B2ms` em Brazil South e
+      `Standard_D2s_v3`/`v5` em East US 2 inicialmente — resolvido via
+      pedido de aumento de cota (aprovado). Tamanho final: `Standard_D2s_v5`
+      (East US 2, ~US$70/mês). `psql-erpitp-prod` eliminado antes disso
+      (redundante após a reversão de arquitetura pra VM, economiza
+      US$32,56/mês).
+- [ ] SSH funcionando, NSG restrito ao IP atual (`177.73.164.250/32`, porta
+      22 — aguardando implantação concluir pra testar)
+- [ ] Configurar Backup (não disponível no assistente de criação pra essa
+      imagem/região, configurar depois na própria página da VM)
 
 ### Fase VM.2 — Configuração inicial
 - [ ] Docker + Docker Compose instalados
