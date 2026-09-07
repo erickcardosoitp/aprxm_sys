@@ -174,21 +174,25 @@ Ordem sugerida: de cima pra baixo na árvore (Gestor de cada um só depois
 que a pessoa acima dela já foi processada, evita ficar sem opção pra
 selecionar).
 
-## 3. Teams (depois dos grupos prontos)
+## 3. Teams — ✅ CONCLUÍDO em 2026-09-07 (5 equipes, revisado do plano original de 4)
 
-4 Teams mapeados no relatório original (nomenclatura a confirmar se muda
-também, ou mantém como está):
+Estrutura final, simplificada e por função compartilhada (não por
+entidade separada) a pedido do usuário — nomes diretos, sem enfeite
+corporativo (não é uma empresa, é ONG):
 
-| Team | Foco | SharePoint |
-|---|---|---|
-| 🏛️ ITP & AM — Governança e Diretoria | Decisões estratégicas, parcerias, prestação de contas | Atas oficiais, estatutos, contratos, documentos jurídicos |
-| 💻 ITP — Tecnologia e Sistemas | Gestão do ERP, infraestrutura Azure, integrações de API, suporte técnico | Documentação de arquitetura, manuais técnicos, artefatos de código |
-| 🏠 Associação de Moradores — Gestão e Operação | Atendimento local, cadastros de famílias, demandas operacionais | Planilhas de atendimento, formulários de campo, registros |
-| 🏫 Instituto Tia Pretinha — Educação e Apoio | Aulas de informática, suporte pedagógico, infraestrutura da sede | Material didático, listas de presença, escalas da cozinha |
+| # | Equipe | E-mail | Membros (grupos) | Status |
+|---|---|---|---|---|
+| 1 | Diretoria | `diretoria@institutotiapretinha.org` | `ITP_AM_Executiva_Geral`, `ITP_AM_ADMINISTRACAO` | ✅ criada |
+| 2 | Tecnologia | `tecnologa@institutotiapretinha.org` (sic, confirmado intencional) | `ITP_AM_ADMIN_TEC` | ✅ criada |
+| 3 | Professores | `docentes@institutotiapretinha.org` | `ITP_DOCENTES` | ✅ criada |
+| 4 | Cozinha | — | `ITP_COZINHA` | ✅ criada |
+| 5 | Associação de Moradores | — | `AM_GERENCIA`, `AM_Operacao` | ✅ criada |
 
-Cada Team deve ter como membros o(s) grupo(s) de segurança correspondente(s)
-— evita adicionar pessoa por pessoa de novo, os grupos já fazem esse
-trabalho.
+Diferença do plano original: Diretoria absorveu a Administração (governança
++ financeiro/administrativo, já que as mesmas pessoas cuidam de ambas as
+entidades); Docentes e Cozinha viraram equipes separadas em vez de uma
+"Instituto Tia Pretinha" única — mais granular, cada área tem seu próprio
+espaço.
 
 ---
 
