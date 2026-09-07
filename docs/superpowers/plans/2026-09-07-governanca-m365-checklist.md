@@ -44,11 +44,10 @@ na lista original.
 | 13 | Leo | `leo@institutotiapretinha.org` | ITP_Docentes |
 | 14 | Daiana | `daiana@institutotiapretinha.org` | ITP_Cozinha |
 
-**⚠️ Nota sobre Erick (#3)**: já existe a conta `erickcardoso@institutotiapretinha.org`
-(a que está sendo usada pra administrar tudo isso). Antes de criar um
-"Erick" novo, confirmar: é a mesma pessoa? Se for, **não criar duplicata**
-— só adicionar a conta `erickcardoso@` já existente no grupo
-`ITP_AM_Admin_Tecnologia`.
+**✅ Confirmado (2026-09-07)**: Erick = conta já existente `erickcardoso@institutotiapretinha.org`,
+sem duplicata criada — usar essa conta ao montar o grupo `ITP_AM_Admin_Tecnologia`.
+
+**Todos os 14 usuários resolvidos** — 13 criados + Erick já existente.
 
 ---
 
@@ -56,15 +55,24 @@ na lista original.
 
 Todos: **Tipo = Security**, **Associação = Assigned** (não Dynamic).
 
-| # | Nome | Descrição | Membros |
-|---|---|---|---|
-| 1 | `ITP_AM_Executiva_Geral` | Acesso total a documentos estratégicos, financeiros, governança e diretoria de ambas as entidades | Célia, Hanyelle, Gabi Graciano, Carla, Felipe Siqueira |
-| 2 | `ITP_AM_Admin_Tecnologia` | Acesso administrativo global de TI, infraestrutura Azure, banco de dados e gestão técnica dos sistemas | Erick (`erickcardoso@`), Bruno Duarte |
-| 3 | `ITP_AM_Diretoria_Auxiliar` | Acesso a rotinas administrativas de apoio, controle de cadastros, atas e suporte operacional da diretoria | Gabriela Barbosa |
-| 4 | `AM_Gerencia` | Acesso a relatórios de gestão, direcionamento operacional e indicadores da Associação de Moradores | Vinicius Façan, Monique |
-| 5 | `AM_Operacao` | Acesso aos fluxos diários de atendimento, formulários e ferramentas operacionais da Associação | Danielly, Paulo Victor, Fernanda Siqueira |
-| 6 | `ITP_Docentes` | Acesso exclusivo ao material didático, cronogramas das aulas de informática e pastas de turmas | Erica, Ellen, Tico, Lucas, Leo |
-| 7 | `ITP_Cozinha` | Acesso restrito a avisos gerais, escalas e rotinas operacionais da cozinha do Instituto | Daiana |
+Nomes reais criados (2026-09-07) podem diferir levemente do planejado
+originalmente — registrado como ficou de fato:
+
+| # | Nome real criado | Descrição | Membros | Status |
+|---|---|---|---|---|
+| 1 | `ITP_AM_Executiva_Geral` | Acesso total a documentos estratégicos, financeiros, governança e diretoria de ambas as entidades | Célia, Hanyelle, Gabi Graciano, Carla, Felipe Siqueira | ✅ criado |
+| 2 | `ITP_AM_ADMIN_TEC` (função só Tecnologia) | Acesso administrativo global de TI, infraestrutura Azure, banco de dados e gestão técnica dos sistemas | Erick (`erickcardoso@`), Bruno Duarte | ✅ criado |
+| 3 | `ITP_AM_ADMINISTRACAO` (escopo ampliado: toda administração do Instituto **e** Associação, substitui o "Diretoria_Auxiliar" original) | Rotinas administrativas de ambas as entidades | Gabriela Barbosa (+ outros que fizerem sentido no escopo ampliado) | ✅ criado |
+| 4 | `AM_GERENCIA` | Acesso a relatórios de gestão, direcionamento operacional e indicadores da Associação de Moradores | Vinicius Façan, Monique | ✅ criado |
+| 5 | `AM_Operacao` | Acesso aos fluxos diários de atendimento, formulários e ferramentas operacionais da Associação | Danielly, Paulo Victor, Fernanda Siqueira | ⏳ a criar |
+| 6 | `ITP_DOCENTES` | Acesso exclusivo ao material didático, cronogramas das aulas de informática e pastas de turmas | Erica, Ellen, Tico, Lucas, Leo | ✅ criado |
+| 7 | `ITP_COZINHA` | Acesso restrito a avisos gerais, escalas e rotinas operacionais da cozinha do Instituto | Daiana | ✅ criado |
+
+Achado à parte: já existiam 2 grupos anteriores, sem relação com este
+plano — **"All Company"** (padrão do M365, todo tenant tem) e
+**"Instituto Tia Pretinha"** (Microsoft 365 Group, e-mail
+`contato@institutotiapretinha.org`, uso de contato geral) — não conflitam,
+não precisam de ação.
 
 ---
 
