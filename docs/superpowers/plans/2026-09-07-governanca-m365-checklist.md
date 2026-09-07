@@ -20,7 +20,7 @@ Convenção: `[x]` já existe/feito · `[ ]` falta criar.
 - [x] Gabi/Gabriela Graciano
 - [x] Gabriela Barbosa
 
-### Faltam criar (14)
+### Faltam criar (14) — 13 criados em 2026-09-07, Erick pendente de confirmação
 
 UPN sugerido = nome+sobrenome sem espaço, minúsculo, `@institutotiapretinha.org`
 (mesmo padrão do `erickcardoso@...` já existente) — **confirmar sobrenome
