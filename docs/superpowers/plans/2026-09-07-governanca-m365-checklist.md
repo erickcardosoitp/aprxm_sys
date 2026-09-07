@@ -130,27 +130,30 @@ definitiva, substitui rascunhos anteriores deste documento):**
 **Telefone real (achado no banco do erp_itp, tabelas `usuarios`/`funcionarios`,
 2026-09-07)**, pra completar o cadastro no Entra ID:
 
-| Pessoa | Cargo | Departamento | Tipo de empregado | Gestor | Telefone |
+**Nomes completos reais** (2026-09-07, do banco erp_itp) usados como
+identificador principal a partir daqui:
+
+| Pessoa (nome completo) | Cargo | Departamento | Tipo de empregado | Gestor | Telefone |
 |---|---|---|---|---|---|
-| Célia | Presidente | ITP-AM | Voluntário | — | 21966771531 |
-| Erick | Coordenador de Tecnologia | ITP-AM | Voluntário | Célia | 21933006073 |
-| Gabi Graciano | Coordenador do Instituto | ITP | Voluntário | Célia | 84988737435 |
-| Felipe Siqueira | Diretor da Associação | AM | Voluntário | Célia | ⚠️ pendente |
-| Hanyelle | Diretor da Associação | ITP-AM | Voluntário | Célia | 21981141335 |
-| Gabi Barbosa | Gerente | ITP | Voluntário | Gabi Graciano | 21972033514 |
-| Carla | Gerente | AM | Voluntário | Felipe Siqueira | 21974899568 |
-| Vinicius Façan | Gerente | AM | Voluntário | Felipe Siqueira | ⚠️ 21978611648 (nome no banco é "Vinicius Augusto", confirmar se é a mesma pessoa) |
-| Monique | Gerente | AM | Voluntário | Felipe Siqueira | 21970606801 |
-| Bruno Duarte | Analista de Dados | ITP-AM | Voluntário | Erick | — |
-| Erica | Professor(a) | ITP | Voluntário | Gabi Graciano | 21998706667 |
-| Ellen | Professor(a) | ITP | Voluntário | Gabi Graciano | 21920423653 |
-| Tico | Professor(a) | ITP | Voluntário | Gabi Graciano | ❌ não encontrado no banco (apelido?) |
-| Lucas | Professor(a) | ITP | Voluntário | Gabi Graciano | 21974651756 |
-| Leo | Professor(a) | ITP | Voluntário | Gabi Graciano | ❌ ambíguo — 2 "Leandro" no banco (Leandro Alves / Leandro Pinheiro de Oliveira), confirmar qual |
-| Daiana | Chefe de Cozinha | ITP | Voluntário | Gabi Graciano | 2194379444 |
-| Danielly | Operador(a) | AM | Voluntário | Carla | 21981605788 |
-| Paulo Victor | Operador(a) | AM | Voluntário | Carla | 21996823550 |
-| Fernanda Siqueira | Operador(a) | AM | Voluntário | Carla | 21981045195 |
+| Célia da Silva Paixão | Presidente | ITP-AM | Voluntário | — | 21966771531 |
+| Erick Gonçalves Cardoso | Coordenador de Tecnologia | ITP-AM | Voluntário | Célia da Silva Paixão | 21933006073 |
+| Gabriela Graciano Bezerra | Coordenador do Instituto | ITP | Voluntário | Célia da Silva Paixão | 84988737435 |
+| Felipe Siqueira ⚠️ (sobrenome completo não encontrado) | Diretor da Associação | AM | Voluntário | Célia da Silva Paixão | ⚠️ pendente |
+| Hannyele Barbosa Alves da Penha | Diretor da Associação | ITP-AM | Voluntário | Célia da Silva Paixão | 21981141335 |
+| Gabriella Barbosa da Silva | Gerente | ITP | Voluntário | Gabriela Graciano Bezerra | 21972033514 |
+| Carla Barbosa Sales | Gerente | AM | Voluntário | Felipe Siqueira | 21974899568 |
+| ⚠️ Vinicius Augusto (confirmar se é "Vinicius Façan") | Gerente | AM | Voluntário | Felipe Siqueira | 21978611648 |
+| Monique Cristina Mendes Santos | Gerente | AM | Voluntário | Felipe Siqueira | 21970606801 |
+| Bruno Duarte | Analista de Dados | ITP-AM | Voluntário | Erick Gonçalves Cardoso | — |
+| Érica da Silva Lucas | Professor(a) | ITP | Voluntário | Gabriela Graciano Bezerra | 21998706667 |
+| Ellen da Silva Ribeiro | Professor(a) | ITP | Voluntário | Gabriela Graciano Bezerra | 21920423653 |
+| ❌ Tico (não encontrado no banco) | Professor(a) | ITP | Voluntário | Gabriela Graciano Bezerra | — |
+| Lucas Seabra Rabelo da Silva | Professor(a) | ITP | Voluntário | Gabriela Graciano Bezerra | 21974651756 |
+| ❌ Leo (ambíguo: Leandro Alves ou Leandro Pinheiro de Oliveira) | Professor(a) | ITP | Voluntário | Gabriela Graciano Bezerra | — |
+| Daiana Alves Gomes | Chefe de Cozinha | ITP | Voluntário | Gabriela Graciano Bezerra | 2194379444 |
+| Danielly da Silva Marinho Quinta | Operador(a) | AM | Voluntário | Carla Barbosa Sales | 21981605788 |
+| Paulo Victor Barbosa da Silva | Operador(a) | AM | Voluntário | Carla Barbosa Sales | 21996823550 |
+| Fernanda Barbosa Siqueira | Operador(a) | AM | Voluntário | Carla Barbosa Sales | 21981045195 |
 
 Confirmado: Felipe Siqueira e Hanyelle são **co-diretores** da Associação
 (mesmo cargo, intencional). Monique reporta direto a Felipe Siqueira (não
