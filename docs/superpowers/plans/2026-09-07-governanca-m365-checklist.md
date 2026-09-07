@@ -102,27 +102,38 @@ Célia (Presidente)
 └── Hanyelle — Diretora (independente, sem área fixa)
 ```
 
-| Pessoa | Cargo | Departamento | Gestor | Status |
-|---|---|---|---|---|
-| Célia | Presidente | Presidência | — | [ ] |
-| Erick | Diretor | Tecnologia | Célia | [ ] |
-| Gabi Graciano | Diretor | Instituto | Célia | [ ] |
-| Felipe Siqueira | Diretor | Associação | Célia | [ ] |
-| Hanyelle | Diretora | Diretoria | Célia | [ ] |
-| Gabi Barbosa | Gerente | Instituto | Gabi Graciano | [ ] |
-| Carla | Gerente | Associação | Felipe Siqueira | [ ] |
-| Vinicius Façan | Gerente | Associação | Carla | [ ] |
-| Monique | Gerente | Associação | Carla | [ ] |
-| Bruno Duarte | Voluntário | Tecnologia | Erick | [ ] |
-| Erica | Voluntário | Instituto | Gabi Graciano | [ ] |
-| Ellen | Voluntário | Instituto | Gabi Graciano | [ ] |
-| Tico | Voluntário | Instituto | Gabi Graciano | [ ] |
-| Lucas | Voluntário | Instituto | Gabi Graciano | [ ] |
-| Leo | Voluntário | Instituto | Gabi Graciano | [ ] |
-| Daiana | Voluntário | Instituto | Gabi Graciano | [ ] |
-| Danielly | Voluntário | Associação | Carla | [ ] |
-| Paulo Victor | Voluntário | Associação | Carla | [ ] |
-| Fernanda Siqueira | Voluntário | Associação | Carla | [ ] |
+**Tabela final (montada pelo usuário em Excel, 2026-09-07 — versão
+definitiva, substitui rascunhos anteriores deste documento):**
+
+| Pessoa | Cargo | Departamento | Tipo de empregado | Gestor | Status |
+|---|---|---|---|---|---|
+| Célia | Presidente | ITP-AM | Voluntário | — | [ ] |
+| Erick | Coordenador de Tecnologia | ITP-AM | Voluntário | Célia | [ ] |
+| Gabi Graciano | Coordenador do Instituto | ITP | Voluntário | Célia | [ ] |
+| Felipe Siqueira | Diretor da Associação | AM | Voluntário | Célia | [ ] |
+| Hanyelle | Diretor da Associação | ITP-AM | Voluntário | Célia | [ ] |
+| Gabi Barbosa | Gerente | ITP | Voluntário | Gabi Graciano | [ ] |
+| Carla | Gerente | AM | Voluntário | Felipe Siqueira | [ ] |
+| Vinicius Façan | Gerente | AM | Voluntário | Carla | [ ] |
+| Monique | Gerente | AM | Voluntário | Felipe Siqueira | [ ] |
+| Bruno Duarte | Analista de Dados | ITP-AM | Voluntário | Erick | [ ] |
+| Erica | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
+| Ellen | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
+| Tico | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
+| Lucas | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
+| Leo | Professor(a) | ITP | Voluntário | Gabi Graciano | [ ] |
+| Daiana | Chefe de Cozinha | ITP | Voluntário | Gabi Graciano | [ ] |
+| Danielly | Operador(a) | AM | Voluntário | Carla | [ ] |
+| Paulo Victor | Operador(a) | AM | Voluntário | Carla | [ ] |
+| Fernanda Siqueira | Operador(a) | AM | Voluntário | Carla | [ ] |
+
+Confirmado: Felipe Siqueira e Hanyelle são **co-diretores** da Associação
+(mesmo cargo, intencional). Monique reporta direto a Felipe Siqueira (não
+a Carla, diferente do Vinicius).
+
+O campo **Cargo** preenchido aqui é o mesmo que aparece automaticamente no
+Teams (cartão de perfil, organograma, hover de @menção) — não precisa
+configurar nada a mais lá.
 
 Campos do painel "Editar propriedades" a **ignorar** em todo mundo (não
 necessários pro objetivo, são detalhamento de RH que não está em uso):
