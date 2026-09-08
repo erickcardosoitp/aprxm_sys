@@ -4,10 +4,18 @@ import type SignatureCanvasType from 'react-signature-canvas'
 import { Check, RotateCcw, PenLine } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-// react-signature-canvas é CJS; alguns bundlers nao desembrulham o default
-// automaticamente, entao resolvemos manualmente pra evitar "Element type is invalid".
-const ReactSignatureCanvas: typeof SignatureCanvasType =
-  (SignatureCanvasModule as any).default ?? (SignatureCanvasModule as any)
+// react-signature-canvas é CJS com __esModule=true, mas o __toESM do esbuild
+// (usado pelo Vite) ainda envolve o modulo inteiro dentro de ".default" nesse
+// caso, entao o componente real fica em ".default.default", nao so ".default".
+// Resolvemos manualmente pra evitar "Element type is invalid" em producao.
+const ReactSignatureCanvas: typeof SignatureCanvasType = (() => {
+  const mod = SignatureCanvasModule as any
+  let candidate = mod.default ?? mod
+  while (candidate && typeof candidate !== 'function' && candidate.default) {
+    candidate = candidate.default
+  }
+  return candidate
+})()
 
 interface SignaturePadProps {
   label?: string
