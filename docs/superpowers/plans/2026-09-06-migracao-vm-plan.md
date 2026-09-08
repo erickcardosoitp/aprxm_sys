@@ -338,13 +338,27 @@ mantenedor** se precisa ser agendado.
   ou trazer pra dentro da VM. Perguntado ao usuário, sem resposta ainda.
 - **aprxm_sys**: Fases VM.3 (dump ainda não gerado), VM.4, VM.5, VM.6 não
   iniciadas — só erp_itp foi migrado até agora.
-- CORS duplicado no código do erp_itp (achado na due-diligence) — não
-  consolidado, e pode já ser irrelevante já que rodamos via `src/main.ts`
-  (precisa reverificar, não assumir).
-- 3º endpoint de cron (`captacao.controller.ts`) sem confirmação do
-  mantenedor.
-- Webhooks do Google Apps Script (2 scripts com URL hardcoded
-  `api.itp.institutotiapretinha.org`) — não testados pós-corte de DNS.
+- **✅ CORS reverificado (2026-09-08)** — `src/main.ts` (o que roda na VM)
+  tem CORS único e correto. A duplicação real está só em `api/main.ts`
+  (exclusivo Vercel, código morto após decommission), incluindo um bug
+  nela (preflight fast-path não libera `itp.`/`api.itp.`) — não vale
+  corrigir código que vai ser desligado.
+- **✅ 3º endpoint de cron corrigido (2026-09-08)** — não era ambiguidade,
+  era bug: `POST /captacao/cron/expire` tinha `@UseGuards(JwtAuthGuard,
+  ModuloPermGuard)` de classe bloqueando a chamada de cron (sem JWT) antes
+  do check manual de `x-cron-secret`, tornando o endpoint inacessível por
+  automação desde sempre. Fix: `@Public()` + remove `@ModuloPerm` da rota
+  (mesmo padrão dos outros crons). Testado (HTTP 201) e agendado no cron
+  (diário, 2h). Commit `fix(captacao)`.
+- **✅ Webhooks do Google Apps Script testados (2026-09-08)**:
+  `matriculas/inscricao` — OK, já funcionava. `funcionarios/webhook` —
+  **404 sempre, bug pré-existente não causado pela migração**: o service
+  `criarViaWebhook()` existia pronto, mas nenhuma rota do controller
+  chamava. Fix: rota `POST /funcionarios/webhook` adicionada, espelhando
+  o padrão `@Public()` de `matriculas/inscricao`. Testado (HTTP 400 em vez
+  de 404 — validação executando). **Os `.gs` não precisam de edição** — a
+  URL hardcoded já é a definitiva (`api.itp.institutotiapretinha.org`),
+  só trocamos o DNS por trás. Commit `fix(funcionarios)`.
 - `psql-erpitp-prod` (Flexible Server) e Vercel do erp_itp: manter rodando
   em paralelo por 1-2 semanas como rollback antes de desligar — ainda dentro
   da janela, não desligar ainda.
