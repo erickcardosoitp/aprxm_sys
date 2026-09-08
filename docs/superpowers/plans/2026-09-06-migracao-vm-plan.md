@@ -296,11 +296,20 @@ mantenedor** se precisa ser agendado.
 
 ## Pendências / não feito ainda
 
-- **Backup automático — CRÍTICO, ainda não configurado.** Flexible Server
-  tinha backup automático de 7 dias de graça; na VM isso é responsabilidade
-  nossa. Nada agendado ainda (nem `pg_dump` cron, nem Azure Backup de disco,
-  nem snapshot). Bloqueante antes de desligar de vez o Vercel/Neon do
-  erp_itp.
+- **✅ Backup/redundância configurado (2026-09-08).** Decisão: VM Postgres é
+  a fonte de verdade; Neon (banco original do erp_itp, antes só rollback
+  manual) passa a servir de redundância "morna" sincronizada por cron.
+  Script `~/pg-sync-to-neon.sh` na VM, agendado a cada 6h
+  (`0 */6 * * *`): `pg_dump -Fc` do Postgres local → guarda cópia em
+  `~/backups/` (retenção 7 dias) → `pg_restore --clean --if-exists` no
+  Neon. Testado manualmente: 68/68 tabelas batendo entre origem e destino.
+  Erros esperados/inofensivos no restore: schema `pgrst` (gerenciado pela
+  própria plataforma Neon, sem permissão de escrita nossa — não é dado da
+  aplicação). Credencial do Neon fica em `~/itp-stack/neon_sync.env`
+  (chmod 600), fora do crontab em texto aberto.
+  **Ainda falta**: backup do disco da própria VM (snapshot/Azure Backup)
+  — o dump cobre só o Postgres, não a VM inteira (configs, volumes do
+  pgAdmin, etc.).
 - **Fase VM.6 (frontends)**: decisão não tomada — manter no Static Web App
   ou trazer pra dentro da VM. Perguntado ao usuário, sem resposta ainda.
 - **aprxm_sys**: Fases VM.3 (dump ainda não gerado), VM.4, VM.5, VM.6 não
