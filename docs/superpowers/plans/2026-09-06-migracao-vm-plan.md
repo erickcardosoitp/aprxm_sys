@@ -172,8 +172,13 @@ Adicionar ao `docker-compose.yml`:
 ```
 
 Reaproveitar as decisões já tomadas no plano original sobre cada backend:
-- erp_itp: entrypoint `api/main.ts` (não `src/main.ts`), CORS a consolidar,
-  `rejectUnauthorized: true` no TLS do Postgres.
+- erp_itp: **✅ CORRIGIDO (2026-09-08)** — entrypoint real pra rodar
+  standalone (VM/Docker) é **`src/main.ts`** (`dist/src/main.js`), **não**
+  `api/main.ts` (esse é exclusivo do runtime serverless da Vercel — só
+  exporta `handler`, sem `app.listen()`, roda e sai sem fazer nada fora da
+  Vercel). CORS a consolidar ainda pendente. SSL da conexão Postgres:
+  desligado pro host interno `postgres` do Docker (rede privada da VM, sem
+  necessidade de TLS nesse trecho) — ver `app.module.ts`.
 - aprxm_sys: confirmar versão real do Python antes de fixar no Dockerfile,
   extensão `pg_session_jwt` excluída do restore, `api_request_logs`
   avaliar truncar.

@@ -295,7 +295,20 @@ Detalhe completo: [2026-09-06-migracao-vm-plan.md](2026-09-06-migracao-vm-plan.m
 - [ ] Decidir sobre `psql-erpitp-prod` (manter como backup ou desligar)
 
 ### Fase VM.4 — Backends
-- [ ] Container erp_itp backend rodando, respondendo local
+- [x] Container **erp_itp backend rodando e respondendo (HTTP 200)** — ✅
+      2026-09-08. Achados corrigidos no código (commitados em
+      `erickcardosoitp/erp_itp`):
+      - `api/main.ts` é **exclusivo da Vercel** (só exporta `handler`, sem
+        `app.listen()` — processo sobe e sai com exit 0, sem log nenhum).
+        O correto pra rodar standalone é **`src/main.ts`**
+        (`bootstrapLocal()` + `if (!process.env.VERCEL)`) — Dockerfile
+        corrigido pra `CMD ["node", "dist/src/main.js"]`.
+      - `app.module.ts` só desligava SSL da conexão Postgres se a URL
+        contivesse `localhost`/`127.0.0.1` — adicionado `@postgres:`
+        (nome do serviço Docker) à condição, já que o Postgres interno da
+        VM não tem SSL configurado (nem precisa, é rede Docker privada).
+      - Schema confirmado: `Schema v20 já aplicado` no log — bate com o
+        que já sabíamos da produção real.
 - [ ] Container aprxm_sys backend rodando, respondendo local
 
 ### Fase VM.5 — Traefik + domínios
