@@ -203,6 +203,28 @@ Critério de saída: os 2 backends rodando, respondendo localmente na VM
 Critério de saída: os 2 sistemas acessíveis via HTTPS nos domínios finais,
 certificado válido.
 
+**✅ Concluído para erp_itp (2026-09-08)** — `itp.institutotiapretinha.org` e
+`api.itp.institutotiapretinha.org` respondendo HTTP 200 via HTTPS,
+certificado Let's Encrypt válido.
+
+**Achados/incidentes:**
+- **Docker Engine 29.8.0 (repo stable) quebrou o provider Docker do Traefik**
+  (v3.1 e v3.5 igualmente) com erro `client version 1.24 is too old.
+  Minimum supported API version is 1.40`. É incompatibilidade real entre o
+  client Docker vendorizado no Traefik e engines muito recentes, não bug de
+  config (endpoint explícito e `DOCKER_API_VERSION` não resolveram). Fix:
+  downgrade do `docker-ce`/`docker-ce-cli` pra **28.5.2** (stable, LTS-like),
+  restart do daemon. Se atualizar o Docker Engine no futuro, testar Traefik
+  antes de aplicar em produção.
+- **Disco raiz saturado durante o build** (`ENOSPC` copiando `node_modules`
+  do backend) — causa raiz: disco OS provisionado como **P4 (32GB)**, não
+  P6 (64GB) como este plano já previa na Fase VM.1 (desvio da execução, não
+  do plano). `docker system prune` só ganha espaço temporário, não resolve.
+  Fix definitivo: resize do managed disk P4→P6 (`az disk update --size-gb
+  64`, exige deallocate/start da VM, ~3min downtime) + expansão a quente de
+  partição/LVM/XFS (`growpart` → `pvresize` → `lvextend` →
+  `xfs_growfs`), sem perda de dado. Custo: US$4,80→US$9,28/mês (+US$4,48).
+
 ---
 
 ## Fase VM.6 — Frontends
