@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { lazy, Suspense, Component } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { AppShell } from './components/layout/AppShell'
 import { useAuthStore } from './store/authStore'
@@ -22,18 +22,41 @@ function lazyWithReload(factory: () => Promise<{ default: React.ComponentType<an
   )
 }
 
-class ChunkErrorBoundary extends Component<{ children: ReactNode }, { crashed: boolean }> {
-  state = { crashed: false }
-  componentDidCatch(e: Error) {
-    if (
+class ChunkErrorBoundary extends Component<{ children: ReactNode }, { crashed: boolean; error: Error | null }> {
+  state: { crashed: boolean; error: Error | null } = { crashed: false, error: null }
+  componentDidCatch(e: Error, info: ErrorInfo) {
+    const isChunkError =
       e.message?.includes('Failed to fetch dynamically imported module') ||
       e.message?.includes('Importing a module script failed')
-    ) {
+    if (isChunkError) {
       window.location.reload()
+      this.setState({ crashed: true, error: null })
+      return
     }
-    this.setState({ crashed: true })
+    console.error('[APRXM] Render error:', e, info)
+    this.setState({ crashed: true, error: e })
   }
   render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#0f2a4a] p-6">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+            <h2 className="text-lg font-bold text-red-600 mb-2">Erro inesperado</h2>
+            <pre className="text-xs text-gray-600 bg-gray-50 rounded p-3 overflow-auto max-h-60 whitespace-pre-wrap">
+              {this.state.error.message}
+              {'\n'}
+              {this.state.error.stack}
+            </pre>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 w-full bg-[#26619c] text-white py-2 rounded-xl text-sm font-semibold"
+            >
+              Recarregar
+            </button>
+          </div>
+        </div>
+      )
+    }
     if (this.state.crashed) return null
     return this.props.children
   }
