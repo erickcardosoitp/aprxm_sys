@@ -309,6 +309,15 @@ Detalhe completo: [2026-09-06-migracao-vm-plan.md](2026-09-06-migracao-vm-plan.m
         VM não tem SSL configurado (nem precisa, é rede Docker privada).
       - Schema confirmado: `Schema v20 já aplicado` no log — bate com o
         que já sabíamos da produção real.
+- [x] **2 crons do erp_itp configurados via `crontab` do Linux** — ✅
+      2026-09-08 (substitui a ideia de Logic App do plano antigo de
+      App Service — na VM é trivial, cron nativo mesmo):
+      - `0 8 * * *` → `verificar-senhas` (lembrete de senha vencida)
+      - `30 8 * * *` → `health-check` (monitora Supabase Storage)
+      - Autenticação via header `x-cron-secret`, testado manualmente com
+        sucesso (`{"ok":true}`, HTTP 200). Log em `~/cron.log`.
+      - Pendente: 3º endpoint órfão (`captacao.controller.ts:261`) ainda
+        sem confirmação se precisa de agendamento — não configurado.
 - [ ] Container aprxm_sys backend rodando, respondendo local
 - [x] **Frontend erp_itp (Next.js SSR) rodando** — ✅ 2026-09-08, HTTP 200.
       Achado: `NEXT_PUBLIC_*` do Next.js são embutidas em **tempo de
