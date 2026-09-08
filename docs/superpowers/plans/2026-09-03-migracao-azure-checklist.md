@@ -310,6 +310,17 @@ Detalhe completo: [2026-09-06-migracao-vm-plan.md](2026-09-06-migracao-vm-plan.m
       - Schema confirmado: `Schema v20 já aplicado` no log — bate com o
         que já sabíamos da produção real.
 - [ ] Container aprxm_sys backend rodando, respondendo local
+- [x] **Frontend erp_itp (Next.js SSR) rodando** — ✅ 2026-09-08, HTTP 200.
+      Achado: `NEXT_PUBLIC_*` do Next.js são embutidas em **tempo de
+      build**, não runtime — precisou passar como Docker build `args`
+      (não só `env_file`, que só afeta o container em execução). Proxy
+      interno `/backend-api/*` configurado via `BACKEND_INTERNAL_URL=http://erp_itp_backend:3001`
+      (nome do serviço Docker, não o domínio público).
+- [x] **pgAdmin4** instalado como container (`dpage/pgadmin4`, porta 5050)
+      — usuário pediu "pgadmin3", mas está descontinuado; usamos pgAdmin4.
+      Atalho na área de trabalho do MATE abre via Firefox
+      (`http://localhost:5050`), servidor Postgres cadastrado com host
+      `postgres` (nome do serviço, não `localhost`).
 
 ### Fase VM.5 — Traefik + domínios
 - [ ] Traefik configurado com HTTPS (Let's Encrypt)
