@@ -267,8 +267,24 @@ Detalhe completo: [2026-09-06-migracao-vm-plan.md](2026-09-06-migracao-vm-plan.m
 
 ### Fase VM.2 — Configuração inicial
 - [ ] Docker + Docker Compose instalados
-- [ ] Cockpit instalado e acessível (porta 9090, só seu IP)
-- [ ] Portainer rodando e acessível (porta 9443, só seu IP)
+- [x] **X2Go + MATE (desktop remoto)** ao invés de Cockpit — ✅ 2026-09-08,
+      a pedido do usuário (queria acesso visual completo de área de
+      trabalho, não só painel web). Achados/correções no caminho:
+      - `dnf groupinstall` não aceita pacote solto junto com nome de grupo
+        (rodar separado)
+      - Grupo se chama `"Xfce"` (não `xfce-desktop-environment`); **MATE
+        não tem grupo disponível** nesses repositórios — instalado pacote
+        a pacote (`mate-session-manager mate-panel mate-terminal
+        mate-control-center mate-settings-daemon mate-desktop marco caja`)
+      - `x2goserver` faltava dependência `perl(File::BaseDir)`, só
+        disponível depois de habilitar o repo **CodeReady Builder**
+        (`dnf config-manager --set-enabled ol9_codeready_builder`)
+      - `x2goserver` **não tem daemon systemd persistente** — funciona sob
+        demanda via SSH (porta 22 já basta, nada a mais pra abrir no NSG)
+      - Erro cosmético esperado no primeiro login MATE: applet de volume
+        falha (sem hardware de áudio na VM) — só deletar o applet
+- [ ] Portainer rodando e acessível (porta 9443, só seu IP) — Cockpit
+      descartado, ver acima
 
 ### Fase VM.3 — Postgres
 - [ ] Container Postgres 17 subindo, 2 bancos lógicos criados

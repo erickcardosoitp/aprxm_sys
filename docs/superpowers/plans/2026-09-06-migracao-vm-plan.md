@@ -51,16 +51,21 @@ Via SSH na VM:
    sudo systemctl enable --now docker
    sudo usermod -aG docker $(whoami)
    ```
-3. **Cockpit** (painel visual do sistema — Oracle Linux/RHEL já vem com
-   pacote disponível):
+3. **✅ SUBSTITUÍDO por X2Go + MATE** (2026-09-08, a pedido do usuário —
+   queria área de trabalho remota completa, não painel web). Cockpit
+   descartado. Passos reais que funcionaram:
    ```bash
-   sudo dnf install -y cockpit
-   sudo systemctl enable --now cockpit.socket
-   sudo firewall-cmd --add-service=cockpit --permanent
-   sudo firewall-cmd --reload
+   sudo dnf groupinstall -y "Xfce"   # nome do grupo, não "xfce-desktop-environment"
+   sudo dnf config-manager --set-enabled ol9_codeready_builder  # tem a dependencia perl(File::BaseDir)
+   sudo dnf install -y perl-File-BaseDir x2goserver x2goserver-xsession
+   sudo dnf install -y mate-session-manager mate-panel mate-terminal mate-control-center mate-settings-daemon mate-desktop marco caja
    ```
-   Acesso: `https://<ip-da-vm>:9090` (usuário/senha do sistema Linux).
-   **Abrir a porta 9090 no NSG só pro seu IP**, não público.
+   Sem grupo "MATE" disponível nos repositórios — instalado pacote a
+   pacote. `x2goserver` não roda daemon systemd persistente (funciona sob
+   demanda via SSH, porta 22 já basta, nada a abrir no NSG). Cliente:
+   X2Go Client no Windows, host = IP da VM, login = usuário Linux, chave
+   SSH (mesma do acesso), sessão tipo **MATE**. Erro cosmético esperado no
+   1º login (`GvcApplet`/volume falha, sem áudio na VM) — deletar o applet.
 4. **Portainer** (painel visual dos containers Docker — sobe como container
    também):
    ```bash
