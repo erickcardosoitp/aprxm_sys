@@ -216,6 +216,38 @@ dentro da VM também, pra ficar "tudo num lugar só".
 
 ---
 
+## Mapa de localização na VM (`vm-itp-prod`, `20.114.240.177`)
+
+| O quê | Onde |
+|---|---|
+| Stack Docker Compose (arquivo principal) | `~/itp-stack/docker-compose.yml` |
+| Env do backend erp_itp (secrets) | `~/itp-stack/erp_itp_backend.env` |
+| Env do frontend erp_itp | `~/itp-stack/erp_itp_frontend.env` |
+| Código-fonte erp_itp (clone git) | `~/erp_itp/` (repo `erickcardosoitp/erp_itp`) |
+| Dockerfile backend | `~/erp_itp/apps/backend/Dockerfile` |
+| Dockerfile frontend | `~/erp_itp/apps/frontend/Dockerfile` |
+| Dados do Postgres (volume Docker) | volume `itp-stack_pg_data` (não é pasta direta no host, gerenciado pelo Docker) |
+| Dados do pgAdmin4 (volume Docker) | volume `itp-stack_pgadmin_data` |
+| Atalhos da área de trabalho (MATE) | `~/Desktop/*.desktop` (Firefox, pgAdmin4) |
+| Dump de backup usado no restore | `~/erp_itp_20260905_215242.dump` (cópia manual via scp) |
+
+**Portas em uso na VM:**
+
+| Porta | Serviço | Exposta no NSG? |
+|---|---|---|
+| 22 | SSH (+ X2Go, sob demanda) | Sim, só IP `177.73.164.250/32` |
+| 3001 | Backend erp_itp (NestJS) | Não (só rede interna Docker por enquanto) |
+| 3000 | Frontend erp_itp (Next.js) | Não (idem) |
+| 5432 | Postgres | Não (idem) |
+| 5050 | pgAdmin4 | Não — acesso só via `localhost` de dentro da VM (MATE) |
+| 9443 | Portainer | Não — mesma lógica, acesso só via `localhost` |
+
+Nenhuma porta de aplicação está pública ainda — só SSH. As portas 80/443
+(Traefik) entram só na Fase VM.5, quando decidirmos o corte de DNS de
+verdade.
+
+---
+
 ## Fora deste plano por enquanto
 
 - Cron jobs: dentro da VM isso vira trivial — `cron` do próprio sistema
