@@ -307,9 +307,33 @@ mantenedor** se precisa ser agendado.
   própria plataforma Neon, sem permissão de escrita nossa — não é dado da
   aplicação). Credencial do Neon fica em `~/itp-stack/neon_sync.env`
   (chmod 600), fora do crontab em texto aberto.
-  **Ainda falta**: backup do disco da própria VM (snapshot/Azure Backup)
-  — o dump cobre só o Postgres, não a VM inteira (configs, volumes do
-  pgAdmin, etc.).
+- **✅ Snapshot diário do disco da VM (2026-09-08).** Cobre o que o backup
+  do Postgres não cobre: configs, certificados Let's Encrypt, volumes do
+  pgAdmin, todo o setup manual. Mecanismo: identidade gerenciada
+  (system-assigned) na VM, com 2 roles escopadas **só ao disco/RG do
+  próprio recurso** (nunca Contributor genérico):
+  - `Disk Snapshot Contributor` no escopo do resource group `rg-itp-prod`
+    (precisa ser no RG, não no disco, porque criar snapshot cria um recurso
+    novo — não dá pra escopar só no disco de origem)
+  - `Reader` escopado só no disco `vm-itp-prod_OsDisk_1_...` (a role de
+    snapshot sozinha só dá `beginGetAccess`, não leitura direta do disco)
+
+  Script `~/vm-snapshot.sh`, cron diário (`0 3 * * *`): `az login --identity`
+  (sem credencial gravada em lugar nenhum) → `az snapshot create --incremental`
+  (snapshot incremental, cobra só o delta) → apaga snapshots com mais de 7
+  dias. Testado e validado (`snap-vm-itp-prod-osdisk-*` criado com sucesso).
+
+  **Achados/incidentes desta parte:**
+  - RBAC recém-concedido não bastou de imediato — `az login --identity` na
+    VM tinha cacheado um token de antes da permissão propagar, e não
+    renovava sozinho. Fix: `az account clear` uma vez pra limpar cache
+    antigo do Azure CLI.
+  - `az snapshot create` falhava com `(InvalidParameter) Entity not of
+    expected type` em `sourceResourceId` — causa real (achada via
+    `--debug`): a CLI da VM tinha `brazilsouth` como região default
+    (config antiga), mas o disco está em `eastus2`; snapshot precisa
+    nascer na mesma região do disco de origem. Fix: `--location eastus2`
+    explícito no `az snapshot create`.
 - **Fase VM.6 (frontends)**: decisão não tomada — manter no Static Web App
   ou trazer pra dentro da VM. Perguntado ao usuário, sem resposta ainda.
 - **aprxm_sys**: Fases VM.3 (dump ainda não gerado), VM.4, VM.5, VM.6 não
