@@ -224,6 +224,19 @@ certificado Let's Encrypt válido.
   64`, exige deallocate/start da VM, ~3min downtime) + expansão a quente de
   partição/LVM/XFS (`growpart` → `pvresize` → `lvextend` →
   `xfs_growfs`), sem perda de dado. Custo: US$4,80→US$9,28/mês (+US$4,48).
+- **Causa raiz complementar do disco cheio**: parte do 19GB original já
+  estava consumida antes de qualquer build — `/var/cache/uptrack` (2,7GB,
+  cache do Ksplice/patch de kernel ao vivo da Oracle, nunca limpo) +
+  `/var/cache/dnf` (730MB, sobra dos `dnf install` da Fase VM.2). Limpo
+  (`rm -rf /var/cache/uptrack/*` + `dnf clean all`), recuperou ~3,4GB.
+- **Dockerfiles otimizados (2026-09-08)**, commit `perf(docker)` no
+  `erp_itp`: `RUN --mount=type=cache,target=/root/.npm npm ci` (cache do
+  npm não vira camada de imagem) + estágio `prod-deps` separado rodando
+  `npm ci --omit=dev` (imagem final não carrega devDependencies). Resultado:
+  imagem do backend caiu pra **288MB**. Frontend ficou em **1,28GB** (Next.js
+  ainda carrega `node_modules` de produção completo — reduzir mais exigiria
+  `output: 'standalone'` no `next.config.mjs`, não feito ainda, fora de
+  escopo por enquanto).
 
 ---
 
@@ -258,25 +271,49 @@ dentro da VM também, pra ficar "tudo num lugar só".
 | Porta | Serviço | Exposta no NSG? |
 |---|---|---|
 | 22 | SSH (+ X2Go, sob demanda) | Sim, só IP `177.73.164.250/32` |
-| 3001 | Backend erp_itp (NestJS) | Não (só rede interna Docker por enquanto) |
+| 80, 443 | Traefik (proxy reverso, HTTPS) | **Sim, público (Origem=Any)** — desde a Fase VM.5 |
+| 3001 | Backend erp_itp (NestJS) | Não (só rede interna Docker, roteado via Traefik) |
 | 3000 | Frontend erp_itp (Next.js) | Não (idem) |
 | 5432 | Postgres | Não (idem) |
 | 5050 | pgAdmin4 | Não — acesso só via `localhost` de dentro da VM (MATE) |
 | 9443 | Portainer | Não — mesma lógica, acesso só via `localhost` |
 
-Nenhuma porta de aplicação está pública ainda — só SSH. As portas 80/443
-(Traefik) entram só na Fase VM.5, quando decidirmos o corte de DNS de
-verdade.
+**DNS**: `itp` e `api.itp` na zona `institutotiapretinha.org` são registros
+**A** apontando pro IP público da VM (`20.114.240.177`) — substituíram os
+CNAMEs antigos que apontavam pra Vercel. Apex do domínio institucional
+(site) segue intocado, apontando pro Static Web App.
+
+**Crons ativos** (crontab do usuário `itpadmin` na VM, não mais Logic App):
+```
+0 8 * * *  curl -s -H "x-cron-secret: ..." http://localhost:3001/api/auth/cron/verificar-senhas
+30 8 * * * curl -s -H "x-cron-secret: ..." http://localhost:3001/api/supabase/cron/health-check
+```
+3º endpoint (`captacao.controller.ts:261`, protegido por cron-secret mas
+fora da lista oficial de crons da Vercel) — **pendente confirmar com o
+mantenedor** se precisa ser agendado.
 
 ---
 
-## Fora deste plano por enquanto
+## Pendências / não feito ainda
 
-- Cron jobs: dentro da VM isso vira trivial — `cron` do próprio sistema
-  operacional ou um serviço agendador simples, sem precisar de Logic App
-  (isso era workaround específico de PaaS serverless).
-- Backup: **crítico revisar** — Flexible Server tinha backup automático de
-  7 dias de graça; numa VM isso é responsabilidade nossa configurar
-  (`pg_dump` agendado + Azure Backup pra VM, ou snapshot de disco).
+- **Backup automático — CRÍTICO, ainda não configurado.** Flexible Server
+  tinha backup automático de 7 dias de graça; na VM isso é responsabilidade
+  nossa. Nada agendado ainda (nem `pg_dump` cron, nem Azure Backup de disco,
+  nem snapshot). Bloqueante antes de desligar de vez o Vercel/Neon do
+  erp_itp.
+- **Fase VM.6 (frontends)**: decisão não tomada — manter no Static Web App
+  ou trazer pra dentro da VM. Perguntado ao usuário, sem resposta ainda.
+- **aprxm_sys**: Fases VM.3 (dump ainda não gerado), VM.4, VM.5, VM.6 não
+  iniciadas — só erp_itp foi migrado até agora.
+- CORS duplicado no código do erp_itp (achado na due-diligence) — não
+  consolidado, e pode já ser irrelevante já que rodamos via `src/main.ts`
+  (precisa reverificar, não assumir).
+- 3º endpoint de cron (`captacao.controller.ts`) sem confirmação do
+  mantenedor.
+- Webhooks do Google Apps Script (2 scripts com URL hardcoded
+  `api.itp.institutotiapretinha.org`) — não testados pós-corte de DNS.
+- `psql-erpitp-prod` (Flexible Server) e Vercel do erp_itp: manter rodando
+  em paralelo por 1-2 semanas como rollback antes de desligar — ainda dentro
+  da janela, não desligar ainda.
 - Alta disponibilidade: não existe replicação/HA nesse desenho — é o
   trade-off já aceito na reversão de arquitetura.
