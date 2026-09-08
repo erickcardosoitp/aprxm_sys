@@ -22,8 +22,8 @@ function lazyWithReload(factory: () => Promise<{ default: React.ComponentType<an
   )
 }
 
-class ChunkErrorBoundary extends Component<{ children: ReactNode }, { crashed: boolean; error: Error | null }> {
-  state: { crashed: boolean; error: Error | null } = { crashed: false, error: null }
+class ChunkErrorBoundary extends Component<{ children: ReactNode }, { crashed: boolean; error: Error | null; componentStack: string | null }> {
+  state: { crashed: boolean; error: Error | null; componentStack: string | null } = { crashed: false, error: null, componentStack: null }
   componentDidCatch(e: Error, info: ErrorInfo) {
     const isChunkError =
       e.message?.includes('Failed to fetch dynamically imported module') ||
@@ -33,8 +33,8 @@ class ChunkErrorBoundary extends Component<{ children: ReactNode }, { crashed: b
       this.setState({ crashed: true, error: null })
       return
     }
-    console.error('[APRXM] Render error:', e, info)
-    this.setState({ crashed: true, error: e })
+    console.error('[APRXM] Render error:\n' + e.message + '\n' + e.stack + '\nComponent stack:' + info.componentStack)
+    this.setState({ crashed: true, error: e, componentStack: info.componentStack ?? null })
   }
   render() {
     if (this.state.error) {
@@ -46,6 +46,8 @@ class ChunkErrorBoundary extends Component<{ children: ReactNode }, { crashed: b
               {this.state.error.message}
               {'\n'}
               {this.state.error.stack}
+              {'\nComponent stack:'}
+              {this.state.componentStack}
             </pre>
             <button
               onClick={() => window.location.reload()}

@@ -1,7 +1,13 @@
 import { useRef, useState, useEffect } from 'react'
-import ReactSignatureCanvas from 'react-signature-canvas'
+import * as SignatureCanvasModule from 'react-signature-canvas'
+import type SignatureCanvasType from 'react-signature-canvas'
 import { Check, RotateCcw, PenLine } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+// react-signature-canvas é CJS; alguns bundlers nao desembrulham o default
+// automaticamente, entao resolvemos manualmente pra evitar "Element type is invalid".
+const ReactSignatureCanvas: typeof SignatureCanvasType =
+  (SignatureCanvasModule as any).default ?? (SignatureCanvasModule as any)
 
 interface SignaturePadProps {
   label?: string
@@ -11,7 +17,7 @@ interface SignaturePadProps {
 }
 
 export function SignaturePad({ label = 'Assinatura', onSave, onClear, onUpload }: SignaturePadProps) {
-  const canvasRef = useRef<ReactSignatureCanvas>(null)
+  const canvasRef = useRef<SignatureCanvasType>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [saved, setSaved] = useState(false)
   const [uploading, setUploading] = useState(false)
