@@ -563,3 +563,50 @@ manualmente no ITP). Se quiser retomar no futuro, o caminho seria criar uma
 estrutura de grupos **nova e paralela**, só pra nível de permissão (ex:
 `ITP_ROLE_ADMIN`, `ITP_ROLE_DRT`, `ITP_ROLE_ASSIST`), sem mexer nos grupos
 de área já existentes.
+
+---
+
+## ✅ Fechamento da rodada 2026-09-09 — email, soft delete completo, storage institucional
+
+**Envio de email: SMTP → Microsoft Graph API.** SMTP (M365, caixa
+`projetos@institutotiapretinha.org`) ficou bloqueado por "Security
+Defaults" do tenant (política que barra autenticação legada/SMTP AUTH
+tenant-wide). Em vez de desativar essa política (enfraquece a segurança do
+tenant inteiro) ou pagar Entra ID P1 pra Conditional Access de exceção:
+`GraphMailTransport`, um transport nodemailer customizado que envia via
+`POST /users/{mailbox}/sendMail` (Graph API, OAuth2 app-only), reaproveitando
+o App Registration do SSO. Não é afetado por Security Defaults (não é
+legacy auth). Testado, `{"ok":true}` confirmado. **Pendência de
+hardening**: `Mail.Send` (Application) permite enviar como qualquer
+mailbox do tenant por padrão — restringir a só `projetos@` exige
+Application Access Policy via Exchange Online PowerShell, bloqueado nesta
+sessão por Conditional Access (dispositivo não gerenciado).
+
+**Soft delete: lacuna do SQL cru fechada.** As 31 queries manuais
+(`this.db.query()`) em `relatorios.service.ts` (25), `publico.service.ts`
+(5, inclui a página **pública** de prestação de contas) e
+`academico.service.ts` (1) que liam `movimentacoes_financeiras` sem passar
+pelo `@DeleteDateColumn` automático do TypeORM agora têm `deleted_at IS
+NULL` explícito. Verificado que nenhuma faz JOIN com outra tabela que
+também tem `deleted_at` (sem risco de ambiguidade).
+
+**Migração de acervo institucional Google Drive → SharePoint.** Achado um
+backup do Google Takeout (`goncalvecardoso@gmail.com`) com currículos da
+equipe, vídeos/social mídia do Instituto e material de colônia de férias —
+Team novo `ADMIN_ITP` criado (Célia, Felipe, as 2 Gabis, as 2 contas do
+Erick), 339/340 arquivos migrados via Graph API (upload em lote com
+threshold ajustado pra 195MB — Graph aceita upload simples até ~250MB, não
+só 4MB). 1 vídeo de 405MB falhou por bug não diagnosticado na sessão de
+upload em chunks — usuário faz upload manual desse único arquivo pelo
+navegador.
+
+**Logs**: rotação nativa do Docker configurada (20MB×5 por container, não
+afeta `docker logs -f` ao vivo) + zip diário automático (23:55, retenção 7
+dias) em `~/logs-diarios/` na VM — antes não existia nenhum log persistente
+além do que o Docker mantinha ao vivo sem limite.
+
+**Adiado a pedido do usuário**: localizar/apagar o projeto Supabase órfão
+(sem custo real, sem urgência); corrigir os achados de código do
+levantamento anterior (rotas de chamada duplicadas, `relatorios/page.jsx`
+órfão, `FuncionariosController` possivelmente duplicado); migração do
+aprxm_sys.
