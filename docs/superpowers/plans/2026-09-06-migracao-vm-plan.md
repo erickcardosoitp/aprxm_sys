@@ -535,3 +535,31 @@ erp_itp no dashboard (`jtlxmvlglfxoosxqlrfv`) — commit original de criação
 foi feito com `goncalvecardoso@gmail.com`, mas pode ter sido criado via
 OAuth (GitHub) numa conta/organização diferente. Sem custo real enquanto
 não usado (tier free) — não bloqueante, só fica órfão até ser localizado.
+
+---
+
+## ❌ Sincronia grupo Entra ID → role ITP — avaliado e descartado (2026-09-09)
+
+Ideia: no 1º login SSO, ler os grupos do usuário via Graph API
+(`/users/{id}/memberOf`) e derivar automaticamente o `role` do ITP a partir
+de um grupo do Entra, em vez de cadastro manual.
+
+**Por que não**: correlacionei os 6 usuários reais do ITP com os grupos que
+cada um pertence no Entra (12 grupos ao todo, alguns claramente duplicados —
+grupos manuais tipo `ITP_AM_TECNOLOGIA` coexistindo com grupos
+auto-criados pelo Teams tipo `ITP & AM - Tecnologia`, resquício da
+governança M365 anterior). Resultado: **não existe correlação limpa**. Os
+3 usuários com role `admin` (Erick, Felipe, Bruno) não compartilham nenhum
+grupo exclusivo entre si; `prt` (Célia) e `drt`/`assist` (Gabriela/Gabriella)
+se sobrepõem quase totalmente nos mesmos grupos. Causa raiz: os grupos do
+Entra foram desenhados por **área/departamento** (Cozinha, Tecnologia,
+Diretoria, Operação), enquanto o `role` do ITP é **nível de permissão**
+(admin/drt/prt/assist/...) — são dois eixos diferentes, um não deriva o
+outro sem reestruturar os grupos primeiro.
+
+**Decisão do usuário**: não forçar a correlação. Descartado por ora — SSO
+continua como está (casa por e-mail, sem criar conta, `role` gerenciado
+manualmente no ITP). Se quiser retomar no futuro, o caminho seria criar uma
+estrutura de grupos **nova e paralela**, só pra nível de permissão (ex:
+`ITP_ROLE_ADMIN`, `ITP_ROLE_DRT`, `ITP_ROLE_ASSIST`), sem mexer nos grupos
+de área já existentes.
