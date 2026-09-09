@@ -413,13 +413,15 @@ Authorization Code manual com `fetch` nativo (Node 24) + `jsonwebtoken` +
 - `GET /auth/microsoft/callback`: valida `state`, troca `code` por token,
   verifica assinatura do id_token via JWKS da Microsoft (audience + issuer),
   extrai `email`, chama `authService.loginComSSO()`
-- `AuthService.loginComSSO()`: casa por `usuarios.email`; se não existir,
-  cria conta nova com **role `'user'`** (confirmado no banco: nenhum usuário
-  usa esse role hoje — é o piso do `ROLE_LEVEL`, só visualização básica onde
-  módulo não tem permissão configurada; API_LEVEL de `assist` pra cima já
-  concede editar/incluir, não é seguro pra conta autocriada sem revisão).
-  Emite o mesmo JWT/cookie `itp_token` do login normal — resto do app não
-  percebe diferença.
+- `AuthService.loginComSSO()`: casa por `usuarios.email`. **Revisado
+  2026-09-09** — decisão original era autocriar conta (role `'user'`) se
+  o e-mail não existisse; usuário corrigiu depois do 1º teste real: **não
+  cria conta automática**. Sem conta prévia, registra uma notificação
+  (`tipo: solicitacao_acesso_sso`, dedupe por e-mail, `cargo_minimo: 8` —
+  só DRT+ vê) e lança `SsoSemContaException`; controller redireciona pro
+  login com aviso de "solicitação enviada", sem logar ninguém.
+  Com conta encontrada, emite o mesmo JWT/cookie `itp_token` do login
+  normal — resto do app não percebe diferença.
 
 **Frontend**: botão "Entrar com Microsoft" em `apps/frontend/src/app/login/page.tsx`,
 link direto (não fetch) pra `${API_BASE}/auth/microsoft` — deixa o navegador
@@ -437,10 +439,99 @@ login normal, cookie sai do domínio certo. Cookie de `state` também ajustado
 de `path` restrito pra `path: '/'` pelo mesmo motivo (o navegador vê
 `/backend-api/...`, não `/api/...`, a rota interna do backend).
 
-Testado: `GET /backend-api/auth/microsoft` retorna 302 com `redirect_uri`
-correto. Deploy via `~/erp_itp/deploy.sh` (script novo do repo — pull, build,
-up, prune de cache >24h).
+Deploy via `~/erp_itp/deploy.sh` (script novo do repo — pull, build, up,
+prune de cache >24h).
 
-**Pendente**: testar o fluxo completo logando de fato com uma conta Microsoft
-real do tenant (só validei o redirect inicial, não o callback+criação de
-usuário ponta a ponta).
+**✅ Testado ponta a ponta e funcionando (2026-09-09)**, com mais 2 bugs
+achados e corrigidos no processo real de login:
+
+1. **Service Worker (`public/sw.js`) interceptava a navegação do SSO e
+   cancelava.** `sw.js` só excluía `/api/*` da interceptação, mas o browser
+   chama `/backend-api/*` (proxy do `next.config.mjs`) — nunca era excluído.
+   O SW fazia `fetch()` do redirect pro `/auth/microsoft`, seguia até
+   `login.microsoftonline.com` (cross-origin) e cancelava — causava um erro
+   piscando rápido na tela e navegação instável/duplicada. Fix: adiciona
+   `/backend-api/` à exclusão do SW, mesmo padrão do `/api/`.
+2. **Cookie `itp_token` com `SameSite=Strict` não "pegava" até um reload
+   manual.** A navegação de volta da Microsoft pro callback, mesmo sendo
+   `itp.institutotiapretinha.org` → `itp.institutotiapretinha.org`, ainda é
+   tratada pelo navegador como parte de uma cadeia de redirect iniciada
+   cross-site (por `login.microsoftonline.com`) — cookie `Strict` não é
+   enviado nesse hop imediato, só numa navegação nova e genuinamente
+   same-site (reload manual). Fix: cookie da SSO usa `SameSite=Lax`
+   (login por senha, que é fetch same-origin, continua `Strict`, não afetado).
+
+**Limpeza de usuários pós-teste (2026-09-09)**: sua conta admin
+(`Erick Gonçalves Cardoso`) não tinha e-mail cadastrado — 1º teste de SSO
+criou uma conta duplicada (`role: user`) em vez de reconhecer a existente.
+Corrigido: duplicata apagada, e-mail `erickcardoso@institutotiapretinha.org`
+setado na conta admin real. Comparação completa Entra ID (22 contas) x
+usuários do ITP (11 contas) revelou que **10 de 11 usuários tinham e-mail
+pessoal (Gmail/Outlook) cadastrado, não o institucional** — SSO não
+funcionaria pra nenhum deles do jeito que estava. Ação tomada: 5 contas
+atualizadas pro e-mail institucional correspondente (Bruno Duarte, Célia,
+Felipe Siqueira, Gabriela Graciano, Gabriella Barbosa), 3 contas
+duplicadas/órfãs deletadas (2 accounts do usuário — `goncalvecardoso@gmail.com`
+com role `prof` duplicando a conta admin real: `karinasales2004@gmail.com` e
+`lwellingtonlacerda@gmail.com`, sem correspondência confirmável no Entra ID
+—, e a 2ª conta "Bruno Duarte" duplicada). ITP ficou com **6 usuários**,
+todos com SSO funcional.
+
+**Fotos de perfil**: baixadas do Entra ID via Microsoft Graph
+(`/users/{upn}/photo/$value`) pros 6 usuários e subidas pro mesmo storage
+que o app já usa (ver migração de storage abaixo).
+
+---
+
+## ✅ Storage de arquivos: Supabase → Azure Blob Storage (2026-09-09)
+
+Pedido pelo usuário depois de perceber que a foto de perfil via SSO usava
+Supabase Storage ("ainda estamos usando isso??"). Decisão: reduzir
+dependência de serviços fora do Azure, já que Azure já é usado pra
+VM/DNS/backups/snapshots.
+
+**Escopo real** (levantado antes de mexer): 11 arquivos em
+`src/{modules/supabase,auth,academico,alunos,projetos,matriculas,gente,
+funcionarios}` injetam `SupabaseService` — só **1 arquivo**
+(`supabase.service.ts`) implementa o storage de fato. Decisão de design:
+manter a interface pública idêntica (`upload`/`resolveUrl`/`getSignedUrl`/
+`delete`/`checkHealth`) e trocar só a implementação interna — os outros 10
+arquivos não precisaram mudar uma linha. Nome do arquivo/classe
+(`SupabaseService`) mantido por esse motivo, com comentário no topo
+explicando a migração (evita um rename mecânico em 10+ arquivos por uma
+razão só cosmética).
+
+**Infra criada**: Storage Account `stitperpprod` (Standard_LRS, tier Cool,
+`eastus2`, TLS 1.2 mínimo, sem acesso público a blob), container privado
+`arquivos`.
+
+**Migração de dados**: 599 arquivos existentes no Supabase (fotos de
+funcionários, documentos de inscrição em estrutura aninhada
+`inscricoes/{id}/`, imagens de projetos) — baixados via script Python
+(lista recursiva + download, preservando estrutura de pastas) e subidos em
+lote pro Azure (`az storage blob upload-batch`). 599/599 confirmados nos
+dois lados.
+
+**Código**: `@azure/storage-blob` no lugar de `@supabase/supabase-js`
+(removido do `package.json`). Leitura usa SAS token gerado sob demanda
+(`generateBlobSASQueryParameters`, permissão só leitura, expira em 1h por
+padrão) em vez de signed URL do Supabase — mesmo conceito, biblioteca
+diferente.
+
+**Validado**: health-check (`GET /supabase/cron/health-check`, nome da rota
+mantido) retornando OK contra Azure; upload em lote confirmado; leitura via
+SAS testada (gerou URL, `curl` retornou HTTP 200 com o arquivo certo).
+
+**Achado importante durante a limpeza**: `aprxm_sys` (2º sistema, devendo
+ser migrado ainda) **também usa Supabase Storage**, mas é um **projeto
+diferente** (`tzkvwlqpzrzdmbkisliy.supabase.co`, vs
+`jtlxmvlglfxoosxqlrfv.supabase.co` do erp_itp) — confirmado antes de
+autorizar a exclusão do projeto do erp_itp, pra não quebrar o aprxm_sys por
+engano. Quando migrarmos o aprxm_sys, avaliar se vale a mesma troca pro
+Azure Blob lá também (projeto separado, decisão separada).
+
+**Pendente**: usuário não conseguiu localizar/apagar o projeto Supabase do
+erp_itp no dashboard (`jtlxmvlglfxoosxqlrfv`) — commit original de criação
+foi feito com `goncalvecardoso@gmail.com`, mas pode ter sido criado via
+OAuth (GitHub) numa conta/organização diferente. Sem custo real enquanto
+não usado (tier free) — não bloqueante, só fica órfão até ser localizado.
