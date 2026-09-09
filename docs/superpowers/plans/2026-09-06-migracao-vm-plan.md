@@ -334,8 +334,15 @@ mantenedor** se precisa ser agendado.
     (config antiga), mas o disco está em `eastus2`; snapshot precisa
     nascer na mesma região do disco de origem. Fix: `--location eastus2`
     explícito no `az snapshot create`.
-- **Fase VM.6 (frontends)**: decisão não tomada — manter no Static Web App
-  ou trazer pra dentro da VM. Perguntado ao usuário, sem resposta ainda.
+- **✅ Fase VM.6 fechada (2026-09-08)**: frontend do erp_itp é Next.js com
+  SSR/middleware — não é candidato a Static Web App (hospedagem estática
+  pura) sem reescrita grande. Já roda como container na VM
+  (`erp_itp_frontend`), que é o único caminho tecnicamente viável. Nenhuma
+  decisão real pendente aqui, só formalização.
+- **✅ Vercel do erp_itp desligado (2026-09-08)**: projetos `itp-erp-backend`
+  e `itp-erp-frontend` removidos da Vercel (`vercel project rm`). **Neon
+  mantido de propósito** — não é mais o banco de produção, virou alvo do
+  backup/redundância (cron 6h), continua recebendo sync normalmente.
 - **aprxm_sys**: Fases VM.3 (dump ainda não gerado), VM.4, VM.5, VM.6 não
   iniciadas — só erp_itp foi migrado até agora.
 - **✅ CORS reverificado (2026-09-08)** — `src/main.ts` (o que roda na VM)
@@ -359,8 +366,22 @@ mantenedor** se precisa ser agendado.
   de 404 — validação executando). **Os `.gs` não precisam de edição** — a
   URL hardcoded já é a definitiva (`api.itp.institutotiapretinha.org`),
   só trocamos o DNS por trás. Commit `fix(funcionarios)`.
-- `psql-erpitp-prod` (Flexible Server) e Vercel do erp_itp: manter rodando
-  em paralelo por 1-2 semanas como rollback antes de desligar — ainda dentro
-  da janela, não desligar ainda.
+- **✅ `psql-erpitp-prod` (Flexible Server) deletado (2026-09-08)** —
+  redundante com o Neon (que já cobre o papel de backup). Economia de
+  ~US$32,56/mês.
 - Alta disponibilidade: não existe replicação/HA nesse desenho — é o
   trade-off já aceito na reversão de arquitetura.
+
+---
+
+## ✅ erp_itp — migração concluída (2026-09-08)
+
+Todas as fases (VM.1 a VM.6) fechadas, todas as pendências resolvidas:
+backup em 2 camadas (Postgres→Neon 6h, disco→snapshot diário), 3 bugs
+pré-existentes corrigidos (cron `captacao/expire`, webhook `funcionarios`,
+CORS reverificado), Vercel desligado, Flexible Server redundante deletado.
+Único ponto ainda rodando fora da VM, **de propósito**: Neon (papel de
+backup, não produção).
+
+Próximo passo do parque de sistemas: migração do **aprxm_sys** (Fases VM.3
+em diante para o 2º sistema), ainda não iniciada.
