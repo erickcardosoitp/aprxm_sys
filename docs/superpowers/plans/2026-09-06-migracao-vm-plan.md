@@ -388,32 +388,59 @@ em diante para o 2º sistema), ainda não iniciada.
 
 ---
 
-## 📋 Pendente (fora do escopo de migração): SSO Microsoft no erp_itp
+## ✅ SSO Microsoft no erp_itp — implementado (2026-09-08)
 
-Pedido pelo usuário em 2026-09-08, depois do ITP concluído — feature nova,
-não bloqueante pra fechar a migração. Decisões já tomadas, implementação
-ainda não iniciada:
+Pedido pelo usuário depois do ITP concluído — feature nova, fora do escopo
+original de migração. Login por senha continua existindo em paralelo; SSO é
+método extra, não substitui nada.
 
-**Arquitetura** (mantém login atual intacto, adiciona OAuth2/OIDC como método
-extra):
-1. App Registration no Entra ID (tenant `institutotiapretinha.org`, já
-   existe pela governança M365) — Client ID + secret, redirect URI
-2. Backend NestJS: nova estratégia Passport (`passport-openid-client` ou
-   `@azure/msal-node`), `GET /auth/microsoft` (redireciona pro login MS) +
-   `GET /auth/microsoft/callback` (valida token de retorno)
-3. Matching por `email` do Entra ID ↔ `funcionarios.email`/`users.email`
-4. Depois de validado, emite o mesmo JWT cookie que já existe — resto do
-   app não muda
-5. Frontend: botão "Entrar com Microsoft" na tela de login
+**Entra ID (tenant `institutotiapretinha.org`)**:
+- App Registration `ERP ITP - Login SSO` (`az ad app create`), appId
+  `9cc2d265-abab-4101-8e7a-5d8d32eb878d`, `signInAudience: AzureADMyOrg`
+  (só contas do tenant, não multi-tenant/pessoal)
+- Client secret gerado via `az ad app credential reset` (validade 2 anos,
+  vence 2028-09) — guardado em `~/itp-stack/erp_itp_backend.env` na VM
+  (chmod 600), nunca commitado
+- Service Principal criado (`az ad sp create`)
+- Redirect URI: **`https://itp.institutotiapretinha.org/backend-api/auth/microsoft/callback`**
+  (não `api.itp.*` — ver achado abaixo)
 
-**Decisões do usuário:**
-- Usuário do tenant M365 sem conta prévia no ITP → **cria conta
-  automaticamente** (permissão mínima) no primeiro login via SSO, em vez de
-  bloquear
-- Login por email/senha **continua existindo em paralelo** — SSO é opção
-  extra, não substitui
+**Backend** (`apps/backend/src/auth/`), sem lib de OIDC pesada — fluxo OAuth2
+Authorization Code manual com `fetch` nativo (Node 24) + `jsonwebtoken` +
+`jwks-rsa` só pra validar assinatura do id_token:
+- `GET /auth/microsoft`: gera `state` (CSRF), cookie curto (5min), redireciona
+  pro `authorize` da Microsoft
+- `GET /auth/microsoft/callback`: valida `state`, troca `code` por token,
+  verifica assinatura do id_token via JWKS da Microsoft (audience + issuer),
+  extrai `email`, chama `authService.loginComSSO()`
+- `AuthService.loginComSSO()`: casa por `usuarios.email`; se não existir,
+  cria conta nova com **role `'user'`** (confirmado no banco: nenhum usuário
+  usa esse role hoje — é o piso do `ROLE_LEVEL`, só visualização básica onde
+  módulo não tem permissão configurada; API_LEVEL de `assist` pra cima já
+  concede editar/incluir, não é seguro pra conta autocriada sem revisão).
+  Emite o mesmo JWT/cookie `itp_token` do login normal — resto do app não
+  percebe diferença.
 
-**Ainda a decidir antes de implementar**: qual grupo/role padrão a conta
-autocriada recebe (afeta `ROLE_LEVEL` do `ModuloPermGuard` — ver
-`modulo-perm.guard.ts`), e quem faz a App Registration no Entra ID (precisa
-de permissão de admin no tenant).
+**Frontend**: botão "Entrar com Microsoft" em `apps/frontend/src/app/login/page.tsx`,
+link direto (não fetch) pra `${API_BASE}/auth/microsoft` — deixa o navegador
+seguir os redirects normalmente.
+
+**Achado/incidente**: o `redirect_uri` inicial apontava pra
+`api.itp.institutotiapretinha.org` (domínio do backend) — a Microsoft
+redireciona o navegador **direto** pra essa URL (sem passar pelo proxy do
+frontend), então o `Set-Cookie` da sessão ficaria escopado a `api.itp.*`,
+um domínio diferente de `itp.*` (onde o middleware do Next lê o cookie) —
+login pareceria funcionar mas o usuário voltava pro login. Fix: `redirect_uri`
+aponta pro **frontend** (`itp.institutotiapretinha.org/backend-api/auth/microsoft/callback`),
+que já tem rewrite proxy pro backend (`next.config.mjs`) — mesmo padrão do
+login normal, cookie sai do domínio certo. Cookie de `state` também ajustado
+de `path` restrito pra `path: '/'` pelo mesmo motivo (o navegador vê
+`/backend-api/...`, não `/api/...`, a rota interna do backend).
+
+Testado: `GET /backend-api/auth/microsoft` retorna 302 com `redirect_uri`
+correto. Deploy via `~/erp_itp/deploy.sh` (script novo do repo — pull, build,
+up, prune de cache >24h).
+
+**Pendente**: testar o fluxo completo logando de fato com uma conta Microsoft
+real do tenant (só validei o redirect inicial, não o callback+criação de
+usuário ponta a ponta).
