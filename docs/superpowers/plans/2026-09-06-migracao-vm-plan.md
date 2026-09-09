@@ -385,3 +385,35 @@ backup, não produção).
 
 Próximo passo do parque de sistemas: migração do **aprxm_sys** (Fases VM.3
 em diante para o 2º sistema), ainda não iniciada.
+
+---
+
+## 📋 Pendente (fora do escopo de migração): SSO Microsoft no erp_itp
+
+Pedido pelo usuário em 2026-09-08, depois do ITP concluído — feature nova,
+não bloqueante pra fechar a migração. Decisões já tomadas, implementação
+ainda não iniciada:
+
+**Arquitetura** (mantém login atual intacto, adiciona OAuth2/OIDC como método
+extra):
+1. App Registration no Entra ID (tenant `institutotiapretinha.org`, já
+   existe pela governança M365) — Client ID + secret, redirect URI
+2. Backend NestJS: nova estratégia Passport (`passport-openid-client` ou
+   `@azure/msal-node`), `GET /auth/microsoft` (redireciona pro login MS) +
+   `GET /auth/microsoft/callback` (valida token de retorno)
+3. Matching por `email` do Entra ID ↔ `funcionarios.email`/`users.email`
+4. Depois de validado, emite o mesmo JWT cookie que já existe — resto do
+   app não muda
+5. Frontend: botão "Entrar com Microsoft" na tela de login
+
+**Decisões do usuário:**
+- Usuário do tenant M365 sem conta prévia no ITP → **cria conta
+  automaticamente** (permissão mínima) no primeiro login via SSO, em vez de
+  bloquear
+- Login por email/senha **continua existindo em paralelo** — SSO é opção
+  extra, não substitui
+
+**Ainda a decidir antes de implementar**: qual grupo/role padrão a conta
+autocriada recebe (afeta `ROLE_LEVEL` do `ModuloPermGuard` — ver
+`modulo-perm.guard.ts`), e quem faz a App Registration no Entra ID (precisa
+de permissão de admin no tenant).
