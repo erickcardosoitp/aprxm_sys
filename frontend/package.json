@@ -26,7 +26,7 @@
     "react-is": "^19.2.5",
     "react-router-dom": "^7.18.3",
     "react-signature-canvas": "^1.0.6",
-    "recharts": "^3.8.1",
+    "recharts": "^3.10.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zustand": "^4.5.2"
   },
