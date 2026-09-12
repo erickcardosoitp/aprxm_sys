@@ -358,14 +358,14 @@ prioridade de negócio (o item mais simples pode não ser o mais urgente).
      `service_orders` — a coluna real é `so.number` (já usada
      corretamente em outro SELECT do mesmo arquivo). Ambos corrigidos e
      reconfirmados com 200 em produção.
-9. **Fixar `TZ=UTC`** explícito no Dockerfile do backend — **ainda não
-   feito** (hoje é implícito pela imagem base).
-10. **Adicionar healthcheck + usuário não-root ao `backend/Dockerfile`**
-    — **ainda não feito** — hoje roda como root, sem healthcheck.
-11. **Adicionar `--proxy-headers --forwarded-allow-ips` no uvicorn** —
-    **ainda não feito** — sem isso, atrás de qualquer proxy (nginx/Traefik),
-    o IP registrado em `api_request_logs` e usado pelo rate limit
-    (`slowapi`) é o do proxy, não o do cliente real.
+9. ✅ **Fixar `TZ=UTC`** explícito no Dockerfile do backend. **Feito.**
+10. ✅ **Healthcheck + usuário não-root no `backend/Dockerfile`** — usa
+    `/health` (rota pública já existente; `ti/health` exige auth admin,
+    não serve). **Feito.** Não testado com build real (Docker Desktop
+    parado no momento) — só relevante quando sair do Vercel, hoje não
+    afeta produção (Vercel usa `@vercel/python`, ignora este Dockerfile).
+11. ✅ **`--proxy-headers --forwarded-allow-ips` no uvicorn** — **Feito**,
+    mesma ressalva do item 10 (dorme até a migração sair do Vercel).
 
 ### 🟠 Moderado (requer decisão de design, ainda que pequena)
 
