@@ -114,9 +114,13 @@ anotação de tipo**. O FastAPI trata parâmetro sem anotação como *query
 param obrigatório* — então esses endpoints respondem **422 sempre**,
 independente de auth.
 
-Confirmação no banco: a linha mais recente de `mensalidades` foi criada em
-**31/07/2026**. Nada em agosto, nada em setembro — apesar do cron mensal
-`0 8 1 * *`. A geração de mensalidade está sendo feita só manualmente.
+Confirmação no banco: existem mensalidades de `2026-08` (244 linhas) e
+`2026-09` (147 linhas), com `created_at` até 10-11/09 — mas tudo indica
+geração **manual**, não via cron `0 8 1 * *` (que estava quebrado pelo bug
+acima, 422 sempre). Achado à parte, não root-causado: um lote de
+mensalidades com `reference_month` futuro (`2027-01` a `2027-06`) foi criado
+em rajada única em 29-31/07/2026 por um mesmo `created_by` — parece geração
+manual em massa por engano, não investigado a fundo.
 
 ### 2.4 🟠 Vercel cron dispara **GET**; os 8 handlers são **POST**
 

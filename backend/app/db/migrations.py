@@ -28,7 +28,7 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 async def _create_base_schema(session) -> None:
     """Cria o schema do zero num banco 100% vazio (sem o dump de referencia).
@@ -1614,6 +1614,29 @@ async def _apply_versioned_migrations(session) -> None:
     except Exception as exc:
         await session.rollback()
         print(f"[MIGRATION v24] falhou (nao-fatal): {exc}")
+
+    # v25: association_settings.default_due_day -- coluna referenciada por
+    # mensalidades.py (cron-generate) e crm.py (portal do agente) desde
+    # sempre (COALESCE(s.default_due_day, 10)), mas NUNCA foi criada --
+    # achado real em 2026-09-12, testando o cron de mensalidade contra
+    # producao: UndefinedColumnError, 500 em ambos os endpoints. Existe
+    # ate tela de configuracao no frontend (SettingsPage.tsx) pra esse
+    # campo, que nunca persistia de verdade. Default 10 casa com o
+    # fallback ja hardcoded em todo lugar que le essa coluna.
+    try:
+        await session.execute(text(
+            "ALTER TABLE association_settings "
+            "ADD COLUMN IF NOT EXISTS default_due_day INTEGER DEFAULT 10"
+        ))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (25, 'v25: association_settings.default_due_day (coluna nunca existia, quebrava cron de mensalidade)') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v25] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:

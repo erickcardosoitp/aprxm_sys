@@ -175,7 +175,7 @@ async def cron_check_overdue(
 
     summary = []
     for assoc_id, assoc_name, grace_days in rows:
-        cutoff = (datetime.utcnow().date() - timedelta(days=grace_days)).isoformat()
+        cutoff_date = datetime.utcnow().date() - timedelta(days=grace_days)
         result = (await session.execute(text("""
             SELECT COUNT(DISTINCT m.resident_id), COUNT(m.id), COALESCE(SUM(m.amount), 0)
             FROM mensalidades m
@@ -185,13 +185,13 @@ async def cron_check_overdue(
               AND m.due_date < :cutoff
               AND res.type = 'member'
               AND res.status = 'active'
-        """), {"aid": str(assoc_id), "cutoff": cutoff})).fetchone()
+        """), {"aid": str(assoc_id), "cutoff": cutoff_date})).fetchone()
         summary.append({
             "association": assoc_name,
             "unique_delinquents": result[0],
             "total_records": result[1],
             "total_amount": float(result[2]),
-            "cutoff_date": cutoff,
+            "cutoff_date": cutoff_date.isoformat(),
         })
 
     return {"checked_at": datetime.utcnow().isoformat(), "associations": summary}
