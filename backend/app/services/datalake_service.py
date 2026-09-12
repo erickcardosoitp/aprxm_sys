@@ -1888,10 +1888,10 @@ async def _send_alert(error_msg: str, mode: str) -> None:
     """Envia email de alerta quando o ETL falha."""
     try:
         from app.services.email_service import send_email
-        await send_email(
+        send_email(
             to=settings.smtp_user,
             subject=f"[APRXM] ETL Data Lake falhou — {date.today()}",
-            body=f"Modo: {mode}\n\nErro:\n{error_msg}\n\nVerifique em /api/v1/datalake/runs",
+            html=f"Modo: {mode}<br><br>Erro:<br>{error_msg}<br><br>Verifique em /api/v1/datalake/runs",
         )
     except Exception as e:
         logger.error("Falha ao enviar alerta de email: %s", e)

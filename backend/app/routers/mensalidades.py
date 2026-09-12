@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,11 +72,10 @@ async def delete_by_month(
 
 @router.post("/cron-generate", summary="Geração automática semanal (chamada por cron externo)")
 async def cron_generate(
-    request,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import os
-    from fastapi import Request
     from sqlalchemy import text
     from decimal import Decimal
     from datetime import datetime
@@ -153,11 +152,10 @@ async def cron_generate(
 
 @router.post("/cron-check-overdue", summary="Cron diário: verifica inadimplentes por associação")
 async def cron_check_overdue(
-    request,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     import os
-    from fastapi import Request
     from sqlalchemy import text
     from datetime import datetime, timedelta
 
