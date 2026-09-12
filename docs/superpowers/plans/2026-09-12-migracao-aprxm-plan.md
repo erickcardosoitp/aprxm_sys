@@ -13,6 +13,14 @@ código diz que deveria.
 > funciona) por características do ambiente serverless. Este documento
 > substitui aquele.
 
+> **Status (2026-09-12):** diagnóstico, achados críticos (§2) e as 6
+> decisões (§6) estão **fechados**. Os itens 1-11 do plano de correções
+> (§9) estão **corrigidos e confirmados em produção**. As próximas fases
+> (execução da migração em si) estão detalhadas em
+> [`2026-09-12-migracao-aprxm-execucao.md`](2026-09-12-migracao-aprxm-execucao.md)
+> — este documento fica como registro do diagnóstico e das decisões,
+> não é mais o checklist de trabalho ativo.
+
 ---
 
 ## 1. Inventário real do sistema
@@ -155,8 +163,12 @@ corrotina** (`datalake_service.py`), sem thread. Na Vercel isso era
 isolado numa invocação serverless própria — numa VM com um uvicorn, vai
 **bloquear a API inteira por minutos, duas vezes por dia**.
 
-→ Precisa virar processo/container separado (mesma imagem, comando
-diferente), chamado pelo cron, não via HTTP.
+→ **Decisão (2026-09-12): migração completa e nativa pro servidor, sem
+etapa intermediária.** Nada de manter o disparo via HTTP/`CRON_SECRET`
+como ponte "por enquanto" — o ETL vira um comando Python invocado
+diretamente pelo cron do sistema operacional na VM (mesmo padrão do
+`tarefas_runner.py` do ITP_TEC), não uma rota HTTP chamada de fora. Ver
+`2026-09-12-migracao-aprxm-execucao.md`, Fase A.
 
 ### 3.2 Pool de conexões dimensionado para serverless
 
@@ -406,14 +418,12 @@ prioridade de negócio (o item mais simples pode não ser o mais urgente).
 
 ### 🔴 Difícil (mudança de arquitetura ou coordenação externa)
 
-15. **Extrair `/datalake/run` do processo web (§3.1)** — é CPU-bound com
-    pandas rodando direto na corrotina da API. Precisa virar um comando
-    separado da mesma imagem (`python -m app.jobs.datalake_run` ou
-    similar), chamado pelo cron via `docker exec`/container próprio, não
-    mais via HTTP dentro do mesmo processo do uvicorn. Não é reescrever o
-    ETL, é só mudar **onde** ele roda — mas toca o mecanismo de disparo
-    (hoje é HTTP + `CRON_SECRET`, precisaria virar invocação direta de
-    processo) e como o resultado é registrado em `etl_runs`.
+15. **Extrair `/datalake/run` do processo web (§3.1)** — migração
+    **completa e nativa** pro servidor, sem HTTP como intermediário (ver
+    Fase A do doc de execução). Não é reescrever o ETL, é só mudar
+    **onde e como** ele é disparado — toca o mecanismo de disparo (hoje é
+    HTTP + `CRON_SECRET`, vira invocação direta de processo pelo cron do
+    SO) e como o resultado é registrado em `etl_runs`.
 16. **Domínio + TLS do backend e rewrite dos 4 frontends** — provisionar
     `api-aprxm.institutotiapretinha.org` (ou equivalente) atrás de
     Traefik/Let's Encrypt na VM, depois trocar o rewrite `/api/*` no
