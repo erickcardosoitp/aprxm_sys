@@ -486,7 +486,7 @@ VACUUM_TABLES = [
     "mensalidades",
     "demands",
     "daily_tasks",
-    "finance_transactions",
+    "transactions",
     "bank_statements",
     "api_request_logs",
 ]
