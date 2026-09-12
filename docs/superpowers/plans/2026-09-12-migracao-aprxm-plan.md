@@ -151,6 +151,27 @@ Pior: há **três esquemas de auth diferentes e incompatíveis** entre si:
 | Bearer **sem** o skip (401 sempre se secret vazio) | crm/cron-scoring |
 | Aceita ambos | datalake |
 
+### 2.6 🔴 Um 9º mecanismo, achado só em 2026-09-12: `sync_pix_bank_statements`
+
+Não fazia parte do levantamento original dos "8 crons" — vive em
+`admin.py`, num sistema `scheduled_tasks` por associação com botão manual
+no painel (`/admin/scheduled-tasks/{task_key}/run`), **sem nenhum cron
+real por trás** (nem Vercel, nem OS) apesar de ter um `schedule_cron`
+"0 8 * * *" só **descritivo** na UI. Mesma classe de bug dos outros:
+automação que parece existir mas nunca foi ligada de verdade.
+
+Confirmado em produção: 1.378 transações PIX (R$ 8.730,50) sem
+sincronizar em `bank_statements` desde 02/06/2026 — mais de 3 meses.
+**Corrigido e sincronizado em 2026-09-12** (ver plano de execução, seção
+"Fase B+ — sync_pix_bank_statements como 9º cron"). Um segundo bug real
+foi encontrado na própria query ao rodar de verdade: o `NOT EXISTS` por
+`transaction_id` não é suficiente porque existe uma constraint
+`idx_bs_dedup` mais ampla (`association_id, bank, date, name, amount`) —
+duas transações distintas com mesmo nome/valor/data colidem. Corrigido
+com `ON CONFLICT ... DO NOTHING`. Restam 58 transações com colisão real
+de dedup, não resolvidas (precisa de decisão de negócio, não é bug de
+código).
+
 ---
 
 ## 3. O que torna a migração **não-trivial**
@@ -263,7 +284,11 @@ Pontos de atenção:
 - `VAPID_PUBLIC_KEY` tem **chave real hardcoded como default** no código.
 - `CRON_SECRET` default `""` → §2.5.
 - `ANALYTICS_DATABASE_URL` é legado, não mais lido — remover.
-- `DATABASE_URL_DIRECT` está no `.env.example` mas **nenhum código lê**.
+- ~~`DATABASE_URL_DIRECT` está no `.env.example` mas nenhum código lê~~ —
+  **correção (2026-09-12): estava errado.** É usado em `admin.py:472`
+  como conexão sem pooler pro VACUUM manual do painel admin. Achado ao
+  tentar removê-lo de fato (ver doc de execução, pendência 2) — lição:
+  confirmar no código, não só repetir o levantamento anterior.
 - Os dumps `.env.production`, `.env.vercel-prod`, `.env.pull-*` contêm
   `VERCEL_OIDC_TOKEN` e afins. **Estão corretamente no `.gitignore` e não
   rastreados** (verificado). Descartar na migração, não portar.

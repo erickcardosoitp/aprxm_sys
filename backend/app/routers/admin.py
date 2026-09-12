@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -340,6 +340,64 @@ async def clear_data(
 
 # ── Tarefas Agendadas ─────────────────────────────────────────────────────────
 
+async def sync_pix_bank_statements_job(session: AsyncSession, association_id: str) -> int:
+    """Sincroniza transacoes PIX sem entrada em bank_statements. Chamada pelo
+    botao manual (/admin/scheduled-tasks/.../run) e pelo cron nativo
+    (app/jobs/run_cron.py). ON CONFLICT necessario: idx_bs_dedup e mais amplo
+    (association_id, bank, date, name, amount) que o NOT EXISTS por
+    transaction_id -- duas transacoes distintas com mesmo nome/valor/data
+    colidem (achado em producao 2026-09-12, ver plano de execucao)."""
+    r = await session.execute(text("""
+        INSERT INTO bank_statements (association_id, bank, date, amount, name, description, tipo, conciliado, transaction_id)
+        SELECT t.association_id, 'PIX', t.created_at::date, t.amount, t.description, t.description,
+               'entrada', false, t.id
+        FROM transactions t
+        JOIN payment_methods pm ON pm.id = t.payment_method_id
+        WHERE t.association_id = :aid
+          AND t.type = 'income'
+          AND LOWER(pm.name) LIKE '%pix%'
+          AND t.reversed_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM bank_statements bs WHERE bs.transaction_id = t.id)
+        ON CONFLICT (association_id, bank, date, COALESCE(name, ''), amount) DO NOTHING
+        RETURNING id
+    """), {"aid": association_id})
+    return len(r.fetchall())
+
+
+async def cron_sync_pix_job(session: AsyncSession) -> dict:
+    """Roda sync_pix_bank_statements_job pra todas as associacoes ativas.
+    Chamada pela rota HTTP de cron (auth) e pelo dispatcher nativo."""
+    rows = (await session.execute(text(
+        "SELECT id FROM associations WHERE is_active = TRUE"
+    ))).fetchall()
+    results = {}
+    total = 0
+    for (assoc_id,) in rows:
+        count = await sync_pix_bank_statements_job(session, str(assoc_id))
+        results[str(assoc_id)] = count
+        total += count
+        await session.execute(text(
+            "UPDATE scheduled_tasks SET last_run_at = now(), last_run_status = 'success', "
+            "last_run_result = :r WHERE association_id = :aid AND task_key = 'sync_pix_bank_statements'"
+        ), {"aid": str(assoc_id), "r": f"{count} entrada(s) PIX sincronizadas (cron)."})
+    await session.commit()
+    return {"total_synced": total, "by_association": results}
+
+
+@router.api_route("/cron-sync-pix", methods=["GET", "POST"], summary="Cron diário: sincroniza PIX pendente de conciliação", include_in_schema=False)
+async def cron_sync_pix(
+    session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    from app.config import get_settings
+
+    settings = get_settings()
+    if settings.cron_secret and authorization != f"Bearer {settings.cron_secret}":
+        raise HTTPException(status_code=401, detail="Não autorizado.")
+    return await cron_sync_pix_job(session)
+
+
+
 BUILT_IN_TASKS = [
     {
         "task_key": "sync_pix_bank_statements",
@@ -431,21 +489,7 @@ async def run_task_now(
 
     try:
         if task_key == "sync_pix_bank_statements":
-            # Find PIX income transactions without bank_statement entry
-            r = await session.execute(text("""
-                INSERT INTO bank_statements (association_id, bank, date, amount, name, description, tipo, conciliado, transaction_id)
-                SELECT t.association_id, 'PIX', t.created_at::date, t.amount, t.description, t.description,
-                       'entrada', false, t.id
-                FROM transactions t
-                JOIN payment_methods pm ON pm.id = t.payment_method_id
-                WHERE t.association_id = :aid
-                  AND t.type = 'income'
-                  AND LOWER(pm.name) LIKE '%pix%'
-                  AND t.reversed_at IS NULL
-                  AND NOT EXISTS (SELECT 1 FROM bank_statements bs WHERE bs.transaction_id = t.id)
-                RETURNING id
-            """), {"aid": aid})
-            count = len(r.fetchall())
+            count = await sync_pix_bank_statements_job(session, aid)
             result_msg = f"{count} entrada(s) PIX sincronizadas."
 
         elif task_key == "generate_monthly_mensalidades":

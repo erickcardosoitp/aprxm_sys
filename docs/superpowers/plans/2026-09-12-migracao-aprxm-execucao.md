@@ -175,6 +175,7 @@ fora do FastAPI.
 | 4 | `crm/cron-scoring` | `0 6 * * *` | chama `run_scoring_all(session)` — já é service function |
 | 5 | `demands/reminders/trigger` | `0 11 * * *` | inline em `trigger_reminders` (`demands.py:209`) |
 | 6 | `daily-tasks/reminders/trigger` | `0 10 * * *` | inline em `trigger_task_reminders` (`daily_tasks.py:1124`) |
+| 7 | `admin/cron-sync-pix` (**9º cron, achado em 2026-09-12** — não fazia parte do levantamento original de "8 crons", ver doc de diagnóstico §2.6) | `0 8 * * *` | extraído em `sync_pix_bank_statements_job`/`cron_sync_pix_job` (`admin.py`) |
 
 ### Passo a passo
 
@@ -238,9 +239,22 @@ fora do FastAPI.
   dispatcher, **antes** do commit.
 - ✅ Deploy feito, e as 6 rotas HTTP reconfirmadas sem regressão (mesma
   resposta de antes do refactor) — o refactor não mudou comportamento.
-- ✅ `backend/deploy/crontab.aprxm` criado com as 8 linhas prontas.
+- ✅ **9º cron descoberto e tratado no mesmo padrão:**
+  `sync_pix_bank_statements` (`admin.py`) — tinha `schedule_cron`
+  descritivo na UI mas nenhuma automação real por trás, só botão manual.
+  Extraído em `sync_pix_bank_statements_job`/`cron_sync_pix_job`, exposto
+  em `POST/GET /api/v1/admin/cron-sync-pix`, adicionado ao
+  `vercel.json` (`0 8 * * *`) e ao dispatcher (`sync-pix`).
+  **Backlog real de 1.378 transações PIX (R$ 8.730,50) sem sincronizar
+  desde 02/06/2026, sincronizado manualmente em 2026-09-12** (autorizado
+  pelo usuário, operação idempotente confirmada por `NOT EXISTS` +
+  `ON CONFLICT`). Restam 58 com colisão real de dedup (`idx_bs_dedup` é
+  mais amplo que `transaction_id`) — não resolvidas, precisam de decisão
+  de negócio, não é bug de código.
+- ✅ `backend/deploy/crontab.aprxm` criado com as **9** linhas prontas
+  (8 + o sync-pix).
 - ⏸️ **Pendente (precisa de VM):** instalar o crontab de verdade e
-  remover as 6 entradas restantes do `vercel.json` **só depois** de
+  remover as 7 entradas restantes do `vercel.json` **só depois** de
   confirmar que o cron nativo está rodando na VM (mesma cautela da
   Fase A — não tirar o fallback antes de validar o substituto).
 
@@ -376,12 +390,18 @@ foi feito (Fases A, B, C e parte da F). O que resta é ordenado abaixo por
 esforço real — a maior parte depende de acesso a algo fora deste repo
 (SSH na VM, DNS, ou levantar dado externo).
 
-1. 🟢 **Extrair a lista real das 35+ env vars do painel da Vercel** (Fase F,
-   item 1) — puro levantamento, sem precisar de VM. Vira um
-   `backend/.env.production.example` (nomes + comentário, nunca valor
-   real) pra não decidir isso de improviso na hora do deploy.
-2. 🟢 **Remover `DATABASE_URL_DIRECT`** do `.env.example`/config (Fase F,
-   item 4) — confirmado que nenhum código lê, 1 linha.
+1. ✅ **Extrair a lista real das 35+ env vars** (Fase F, item 1) —
+   **feito 2026-09-12**: `.env.example` (raiz do repo, já rastreado no
+   git) atualizado com as vars que faltavam (`CRON_SECRET`, `R2_*`,
+   `DATAWAREHOUSE_APRXM_DATABASE_URL`, `WEBAUTHN_*`, `VAPID_*`,
+   `GROQ_API_KEY`, `PAINEL_*`, `DB_POOL_SIZE`/`DB_MAX_OVERFLOW`).
+2. ❌ **Correção de levantamento anterior — `DATABASE_URL_DIRECT` NÃO é
+   legado.** A afirmação original ("nenhum código lê") estava **errada**
+   — confirmado em `admin.py:472` que é usado como conexão sem pooler
+   pro VACUUM. Achado ao tentar remover: `grep` direto no código (não só
+   no doc anterior) mostrou o uso real. Não remover. Corrigido também no
+   [`2026-09-12-migracao-aprxm-plan.md`](2026-09-12-migracao-aprxm-plan.md)
+   se ainda citar isso como legado.
 3. 🟡 **Levantar volume do Supabase Storage** (Fase D, passo 1) — quantos
    arquivos, tamanho total, tipos. Não precisa de VM, só de credencial
    do Supabase (já usada no backend hoje). Pré-requisito pra tudo mais

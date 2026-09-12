@@ -33,6 +33,11 @@ async def _crm_scoring(session) -> dict:
     return await run_scoring_all(session)
 
 
+async def _sync_pix(session) -> dict:
+    from app.routers.admin import cron_sync_pix_job
+    return await cron_sync_pix_job(session)
+
+
 async def _demands_reminders() -> dict:
     from app.routers.demands import trigger_reminders_job
     return await trigger_reminders_job()
@@ -55,6 +60,7 @@ SESSION_JOBS = {
     "mensalidade-generate": _mensalidade_generate,
     "mensalidade-overdue": _mensalidade_overdue,
     "crm-scoring": _crm_scoring,
+    "sync-pix": _sync_pix,
 }
 
 

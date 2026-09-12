@@ -31,3 +31,7 @@
 
 # Tarefas diarias: lembretes no chat — diario, 07h Brasilia
 0 10 * * * docker exec aprxm_backend python -m app.jobs.run_cron daily-tasks-reminders >> /var/log/aprxm/cron.log 2>&1
+
+# Financeiro: sincroniza PIX pendente de conciliacao — diario, 05h Brasilia
+# (9o cron, achado em 2026-09-12 -- nunca teve automacao real, so botao manual)
+0 8 * * * docker exec aprxm_backend python -m app.jobs.run_cron sync-pix >> /var/log/aprxm/cron.log 2>&1
