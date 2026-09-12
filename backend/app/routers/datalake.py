@@ -76,7 +76,7 @@ def _humanize(delta: timedelta) -> str:
 
 # ── Endpoints de disparo ───────────────────────────────────────────────────────
 
-@router.post("/run", summary="ETL cron (incremental automático)")
+@router.api_route("/run", methods=["GET", "POST"], summary="ETL cron (incremental automático)")
 async def trigger_etl_cron(
     authorization: str | None = Header(default=None),
     x_cron_secret: str | None = Header(default=None),

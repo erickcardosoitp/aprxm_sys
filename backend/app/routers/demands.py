@@ -205,7 +205,7 @@ async def delete_demand(
     return {"ok": True}
 
 
-@router.post("/reminders/trigger", summary="Cron: enviar lembretes de prazo do dia")
+@router.api_route("/reminders/trigger", methods=["GET", "POST"], summary="Cron: enviar lembretes de prazo do dia")
 async def trigger_reminders(
     authorization: str | None = Header(None),
 ) -> dict:

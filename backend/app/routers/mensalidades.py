@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,22 +70,21 @@ async def delete_by_month(
     return {"deleted": deleted, "reference_month": reference_month}
 
 
-@router.post("/cron-generate", summary="Geração automática semanal (chamada por cron externo)")
+@router.api_route("/cron-generate", methods=["GET", "POST"], summary="Geração automática semanal (chamada por cron externo)")
 async def cron_generate(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(default=None),
 ) -> dict:
-    import os
     from sqlalchemy import text
     from decimal import Decimal
     from datetime import datetime
+    from app.config import get_settings
+    from fastapi import HTTPException
 
-    secret = os.environ.get("CRON_SECRET", "")
-    if secret:
-        auth = request.headers.get("x-cron-secret", "")
-        if auth != secret:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=401, detail="Não autorizado.")
+    secret = get_settings().cron_secret
+    if secret and authorization != f"Bearer {secret}":
+        raise HTTPException(status_code=401, detail="Não autorizado.")
 
     from calendar import monthrange as _monthrange
 
@@ -150,21 +149,20 @@ async def cron_generate(
     return {"refs": refs_to_generate, "total_created": total_created}
 
 
-@router.post("/cron-check-overdue", summary="Cron diário: verifica inadimplentes por associação")
+@router.api_route("/cron-check-overdue", methods=["GET", "POST"], summary="Cron diário: verifica inadimplentes por associação")
 async def cron_check_overdue(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(default=None),
 ) -> dict:
-    import os
     from sqlalchemy import text
     from datetime import datetime, timedelta
+    from app.config import get_settings
+    from fastapi import HTTPException
 
-    secret = os.environ.get("CRON_SECRET", "")
-    if secret:
-        auth = request.headers.get("x-cron-secret", "")
-        if auth != secret:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=401, detail="Não autorizado.")
+    secret = get_settings().cron_secret
+    if secret and authorization != f"Bearer {secret}":
+        raise HTTPException(status_code=401, detail="Não autorizado.")
 
     rows = (await session.execute(text("""
         SELECT a.id, a.name, COALESCE(s.delinquency_grace_days, 2)

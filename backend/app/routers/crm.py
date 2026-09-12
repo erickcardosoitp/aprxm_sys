@@ -449,7 +449,7 @@ async def list_parcelamentos(
 
 # ─── POST /crm/cron-scoring ──────────────────────────────────────────────────
 
-@router.post("/cron-scoring", include_in_schema=False)
+@router.api_route("/cron-scoring", methods=["GET", "POST"], include_in_schema=False)
 async def cron_scoring(
     request: Request,
     session: AsyncSession = Depends(get_session),

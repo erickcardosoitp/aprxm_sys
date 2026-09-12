@@ -1,7 +1,7 @@
 import time as _time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -591,17 +591,17 @@ async def analytics(
     }
 
 
-@router.post("/vacuum", summary="VACUUM ANALYZE nas tabelas principais (cron semanal)")
-async def run_vacuum(request: Request) -> dict:
-    import os
+@router.api_route("/vacuum", methods=["GET", "POST"], summary="VACUUM ANALYZE nas tabelas principais (cron semanal)")
+async def run_vacuum(
+    authorization: str | None = Header(default=None),
+) -> dict:
     from app.database import engine
+    from app.config import get_settings
+    from fastapi import HTTPException
 
-    secret = os.environ.get("CRON_SECRET", "")
-    if secret:
-        auth = request.headers.get("x-cron-secret", "")
-        if auth != secret:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=401, detail="Não autorizado.")
+    secret = get_settings().cron_secret
+    if secret and authorization != f"Bearer {secret}":
+        raise HTTPException(status_code=401, detail="Não autorizado.")
 
     results = []
     # VACUUM must run outside a transaction — use AUTOCOMMIT isolation

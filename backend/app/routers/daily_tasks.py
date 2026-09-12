@@ -1120,7 +1120,7 @@ async def report_pdf(
     )
 
 
-@router.post("/reminders/trigger", summary="Cron: disparar lembretes de tarefas no Chat")
+@router.api_route("/reminders/trigger", methods=["GET", "POST"], summary="Cron: disparar lembretes de tarefas no Chat")
 async def trigger_task_reminders(
     authorization: str | None = Header(None),
 ) -> dict:
