@@ -215,7 +215,8 @@ async def trigger_reminders(
         if authorization != expected:
             raise HTTPException(401, "Não autorizado")
 
-    today = date.today().isoformat()
+    today_date = date.today()
+    today = today_date.isoformat()
     sent = 0
 
     async with AsyncSessionLocal() as session:
@@ -231,7 +232,7 @@ async def trigger_reminders(
               AND d.status != 'concluido'
               AND d.reminded_at IS NULL
               AND d.assigned_to_name IS NOT NULL
-        """), {"today": today})).fetchall()
+        """), {"today": today_date})).fetchall()
 
         for r in rows:
             demand_id, title, assoc_id, atn, so_id, email, full_name, so_num = r
