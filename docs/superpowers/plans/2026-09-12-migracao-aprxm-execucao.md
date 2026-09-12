@@ -26,6 +26,45 @@ HTTP. Esse mesmo princípio se aplica, na Fase B, aos outros 7 crons.
 
 ---
 
+## Garantia de continuidade — o sistema não pode ficar fora do ar
+
+Regra que vale pra **toda** fase daqui pra frente, não só uma etapa
+isolada:
+
+1. **Nunca desligar o lado antigo antes do novo estar validado rodando de
+   verdade.** Já é o padrão seguido em A/B (cron nativo só substitui o da
+   Vercel depois de N ciclos reais confirmados) — continua valendo pra
+   domínio (E), storage (D) e frontends (G).
+2. **O banco (Neon) é compartilhado pelos dois lados o tempo todo.** Não
+   existe estado que vive só na VM ou só na Vercel durante a transição —
+   os dois lados leem/escrevem o mesmo Postgres. Isso é o que torna
+   possível rodar em paralelo (Fase H) sem duas fontes de verdade
+   divergentes. O único cuidado real: **nunca deixar os dois lados
+   disparando o mesmo cron ao mesmo tempo** (duplicaria mensalidade,
+   duplicaria e-mail de lembrete etc.) — por isso B mantém o cron da
+   Vercel ativo até o nativo estar confirmado, nunca os dois juntos.
+3. **O corte de domínio (Fase E→G) é 1 linha por frontend, reversível em
+   segundos.** Trocar o rewrite `/api/*` no `vercel.json` de cada
+   frontend e fazer `git push` é o único ato de corte de verdade — se
+   algo quebrar, reverter é outro `git push` com o rewrite antigo. Isso
+   só deve acontecer **depois** que o domínio novo (Fase E) já responde
+   `/health` de forma estável por um período — nunca apontar o frontend
+   pro domínio novo no mesmo dia em que ele sobe.
+4. **Os frontends nunca saem da Vercel** (decisão §6.2) — o usuário final
+   nunca fica sem UI pra acessar; na pior hipótese, a API fica
+   temporariamente inacessível (erro de rede na tela), não a aplicação
+   inteira fora do ar.
+5. **Nada do que já foi commitado até agora (Fases A/B/C/F) causa
+   downtime.** Só trocamos *como* os crons são chamados e calibramos
+   configuração — a API em produção (Vercel) nunca parou de responder e
+   continua sendo a única fonte real de tráfego até a Fase G acontecer.
+6. **Rollback de cada fase é documentado dentro da própria fase** (ver
+   "Risco / rollback" na Fase A, por exemplo) — antes de aplicar
+   qualquer fase que toque produção de verdade, confirmar que o rollback
+   dela está claro, não só o passo pra frente.
+
+---
+
 ## Fase A — ETL: migração completa e nativa ✅ concluída (2026-09-12)
 
 ### O que existe hoje
