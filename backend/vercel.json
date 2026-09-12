@@ -34,14 +34,6 @@
       "schedule": "0 9 * * *"
     },
     {
-      "path": "/api/v1/datalake/run",
-      "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/v1/datalake/run",
-      "schedule": "0 20 * * *"
-    },
-    {
       "path": "/api/v1/ti/vacuum",
       "schedule": "0 3 * * 0"
     },
