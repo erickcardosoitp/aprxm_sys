@@ -15,6 +15,19 @@
 # Uso: docker compose -f backend/deploy/docker-compose.prod.yml up -d
 # Pre-requisito: .env real na VM (nunca commitar -- ver .env.example na
 # raiz do repo pra saber o que preencher).
+#
+# ============================================================
+# SUPERADO em 2026-09-12 (mesmo dia) -- mantido so como historico,
+# NAO usado no deploy real. Com acesso SSH real a vm-itp-prod, confirmou-se
+# que todos os servicos vivem num unico docker-compose.yml compartilhado
+# (/home/itpadmin/itp-stack/docker-compose.yml, fora deste repo -- e do
+# repo/gestao do itp-stack, nao do aprxm_sys). O APRXM foi adicionado la
+# como mais um servico (aprxm_backend), com mem_limit: 2g e labels REAIS
+# do Traefik (confirmado: certresolver=leresolver, nao "letsencrypt" como
+# chutado abaixo; dominio real api-aprxm.institutotiapretinha.org, igual
+# o chutado). Ver docs/superpowers/plans/2026-09-12-migracao-aprxm-execucao.md,
+# secao "O que foi feito com acesso real a VM".
+# ============================================================
 
 services:
   backend:

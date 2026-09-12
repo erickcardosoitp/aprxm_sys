@@ -1,3 +1,19 @@
+# SUPERADO em 2026-09-12 (mesmo dia) -- mantido so como historico, NAO
+# usado no deploy real. Com acesso SSH real a vm-itp-prod, o mecanismo
+# real de cron nao e crontab manual: e tarefas-registro.json +
+# tarefas_runner.py + uma API interna (tarefas_api.py, porta 8002, so
+# 127.0.0.1) que cria a entrada no registro E grava a linha no crontab
+# numa unica chamada, com log e timing (JSONL) padronizados -- mesmo
+# mecanismo ja usado pelo erp_itp/ITP_TEC. Os 9 crons (8 abaixo + o
+# sync-pix, achado no mesmo dia) foram registrados por ela com os ids
+# aprxm-etl, aprxm-vacuum, aprxm-mensalidade-generate,
+# aprxm-mensalidade-overdue, aprxm-crm-scoring, aprxm-demands-reminders,
+# aprxm-daily-tasks-reminders, aprxm-sync-pix. Ver
+# docs/superpowers/plans/2026-09-12-migracao-aprxm-execucao.md, secao
+# "O que foi feito com acesso real a VM".
+#
+# --- conteudo original (rascunho) abaixo ---
+#
 # Crontab dos 8 jobs do APRXM na vm-itp-prod.
 #
 # Pre-requisito: container do backend rodando la com o nome "aprxm_backend"

@@ -4,18 +4,85 @@
 > (diagnóstico + achados críticos + as 6 decisões, todos fechados). Este
 > documento é o checklist de execução das fases que faltam, uma a uma.
 
-> **Status (2026-09-12):** Fases A, B e C **concluídas e validadas contra
-> produção** (código no ar, testado, sem regressão). Fase F parcialmente
-> concluída (validação de boot). **Tudo que dava pra deixar pronto sem
-> acesso à VM/DNS já está feito** — o que falta depende de infraestrutura
-> real (SSH na VM, DNS, ou levantamento de dado externo). Ver "Pendências
-> para as próximas vezes" no fim do documento, ordenadas da mais fácil
-> pra mais difícil.
+> **Status (2026-09-12, atualizado após acesso SSH real à VM):** Fases
+> **A e B concluídas de ponta a ponta e em produção de verdade** — backend
+> do APRXM deployado na `vm-itp-prod`, os 9 crons (8 originais + o
+> `sync-pix` achado nesta sessão) rodando nativos via `tarefas_api.py`/
+> `tarefas_runner.py` (mesmo mecanismo do erp_itp), `vercel.json` sem
+> nenhum cron. Fase C concluída. Fase F parcialmente concluída. Ver
+> "O que foi feito com acesso real à VM" logo abaixo pro detalhamento
+> completo desta rodada, e "Pendências para as próximas vezes" no fim do
+> documento pro que ainda falta (domínio/TLS, storage, rewrite frontends).
+
+**Correção importante:** a VM tem **15 GB de RAM / 2 vCPUs** — os
+"128 GB" citados em decisões anteriores são o **disco**, não RAM.
+Confirmado sem problema na prática (ver seção abaixo), mas o número
+errado não deve se propagar pra decisões futuras.
 
 **Escopo fechado (§6 do doc anterior):** só o backend migra pra
-`vm-itp-prod` (128 GB, co-localizada). Os 4 frontends ficam na Vercel
-free — nenhuma fase abaixo toca `frontend/`, `painel/`, `presidencia/`
-ou `simplifica-prototype/` além do rewrite de URL na Fase G.
+`vm-itp-prod` (co-localizada, 15 GB RAM / 2 vCPU / 117 GB disco). Os 4
+frontends ficam na Vercel free — nenhuma fase abaixo toca `frontend/`,
+`painel/`, `presidencia/` ou `simplifica-prototype/` além do rewrite de
+URL na Fase G.
+
+---
+
+## O que foi feito com acesso real à VM (2026-09-12)
+
+Sessão ganhou acesso SSH real (`itpadmin@20.114.240.177`, chave
+`vm-itp-prod_key.pem`) depois de todo o trabalho de preparação de código
+(Fases A/B/C/F) já estar pronto no repo. Isso permitiu concluir de fato,
+não só preparar:
+
+1. **Reconhecimento da VM** — corrigiu 3 premissas erradas do plano:
+   - RAM real 15 GB / 2 vCPU (não 128 GB — isso é disco).
+   - O mecanismo de cron real não é crontab manual: é
+     `tarefas-registro.json` + `tarefas_runner.py` + uma API interna
+     (`tarefas_api.py`, porta 8002, só `127.0.0.1`) que cria a entrada no
+     registro **e** grava a linha no crontab numa única chamada, com log
+     e timing (JSONL) padronizados. Usado em vez do crontab manual
+     originalmente rascunhado.
+   - Todos os serviços vivem num único `docker-compose.yml`
+     (`/home/itpadmin/itp-stack/docker-compose.yml`) — o APRXM entrou
+     como mais um serviço nesse arquivo, não um compose separado.
+     Convenção real do Traefik: `certresolver=leresolver` (não
+     `letsencrypt`), domínio `api.<app>.institutotiapretinha.org`.
+2. **Deploy key do GitHub** criada na VM (`~/.ssh/aprxm_sys_deploy_key`,
+   mesmo padrão do `erp_itp_deploy_key` já existente) e adicionada como
+   Deploy Key (read-only) no repo `aprxm_sys` — permite `git pull` direto
+   na VM pra atualizações futuras.
+3. **Repo clonado** em `/home/itpadmin/aprxm_sys`.
+4. **Env de produção** transferido via `scp` (nunca via git) pra
+   `/home/itpadmin/itp-stack/aprxm_backend.env`, com `DB_POOL_SIZE=10`/
+   `DB_MAX_OVERFLOW=20` (Fase C) adicionados por cima do que já existia
+   no Vercel.
+5. **Serviço `aprxm_backend` adicionado ao `docker-compose.yml`** do
+   itp-stack (backup do arquivo original feito antes de editar), com
+   `mem_limit: 2g` como trava de segurança, expondo só `127.0.0.1:8003`
+   (sem tráfego público ainda — falta Fase E, domínio/TLS).
+6. **Build + `docker compose up -d aprxm_backend`** — confirmado
+   `healthy`, `/health` respondendo 200, migrations rodaram sem erro
+   (v25 replay-safe confirmado de novo), `validate_production_config()`
+   passou.
+7. **ETL rodado nativamente dentro do container** (`docker exec
+   aprxm_backend python -m app.jobs.run_etl`) — sucesso, 24,2s, dados
+   reais de produção processados. Memória do container: ~174 MB durante
+   o ETL (limite de 2 GB — folga grande, risco confirmado baixo na
+   prática, não só em teoria).
+8. **Os 9 crons registrados via `tarefas_api.py`** (ETL + os outros 8),
+   todos testados individualmente via `docker exec` na VM antes de
+   remover qualquer coisa da Vercel — todos `exit 0`, mesmos resultados
+   já vistos em produção.
+9. **`vercel.json` zerado de crons** (commit final desta rodada) — os 9
+   agora rodam 100% nativos na VM. Rotas HTTP continuam no código, sem
+   cron apontando, só disparo manual/debug.
+
+**O que ainda falta pra fechar a migração de verdade:** domínio/TLS
+público (Fase E — hoje só responde em `127.0.0.1:8003`, ninguém de fora
+acessa), rewrite dos 4 frontends (Fase G — continuam batendo na function
+serverless da Vercel pra tráfego normal, só os crons saíram de lá),
+storage (Fase D) e o corte final (Fase I). Ver pendências no fim do
+documento.
 
 **Princípio orientador desta rodada (2026-09-12):** o ETL migra
 **completo e nativo pro servidor — nada de etapa intermediária.** Ou
@@ -152,11 +219,16 @@ removida, só parou de ser chamada por cron.
   produção real (`status: success`, novo `run_id`).
 - ✅ Removidas as 2 entradas de `/api/v1/datalake/run` do `vercel.json`.
   Rota HTTP mantida, sem cron apontando.
-- ⏸️ **Pendente (precisa de VM):** instalar o cron de fato (`crontab -u
-  <usuário> backend/deploy/crontab.aprxm`, linhas do ETL) e validar os 2
-  ciclos reais agendados. **Até lá, decisão do usuário: rodar o ETL
-  manualmente via `POST /api/v1/datalake/run`** — não há cron nenhum
-  ativo pro ETL neste meio-tempo (aceito conscientemente).
+- ✅ **Concluído com acesso real à VM (2026-09-12, mesmo dia):** backend
+  deployado (`aprxm_backend`, container healthy), ETL rodado com sucesso
+  via `docker exec aprxm_backend python -m app.jobs.run_etl` (24,2s,
+  dados reais). Cron registrado via `tarefas_api.py` (id `aprxm-etl`,
+  `0 12,20 * * *`) — **não** via crontab manual como rascunhado
+  originalmente (ver "O que foi feito com acesso real à VM" no topo do
+  documento). `vercel.json` já estava sem essas 2 entradas.
+- ⏸️ **Único item real ainda pendente:** validar a 1ª execução
+  *agendada* (não manual) às 20h UTC de hoje ou 12h UTC de amanhã —
+  confirmar em `~/itp-stack/tarefas-timing/aprxm-etl.jsonl` na VM.
 
 ---
 
@@ -251,12 +323,20 @@ fora do FastAPI.
   `ON CONFLICT`). Restam 58 com colisão real de dedup (`idx_bs_dedup` é
   mais amplo que `transaction_id`) — não resolvidas, precisam de decisão
   de negócio, não é bug de código.
-- ✅ `backend/deploy/crontab.aprxm` criado com as **9** linhas prontas
-  (8 + o sync-pix).
-- ⏸️ **Pendente (precisa de VM):** instalar o crontab de verdade e
-  remover as 7 entradas restantes do `vercel.json` **só depois** de
-  confirmar que o cron nativo está rodando na VM (mesma cautela da
-  Fase A — não tirar o fallback antes de validar o substituto).
+- ✅ `backend/deploy/crontab.aprxm` (rascunho inicial, **substituído** —
+  ver abaixo).
+- ✅ **Concluído com acesso real à VM (2026-09-12, mesmo dia):** os 7
+  jobs testados individualmente via `docker exec` no container real
+  (todos `exit 0`, mesmos resultados de sempre), registrados via
+  `tarefas_api.py` (ids `aprxm-vacuum`, `aprxm-mensalidade-generate`,
+  `aprxm-mensalidade-overdue`, `aprxm-crm-scoring`,
+  `aprxm-demands-reminders`, `aprxm-daily-tasks-reminders`,
+  `aprxm-sync-pix`) — **não** via `backend/deploy/crontab.aprxm` manual
+  como rascunhado originalmente. `vercel.json` zerado de crons **depois**
+  de confirmar os 9 rodando na VM, nunca antes (mesma cautela da Fase A).
+- ⏸️ **Único item real ainda pendente:** validar os primeiros ciclos
+  *agendados* (não manuais) de cada um nos próximos dias — conferir
+  `~/itp-stack/tarefas-timing/<id>.jsonl` na VM.
 
 ---
 
@@ -418,48 +498,46 @@ da VM, remover campo morto) — ver pendências no fim do documento.
 
 ## Pendências para as próximas vezes — da mais fácil pra mais difícil
 
-Tudo que dava pra preparar em código, sem precisar de acesso à VM/DNS, já
-foi feito (Fases A, B, C e parte da F). O que resta é ordenado abaixo por
-esforço real — a maior parte depende de acesso a algo fora deste repo
-(SSH na VM, DNS, ou levantar dado externo).
+**Atualizado 2026-09-12 após acesso SSH real à VM** — praticamente tudo
+que dependia só de código já foi feito, e boa parte do que dependia de
+VM também (backend deployado, 9 crons migrados). O que resta agora é
+majoritariamente rede/domínio e a migração de storage.
 
-1. ✅ **Extrair a lista real das 35+ env vars** (Fase F, item 1) —
-   **feito 2026-09-12**: `.env.example` (raiz do repo, já rastreado no
-   git) atualizado com as vars que faltavam (`CRON_SECRET`, `R2_*`,
-   `DATAWAREHOUSE_APRXM_DATABASE_URL`, `WEBAUTHN_*`, `VAPID_*`,
-   `GROQ_API_KEY`, `PAINEL_*`, `DB_POOL_SIZE`/`DB_MAX_OVERFLOW`).
-2. ❌ **Correção de levantamento anterior — `DATABASE_URL_DIRECT` NÃO é
-   legado.** A afirmação original ("nenhum código lê") estava **errada**
-   — confirmado em `admin.py:472` que é usado como conexão sem pooler
-   pro VACUUM. Achado ao tentar remover: `grep` direto no código (não só
-   no doc anterior) mostrou o uso real. Não remover. Corrigido também no
-   [`2026-09-12-migracao-aprxm-plan.md`](2026-09-12-migracao-aprxm-plan.md)
-   se ainda citar isso como legado.
-3. ✅ **Levantar volume do Supabase Storage** — **feito 2026-09-12**:
-   2.750 arquivos, 204,25 MB (ver Fase D acima para o detalhamento).
-   Volume pequeno, migração de dados em si é rápida.
-4. ⚠️ **Rascunho do compose de produção** — `backend/deploy/docker-compose.prod.yml`
-   criado 2026-09-12, mas **não confirmado contra a config real da VM**:
-   esta sessão não teve acesso ao repo/config de infra do erp_itp (só um
-   checkout parcial sem Traefik/compose), então o nome da rede
-   (`traefik-public`), certresolver (`letsencrypt`) e o domínio são um
-   chute razoável por convenção comum, **não confirmados**. Antes de
-   aplicar: conferir na própria VM o nome real da rede externa do
-   Traefik (`docker network ls`) e o certresolver configurado.
-5. 🟠 **Provisionar domínio + TLS na VM** (Fase E, execução) — precisa de
-   acesso real a DNS + à VM (Traefik). Não executável desta sessão sem
-   SSH configurado.
-6. 🟠 **Instalar o crontab na VM e validar ciclos reais** (Fases A/B,
-   pendência já registrada acima) — precisa do backend já rodando lá
-   (depende do item 5).
-7. 🟠 **Preencher `.env` real da VM** (Fase F, item 2) — depende dos
-   itens 1 e 5 (precisa saber a lista de vars e ter onde colocar).
-8. 🔴 **Migração de arquivos Supabase → Azure Blob** (Fase D, passos 2-6)
+1. ✅ Lista real das 35+ env vars — feito (`.env.example` na raiz).
+2. ❌→✅ `DATABASE_URL_DIRECT` **não é legado** (correção de levantamento
+   anterior) — não remover, está em uso real (`admin.py:472`).
+3. ✅ Volume do Supabase Storage levantado — 2.750 arquivos, 204,25 MB.
+4. ✅ **Backend deployado na VM** — container `aprxm_backend` rodando,
+   healthy, `mem_limit: 2g`, só acessível em `127.0.0.1:8003` por
+   enquanto (sem domínio público ainda).
+5. ✅ **Os 9 crons migrados e rodando nativos na VM** via `tarefas_api.py`
+   (ids `aprxm-etl`, `aprxm-vacuum`, `aprxm-mensalidade-generate`,
+   `aprxm-mensalidade-overdue`, `aprxm-crm-scoring`,
+   `aprxm-demands-reminders`, `aprxm-daily-tasks-reminders`,
+   `aprxm-sync-pix`). `vercel.json` zerado de crons.
+6. 🟡 **Validar os primeiros ciclos agendados de verdade** (não manuais)
+   de todos os 9 — conferir `~/itp-stack/tarefas-timing/<id>.jsonl` na VM
+   nos próximos dias. Único item que só o tempo resolve.
+7. 🟠 **Provisionar domínio + TLS público** (Fase E) — o serviço já tem
+   labels do Traefik prontas no `docker-compose.yml`
+   (`Host(\`api-aprxm.institutotiapretinha.org\`)`, `certresolver=leresolver`,
+   confirmados contra a config real do Traefik da VM), falta só:
+   registrar o domínio no DNS (mesma zona Azure DNS do resto do parque,
+   apontar A record pro IP `20.114.240.177`) e confirmar o handshake TLS
+   (Let's Encrypt via HTTP challenge, automático assim que o DNS resolver).
+8. 🟠 **Preencher o restante do `.env` real da VM** (Fase F, item 2) —
+   já feito o essencial (`aprxm_backend.env` transferido via `scp`,
+   com `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` ajustados); revisar se falta
+   algum valor específico depois que o domínio (item 7) estiver ativo
+   (ex. `ALLOWED_ORIGINS` já cobre os 4 frontends, confirmar CORS).
+9. 🔴 **Migração de arquivos Supabase → Azure Blob** (Fase D, passos 2-6)
    — levantamento (item 3) já feito; é a fase com mais trabalho de
    código novo (client de storage em `storage_service.py`, script de
    migração em lote, mapear onde cada URL é referenciada no banco).
-9. 🔴 **Rewrite dos 4 `vercel.json` + deploy dos frontends** (Fase G) —
-   mecanicamente simples, mas só pode ser feito depois do item 5 estar
-   validado (senão quebra o app em produção).
-10. 🔴 **Validação paralela** (Fase H) — só depois de tudo acima.
-11. 🔴 **Corte** (Fase I) — último passo, desliga a Vercel de vez.
+10. 🔴 **Rewrite dos 4 `vercel.json` + deploy dos frontends** (Fase G) —
+    mecanicamente simples, mas só pode ser feito depois do item 7 estar
+    validado (senão quebra o app em produção).
+11. 🔴 **Validação paralela** (Fase H) — rodar VM (via domínio novo) e
+    Vercel lado a lado antes de cortar de vez.
+12. 🔴 **Corte** (Fase I) — desliga a function serverless do backend na
+    Vercel só depois de tudo validado.

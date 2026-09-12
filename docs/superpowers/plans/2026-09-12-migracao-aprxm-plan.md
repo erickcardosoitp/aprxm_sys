@@ -297,8 +297,17 @@ Pontos de atenção:
 
 ## 6. Decisões (fechadas em 2026-09-12)
 
-1. ✅ **Co-localizar na `vm-itp-prod`.** VM foi redimensionada pra 128 GB
-   — cobre o pico do ETL (§3.1) com folga. Não precisa de VM separada.
+1. ✅ **Co-localizar na `vm-itp-prod`.** **Correção (confirmado via SSH em
+   2026-09-12): os "128 GB" mencionados são o DISCO, não RAM** — a VM tem
+   na verdade **15 GB de RAM, 2 vCPUs** (Xeon Platinum 8370C),
+   compartilhados com Postgres, Traefik, Grafana, Prometheus, erp_itp e
+   catálogo (usando ~3,2 GB antes do APRXM subir). Mesmo assim, medido na
+   prática após o deploy: backend do APRXM em repouso usa ~171 MB, e
+   rodando o ETL completo (pandas com as tabelas reais de produção) usa
+   ~174 MB — folga enorme mesmo com limite de 2 GB no container. Risco de
+   memória era mais teórico que real, dado o volume atual de dados (banco
+   de 97 MB). Decisão confirmada: co-localizar, com `mem_limit: 2g` no
+   container como trava de segurança.
 2. ✅ **Escopo da migração é só o backend.** Os 4 frontends (`frontend/`,
    `painel/`, `presidencia/`, `simplifica-prototype/`) **ficam na Vercel
    free** (hospedagem estática, sem custo). Só o backend (FastAPI + ETL +
