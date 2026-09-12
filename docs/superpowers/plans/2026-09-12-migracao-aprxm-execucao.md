@@ -469,18 +469,36 @@ da VM, remover campo morto) — ver pendências no fim do documento.
 
 ---
 
-## Fase G — Rewrite dos 4 frontends
+## Fase G — Rewrite dos 4 frontends ✅ concluída (2026-09-12)
 
 Único ponto de contato entre o backend migrado e os frontends que
 **ficam na Vercel** (decisão §6.2):
 
-1. Em cada um dos 4 `vercel.json` (`frontend/`, `painel/`, `presidencia/`,
-   `simplifica-prototype/`), trocar o rewrite `/api/*` da function
-   serverless pro domínio novo do backend (Fase E).
-2. Confirmar CORS (`ALLOWED_ORIGINS` no backend) inclui os domínios reais
-   dos 4 frontends na Vercel.
-3. Deploy de cada frontend (git push — dispara build/deploy automático
-   na Vercel, como hoje).
+1. ✅ **Só 3 dos 4 precisavam** — `simplifica-prototype/` é HTML estático
+   puro, sem `vercel.json` e sem nenhuma chamada de API (confirmado por
+   grep), então não entrou no rewrite. `frontend/`, `painel/` e
+   `presidencia/` tiveram o rewrite `/api/*` trocado pra
+   `https://api-aprxm.institutotiapretinha.org/api/:path*`.
+   `frontend/vercel.json` também teve o CSP (`connect-src`) atualizado —
+   sem isso o navegador bloquearia a chamada mesmo com o rewrite certo
+   (`painel`/`presidencia` não têm CSP restritiva, não precisou).
+2. ✅ **CORS confirmado** — descobri os domínios reais via `vercel project
+   ls` (`aprxm.vercel.app`, `painel-aprxm.vercel.app`,
+   `aprxm-dash-prd.vercel.app`) e atualizei `ALLOWED_ORIGINS` no
+   `aprxm_backend.env` da VM. **Pegadinha:** `docker compose restart` não
+   relê `env_file` (só reinicia o processo) — precisou `docker compose up
+   -d` pra recriar o container de verdade. Testado com preflight OPTIONS
+   real pras 3 origens — todas retornam `Access-Control-Allow-Origin`
+   correto.
+3. ✅ **Deploy e teste de ponta a ponta** — `git push`, aguardado os 3
+   deploys, testado `GET /api/v1/health` através do domínio público de
+   cada um dos 3 frontends (não direto na VM) — os 3 retornam 200 vindo
+   da VM de verdade. Página principal do `frontend/` confirmada
+   carregando normalmente com o CSP novo.
+
+**Tráfego normal dos 3 frontends com API já passa pela VM, não mais pela
+function serverless da Vercel.** Só falta a Fase H (validação por um
+período) e a Fase I (desligar de vez a function na Vercel).
 
 ---
 
@@ -536,17 +554,21 @@ majoritariamente rede/domínio e a migração de storage.
    automatizar), Traefik emitiu o certificado Let's Encrypt real assim
    que o DNS propagou. `https://api-aprxm.institutotiapretinha.org/health`
    e um endpoint autenticado real testados com sucesso publicamente.
-8. 🟡 **Confirmar `ALLOWED_ORIGINS`/CORS** com o domínio novo em uso real
-   — hoje só testado via `curl`, ainda não via navegador/frontend de
-   verdade (isso só acontece na Fase G, quando os frontends passarem a
-   chamar esse domínio).
-9. 🔴 **Migração de arquivos Supabase → Azure Blob** (Fase D, passos 2-6)
-   — levantamento (item 3) já feito; é a fase com mais trabalho de
-   código novo (client de storage em `storage_service.py`, script de
-   migração em lote, mapear onde cada URL é referenciada no banco).
-10. 🔴 **Rewrite dos 4 `vercel.json` + deploy dos frontends** (Fase G) —
-    mecanicamente simples, já pode ser feito (domínio validado no item 7).
-11. 🔴 **Validação paralela** (Fase H) — rodar VM (via domínio novo) e
-    Vercel lado a lado antes de cortar de vez.
-12. 🔴 **Corte** (Fase I) — desliga a function serverless do backend na
-    Vercel só depois de tudo validado.
+8. ✅ **`ALLOWED_ORIGINS`/CORS confirmado com uso real** — os 3
+   frontends (Fase G) já chamam a API através do domínio novo, testado
+   com preflight OPTIONS real pras 3 origens.
+9. ✅ **Rewrite dos 3 `vercel.json` + deploy dos frontends** (Fase G) —
+   feito, testado de ponta a ponta através do domínio público de cada
+   frontend (não só direto na VM).
+10. 🔴 **Migração de arquivos Supabase → Azure Blob** (Fase D, passos 2-6)
+    — levantamento já feito; é a fase com mais trabalho de código novo
+    (client de storage em `storage_service.py`, script de migração em
+    lote, mapear onde cada URL é referenciada no banco).
+11. 🟡 **Validação paralela** (Fase H) — observar os 3 frontends rodando
+    contra a VM por um período antes de considerar o corte definitivo.
+    Diferente do rascunho original: não é mais "rodar VM e Vercel lado a
+    lado" como alternativa — a VM **já é** o caminho real de tráfego
+    desde a Fase G. É mais observação/monitoramento do que decisão.
+12. 🔴 **Corte** (Fase I) — a function serverless do backend na Vercel
+    já não recebe tráfego normal (só ficaria como fallback se alguém
+    reverter o rewrite). Falta decidir quando desligá-la de vez.
