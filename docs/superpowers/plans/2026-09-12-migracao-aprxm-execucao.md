@@ -426,14 +426,27 @@ concentrada ali, não espalhada pelo código.
 
 ---
 
-## Fase E — Domínio + TLS do backend
+## Fase E — Domínio + TLS do backend ✅ concluída (2026-09-12)
 
-1. Escolher o subdomínio (ex. `api-aprxm.institutotiapretinha.org`).
-2. Configurar registro DNS apontando pra `vm-itp-prod`.
-3. Label do Traefik (mesmo padrão do resto do parque ITP) + certificado
-   Let's Encrypt automático.
-4. Testar handshake TLS e resposta de `/health` no domínio novo antes de
-   qualquer frontend apontar pra lá.
+1. ✅ Subdomínio escolhido: `api-aprxm.institutotiapretinha.org`.
+2. ✅ Registro DNS (A, `api-aprxm` → `20.114.240.177`) criado pelo usuário
+   no Azure DNS (mesma zona do resto do parque ITP), via portal —
+   identidade da VM não tinha permissão de leitura na zona (escopo
+   propositalmente restrito, só disco), então não deu pra automatizar
+   via CLI desta vez.
+3. ✅ Labels do Traefik já estavam no `docker-compose.yml` desde o deploy
+   do container (Fase A/B) — certificado Let's Encrypt emitido com
+   sucesso depois que o DNS propagou (2 tentativas anteriores falharam
+   com NXDOMAIN, antes do registro existir/propagar — sem problema, bem
+   longe do rate limit de 5 falhas/hora que já mordeu o domínio
+   `grafana.itp...` antes).
+4. ✅ Testado: `https://api-aprxm.institutotiapretinha.org/health` → 200
+   com certificado real (antes: erro de certificado não confiável, cert
+   default do Traefik). Testado também um endpoint autenticado real
+   (`mensalidades/cron-check-overdue`) via HTTPS público — 200, dados de
+   produção corretos. **API do APRXM já está publicamente acessível na
+   VM** — só falta o rewrite dos 4 frontends (Fase G) pra tráfego normal
+   parar de passar pela function serverless da Vercel.
 
 ---
 
@@ -518,25 +531,21 @@ majoritariamente rede/domínio e a migração de storage.
 6. 🟡 **Validar os primeiros ciclos agendados de verdade** (não manuais)
    de todos os 9 — conferir `~/itp-stack/tarefas-timing/<id>.jsonl` na VM
    nos próximos dias. Único item que só o tempo resolve.
-7. 🟠 **Provisionar domínio + TLS público** (Fase E) — o serviço já tem
-   labels do Traefik prontas no `docker-compose.yml`
-   (`Host(\`api-aprxm.institutotiapretinha.org\`)`, `certresolver=leresolver`,
-   confirmados contra a config real do Traefik da VM), falta só:
-   registrar o domínio no DNS (mesma zona Azure DNS do resto do parque,
-   apontar A record pro IP `20.114.240.177`) e confirmar o handshake TLS
-   (Let's Encrypt via HTTP challenge, automático assim que o DNS resolver).
-8. 🟠 **Preencher o restante do `.env` real da VM** (Fase F, item 2) —
-   já feito o essencial (`aprxm_backend.env` transferido via `scp`,
-   com `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` ajustados); revisar se falta
-   algum valor específico depois que o domínio (item 7) estiver ativo
-   (ex. `ALLOWED_ORIGINS` já cobre os 4 frontends, confirmar CORS).
+7. ✅ **Domínio + TLS público provisionado** (Fase E) — DNS criado pelo
+   usuário via portal Azure (identidade da VM não tinha permissão pra
+   automatizar), Traefik emitiu o certificado Let's Encrypt real assim
+   que o DNS propagou. `https://api-aprxm.institutotiapretinha.org/health`
+   e um endpoint autenticado real testados com sucesso publicamente.
+8. 🟡 **Confirmar `ALLOWED_ORIGINS`/CORS** com o domínio novo em uso real
+   — hoje só testado via `curl`, ainda não via navegador/frontend de
+   verdade (isso só acontece na Fase G, quando os frontends passarem a
+   chamar esse domínio).
 9. 🔴 **Migração de arquivos Supabase → Azure Blob** (Fase D, passos 2-6)
    — levantamento (item 3) já feito; é a fase com mais trabalho de
    código novo (client de storage em `storage_service.py`, script de
    migração em lote, mapear onde cada URL é referenciada no banco).
 10. 🔴 **Rewrite dos 4 `vercel.json` + deploy dos frontends** (Fase G) —
-    mecanicamente simples, mas só pode ser feito depois do item 7 estar
-    validado (senão quebra o app em produção).
+    mecanicamente simples, já pode ser feito (domínio validado no item 7).
 11. 🔴 **Validação paralela** (Fase H) — rodar VM (via domínio novo) e
     Vercel lado a lado antes de cortar de vez.
 12. 🔴 **Corte** (Fase I) — desliga a function serverless do backend na
