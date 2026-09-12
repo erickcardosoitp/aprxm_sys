@@ -39,11 +39,22 @@ Vercel — descartável, o `Dockerfile` já usa `uvicorn app.main:app`).
 ### 1.3 Dados — dois bancos Neon + um data lake
 
 ```
-Neon "APRXM" (OLTP, 97 MB)        ──► Cloudflare R2 (bronze/silver/gold)
-  59 tabelas em `public`                        │
-  + schemas: analytics, auth,                   ▼
-    neon_auth, pgrst (resíduos)      Neon "aprxm-analytics" (42 tabelas) ──► Power BI
+Neon "APRXM" (OLTP, 97 MB)        ──► Cloudflare R2, bucket `aprxm-datalake`
+  59 tabelas em `public`                (bronze/ prata/ ouro/ _controle/ —
+  + schemas: analytics, auth,            nomes reais em português, confirmado
+    neon_auth, pgrst (resíduos)          direto no bucket)
+                                                │
+                                                ▼ (ouro/ também carrega pra cá)
+                                   Neon "aprxm-analytics" (42 tabelas) ──► Power BI
 ```
+
+**Confirmado direto no bucket R2** (`aprxm-datalake`): as 3 camadas
+(bronze/prata/ouro) existem como parquet no R2 — "ouro" não é só carregado
+no Neon analytics, também fica arquivado no R2. Último arquivo em
+`bronze/` e `ouro/` é de **02/08/2026**, batendo com a parada do ETL
+(§2.1). Amostra de `prata/` mostrou arquivo de 01/06/2026, mas foi só
+os 5 primeiros objetos retornados (sem ordenação por data) — não é prova
+de que silver parou antes, só não dá pra confirmar sem uma listagem completa.
 
 **Volume real em produção (2026-09-12):**
 
@@ -281,7 +292,106 @@ Pontos de atenção:
 
 ---
 
-## 8. O que **não** precisa mudar
+## 9. Plano de correções — do mais simples ao mais difícil
+
+Todos os itens abaixo são **independentes da decisão de migrar** (§6) —
+são bugs/dívidas reais de hoje. Ordenados por esforço, não por
+prioridade de negócio (o item mais simples pode não ser o mais urgente).
+
+### 🟢 Trivial (1 linha, sem efeito colateral, sem infra)
+
+1. **Corrigir os 2 crons de mensalidade (§2.3)** — `mensalidades.py:75,157`:
+   trocar `request,` por `request: Request,`. Sem isso o FastAPI trata como
+   query param obrigatório e responde 422 sempre. 2 linhas, testável na hora
+   (`curl -X POST .../cron-generate -H "x-cron-secret: ..."`).
+2. **Corrigir o alerta de falha do ETL (§2.1)** — `datalake_service.py:1891`:
+   `email_service.send_email` é função síncrona, chamada errada com `await`
+   e parâmetro errado (`body=` em vez de `html=`). Ajustar a chamada pra
+   bater com a assinatura real. Sem isso, falha de ETL continua invisível
+   pra sempre — é o bug que permitiu a lacuna de 6 semanas passar batido.
+3. **Remover `ANALYTICS_DATABASE_URL` (legado)** do `.env.example` e de
+   qualquer lugar que ainda cite — confirmado que nada mais lê essa var.
+4. **Remover as 4 env vars mortas de Cloudinary** do `docker-compose.yml`
+   (`STORAGE_PROVIDER`, `CLOUDINARY_*`) — zero código as lê.
+5. **Apagar os dumps `.env.vercel-prod`/`.env.pull-*` do disco local**
+   depois de extrair o que for preciso pra migração — já confirmado que
+   não estão no git, mas não devem ficar soltos indefinidamente com
+   credencial de produção em texto puro.
+
+### 🟡 Simples (poucas linhas, precisa de teste, sem mudança de arquitetura)
+
+6. **Padronizar autenticação dos 8 crons (§2.5)** — hoje são 3 esquemas
+   incompatíveis (`Authorization: Bearer` com/sem skip, `x-cron-secret`
+   via `os.environ`). Escolher **um** padrão (recomendo `x-cron-secret`,
+   já que é o que 3 dos 8 usam) e aplicar nos 8. Fazer `CRON_SECRET`
+   **obrigatório** em produção (falhar no boot se vazio e `APP_ENV=production`)
+   em vez de default `""` que abre os endpoints.
+7. **Trocar `@router.post` por `@router.get` nos 8 endpoints de cron (§2.4)**
+   — Vercel cron sempre dispara GET; é bem provável que essa seja a causa
+   raiz de tudo em §2.1-§2.3 nunca ter rodado de verdade. **Fazer isso
+   depois do item 6** (senão fica exposto sem auth por mais tempo) e
+   **testar manualmente os 8 antes de confiar no cron de novo**.
+8. **Confirmar que o ETL e o vacuum voltaram a rodar** — depois de 6+7,
+   observar os próximos 2 ciclos de `etl_runs` e o tamanho de
+   `api_request_logs` caindo. Sem essa confirmação, os fixes de código
+   são teoria, não fato (mesmo padrão de rigor que apliquei nesta revisão).
+9. **Fixar `TZ=UTC`** explícito no Dockerfile do backend (hoje é implícito
+   pela imagem base — deixar explícito evita regressão se a imagem base
+   mudar o default um dia).
+10. **Adicionar healthcheck + usuário não-root ao `backend/Dockerfile`**
+    — hoje roda como root, sem healthcheck. Padrão básico de produção,
+    sem mudar nada de lógica.
+11. **Adicionar `--proxy-headers --forwarded-allow-ips` no uvicorn** —
+    sem isso, atrás de qualquer proxy (nginx/Traefik), o IP registrado em
+    `api_request_logs` e usado pelo rate limit (`slowapi`) é o do proxy,
+    não o do cliente real.
+
+### 🟠 Moderado (requer decisão de design, ainda que pequena)
+
+12. **Portar a CSP e o cache-control do `frontend/vercel.json` pro
+    `nginx.conf`** (§3.4) — hoje `nginx.conf` replica só 4 headers e
+    nenhuma CSP. Precisa decidir a CSP final (trocar `*.vercel.app` pelo
+    domínio novo) antes de escrever — depende de §6.2 (domínio).
+13. **Criar Dockerfile + nginx.conf para `painel/` e `presidencia/`**
+    (espelhando o de `frontend/`) — mecânico, mas precisa confirmar que
+    os dois ainda estão em uso antes de gastar esforço (§6.4 cobre isso
+    junto com `simplifica-prototype/`).
+14. **Subir `pool_size`/`max_overflow` do SQLAlchemy** (§3.2) — hoje
+    dimensionado pra serverless (`pool_size=3`). Só faz sentido calibrar
+    depois de saber quantos workers/réplicas a VM vai rodar (depende de
+    §6.1, co-localizar ou não).
+15. **Decidir o esquema de 1 worker uvicorn (ou mover rate-limit/circuit
+    breaker pra Redis)** (§3.6) — mais simples é fixar 1 worker; só some
+    a decidir mover pra Redis se a carga realmente exigir mais de 1.
+
+### 🔴 Difícil (mudança de arquitetura ou coordenação externa)
+
+16. **Extrair `/datalake/run` do processo web (§3.1)** — é CPU-bound com
+    pandas rodando direto na corrotina da API. Precisa virar um comando
+    separado da mesma imagem (`python -m app.jobs.datalake_run` ou
+    similar), chamado pelo cron via `docker exec`/container próprio, não
+    mais via HTTP dentro do mesmo processo do uvicorn. Não é reescrever o
+    ETL, é só mudar **onde** ele roda — mas toca o mecanismo de disparo
+    (hoje é HTTP + `CRON_SECRET`, precisaria virar invocação direta de
+    processo) e como o resultado é registrado em `etl_runs`.
+17. **Coordenar a virada de domínio do WebAuthn (§3.3)** — não é código,
+    é comunicação: todo usuário com passkey registrada perde o acesso por
+    passkey no dia da troca de domínio e precisa registrar de novo. Exige
+    aviso prévio, não só deploy.
+18. **A migração em si** (fases da §7) — depende de todas as decisões da
+    §6 estarem fechadas primeiro. É o item mais difícil porque depende
+    dos outros 17 estarem resolvidos ou conscientemente adiados.
+
+### Ordem recomendada de execução
+
+Itens 1-11 podem (e devem) ser feitos **já, no Vercel, antes de qualquer
+decisão de migração** — são bugs de produção, corrigi-los não depende de
+decidir onde o sistema vai morar. Itens 12-15 dependem de decisões da
+§6. Itens 16-18 são a migração propriamente dita.
+
+---
+
+## 10. O que **não** precisa mudar
 
 - Banco OLTP (Neon "APRXM") e OLAP (Neon "aprxm-analytics") — ficam
 - Cloudflare R2 — fica
