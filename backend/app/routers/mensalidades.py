@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,23 +70,12 @@ async def delete_by_month(
     return {"deleted": deleted, "reference_month": reference_month}
 
 
-@router.api_route("/cron-generate", methods=["GET", "POST"], summary="Geração automática semanal (chamada por cron externo)")
-async def cron_generate(
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-    authorization: str | None = Header(default=None),
-) -> dict:
+async def cron_generate_job(session: AsyncSession) -> dict:
+    """Geracao automatica de mensalidade (mes atual + anterior, recovery).
+    Chamada pela rota HTTP (manual/debug) e pelo cron nativo (app/jobs/run_cron.py)."""
     from sqlalchemy import text
     from decimal import Decimal
     from datetime import datetime
-    from app.config import get_settings
-    from fastapi import HTTPException
-
-    secret = get_settings().cron_secret
-    if secret and authorization != f"Bearer {secret}":
-        raise HTTPException(status_code=401, detail="Não autorizado.")
-
-    from calendar import monthrange as _monthrange
 
     now = datetime.utcnow()
     # Generate for current month AND previous month (recovery for missed cron runs)
@@ -149,20 +138,26 @@ async def cron_generate(
     return {"refs": refs_to_generate, "total_created": total_created}
 
 
-@router.api_route("/cron-check-overdue", methods=["GET", "POST"], summary="Cron diário: verifica inadimplentes por associação")
-async def cron_check_overdue(
-    request: Request,
+@router.api_route("/cron-generate", methods=["GET", "POST"], summary="Geração automática semanal (chamada por cron externo)")
+async def cron_generate(
     session: AsyncSession = Depends(get_session),
     authorization: str | None = Header(default=None),
 ) -> dict:
-    from sqlalchemy import text
-    from datetime import datetime, timedelta
     from app.config import get_settings
     from fastapi import HTTPException
 
     secret = get_settings().cron_secret
     if secret and authorization != f"Bearer {secret}":
         raise HTTPException(status_code=401, detail="Não autorizado.")
+
+    return await cron_generate_job(session)
+
+
+async def cron_check_overdue_job(session: AsyncSession) -> dict:
+    """Verifica inadimplentes por associacao. Chamada pela rota HTTP
+    (manual/debug) e pelo cron nativo (app/jobs/run_cron.py)."""
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
 
     rows = (await session.execute(text("""
         SELECT a.id, a.name, COALESCE(s.delinquency_grace_days, 2)
@@ -193,6 +188,21 @@ async def cron_check_overdue(
         })
 
     return {"checked_at": datetime.utcnow().isoformat(), "associations": summary}
+
+
+@router.api_route("/cron-check-overdue", methods=["GET", "POST"], summary="Cron diário: verifica inadimplentes por associação")
+async def cron_check_overdue(
+    session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    from app.config import get_settings
+    from fastapi import HTTPException
+
+    secret = get_settings().cron_secret
+    if secret and authorization != f"Bearer {secret}":
+        raise HTTPException(status_code=401, detail="Não autorizado.")
+
+    return await cron_check_overdue_job(session)
 
 
 @router.post("/generate-month", summary="Gerar mensalidades pendentes para todos os associados ativos do mês")

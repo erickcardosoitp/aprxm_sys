@@ -205,16 +205,9 @@ async def delete_demand(
     return {"ok": True}
 
 
-@router.api_route("/reminders/trigger", methods=["GET", "POST"], summary="Cron: enviar lembretes de prazo do dia")
-async def trigger_reminders(
-    authorization: str | None = Header(None),
-) -> dict:
-    settings = get_settings()
-    if settings.cron_secret:
-        expected = f"Bearer {settings.cron_secret}"
-        if authorization != expected:
-            raise HTTPException(401, "Não autorizado")
-
+async def trigger_reminders_job() -> dict:
+    """Lembretes de demanda vencendo hoje (chat + e-mail). Chamada pela
+    rota HTTP (manual/debug) e pelo cron nativo (app/jobs/run_cron.py)."""
     today_date = date.today()
     today = today_date.isoformat()
     sent = 0
@@ -267,3 +260,16 @@ async def trigger_reminders(
         await session.commit()
 
     return {"sent": sent, "date": today}
+
+
+@router.api_route("/reminders/trigger", methods=["GET", "POST"], summary="Cron: enviar lembretes de prazo do dia")
+async def trigger_reminders(
+    authorization: str | None = Header(None),
+) -> dict:
+    settings = get_settings()
+    if settings.cron_secret:
+        expected = f"Bearer {settings.cron_secret}"
+        if authorization != expected:
+            raise HTTPException(401, "Não autorizado")
+
+    return await trigger_reminders_job()

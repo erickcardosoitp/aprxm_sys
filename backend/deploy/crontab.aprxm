@@ -1,0 +1,33 @@
+# Crontab dos 8 jobs do APRXM na vm-itp-prod.
+#
+# Pre-requisito: container do backend rodando la com o nome "aprxm_backend"
+# (ajustar se o nome real do compose/service for outro).
+#
+# Instalar: crontab -u <usuario-de-servico> backend/deploy/crontab.aprxm
+# (ou copiar as linhas pro crontab existente do parque ITP, se houver um
+# arquivo unico compartilhado entre os sistemas)
+#
+# Todos os horarios em UTC (mesmos do vercel.json original). Conferir
+# conversao pra Brasilia: UTC-3.
+#
+# ETL (Fase A) — 09h e 17h Brasilia
+0 12 * * * docker exec aprxm_backend python -m app.jobs.run_etl >> /var/log/aprxm/etl.log 2>&1
+0 20 * * * docker exec aprxm_backend python -m app.jobs.run_etl >> /var/log/aprxm/etl.log 2>&1
+
+# Faxina semanal (vacuum) — domingo 00h Brasilia
+0 3 * * 0 docker exec aprxm_backend python -m app.jobs.run_cron vacuum >> /var/log/aprxm/cron.log 2>&1
+
+# Mensalidade: geracao mensal — dia 1, 05h Brasilia
+0 8 1 * * docker exec aprxm_backend python -m app.jobs.run_cron mensalidade-generate >> /var/log/aprxm/cron.log 2>&1
+
+# Mensalidade: verificacao de inadimplencia — diario, 06h Brasilia
+0 9 * * * docker exec aprxm_backend python -m app.jobs.run_cron mensalidade-overdue >> /var/log/aprxm/cron.log 2>&1
+
+# CRM: scoring — diario, 03h Brasilia
+0 6 * * * docker exec aprxm_backend python -m app.jobs.run_cron crm-scoring >> /var/log/aprxm/cron.log 2>&1
+
+# Demandas: lembretes de prazo — diario, 08h Brasilia
+0 11 * * * docker exec aprxm_backend python -m app.jobs.run_cron demands-reminders >> /var/log/aprxm/cron.log 2>&1
+
+# Tarefas diarias: lembretes no chat — diario, 07h Brasilia
+0 10 * * * docker exec aprxm_backend python -m app.jobs.run_cron daily-tasks-reminders >> /var/log/aprxm/cron.log 2>&1

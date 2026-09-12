@@ -10,7 +10,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
 
-from app.config import get_settings
+from app.config import get_settings, validate_production_config
 from app.database import init_db
 from app.db.migrations import run_migrations, seed_local_dev
 from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, notifications, packages, painel_auth, presidencia, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
@@ -21,6 +21,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_production_config()
     # Migrations ANTES do create_all: num banco vazio, o create_all do SQLModel
     # cria as tabelas sem os defaults SQL que as migrations definem (ex: empresas.id
     # sem DEFAULT gen_random_uuid(), timestamptz virando timestamp), e os INSERTs

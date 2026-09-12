@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # Database
     database_url: str
     database_url_direct: str = ""
+    # Default (3/7) e seguro pra Vercel serverless (N instancias, cada uma com seu
+    # pool - ver comentario em database.py). Na VM (1 processo fixo), subir via env
+    # var, sem precisar mudar codigo (docs/superpowers/plans/2026-09-12-migracao-aprxm-execucao.md, Fase C).
+    db_pool_size: int = 3
+    db_max_overflow: int = 7
 
     # Security
     secret_key: str
@@ -83,3 +88,23 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_production_config() -> None:
+    """Falha cedo no boot em producao se a config critica estiver incompleta.
+    Ver docs/superpowers/plans/2026-09-12-migracao-aprxm-execucao.md, Fase F."""
+    s = get_settings()
+    if s.app_env != "production":
+        return
+
+    if not s.cron_secret:
+        raise RuntimeError(
+            "CRON_SECRET vazio em produção — os 8 endpoints de cron ficam "
+            "sem autenticação. Configure a env var antes de subir."
+        )
+    if s.vapid_private_key == "" and s.vapid_public_key:
+        import logging
+        logging.getLogger(__name__).warning(
+            "VAPID_PUBLIC_KEY configurada sem VAPID_PRIVATE_KEY correspondente — "
+            "push notifications vão falhar silenciosamente."
+        )

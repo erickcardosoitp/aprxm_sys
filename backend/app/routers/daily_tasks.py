@@ -1120,15 +1120,9 @@ async def report_pdf(
     )
 
 
-@router.api_route("/reminders/trigger", methods=["GET", "POST"], summary="Cron: disparar lembretes de tarefas no Chat")
-async def trigger_task_reminders(
-    authorization: str | None = Header(None),
-) -> dict:
-    settings = get_settings()
-    if settings.cron_secret:
-        if authorization != f"Bearer {settings.cron_secret}":
-            raise HTTPException(401, "Não autorizado")
-
+async def trigger_task_reminders_job() -> dict:
+    """Lembretes de tarefa no Chat. Chamada pela rota HTTP (manual/debug)
+    e pelo cron nativo (app/jobs/run_cron.py)."""
     sent = 0
 
     async with AsyncSessionLocal() as session:
@@ -1160,6 +1154,18 @@ async def trigger_task_reminders(
         await session.commit()
 
     return {"sent": sent}
+
+
+@router.api_route("/reminders/trigger", methods=["GET", "POST"], summary="Cron: disparar lembretes de tarefas no Chat")
+async def trigger_task_reminders(
+    authorization: str | None = Header(None),
+) -> dict:
+    settings = get_settings()
+    if settings.cron_secret:
+        if authorization != f"Bearer {settings.cron_secret}":
+            raise HTTPException(401, "Não autorizado")
+
+    return await trigger_task_reminders_job()
 
 
 # ── Rotas com parâmetro de path (devem vir DEPOIS das rotas fixas) ─────────────

@@ -591,17 +591,10 @@ async def analytics(
     }
 
 
-@router.api_route("/vacuum", methods=["GET", "POST"], summary="VACUUM ANALYZE nas tabelas principais (cron semanal)")
-async def run_vacuum(
-    authorization: str | None = Header(default=None),
-) -> dict:
+async def run_vacuum_job() -> dict:
+    """Faxina semanal (VACUUM ANALYZE + purga de api_request_logs). Chamada
+    pela rota HTTP (manual/debug) e pelo cron nativo (app/jobs/run_cron.py)."""
     from app.database import engine
-    from app.config import get_settings
-    from fastapi import HTTPException
-
-    secret = get_settings().cron_secret
-    if secret and authorization != f"Bearer {secret}":
-        raise HTTPException(status_code=401, detail="Não autorizado.")
 
     results = []
     # VACUUM must run outside a transaction — use AUTOCOMMIT isolation
@@ -625,3 +618,17 @@ async def run_vacuum(
         "results": results,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@router.api_route("/vacuum", methods=["GET", "POST"], summary="VACUUM ANALYZE nas tabelas principais (cron semanal)")
+async def run_vacuum(
+    authorization: str | None = Header(default=None),
+) -> dict:
+    from app.config import get_settings
+    from fastapi import HTTPException
+
+    secret = get_settings().cron_secret
+    if secret and authorization != f"Bearer {secret}":
+        raise HTTPException(status_code=401, detail="Não autorizado.")
+
+    return await run_vacuum_job()
