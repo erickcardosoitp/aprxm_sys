@@ -223,7 +223,7 @@ async def trigger_reminders(
         rows = (await session.execute(text("""
             SELECT d.id, d.title, d.association_id, d.assigned_to_name,
                    d.service_order_id, u.email, u.full_name,
-                   so.order_number
+                   so.number
             FROM demands d
             LEFT JOIN users u ON u.full_name = d.assigned_to_name
                               AND u.association_id = d.association_id
