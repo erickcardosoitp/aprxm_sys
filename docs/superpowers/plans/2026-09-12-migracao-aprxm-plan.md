@@ -173,13 +173,13 @@ credencial. **Trocar de domínio invalida todas as passkeys já
 registradas** — os usuários precisam registrar de novo. Isso é decisão de
 produto, não só técnica: precisa de aviso aos usuários.
 
-### 3.4 Headers de segurança e CSP só existem no `vercel.json`
+### 3.4 Headers de segurança e CSP — ~~sem efeito após decisão do §6.2~~
 
-`frontend/vercel.json:22-44` tem CSP completa + cache-control
-(`index.html` no-store, `/assets/*` immutable). O `frontend/nginx.conf:8-11`
-replica **4 headers e nenhuma CSP**. Migrar como está = **regressão de
-segurança**. E a CSP atual libera `connect-src https://*.vercel.app` —
-precisa apontar pro domínio novo.
+`frontend/vercel.json:22-44` tem CSP completa + cache-control. Como os 4
+frontends **ficam na Vercel** (§6.2), o `vercel.json` continua sendo a
+fonte real de headers — `frontend/nginx.conf` (que replica só 4 headers e
+nenhuma CSP) segue existindo mas fora do caminho de produção. Só volta a
+importar se um dia decidirem tirar os frontends da Vercel também.
 
 ### 3.5 Timezone muda o comportamento
 
@@ -258,41 +258,57 @@ Pontos de atenção:
 
 ---
 
-## 6. Decisões pendentes (precisam do usuário)
+## 6. Decisões (fechadas em 2026-09-12)
 
-1. **Co-localizar na `vm-itp-prod` ou VM separada?**
-   A VM atual (`Standard_E2bs_v5`, 2 vCPU/16GB após o resize de 2026-09-11)
-   usa ~2,5 GB com 13 containers. Sobra espaço — **mas** o ETL (§3.1) é
-   o consumidor de pico: pandas carregando as tabelas todas em DataFrame.
-   Dimensionar pelo pico do ETL, não pelo estado estacionário.
-2. **Domínio(s)**: quais domínios os 4 frontends vão usar? Define DNS,
-   certificado e **o impacto nas passkeys** (§3.3).
-3. **Power BI**: consome do Neon analytics via Desktop ou Service? Define
-   se esse banco precisa continuar publicamente acessível.
-4. **`simplifica-prototype/`**: entra na migração ou é descartável?
-5. **Storage**: manter Supabase Storage ou consolidar em Azure Blob (como
-   foi feito no erp_itp)? Manter é menos trabalho; consolidar reduz o
-   número de fornecedores.
-6. **Corrigir os bugs da §2 antes, durante ou depois da migração?**
-   Recomendo **antes** — são independentes da migração, e migrar com o
-   ETL morto significa validar a migração contra um pipeline que já não
-   funciona.
+1. ✅ **Co-localizar na `vm-itp-prod`.** VM foi redimensionada pra 128 GB
+   — cobre o pico do ETL (§3.1) com folga. Não precisa de VM separada.
+2. ✅ **Escopo da migração é só o backend.** Os 4 frontends (`frontend/`,
+   `painel/`, `presidencia/`, `simplifica-prototype/`) **ficam na Vercel
+   free** (hospedagem estática, sem custo). Só o backend (FastAPI + ETL +
+   crons) migra pra VM, atrás de um domínio próprio (ex.
+   `api-aprxm.institutotiapretinha.org`). Cada frontend só precisa trocar
+   o rewrite `/api/*` do seu `vercel.json` pra apontar pro domínio novo do
+   backend, em vez da function serverless.
+   **Consequência direta:** isso **elimina** a necessidade de Dockerfile
+   + nginx.conf + CSP pros 4 frontends (itens 12 e 13 do §9, que
+   assumiam migrar tudo) — o domínio do frontend não muda, então as
+   passkeys (§3.3) também não são afetadas. `frontend/nginx.conf` e os
+   `Dockerfile`s de frontend seguem existindo mas **não entram no
+   escopo desta migração**.
+3. ✅ **`simplifica-prototype/` está em uso** — decisão foi migrar
+   junto, mas como fica na Vercel (decisão 2), não precisa de trabalho
+   extra de containerização agora.
+4. ✅ **Storage: consolidar em Azure Blob**, mesmo padrão já adotado no
+   erp_itp — reduz fornecedores. Fica pendente o trabalho de migração dos
+   arquivos existentes no Supabase Storage (não estimado ainda).
+5. ✅ **Power BI usa o Service (nuvem)**, não Desktop — o Neon analytics
+   **precisa continuar publicamente acessível** (refresh agendado exige
+   handshake direto ou gateway on-premises; sem gateway configurado hoje,
+   manter acesso público é o caminho de menor esforço).
+6. ✅ **Corrigir os bugs da §2 antes da migração** — feito (ver §9,
+   itens 1-11 fechados em 2026-09-12).
 
 ---
 
 ## 7. Fases propostas
 
+Escopo fechado em §6: **só o backend migra.** Os 4 frontends continuam na
+Vercel free — nada nas fases abaixo toca `frontend/`, `painel/`,
+`presidencia/` ou `simplifica-prototype/`.
+
 | Fase | O quê |
 |---|---|
-| **0. Correções pré-migração** | §2.1 a §2.5 — ressuscitar ETL, faxina, crons de mensalidade, padronizar auth de cron, consertar alerta de falha |
-| **1. Decisões** | §6 (VM, domínios, storage, Power BI) |
-| **2. Containerização** | Dockerfile de produção do backend (não-root, healthcheck, `--proxy-headers`), Dockerfiles dos 3 frontends que não têm, nginx com CSP/cache portados do `vercel.json` |
+| **0. Correções pré-migração** | §2.1 a §2.5 — ressuscitar ETL, faxina, crons de mensalidade, padronizar auth de cron, consertar alerta de falha. **✅ Concluída (2026-09-12).** |
+| **1. Decisões** | §6 — **✅ Concluída (2026-09-12).** |
+| **2. Containerização do backend** | Dockerfile de produção (não-root, healthcheck, `--proxy-headers`) — **✅ já feito** (itens 9-11 do §9). Nada a fazer nos frontends. |
 | **3. ETL isolado** | Extrair `/datalake/run` para container/processo próprio acionado por cron (§3.1) |
 | **4. Env vars** | Replicar as 35+ da Vercel, com validação de obrigatórias no boot |
 | **5. Crons** | Portar os 8 para o mecanismo já validado no erp_itp (`tarefas-registro.json` + `tarefas_runner.py` do ITP_TEC — dá timing real, log estruturado e execução manual de graça) |
-| **6. DNS/TLS** | Traefik + Let's Encrypt, mesmo padrão do resto do parque |
-| **7. Validação paralela** | Rodar VM e Vercel lado a lado antes de cortar (mesmo padrão cauteloso do erp_itp) |
-| **8. Corte** | Desligar Vercel só após validação |
+| **6. Storage** | Migrar arquivos de Supabase Storage → Azure Blob, trocar código de upload/leitura |
+| **7. DNS/TLS** | Domínio próprio do backend (ex. `api-aprxm.institutotiapretinha.org`) atrás de Traefik + Let's Encrypt, mesmo padrão do resto do parque |
+| **8. Rewrite dos 4 frontends** | Trocar `/api/*` no `vercel.json` de cada frontend pra apontar pro domínio novo do backend |
+| **9. Validação paralela** | Rodar VM e Vercel lado a lado antes de cortar (mesmo padrão cauteloso do erp_itp) |
+| **10. Corte** | Desligar a function serverless do backend na Vercel só após validação |
 
 ---
 
@@ -369,25 +385,28 @@ prioridade de negócio (o item mais simples pode não ser o mais urgente).
 
 ### 🟠 Moderado (requer decisão de design, ainda que pequena)
 
-12. **Portar a CSP e o cache-control do `frontend/vercel.json` pro
-    `nginx.conf`** (§3.4) — hoje `nginx.conf` replica só 4 headers e
-    nenhuma CSP. Precisa decidir a CSP final (trocar `*.vercel.app` pelo
-    domínio novo) antes de escrever — depende de §6.2 (domínio).
-13. **Criar Dockerfile + nginx.conf para `painel/` e `presidencia/`**
-    (espelhando o de `frontend/`) — mecânico, mas precisa confirmar que
-    os dois ainda estão em uso antes de gastar esforço (§6.4 cobre isso
-    junto com `simplifica-prototype/`).
-14. **Subir `pool_size`/`max_overflow` do SQLAlchemy** (§3.2) — hoje
-    dimensionado pra serverless (`pool_size=3`). Só faz sentido calibrar
-    depois de saber quantos workers/réplicas a VM vai rodar (depende de
-    §6.1, co-localizar ou não).
-15. **Decidir o esquema de 1 worker uvicorn (ou mover rate-limit/circuit
-    breaker pra Redis)** (§3.6) — mais simples é fixar 1 worker; só some
-    a decidir mover pra Redis se a carga realmente exigir mais de 1.
+> **Itens 12, 13 e 17 (WebAuthn) da versão anterior deste plano foram
+> eliminados pela decisão do §6.2** — só o backend migra, os 4 frontends
+> ficam na Vercel. Sem troca de domínio de frontend, não há CSP pra
+> portar, não há Dockerfile/nginx de `painel`/`presidencia` pra criar, e
+> as passkeys não são afetadas. Renumerado abaixo.
+
+12. **Subir `pool_size`/`max_overflow` do SQLAlchemy** (§3.2) — hoje
+    dimensionado pra serverless (`pool_size=3`). Calibrar agora que a VM
+    (co-localizada, §6.1) e o nº de workers uvicorn (item 13) estão
+    decididos.
+13. **Fixar 1 worker uvicorn** (§3.6) — `slowapi` (rate limit) e os
+    circuit breakers guardam estado no processo; com >1 worker os limites
+    viram N× o configurado. Mais simples é fixar 1 worker; só mover
+    pra Redis se a carga real exigir mais.
+14. **Migrar arquivos de Supabase Storage → Azure Blob** (§6.4) — trocar
+    código de upload/leitura (hoje contradiz `ARQUITETURA.md`, que cita
+    Cloudinary por engano — real é Supabase) e migrar os arquivos
+    existentes. Escopo/volume ainda não levantado.
 
 ### 🔴 Difícil (mudança de arquitetura ou coordenação externa)
 
-16. **Extrair `/datalake/run` do processo web (§3.1)** — é CPU-bound com
+15. **Extrair `/datalake/run` do processo web (§3.1)** — é CPU-bound com
     pandas rodando direto na corrotina da API. Precisa virar um comando
     separado da mesma imagem (`python -m app.jobs.datalake_run` ou
     similar), chamado pelo cron via `docker exec`/container próprio, não
@@ -395,20 +414,22 @@ prioridade de negócio (o item mais simples pode não ser o mais urgente).
     ETL, é só mudar **onde** ele roda — mas toca o mecanismo de disparo
     (hoje é HTTP + `CRON_SECRET`, precisaria virar invocação direta de
     processo) e como o resultado é registrado em `etl_runs`.
-17. **Coordenar a virada de domínio do WebAuthn (§3.3)** — não é código,
-    é comunicação: todo usuário com passkey registrada perde o acesso por
-    passkey no dia da troca de domínio e precisa registrar de novo. Exige
-    aviso prévio, não só deploy.
-18. **A migração em si** (fases da §7) — depende de todas as decisões da
-    §6 estarem fechadas primeiro. É o item mais difícil porque depende
-    dos outros 17 estarem resolvidos ou conscientemente adiados.
+16. **Domínio + TLS do backend e rewrite dos 4 frontends** — provisionar
+    `api-aprxm.institutotiapretinha.org` (ou equivalente) atrás de
+    Traefik/Let's Encrypt na VM, depois trocar o rewrite `/api/*` no
+    `vercel.json` de cada um dos 4 frontends pra apontar pra lá. Sem
+    impacto em passkey (domínio do frontend não muda), mas precisa de
+    janela de corte coordenada (DNS + validação antes de desligar a
+    function da Vercel).
+17. **A migração em si** (fases da §7) — depende dos itens 12-16
+    resolvidos ou conscientemente adiados.
 
 ### Ordem recomendada de execução
 
-Itens 1-11 podem (e devem) ser feitos **já, no Vercel, antes de qualquer
-decisão de migração** — são bugs de produção, corrigi-los não depende de
-decidir onde o sistema vai morar. Itens 12-15 dependem de decisões da
-§6. Itens 16-18 são a migração propriamente dita.
+Itens 1-11: ✅ **concluídos em 2026-09-12** (bugs de produção, corrigidos
+independente de decisão de migração). Itens 12-14 dependem só de
+execução (decisões já fechadas em §6). Itens 15-17 são a migração
+propriamente dita.
 
 ---
 
