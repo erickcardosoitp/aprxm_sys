@@ -289,27 +289,60 @@ fora do FastAPI.
 
 ## Fase D — Storage: Supabase Storage → Azure Blob
 
-Decisão do §6.4 do doc anterior. Escopo/volume real **ainda não
-levantado** — antes de escrever código:
+Decisão do §6.4 do doc anterior.
 
-1. Levantar volume: quantos arquivos, tamanho total, tipos (fotos,
-   assinaturas, áudio) em `SUPABASE_STORAGE_BUCKET`.
+### Levantamento de volume ✅ concluído (2026-09-12)
+
+Bucket `aprxm-midia`, consultado direto via API do Supabase Storage:
+
+| Métrica | Valor |
+|---|---|
+| Total de arquivos | **2.750** |
+| Total | **204,25 MB** |
+
+Por subpasta (tipo de uso):
+
+| Pasta | Arquivos | Tamanho |
+|---|---|---|
+| `packages/` | 2.695 | 162,05 MB |
+| `task-comments/` | 23 | 35,91 MB |
+| `chat/` | 15 | 4,66 MB |
+| `assoc-logos/` | 5 | 0,45 MB |
+| `signatures/` | 5 | 0,44 MB |
+| outros (`public`, `feed`, `daily-tasks`, `financeiro`) | 6 | ~0,76 MB |
+
+Por extensão: `jpg` (1.639, 174,6 MB), `png` (1.082, 19,6 MB), `jpeg` (13,
+5,2 MB), `webm` — áudio (13, 4,6 MB), `pdf`/`xlsx`/`txt` (3, ~0,26 MB).
+
+**Conclusão prática:** volume pequeno (204 MB, 2.750 objetos) — a
+migração de arquivos em si é rápida (minutos, não horas), o esforço real
+desta fase está nos passos 3-5 abaixo (script + troca de client), não no
+volume de dados.
+
+O client de upload/leitura é um único módulo,
+`backend/app/services/storage_service.py` (`StorageService`, usado por
+`app/routers/uploads.py` e `app/routers/public.py`) — troca de SDK fica
+concentrada ali, não espalhada pelo código.
+
+### Passos restantes
+
+1. ~~Levantar volume~~ ✅ acima.
 2. Provisionar container no Azure Blob (mesmo padrão do erp_itp).
 3. Escrever script de migração (lote, com log de progresso e retry) que
    copia Supabase → Azure Blob preservando os paths/nomes usados como
-   referência no banco (campos que guardam URL/key do arquivo — mapear
-   quais tabelas/colunas antes de migrar).
-4. Trocar o client de upload/leitura no backend (módulo de storage —
-   confirmar arquivo exato antes de editar) de Supabase pra Azure Blob
-   SDK, atrás de uma interface única se ainda não existir uma.
+   referência no banco. **Achado:** os endpoints de upload (`uploads.py`,
+   `public.py`) retornam a URL pública crua pro chamador persistir onde
+   quiser — não há uma tabela/coluna fixa e única de referência; mapear
+   caso a caso (moradores/encomendas, comentários de tarefa, chat,
+   logo da associação, assinaturas, financeiro) antes de migrar os paths.
+4. Trocar o client em `storage_service.py` de Supabase pra Azure Blob
+   SDK, mantendo a mesma interface pública (`upload`, `upload_base64`,
+   `delete`) — os 2 routers que chamam `StorageService` não precisam
+   mudar.
 5. Trocar env vars (`SUPABASE_URL`/`SUPABASE_SERVICE_KEY`/
    `SUPABASE_STORAGE_BUCKET` → equivalentes do Azure Blob).
 6. Rodar os dois em paralelo (dual-write ou pelo menos dual-read) durante
    a validação antes de desligar o Supabase de vez.
-
-**Esta fase precisa de um levantamento próprio antes de virar tarefa
-executável** — está aqui como checklist de alto nível, não como plano
-detalhado (diferente da Fase A/B, que já tem os arquivos/linhas exatos).
 
 ---
 
@@ -402,15 +435,17 @@ esforço real — a maior parte depende de acesso a algo fora deste repo
    no doc anterior) mostrou o uso real. Não remover. Corrigido também no
    [`2026-09-12-migracao-aprxm-plan.md`](2026-09-12-migracao-aprxm-plan.md)
    se ainda citar isso como legado.
-3. 🟡 **Levantar volume do Supabase Storage** (Fase D, passo 1) — quantos
-   arquivos, tamanho total, tipos. Não precisa de VM, só de credencial
-   do Supabase (já usada no backend hoje). Pré-requisito pra tudo mais
-   da Fase D virar tarefa executável de verdade.
-4. 🟡 **Escrever o compose/systemd de produção do backend pra VM** (base
-   da Fase E) — Dockerfile já está pronto (não-root, healthcheck,
-   `--proxy-headers`); falta só o arquivo de orquestração real (compose
-   de produção ou unit systemd) que efetivamente sobe o container na VM.
-   Dá pra escrever e revisar sem aplicar ainda.
+3. ✅ **Levantar volume do Supabase Storage** — **feito 2026-09-12**:
+   2.750 arquivos, 204,25 MB (ver Fase D acima para o detalhamento).
+   Volume pequeno, migração de dados em si é rápida.
+4. ⚠️ **Rascunho do compose de produção** — `backend/deploy/docker-compose.prod.yml`
+   criado 2026-09-12, mas **não confirmado contra a config real da VM**:
+   esta sessão não teve acesso ao repo/config de infra do erp_itp (só um
+   checkout parcial sem Traefik/compose), então o nome da rede
+   (`traefik-public`), certresolver (`letsencrypt`) e o domínio são um
+   chute razoável por convenção comum, **não confirmados**. Antes de
+   aplicar: conferir na própria VM o nome real da rede externa do
+   Traefik (`docker network ls`) e o certresolver configurado.
 5. 🟠 **Provisionar domínio + TLS na VM** (Fase E, execução) — precisa de
    acesso real a DNS + à VM (Traefik). Não executável desta sessão sem
    SSH configurado.
@@ -420,8 +455,9 @@ esforço real — a maior parte depende de acesso a algo fora deste repo
 7. 🟠 **Preencher `.env` real da VM** (Fase F, item 2) — depende dos
    itens 1 e 5 (precisa saber a lista de vars e ter onde colocar).
 8. 🔴 **Migração de arquivos Supabase → Azure Blob** (Fase D, passos 2-6)
-   — depende do levantamento do item 3; é a fase com mais trabalho de
-   código novo (client de storage, script de migração em lote).
+   — levantamento (item 3) já feito; é a fase com mais trabalho de
+   código novo (client de storage em `storage_service.py`, script de
+   migração em lote, mapear onde cada URL é referenciada no banco).
 9. 🔴 **Rewrite dos 4 `vercel.json` + deploy dos frontends** (Fase G) —
    mecanicamente simples, mas só pode ser feito depois do item 5 estar
    validado (senão quebra o app em produção).

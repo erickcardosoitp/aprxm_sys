@@ -1,0 +1,43 @@
+# Compose de PRODUCAO do backend na vm-itp-prod (co-localizada com o resto
+# do parque ITP -- decisao §6.1 do plano de migracao). NAO usar
+# docker-compose.yml da raiz (dev-only: bind mount, --reload, Postgres
+# local). Este arquivo so sobe o backend -- banco (Neon) e storage (R2/
+# Supabase-ou-Azure-Blob) sao externos, nao entram no compose.
+#
+# ATENCAO: rascunho NAO confirmado contra a config real de Traefik da VM.
+# Esta sessao nao teve acesso ao repo/config de infra do erp_itp (so um
+# checkout parcial, sem docker-compose/Traefik) -- o nome da rede
+# (traefik-public), o certresolver (letsencrypt) e o dominio abaixo sao
+# um chute razoavel seguindo convencao comum, NAO confirmado. Antes de
+# aplicar na VM: conferir o nome real da rede externa do Traefik
+# (docker network ls na VM) e o nome do certresolver configurado nele.
+#
+# Uso: docker compose -f backend/deploy/docker-compose.prod.yml up -d
+# Pre-requisito: .env real na VM (nunca commitar -- ver .env.example na
+# raiz do repo pra saber o que preencher).
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: aprxm_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8000:8000"  # Traefik faz o proxy reverso -- nao expor a porta direto
+    # healthcheck ja vem do Dockerfile (HEALTHCHECK). Sem volumes/bind mount
+    # (imagem imutavel), sem --reload (producao).
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.aprxm-backend.rule=Host(`api-aprxm.institutotiapretinha.org`)"
+      - "traefik.http.routers.aprxm-backend.entrypoints=websecure"
+      - "traefik.http.routers.aprxm-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.aprxm-backend.loadbalancer.server.port=8000"
+    networks:
+      - traefik-public
+
+networks:
+  traefik-public:
+    external: true  # mesma rede compartilhada do Traefik do resto do parque ITP
