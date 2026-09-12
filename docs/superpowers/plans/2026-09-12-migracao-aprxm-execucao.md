@@ -4,6 +4,14 @@
 > (diagnóstico + achados críticos + as 6 decisões, todos fechados). Este
 > documento é o checklist de execução das fases que faltam, uma a uma.
 
+> **Status (2026-09-12):** Fases A, B e C **concluídas e validadas contra
+> produção** (código no ar, testado, sem regressão). Fase F parcialmente
+> concluída (validação de boot). **Tudo que dava pra deixar pronto sem
+> acesso à VM/DNS já está feito** — o que falta depende de infraestrutura
+> real (SSH na VM, DNS, ou levantamento de dado externo). Ver "Pendências
+> para as próximas vezes" no fim do documento, ordenadas da mais fácil
+> pra mais difícil.
+
 **Escopo fechado (§6 do doc anterior):** só o backend migra pra
 `vm-itp-prod` (128 GB, co-localizada). Os 4 frontends ficam na Vercel
 free — nenhuma fase abaixo toca `frontend/`, `painel/`, `presidencia/`
@@ -18,7 +26,7 @@ HTTP. Esse mesmo princípio se aplica, na Fase B, aos outros 7 crons.
 
 ---
 
-## Fase A — ETL: migração completa e nativa (prioridade atual)
+## Fase A — ETL: migração completa e nativa ✅ concluída (2026-09-12)
 
 ### O que existe hoje
 
@@ -99,9 +107,21 @@ antes de remover o cron da Vercel de vez. Rollback: re-adicionar as 2
 entradas no `vercel.json` e fazer deploy — a rota HTTP nunca foi
 removida, só parou de ser chamada por cron.
 
+### O que ficou feito
+
+- ✅ `backend/app/jobs/run_etl.py` criado, testado com sucesso contra
+  produção real (`status: success`, novo `run_id`).
+- ✅ Removidas as 2 entradas de `/api/v1/datalake/run` do `vercel.json`.
+  Rota HTTP mantida, sem cron apontando.
+- ⏸️ **Pendente (precisa de VM):** instalar o cron de fato (`crontab -u
+  <usuário> backend/deploy/crontab.aprxm`, linhas do ETL) e validar os 2
+  ciclos reais agendados. **Até lá, decisão do usuário: rodar o ETL
+  manualmente via `POST /api/v1/datalake/run`** — não há cron nenhum
+  ativo pro ETL neste meio-tempo (aceito conscientemente).
+
 ---
 
-## Fase B — Portar os outros 7 crons para o mesmo mecanismo nativo
+## Fase B — Portar os outros 7 crons para o mesmo mecanismo nativo ✅ código concluído (2026-09-12)
 
 Mesmo princípio da Fase A, aplicado aos 7 endpoints restantes. Diferença:
 a lógica desses 7 está **inline no handler do router** (não numa função
@@ -166,26 +186,51 @@ fora do FastAPI.
 - `backend/vercel.json` (remove as 6 entradas restantes)
 - Crontab da VM
 
+### O que ficou feito
+
+- ✅ Lógica extraída em `run_vacuum_job`, `cron_generate_job`,
+  `cron_check_overdue_job`, `trigger_reminders_job`,
+  `trigger_task_reminders_job` — cada rota HTTP virou casca fina que só
+  faz auth + chama a função. `crm/cron-scoring` não precisou de mudança
+  (já usava `run_scoring_all`).
+- ✅ `backend/app/jobs/run_cron.py` criado (dispatcher único, `python -m
+  app.jobs.run_cron <job>`).
+- ✅ Todos os 6 jobs testados com sucesso contra produção via o
+  dispatcher, **antes** do commit.
+- ✅ Deploy feito, e as 6 rotas HTTP reconfirmadas sem regressão (mesma
+  resposta de antes do refactor) — o refactor não mudou comportamento.
+- ✅ `backend/deploy/crontab.aprxm` criado com as 8 linhas prontas.
+- ⏸️ **Pendente (precisa de VM):** instalar o crontab de verdade e
+  remover as 6 entradas restantes do `vercel.json` **só depois** de
+  confirmar que o cron nativo está rodando na VM (mesma cautela da
+  Fase A — não tirar o fallback antes de validar o substituto).
+
 ---
 
-## Fase C — Calibrar pool de conexões e workers
+## Fase C — Calibrar pool de conexões e workers ✅ concluída (2026-09-12)
 
 1. `backend/app/database.py:16-20` — subir `pool_size`/`max_overflow`
    agora que é 1 processo fixo na VM (não N instâncias serverless
-   dividindo o limite do Neon). Ponto de partida razoável: `pool_size=10,
-   max_overflow=20` — ajustar observando `pg_stat_activity` no Neon nos
-   primeiros dias.
+   dividindo o limite do Neon).
 2. Manter `statement_cache_size=0` (obrigatório enquanto for Neon/PgBouncer
    — não é específico de serverless, continua valendo na VM).
-3. Fixar **1 worker uvicorn** (`--workers 1` ou nem passar a flag, que já
-   é o default) — `slowapi` e os circuit breakers guardam estado em
-   memória de processo; N workers = N× os limites configurados. Só
-   revisitar (mover pra Redis) se a carga real exigir mais de 1 worker.
+3. Fixar **1 worker uvicorn** — `slowapi` e os circuit breakers guardam
+   estado em memória de processo; N workers = N× os limites configurados.
+
+### O que ficou feito
+
+- ✅ `pool_size`/`max_overflow` viram configuráveis via env var
+  (`DB_POOL_SIZE`/`DB_MAX_OVERFLOW`, `config.py`), default 3/7 inalterado
+  (seguro pro Vercel hoje). **Pendente:** definir o valor real pra VM
+  (ponto de partida sugerido: `DB_POOL_SIZE=10`, `DB_MAX_OVERFLOW=20`) e
+  ajustar observando `pg_stat_activity` no Neon nos primeiros dias —
+  isso é *configuração no `.env` da VM*, não código.
+- ✅ `statement_cache_size=0` já estava correto, mantido.
+- ✅ 1 worker uvicorn já era o comportamento (Dockerfile não passa
+  `--workers`, default do uvicorn é 1) — nada a mudar.
 
 ### Arquivos tocados
-- `backend/app/database.py`
-- Comando de start do container (Dockerfile `CMD` ou compose/systemd,
-  conforme o padrão de deploy definido)
+- `backend/app/config.py`, `backend/app/database.py`
 
 ---
 
@@ -226,19 +271,22 @@ detalhado (diferente da Fase A/B, que já tem os arquivos/linhas exatos).
 
 ---
 
-## Fase F — Variáveis de ambiente
+## Fase F — Variáveis de ambiente ⏳ parcialmente concluída (2026-09-12)
 
 1. Extrair as 35+ variáveis hoje no painel da Vercel (`backend/app/config.py`
    é a fonte de verdade de quais existem e seus defaults).
 2. Preencher `.env` de produção na VM (nunca commitar — mesmo padrão já
    seguido nesta sessão de não deixar dump de credencial solto).
-3. Adicionar validação de obrigatórias no boot (`DATABASE_URL`,
-   `SECRET_KEY`, e as que hoje têm default perigoso como
-   `VAPID_PUBLIC_KEY` hardcoded) — falhar cedo em vez de subir com
-   configuração incompleta silenciosamente (`config.py` usa
-   `extra="ignore"`, então nome errado de env var passa batido hoje).
+3. ✅ **Feito:** `validate_production_config()` (`config.py`) falha o
+   boot em produção se `CRON_SECRET` estiver vazio, e loga aviso se
+   `VAPID_PUBLIC_KEY` estiver configurada sem `VAPID_PRIVATE_KEY`
+   correspondente. Chamada no `lifespan` do `main.py`. Testado contra os
+   valores reais de produção antes do commit (não quebra o boot atual).
 4. Descartar os campos mortos/legado já identificados (`DATABASE_URL_DIRECT`,
-   que nenhum código lê).
+   que nenhum código lê) — **ainda não feito**.
+
+**Pendente:** os itens 1, 2 e 4 (extrair a lista real, preencher `.env`
+da VM, remover campo morto) — ver pendências no fim do documento.
 
 ---
 
@@ -282,10 +330,41 @@ detalhado (diferente da Fase A/B, que já tem os arquivos/linhas exatos).
 
 ---
 
-## Ordem de execução recomendada
+## Pendências para as próximas vezes — da mais fácil pra mais difícil
 
-Fase A (ETL, em andamento) → Fase B (demais crons, mesmo mecanismo) →
-Fase C (pool/workers, mecânico) → Fase F (env vars, pré-requisito de
-qualquer deploy real na VM) → Fase E (domínio/TLS) → Fase D (storage,
-pode rodar em paralelo às demais, tem levantamento próprio) → Fase G
-(rewrite frontends) → Fase H (validação) → Fase I (corte).
+Tudo que dava pra preparar em código, sem precisar de acesso à VM/DNS, já
+foi feito (Fases A, B, C e parte da F). O que resta é ordenado abaixo por
+esforço real — a maior parte depende de acesso a algo fora deste repo
+(SSH na VM, DNS, ou levantar dado externo).
+
+1. 🟢 **Extrair a lista real das 35+ env vars do painel da Vercel** (Fase F,
+   item 1) — puro levantamento, sem precisar de VM. Vira um
+   `backend/.env.production.example` (nomes + comentário, nunca valor
+   real) pra não decidir isso de improviso na hora do deploy.
+2. 🟢 **Remover `DATABASE_URL_DIRECT`** do `.env.example`/config (Fase F,
+   item 4) — confirmado que nenhum código lê, 1 linha.
+3. 🟡 **Levantar volume do Supabase Storage** (Fase D, passo 1) — quantos
+   arquivos, tamanho total, tipos. Não precisa de VM, só de credencial
+   do Supabase (já usada no backend hoje). Pré-requisito pra tudo mais
+   da Fase D virar tarefa executável de verdade.
+4. 🟡 **Escrever o compose/systemd de produção do backend pra VM** (base
+   da Fase E) — Dockerfile já está pronto (não-root, healthcheck,
+   `--proxy-headers`); falta só o arquivo de orquestração real (compose
+   de produção ou unit systemd) que efetivamente sobe o container na VM.
+   Dá pra escrever e revisar sem aplicar ainda.
+5. 🟠 **Provisionar domínio + TLS na VM** (Fase E, execução) — precisa de
+   acesso real a DNS + à VM (Traefik). Não executável desta sessão sem
+   SSH configurado.
+6. 🟠 **Instalar o crontab na VM e validar ciclos reais** (Fases A/B,
+   pendência já registrada acima) — precisa do backend já rodando lá
+   (depende do item 5).
+7. 🟠 **Preencher `.env` real da VM** (Fase F, item 2) — depende dos
+   itens 1 e 5 (precisa saber a lista de vars e ter onde colocar).
+8. 🔴 **Migração de arquivos Supabase → Azure Blob** (Fase D, passos 2-6)
+   — depende do levantamento do item 3; é a fase com mais trabalho de
+   código novo (client de storage, script de migração em lote).
+9. 🔴 **Rewrite dos 4 `vercel.json` + deploy dos frontends** (Fase G) —
+   mecanicamente simples, mas só pode ser feito depois do item 5 estar
+   validado (senão quebra o app em produção).
+10. 🔴 **Validação paralela** (Fase H) — só depois de tudo acima.
+11. 🔴 **Corte** (Fase I) — último passo, desliga a Vercel de vez.
