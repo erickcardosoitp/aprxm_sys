@@ -41,20 +41,26 @@ async def _atualizar_metricas_negocio() -> None:
 
     from app.database import AsyncSessionLocal
 
+    queries = [
+        "SELECT count(*) FROM associations WHERE is_active = TRUE",
+        "SELECT count(*) FROM residents WHERE status = 'active'",
+        "SELECT count(*) FROM residents WHERE created_at::date = CURRENT_DATE",
+        "SELECT count(*) FROM packages WHERE received_at::date = CURRENT_DATE",
+        "SELECT count(*) FROM packages WHERE status IN ('received', 'notified')",
+        "SELECT count(*) FROM service_orders WHERE status IN ('pending', 'in_progress')",
+        "SELECT count(*) FROM service_orders WHERE created_at::date = CURRENT_DATE",
+        "SELECT COALESCE(sum(amount), 0) FROM transactions WHERE type = 'income' AND created_at::date = CURRENT_DATE",
+    ]
     async with AsyncSessionLocal() as session:
-        assocs, mor_ativos, mor_hoje, enc_hoje, enc_pend, os_ab, os_hoje, receita = (
-            (await session.execute(text(q))).scalar() or 0
-            for q in [
-                "SELECT count(*) FROM associations WHERE is_active = TRUE",
-                "SELECT count(*) FROM residents WHERE status = 'active'",
-                "SELECT count(*) FROM residents WHERE created_at::date = CURRENT_DATE",
-                "SELECT count(*) FROM packages WHERE received_at::date = CURRENT_DATE",
-                "SELECT count(*) FROM packages WHERE status IN ('received', 'notified')",
-                "SELECT count(*) FROM service_orders WHERE status IN ('pending', 'in_progress')",
-                "SELECT count(*) FROM service_orders WHERE created_at::date = CURRENT_DATE",
-                "SELECT COALESCE(sum(amount), 0) FROM transactions WHERE type = 'income' AND created_at::date = CURRENT_DATE",
-            ]
-        )
+        # Uma genexpr com `await` dentro vira um async generator (nao um
+        # generator normal) -- tuple unpack direto falhava com
+        # "cannot unpack non-iterable async_generator object" (achado
+        # 2026-09-14, primeiro deploy desta feature). Sequencial, mesma
+        # sessao/conexao, sem paralelismo real de qualquer forma.
+        resultados = []
+        for q in queries:
+            resultados.append((await session.execute(text(q))).scalar() or 0)
+        assocs, mor_ativos, mor_hoje, enc_hoje, enc_pend, os_ab, os_hoje, receita = resultados
 
     associacoes_ativas.set(assocs)
     moradores_ativos.set(mor_ativos)
