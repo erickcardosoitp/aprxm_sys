@@ -778,6 +778,77 @@ as 2 pastas existem agora com os dashboards certos em cada uma.
   `postgres_exporter` apontando pra ele. Adicionar isso é tarefa maior
   (exporter novo + configuração de rede pro Neon).
 
+### Correção do dashboard KPI BUSINESS — filtro de tempo e indicadores críticos (2026-09-14)
+
+Dois problemas reais apontados pelo usuário na primeira versão do
+dashboard (mesmo dia, poucas horas depois de publicado):
+
+**1. "não está obedecendo os filtros que eu coloco"** — os 4 gauges de
+"hoje" (`aprxm_moradores_cadastrados_hoje`, `aprxm_encomendas_hoje`,
+`aprxm_os_criadas_hoje`, `aprxm_receita_hoje_reais`) faziam a query SQL
+com `WHERE created_at::date = CURRENT_DATE` **direto no backend** —
+o valor exposto em `/metrics` já vinha fixo pro dia corrente do
+servidor, então **qualquer seletor de tempo escolhido no Grafana
+(24h, 7 dias, mês, range customizado) era ignorado por completo**, o
+painel sempre mostrava o mesmo número independente do que o usuário
+selecionasse ali em cima.
+
+**Correção estrutural** (`app/core/metrics.py`, reescrito): os 4
+viraram **totais cumulativos, nunca hardcoded por data**
+(`aprxm_moradores_cadastrados_total = SELECT count(*) FROM residents`,
+sem filtro de data nenhum — mesmo padrão pros outros 3). No Grafana,
+a query passou a usar `increase(aprxm_moradores_cadastrados_total[$__range])`
+— `$__range` é uma variável nativa do Grafana que **sempre** reflete
+o intervalo selecionado no seletor de tempo do dashboard, calculada
+automaticamente pelo motor de template do Grafana antes de mandar a
+query pro Prometheus. Resultado: o mesmo painel agora responde
+corretamente a "últimas 24h", "últimos 7 dias", "este mês" ou qualquer
+range customizado, sem nenhum código novo — o cálculo de janela sai
+inteiramente do backend e passa a ser responsabilidade do Prometheus/
+Grafana, onde semanticamente pertence. Títulos dos painéis também
+trocados de "hoje"/"últimas 24h" fixo pra "no período selecionado" —
+não descreve mais mentira nenhuma quando o usuário muda o range.
+
+**Detalhe técnico:** `prometheus_client` (a lib Python) não tem um
+tipo "Counter que aceita `.set()` com o valor absoluto" — só
+`.inc(delta)`. Como o valor real (contagem total no Postgres) já é
+calculado no backend a cada 60s, continuou sendo exposto como `Gauge`
+(que aceita `.set()`), só que **monotonicamente crescente por
+natureza dos dados** (contagem total só aumenta). Isso funciona
+perfeitamente com `increase()` no PromQL — a função não se importa
+com o `# TYPE` declarado na exposição, só olha se a série cresce ao
+longo do tempo (e lida com reset de contador, ex. quando o container é
+recriado e reinicia do zero — mas aqui não reinicia do zero, porque o
+valor vem de uma contagem real no banco, não de um contador em
+memória do processo).
+
+**2. "ainda temos poucos indicadores críticos"** — adicionados 4
+indicadores novos, todos **snapshots de estado atual** (não
+cumulativos — não faz sentido "increase" de "quantas mensalidades
+estão vencidas agora"), numa fileira nova "🚨 Indicadores críticos" no
+topo do dashboard, com thresholds verde/laranja/vermelho:
+
+| Métrica | Query | Threshold laranja/vermelho | Valor real no primeiro deploy |
+|---|---|---|---|
+| `aprxm_mensalidades_vencidas` | `count(*) FROM mensalidades WHERE status='overdue'` | 20 / 60 | 0 |
+| `aprxm_encomendas_paradas_15d` | `count(*) FROM packages WHERE status IN ('received','notified') AND received_at < NOW() - INTERVAL '15 days'` | 30 / 100 | **341** |
+| `aprxm_caixas_abertas` | `count(*) FROM cash_sessions WHERE status='open'` | 3 / 8 | **7** |
+| `aprxm_moradores_suspensos` | `count(*) FROM residents WHERE status='suspended'` | 15 / 40 | 22 |
+
+**Achado real ao validar os números** (não hipotético): logo no
+primeiro deploy, **341 encomendas** já estavam paradas há mais de 15
+dias e **7 sessões de caixa** seguiam abertas — ambos acima do
+threshold vermelho definido. Não investigado a fundo nem escalado
+nesta sessão (fora do que foi pedido: só a instrumentação), mas é
+sinal de que esses dois indicadores já nascem úteis, não são só
+número decorativo — provavelmente valem uma investigação de negócio
+separada.
+
+Commits: `82915f4` (`aprxm_sys`, backend) + `e14d1c27` (`erp_itp`,
+dashboard). Deploy verificado: `/metrics` expondo os 12 valores
+(8 antigos redesenhados + 4 novos) com números reais, scrape do
+Prometheus `up`, container `healthy`.
+
 ### Testes funcionais de escrita (2026-09-14)
 
 Pedido original do usuário desde o início da revisão operacional:
