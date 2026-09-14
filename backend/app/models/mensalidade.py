@@ -18,6 +18,11 @@ class MensalidadeStatus(str, Enum):
 class Mensalidade(SQLModel, table=True):
     __tablename__ = "mensalidades"
     __table_args__ = (
+        # Nao reflete a constraint real de producao (uq_mensalidade_resident_due,
+        # em association_id/resident_id/due_date) -- achado 2026-09-14, ver
+        # ON CONFLICT em finance_service.py. Deixado como está (so' importa se
+        # create_all rodar num banco vazio, e as migrations sao a fonte de
+        # verdade de schema neste projeto) mas documentado pra nao confundir.
         UniqueConstraint("association_id", "resident_id", "reference_month", name="uq_mensalidade_period"),
     )
 

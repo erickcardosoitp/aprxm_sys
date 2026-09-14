@@ -10,6 +10,7 @@ from sqlmodel import select
 
 from fastapi import HTTPException
 from app.core.exceptions import CashSessionError
+from app.core.metrics import tokens_isencao_invalidos_total
 from app.core.tenant import CurrentUser, get_current_user, require_module_action
 from app.database import get_session
 from app.models.package import Package, PackageStatus
@@ -151,6 +152,7 @@ async def deliver_package(
                AND used_at IS NULL AND expires_at > NOW()
         """), {"aid": str(current.association_id), "tok": body.exemption_token.upper()})).fetchone()
         if not token_row:
+            tokens_isencao_invalidos_total.inc()
             raise HTTPException(status_code=422, detail="TOKEN_INVALID")
         skip_fee = True
 
@@ -256,6 +258,7 @@ async def bulk_deliver_packages(
                AND used_at IS NULL AND expires_at > NOW()
         """), {"aid": str(current.association_id), "tok": body.exemption_token.upper()})).fetchone()
         if not token_row:
+            tokens_isencao_invalidos_total.inc()
             raise HTTPException(status_code=422, detail="TOKEN_INVALID")
         await session.execute(text("""
             UPDATE delivery_exemption_tokens SET used_at = NOW() WHERE id = :id

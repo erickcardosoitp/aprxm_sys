@@ -419,7 +419,15 @@ class FinanceService:
                                 :amount, CAST(:status AS mensalidade_status), :paid_at, :txid, :txid2, :amount2,
                                 :created_by, now(), now()
                             )
-                            ON CONFLICT (association_id, resident_id, reference_month) DO NOTHING
+                            -- A constraint unica real da tabela e' uq_mensalidade_resident_due
+                            -- (association_id, resident_id, due_date), nao reference_month --
+                            -- achado real 2026-09-14: o ON CONFLICT antigo (reference_month)
+                            -- nao batia com nenhuma constraint de verdade em producao, e todo
+                            -- POST /finance/transactions pra mes sem mensalidade pre-existente
+                            -- vinha com 500 (InvalidColumnReferenceError). due_date e' derivado
+                            -- 1:1 de reference_month (dia 10 fixo) logo acima, entao a
+                            -- idempotencia continua identica.
+                            ON CONFLICT (association_id, resident_id, due_date) DO NOTHING
                             RETURNING id
                         """),
                         {
