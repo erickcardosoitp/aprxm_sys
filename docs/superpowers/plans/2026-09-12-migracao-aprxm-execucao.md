@@ -429,13 +429,15 @@ concentrada ali, não espalhada pelo código.
    base64, delete + escopo, leitura de dados reais migrados,
    concorrência + edge cases de nome/path traversal) — **200/200
    passaram**.
-9. 🟡 **Pendente, não bloqueante:** política de lifecycle automática
-   (Hot → Cool após 90 dias, prefixo `aprxm-midia/`) — falhou por falta
-   de permissão ARM (`managementPolicies/write`) na identidade da VM
-   (só tem escopo data-plane). Aplicar manualmente via portal Azure
-   (Storage Account `stitperpprod` → Data management → Lifecycle
-   management) ou conceder `Storage Account Contributor` à identidade
-   antes de tentar via CLI de novo.
+9. ✅ **Política de lifecycle automática aplicada (2026-09-14):**
+   Hot → Cool após 90 dias sem modificação, prefixo `aprxm-midia/`.
+   Precisou conceder a role `Storage Account Contributor` (Contribuinte
+   de Conta de Armazenamento) à identidade gerenciada da VM
+   (`vm-itp-prod`) no escopo da própria storage account — a role
+   original era só data-plane. Após a atribuição, o RBAC do Azure levou
+   ~25 min pra propagar de verdade (múltiplas tentativas com
+   `AuthorizationFailed` mesmo com `az login --identity` renovando o
+   token, antes de passar).
 
 ---
 
@@ -588,6 +590,5 @@ majoritariamente rede/domínio e a migração de storage.
 12. 🔴 **Corte** (Fase I) — a function serverless do backend na Vercel
     já não recebe tráfego normal (só ficaria como fallback se alguém
     reverter o rewrite). Falta decidir quando desligá-la de vez.
-13. 🟡 **Lifecycle policy do Azure Blob (Cool tier)** — não bloqueante,
-    pendente de permissão ARM (`Storage Account Contributor`) na
-    identidade da VM, ou aplicação manual via portal. Ver Fase D §9.
+13. ✅ **Lifecycle policy do Azure Blob (Cool tier)** — aplicada
+    2026-09-14. Ver Fase D §9.
