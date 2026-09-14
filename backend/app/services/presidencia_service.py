@@ -76,7 +76,10 @@ def get_dw_engine() -> AsyncEngine:
             pool_pre_ping=True,
             pool_size=2,
             max_overflow=3,
-            connect_args={"ssl": "require", "statement_cache_size": 0},
+            # server_settings.search_path: mesmo achado do database.py
+            # principal (2026-09-14) - defensivo aqui tambem, projeto Neon
+            # separado (aprxm-analytics) pode ter o mesmo problema de role.
+            connect_args={"ssl": "require", "statement_cache_size": 0, "server_settings": {"search_path": "public"}},
         )
         _DwSessionLocal = async_sessionmaker(
             bind=_dw_engine, class_=AsyncSession, expire_on_commit=False,

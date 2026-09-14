@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -667,7 +667,7 @@ async def blank_proof_of_residence(
     body: BlankProofRequest,
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> "Response":
+) -> Response:
     import random
     import string
     from fastapi.responses import Response as FastAPIResponse

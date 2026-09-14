@@ -22,7 +22,19 @@ engine = create_async_engine(
     max_overflow=settings.db_max_overflow,
     # Neon: SSL required + PgBouncer pooler requires prepared statements disabled.
     # Fora do Neon (ex: Postgres local de teste), ssl fica a cargo do servidor.
-    connect_args={"ssl": "require", "statement_cache_size": 0} if _IS_NEON else {"statement_cache_size": 0},
+    # server_settings.search_path: achado real 2026-09-14 - a role neondb_owner
+    # ficou sem search_path padrao (SHOW search_path retornava vazio em conexao
+    # nova, mesmo com ALTER ROLE ... SET search_path = public aplicado no
+    # catalogo - o pooler/PgBouncer do Neon nao propaga esse default de role
+    # pras sessoes que ele multiplexa). Forcando aqui, por conexao, via
+    # asyncpg diretamente (nao pelo ALTER ROLE, que se mostrou nao confiavel
+    # atras do pooler) - toda query sem esse fix falhava com "relation ...
+    # does not exist" / "no schema has been selected to create in".
+    connect_args=(
+        {"ssl": "require", "statement_cache_size": 0, "server_settings": {"search_path": "public"}}
+        if _IS_NEON
+        else {"statement_cache_size": 0}
+    ),
 )
 
 AsyncSessionLocal = async_sessionmaker(
