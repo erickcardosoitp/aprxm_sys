@@ -17,7 +17,13 @@ async def main() -> int:
         try:
             result = await run_full_etl(session, triggered_by="cron-nativo")
             print(result)
-            return 0
+            # run_full_etl captura suas proprias excecoes fatais e retorna
+            # {"status": "failed", ...} em vez de relancar (ja envia alerta
+            # por e-mail e grava em etl_runs por conta propria) - sem este
+            # check, exit_code sempre era 0 aqui, mascarando falhas reais no
+            # tarefas-timing/aprxm-etl.jsonl (achado real: 2026-09-14, ciclo
+            # das 12h falhou de verdade mas ficou registrado como sucesso).
+            return 1 if result.get("status") == "failed" else 0
         except Exception as e:
             print(f"ETL falhou: {e}", file=sys.stderr)
             return 1
