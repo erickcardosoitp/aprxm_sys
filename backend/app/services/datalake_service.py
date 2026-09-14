@@ -1771,6 +1771,80 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
 
 # ── Analytics Loader ──────────────────────────────────────────────────────────
 
+def _pandas_dtype_to_clickhouse(dtype_str: str) -> str:
+    """Mapeia dtype do pandas pro tipo ClickHouse mais proximo. Sempre Nullable
+    porque agregacoes (sum/mean etc) podem gerar NaN, e ClickHouse rejeita NULL
+    em coluna nao-Nullable."""
+    if dtype_str.startswith("int") or dtype_str.startswith("uint"):
+        return "Nullable(Int64)"
+    if dtype_str.startswith("float"):
+        return "Nullable(Float64)"
+    if dtype_str.startswith("datetime64"):
+        return "Nullable(DateTime64(3))"
+    if dtype_str == "bool":
+        return "Nullable(UInt8)"
+    return "Nullable(String)"
+
+
+def _write_gold_clickhouse(gold_frames: dict[str, pd.DataFrame]) -> tuple[int, list[str]]:
+    """Escreve todos os DataFrames Gold no ClickHouse (aprxm-analytics, OLAP p/
+    Power BI). Equivalente ao _write_gold_sync, mas pro ClickHouse: precisa
+    criar a tabela com ENGINE=MergeTree explicito (to_sql/SQLAlchemy generico
+    nao sabe fazer isso) e usa TRUNCATE + insert_df em vez de to_sql.
+
+    Tabelas Gold sao sempre recriadas do zero a cada rodada do ETL (nao ha
+    estado incremental no OLAP) -- por isso ORDER BY tuple() e' seguro: nao
+    ha necessidade de ordenacao/dedup entre rodadas.
+    """
+    import clickhouse_connect
+    from urllib.parse import urlparse
+
+    parsed = urlparse(settings.datawarehouse_db_url)
+    client = clickhouse_connect.get_client(
+        host=parsed.hostname,
+        port=parsed.port or 8123,
+        username=parsed.username or "default",
+        password=parsed.password or "",
+        database=(parsed.path or "/default").lstrip("/") or "default",
+    )
+    total = 0
+    failures: list[str] = []
+    try:
+        for table_name, df in gold_frames.items():
+            if df.empty:
+                continue
+            df_clean = df.copy()
+            for col in df_clean.columns:
+                dtype_str = str(df_clean[col].dtype)
+                if dtype_str.startswith("period["):
+                    try:
+                        df_clean[col] = df_clean[col].dt.to_timestamp()
+                    except Exception:
+                        df_clean[col] = df_clean[col].astype(str)
+            try:
+                cols_ddl = ", ".join(
+                    f"`{c}` {_pandas_dtype_to_clickhouse(str(df_clean[c].dtype))}"
+                    for c in df_clean.columns
+                )
+                client.command(
+                    f"CREATE TABLE IF NOT EXISTS `{table_name}` ({cols_ddl}) "
+                    "ENGINE = MergeTree ORDER BY tuple()"
+                )
+                client.command(f"TRUNCATE TABLE `{table_name}`")
+                client.insert_df(table_name, df_clean)
+                total += len(df_clean)
+                logger.info("Analytics(ClickHouse) %-35s %5d rows", table_name, len(df_clean))
+            except Exception as e:
+                logger.exception("Analytics: falha em %s (ClickHouse)", table_name)
+                failures.append(f"{table_name}: {e}")
+    except Exception as e:
+        logger.exception("Analytics: falha ao conectar no ClickHouse")
+        failures.append(f"conexao: {e}")
+    finally:
+        client.close()
+    return total, failures
+
+
 def _write_gold_sync(gold_frames: dict[str, pd.DataFrame]) -> tuple[int, list[str]]:
     """Escreve todos os DataFrames Gold no Neon Analytics via SQLAlchemy sync.
 
@@ -1837,8 +1911,13 @@ async def load_gold_to_analytics(
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     loop = asyncio.get_event_loop()
+    writer = (
+        _write_gold_clickhouse
+        if settings.datawarehouse_db_url.startswith("clickhouse://")
+        else _write_gold_sync
+    )
     with ThreadPoolExecutor(max_workers=1) as executor:
-        return await loop.run_in_executor(executor, _write_gold_sync, gold_frames)
+        return await loop.run_in_executor(executor, writer, gold_frames)
 
 
 # ── Orchestrator ───────────────────────────────────────────────────────────────
