@@ -603,6 +603,76 @@ só trocar a env de volta e recriar o container.
 
 ---
 
+## Fase K — Data warehouse: Neon (aprxm-analytics) → ClickHouse self-hosted ✅ concluída (2026-09-14)
+
+Decisão do usuário: substituir o destino OLAP do ETL (`DATAWAREHOUSE_APRXM_DATABASE_URL`,
+projeto Neon separado `aprxm-analytics`) por um motor colunar real,
+self-hosted, sem depender de capacidade paga do Microsoft Fabric — a
+licença Fabric gratuita da organização é **por usuário** (workspace
+pessoal), sem capacidade compartilhada pra um ETL de time/produção.
+
+**Motor escolhido:** ClickHouse — open-source (Apache 2.0), colunar,
+SQL, o equivalente self-hosted mais próximo do BigQuery. Volume real do
+DW é pequeno (10 MB, 42 tabelas) — Fabric/Synapse seriam desperdício de
+capacidade paga (mínimo ~US$ 262-1.088/mês) pra esse tamanho de dado.
+
+### Execução
+
+1. Container `aprxm_clickhouse` (`clickhouse/clickhouse-server:24.10-alpine`)
+   adicionado ao `docker-compose.yml` da VM, mesmo padrão dos outros
+   serviços — database `aprxm_analytics` e usuário `aprxm` provisionados
+   no bootstrap via env vars, `mem_limit: 1g` (dado é pequeno).
+2. **Dado histórico não precisou ser migrado** — a camada Gold é 100%
+   regenerada a cada rodada do ETL (não é fonte de verdade, é cache
+   analítico), então só trocar o destino e rodar o ETL 1x já recria tudo.
+3. **Adaptação de código necessária** (`datalake_service.py`): o loader
+   antigo usava `pandas.to_sql()` genérico via SQLAlchemy, que cria
+   tabela automaticamente no Postgres mas **não sabe** que o ClickHouse
+   exige `ENGINE = MergeTree ORDER BY (...)` explícito na criação — sem
+   isso a criação de tabela falha. Novo `_write_gold_clickhouse()`:
+   - Usa o driver `clickhouse-connect` (`insert_df`), não SQLAlchemy.
+   - Mapeia dtype pandas → tipo ClickHouse, sempre `Nullable(...)`
+     (agregações geram `NaN`, e ClickHouse rejeita `NULL` em coluna
+     não-nullable).
+   - `ORDER BY tuple()` (sem chave de ordenação) — seguro porque não há
+     necessidade de dedup/ordenação entre rodadas (tabela é sempre
+     recriada do zero).
+   - `load_gold_to_analytics()` escolhe o loader pelo scheme da URL
+     (`clickhouse://` vs `postgresql://`) — caminho antigo (Postgres)
+     continua funcionando sem mudança, caso algum outro ambiente ainda
+     use Postgres como destino.
+4. **2 bugs reais encontrados rodando o ETL de verdade contra o
+   ClickHouse** (não hipotéticos — só apareceram com dado de produção):
+   - Coluna pandas com `NaN` misturado a `date`/`float` vira dtype
+     `object` (não `datetime64`/`float64`) — caía no fallback `String`
+     e quebrava a inserção (`TypeError: object of type 'float' has no
+     len()`). Fix: inspeciona o primeiro valor não-nulo da coluna
+     `object` e recasta pro dtype real (`pd.to_datetime`/`to_numeric`)
+     antes de decidir o tipo ClickHouse.
+   - `CREATE TABLE IF NOT EXISTS` prendia o schema errado de uma rodada
+     anterior que tinha falhado — a rodada seguinte, já com o tipo
+     corrigido no código, continuava batendo na tabela antiga com tipo
+     errado. Fix: trocado pra `DROP TABLE IF EXISTS` + `CREATE TABLE`
+     incondicional (seguro, tabela é sempre full-replace mesmo).
+5. **Verificado com dado real:** ETL rodado manualmente (`docker exec
+   aprxm_backend python -m app.jobs.run_etl`) — `status: success`, 39
+   tabelas Gold carregadas (41 tabelas totais no ClickHouse, incluindo
+   utilitárias), números batendo com achados de negócio anteriores
+   (ex. `encomendas_paradas` mostrando os mesmos moradores/associações
+   já sinalizados no dashboard Grafana).
+6. **Interface de consulta (ClickHouse Play UI):** habilitada só em
+   `127.0.0.1:8123` da VM (a pedido do usuário — "não precisa de
+   domínio, vai ficar somente no servidor") — acesso via túnel SSH
+   (`ssh -L 8123:127.0.0.1:8123 ...`), nunca exposta publicamente.
+
+**Não coberto ainda / pendência aberta:** Power BI hoje conecta direto
+no Neon via internet pública (fácil, sem gateway). Com o DW agora numa
+rede privada da VM, vai precisar de driver ODBC/JDBC do ClickHouse
+instalado onde o Power BI roda **e** (exposição pública com TLS **ou**
+um On-premises Data Gateway) — trabalho novo, ainda não feito.
+
+---
+
 ## Fase H — Achados reais durante a validação (2026-09-14)
 
 Sessão diferente da que fez a migração original (2026-09-12/13),
