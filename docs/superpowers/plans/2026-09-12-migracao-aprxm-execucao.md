@@ -696,6 +696,74 @@ pra depois): WebAuthn (`webauthn.py`) converte erro pra `HTTPException`
 sem logar — falhas reais de servidor ali (não rejeição normal de
 credencial) ficam invisíveis; avaliar se vale logar antes de re-raise.
 
+### APRXM incorporado ao Grafana (2026-09-14)
+
+A pedido do usuário ("o aprxm tem bastante movimentações, encomendas,
+OS, cadastro de morador, receita"), adicionada observabilidade completa
+do APRXM ao Grafana compartilhado do parque ITP — mesmo padrão já
+usado pelo `erp_itp` (`apps/backend/src/metrics/metrics.service.ts`).
+
+**Backend (commits `6801175`, `820562a` em `aprxm_sys`):**
+- `app/core/metrics.py`: 8 gauges Prometheus de negócio, agregados de
+  todas as associações — `aprxm_associacoes_ativas`,
+  `aprxm_moradores_ativos`, `aprxm_moradores_cadastrados_hoje`,
+  `aprxm_encomendas_hoje`, `aprxm_encomendas_pendentes`,
+  `aprxm_os_abertas`, `aprxm_os_criadas_hoje`,
+  `aprxm_receita_hoje_reais`. Refrescados a cada 60s via loop
+  `asyncio` de fundo (não bate no banco a cada scrape do Prometheus,
+  que roda de 15 em 15s) — iniciado no `lifespan` do `main.py`.
+- `app/routers/metrics.py`: `GET /metrics` (sem prefixo `/api/v1`, sem
+  auth — mesmo padrão já aceito no `erp_itp_backend`; só acessível de
+  verdade via rede interna do docker-compose, o Prometheus nunca passa
+  pelo domínio público).
+- `requirements.txt`: `prometheus-client==0.21.1`.
+- **Bug real encontrado e corrigido no mesmo deploy**: a primeira
+  versão usava uma expressão geradora com `await` dentro
+  (`(await x for ... in ...)`), que em Python vira um **async
+  generator**, não um generator normal — o unpack em tupla falhava com
+  `cannot unpack non-iterable async_generator object`, silenciosamente
+  (o endpoint `/metrics` continuava respondendo 200, só com todos os
+  valores zerados). **O monitor de erros do backend (montado mais cedo
+  no mesmo dia) capturou o erro em tempo real**, confirmando que a
+  integração com o catálogo de erros funciona de verdade. Corrigido
+  trocando pra um loop sequencial simples.
+
+**Infra (commit `c9677061` em `erp_itp`):**
+- `prometheus.yml`: novo job `aprxm_backend` (`aprxm_backend:8000/metrics`,
+  scrape via rede interna do docker-compose).
+- Novo dashboard `aprxm-kpi-business.json` ("KPI BUSINESS - APRXM"),
+  mesmo layout do "KPI BUSINESS - ITP": comunidade (associações/moradores),
+  encomendas/O.S., financeiro.
+- `itp-visao-geral.json`: painel de disponibilidade da API do APRXM
+  (`probe_success`) na fileira "Sites no ar" (os 3 painéis existentes
+  redimensionados de `w:8` pra `w:6` pra caber o 4º sem deslocar as
+  fileiras abaixo), API APRXM no gráfico de tempo de resposta, e
+  certificado SSL do APRXM no painel de dias-até-expirar.
+
+**Achado de infra importante pra próximas sessões:** o
+`~/itp-stack/monitoring/prometheus/prometheus.yml` **real, usado pelo
+container**, é uma **cópia manual** — não é symlink nem lido direto do
+checkout `~/erp_itp`. Um `git pull` em `~/erp_itp` sozinho **não**
+atualiza o Prometheus rodando; é preciso `cp` manual pro caminho de
+`~/itp-stack` depois, e então `docker kill -s HUP itp_prometheus` pra
+recarregar sem downtime (o container não roda com
+`--web.enable-lifecycle`, então o endpoint HTTP `/-/reload` não
+funciona, mas o sinal `SIGHUP` sempre funciona nativamente no
+Prometheus). Isso já tinha acontecido silenciosamente antes (o
+blackbox target do domínio APRXM só foi refletido porque foi copiado
+manualmente na hora, não por `git pull`) — vale considerar trocar por
+symlink numa próxima sessão pra eliminar essa classe de erro de vez.
+
+**Não implementado nesta rodada** (fora de escopo, registrar pra depois):
+- Métricas HTTP (duração/contagem por rota, tipo `http_requests_total`
+  do `erp_itp`) — só as métricas de negócio foram adicionadas. Sem
+  isso, a regra de alerta "taxa de erro 5xx alta" do `erp_itp` não se
+  aplica ao APRXM.
+- Painel "Banco de dados" do Grafana continua só para o Postgres local
+  (`itp_postgres`) — o banco do APRXM é Neon externo, sem
+  `postgres_exporter` apontando pra ele. Adicionar isso é tarefa maior
+  (exporter novo + configuração de rede pro Neon).
+
 ### Pendências abertas deste incidente
 
 - 🔴 **Backup real de produção do Neon do APRXM ainda não existe.** A
