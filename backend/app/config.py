@@ -39,10 +39,10 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",")]
 
-    # Storage — Supabase
-    supabase_url: str = ""
-    supabase_service_key: str = ""
-    supabase_storage_bucket: str = "aprxm-midia"
+    # Storage — Azure Blob (migrado do Supabase Storage em 2026-09-12)
+    azure_storage_account: str = ""
+    azure_storage_key: str = ""
+    azure_storage_container: str = "aprxm-midia"
 
     # Business rules
     delivery_fee_default: float = 2.50

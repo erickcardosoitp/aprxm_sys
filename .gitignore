@@ -58,3 +58,4 @@ backend/.env.vercel
 
 # Backups de banco (dados sensiveis - nunca commitar)
 *.dump
+backend/scripts/storage_migration_mapping.json
