@@ -41,6 +41,10 @@ os_criadas_total = Gauge(
     "aprxm_os_criadas_total", "Total histórico de ordens de serviço criadas (increase() pro período)", registry=registry)
 receita_reais_total = Gauge(
     "aprxm_receita_reais_total", "Receita acumulada (transações de entrada) em reais (increase() pro período)", registry=registry)
+encomendas_entregues_total = Gauge(
+    "aprxm_encomendas_entregues_total", "Total histórico de encomendas entregues (increase() pro período)", registry=registry)
+os_resolvidas_total = Gauge(
+    "aprxm_os_resolvidas_total", "Total histórico de ordens de serviço resolvidas (increase() pro período)", registry=registry)
 
 # ── Snapshots de estado atual ───────────────────────────────────────────────
 associacoes_ativas = Gauge(
@@ -60,6 +64,14 @@ mensalidades_vencidas = Gauge(
 caixas_abertas = Gauge(
     "aprxm_caixas_abertas", "Sessões de caixa com status open -- indicador crítico de risco operacional (caixa esquecido aberto)", registry=registry)
 
+# ── Experiência do usuário / operação ───────────────────────────────────────
+operadores_ativos_7d = Gauge(
+    "aprxm_operadores_ativos_7d", "Usuários (operadores) com login nos últimos 7 dias -- adoção real do sistema", registry=registry)
+tempo_medio_entrega_horas = Gauge(
+    "aprxm_tempo_medio_entrega_horas", "Tempo médio entre recebimento e entrega de encomenda, últimos 30 dias (horas) -- experiência do morador", registry=registry)
+tempo_medio_resolucao_os_horas = Gauge(
+    "aprxm_tempo_medio_resolucao_os_horas", "Tempo médio de resolução de O.S., últimos 30 dias (horas) -- SLA de atendimento", registry=registry)
+
 _REFRESH_INTERVAL_S = 60
 
 _QUERIES = [
@@ -76,6 +88,15 @@ _QUERIES = [
     (os_abertas, "SELECT count(*) FROM service_orders WHERE status IN ('pending', 'in_progress')"),
     (mensalidades_vencidas, "SELECT count(*) FROM mensalidades WHERE status = 'overdue'"),
     (caixas_abertas, "SELECT count(*) FROM cash_sessions WHERE status = 'open'"),
+    (encomendas_entregues_total, "SELECT count(*) FROM packages WHERE delivered_at IS NOT NULL"),
+    (os_resolvidas_total, "SELECT count(*) FROM service_orders WHERE resolved_at IS NOT NULL"),
+    (operadores_ativos_7d, "SELECT count(*) FROM users WHERE last_login_at > NOW() - INTERVAL '7 days'"),
+    (tempo_medio_entrega_horas,
+     "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (delivered_at - received_at))) / 3600, 0) "
+     "FROM packages WHERE delivered_at IS NOT NULL AND delivered_at > NOW() - INTERVAL '30 days'"),
+    (tempo_medio_resolucao_os_horas,
+     "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))) / 3600, 0) "
+     "FROM service_orders WHERE resolved_at IS NOT NULL AND resolved_at > NOW() - INTERVAL '30 days'"),
 ]
 
 
