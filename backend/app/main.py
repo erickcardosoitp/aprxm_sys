@@ -14,7 +14,7 @@ from app.core.limiter import limiter
 from app.config import get_settings, validate_production_config
 from app.database import init_db
 from app.db.migrations import run_migrations, seed_local_dev
-from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, notifications, packages, painel_auth, presidencia, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
+from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, metrics, notifications, packages, painel_auth, presidencia, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -32,6 +32,8 @@ async def lifespan(app: FastAPI):
     await run_migrations()
     await init_db()
     await seed_local_dev()
+    from app.core.metrics import start_metrics_loop
+    start_metrics_loop()
     yield
 
 
@@ -138,6 +140,9 @@ async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
         status_code=500,
         content={"detail": str(exc), "type": type(exc).__name__, "trace": trace[-1000:]},
     )
+
+
+app.include_router(metrics.router)
 
 
 PREFIX = "/api/v1"
