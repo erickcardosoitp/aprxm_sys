@@ -113,7 +113,9 @@ def main() -> int:
             from azure.storage.blob import ContentSettings
             blob_client.upload_blob(data, overwrite=True, content_settings=ContentSettings(content_type=content_type))
             new_url = signed_url(az_account, az_container, az_key, path)
-            old_url = sb_base + path
+            # supabase-py's get_public_url() sempre termina com "?" (query
+            # string vazia) -- e o que fica gravado no banco de verdade.
+            old_url = sb_base + path + "?"
             mapping[path] = {"old_url": old_url, "new_url": new_url}
             ok += 1
         except Exception as e:
@@ -140,8 +142,10 @@ async def update_database(mapping: dict) -> None:
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    db_url = os.environ["DATABASE_URL"]
-    engine = create_async_engine(db_url, connect_args={"statement_cache_size": 0} if "neon.tech" in db_url else {})
+    db_url = os.environ["DATABASE_URL"].split("?")[0]
+    is_neon = "neon.tech" in db_url
+    connect_args = {"ssl": "require", "statement_cache_size": 0} if is_neon else {"statement_cache_size": 0}
+    engine = create_async_engine(db_url, connect_args=connect_args)
 
     # Colunas de texto simples (1 URL por campo) -- troca direta.
     SIMPLE_COLUMNS = [
@@ -162,19 +166,31 @@ async def update_database(mapping: dict) -> None:
         ("users", "avatar_url"),
     ]
 
+    # Constroi a clausula VALUES uma unica vez (mesma pra todas as colunas) --
+    # 1 query por coluna (14 no total) em vez de 1 query por arquivo
+    # (2752 x 14 = ~38 mil round-trips, lento demais / sem visibilidade
+    # de progresso). Postgres aceita ate 65535 params por query, 2752*2
+    # fica bem dentro do limite.
+    items = list(mapping.values())
+    values_sql = ", ".join(f"(:o{i}, :n{i})" for i in range(len(items)))
+    params = {}
+    for i, urls in enumerate(items):
+        params[f"o{i}"] = urls["old_url"]
+        params[f"n{i}"] = urls["new_url"]
+
     async with engine.begin() as conn:
         for table, col in SIMPLE_COLUMNS:
-            total = 0
-            for path, urls in mapping.items():
-                r = await conn.execute(text(
-                    f"UPDATE {table} SET {col} = :new_url WHERE {col} = :old_url"
-                ), {"new_url": urls["new_url"], "old_url": urls["old_url"]})
-                total += r.rowcount
-            if total:
-                print(f"{table}.{col}: {total} linha(s) atualizada(s)")
+            r = await conn.execute(text(
+                f"UPDATE {table} AS t SET {col} = v.new_url "
+                f"FROM (VALUES {values_sql}) AS v(old_url, new_url) "
+                f"WHERE t.{col} = v.old_url"
+            ), params)
+            if r.rowcount:
+                print(f"{table}.{col}: {r.rowcount} linha(s) atualizada(s)")
 
         # packages.photo_urls e JSON (lista de {url, label, taken_at}) -- precisa
         # reescrever o array inteiro, nao da pra fazer WHERE = valor simples.
+        url_map = {urls["old_url"]: urls["new_url"] for urls in items}
         rows = (await conn.execute(text(
             "SELECT id, photo_urls FROM packages WHERE photo_urls IS NOT NULL AND photo_urls != '[]'"
         ))).fetchall()
@@ -184,10 +200,9 @@ async def update_database(mapping: dict) -> None:
             changed = False
             new_list = []
             for item in photo_urls:
-                url = item.get("url", "")
-                match = next((m for m in mapping.values() if m["old_url"] == url), None)
-                if match:
-                    item = {**item, "url": match["new_url"]}
+                new_url = url_map.get(item.get("url", ""))
+                if new_url:
+                    item = {**item, "url": new_url}
                     changed = True
                 new_list.append(item)
             if changed:
