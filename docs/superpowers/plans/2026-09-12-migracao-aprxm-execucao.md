@@ -542,6 +542,67 @@ período) e a Fase I (desligar de vez a function na Vercel).
 
 ---
 
+## Fase J — Banco de dados: Neon → Postgres na própria VM ✅ concluída (2026-09-14)
+
+Decisão do usuário (fora do escopo original, que previa manter o banco no
+Neon indefinidamente): consolidar infra e reduzir latência, movendo o
+compute do banco pra mesma VM do backend. Aceita janela de manutenção de
+minutos (não zero-downtime).
+
+**Volume:** 121 MB, 62 tabelas — pequeno, migração rápida.
+
+### Execução
+
+1. Reaproveitado o Postgres já existente na VM (`itp_postgres`, container
+   compartilhado com `erp_itp_db`) — banco `aprxm_db` já existia como
+   placeholder vazio (ver Fase H, nota sobre não confundir com produção
+   real) e virou o banco de produção de verdade agora.
+2. Dump do Neon (`pg_dump --format=custom`, endpoint direto sem
+   `-pooler`) → restore em `aprxm_db`. 2 erros ignorados no restore, só
+   recursos proprietários do Neon sem uso pela aplicação
+   (`pg_session_jwt`, schema `neon_auth`) — mesma classe de "erro
+   esperado" já documentada no script de backup do erp_itp.
+3. Contagens de linhas conferidas 1:1 contra o Neon (`users`,
+   `residents`, `packages`, `transactions`, `associations`) antes do
+   corte — sem drift.
+4. **Janela de corte** (~1min30s de indisponibilidade real, medida):
+   parou `aprxm_backend` → dump final do Neon (captura qualquer escrita
+   de último segundo) → `DROP`/`CREATE DATABASE aprxm_db` limpo →
+   restore do dump final → `DATABASE_URL` em `aprxm_backend.env` trocada
+   de `postgresql+asyncpg://...@ep-rough-tooth-...neon.tech/neondb?ssl=true`
+   pra `postgresql+asyncpg://itp_admin:***@postgres:5432/aprxm_db`
+   (rede interna do docker-compose, sem SSL) → container recriado.
+   `database.py` já detecta ausência de `neon.tech` na URL e não força
+   `ssl=require`, nenhuma mudança de código necessária.
+5. **Verificado:** `/health` público 200, login com credenciais erradas
+   → `403` (não 500 — prova que a query real bateu na tabela `users`
+   restaurada sem erro), `/residents` sem token → `401`, `/metrics`
+   respondendo com dados reais.
+6. **Backup automático criado** (substitui o backup gerenciado que o
+   Neon fazia sozinho): novo script
+   `~/itp-stack/tarefas/aprxm-backup-to-neon.sh`, mesmo padrão já usado
+   pelo erp_itp (`pg-sync-to-neon.sh`) — dump local do `aprxm_db` a cada
+   6h, restaura no **mesmo projeto Neon** (agora reaproveitado como
+   destino de backup morno, não mais banco primário), retenção de 7 dias
+   de dumps locais em `~/backups/`. Registrado em
+   `tarefas-registro.json` (id `aprxm-backup-to-neon`) e no crontab
+   (`0 */6 * * *`). Testado manualmente 2x (script direto e via
+   `tarefas_runner.py`, mesmo mecanismo do cron real) — `exit_code: 0`
+   nas duas vezes, dados conferidos no Neon pós-restore (contagens
+   batendo).
+7. `ANALYTICS_DATABASE_URL`/`DATAWAREHOUSE_APRXM_DATABASE_URL`
+   **não tocadas** — projeto Neon separado (`aprxm-analytics`,
+   OLAP/Power BI), fora do escopo desta migração (só o banco principal
+   `neondb`/`ep-rough-tooth` migrou).
+
+**Rollback disponível:** `aprxm_backend.env.bak-pre-azure-vm-db-migration-20260914`
+guardado na VM com a `DATABASE_URL` original do Neon — banco de produção
+Neon original **não foi apagado**, só parou de ser o primário (segue
+íntegro, agora recebendo os backups automáticos por cima). Reverter é
+só trocar a env de volta e recriar o container.
+
+---
+
 ## Fase H — Achados reais durante a validação (2026-09-14)
 
 Sessão diferente da que fez a migração original (2026-09-12/13),
@@ -1123,6 +1184,10 @@ majoritariamente rede/domínio e a migração de storage.
     completo (sem resíduo em produção). Todos passaram, incluindo a
     regra de negócio correta bloqueando exclusão de morador com
     vínculo. Ver Fase H.
+19a. ✅ **Banco de dados migrado do Neon pra Postgres na própria VM**
+    (Fase J, decisão do usuário fora do escopo original) — concluída
+    2026-09-14, ~1min30s de indisponibilidade real, backup automático
+    pro Neon (agora réplica) configurado e testado. Ver Fase J acima.
 19. ✅ **`bulk-deliver` de encomendas retornando 500 com token de
     isenção inválido** — `UnboundLocalError` por import local de
     `HTTPException` dentro de um `if` (mesmo padrão de bug já visto no
