@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.resilience import http_cb
 from app.core.tenant import CurrentUser, get_current_user
+from app.core.metrics import groq_fallback_total, simplifica_interacoes_total
 from app.database import get_session
 
 logger = logging.getLogger("aprxm.agent")
@@ -452,6 +453,7 @@ async def agent_chat(
     session: AsyncSession = Depends(get_session),
 ) -> ChatResponse:
     aid = str(current.association_id)
+    simplifica_interacoes_total.inc()
 
     if settings.groq_api_key:
         try:
@@ -461,6 +463,7 @@ async def agent_chat(
             # (UX nao quebra), mas a falha do Groq precisa ficar visivel pro
             # catalogo de erros -- antes era engolida sem log nenhum.
             logger.error("[ERROR] Groq chat falhou, usando fallback por regex: %s", e)
+            groq_fallback_total.inc()
 
     intent, params = _classify(body.message)
 

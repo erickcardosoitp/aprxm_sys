@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.config import get_settings
+from app.core.metrics import push_enviados_total, push_falhas_total
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import AsyncSessionLocal, get_session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +44,7 @@ def _send_push_sync(endpoint: str, p256dh: str, auth: str, payload: dict) -> Non
         s = get_settings()
         if not s.vapid_private_key:
             logging.error("PUSH: vapid_private_key não configurado")
+            push_falhas_total.inc()
             return
         raw = base64.urlsafe_b64decode(s.vapid_private_key + "==")
         ec_key = ec.derive_private_key(int.from_bytes(raw, "big"), ec.SECP256R1(), default_backend())
@@ -54,8 +56,10 @@ def _send_push_sync(endpoint: str, p256dh: str, auth: str, payload: dict) -> Non
             vapid_claims={"sub": s.vapid_claims_sub},
         )
         logging.info("PUSH: enviado com sucesso para %s", endpoint[:50])
+        push_enviados_total.inc()
     except Exception as e:
         logging.error("PUSH ERROR: %s", str(e))
+        push_falhas_total.inc()
 
 
 async def send_push_to_user(user_id: str, title: str, body: str, data: dict | None = None) -> None:
