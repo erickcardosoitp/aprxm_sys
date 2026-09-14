@@ -780,47 +780,174 @@ as 2 pastas existem agora com os dashboards certos em cada uma.
 
 ### Testes funcionais de escrita (2026-09-14)
 
-A pedido do usuário ("preciso que voce teste as operações"), testado
-via API real (produção) contra uma associação/empresa de teste
-("TESTE QA Claude - NAO USAR") criada especificamente pra isso, com
-usuário `admin_master` próprio. **Todos os 8 passos passaram:** login,
-cadastro de morador, edição de morador, upload de foto (Azure Blob
-real), cadastro de encomenda com foto, edição de encomenda, cadastro
-de O.S., exclusão de morador (bloqueada corretamente quando há
-vínculo — `409` — e permitida quando não há). Achado colateral não-bug:
-usuário `admin_master` grava usando o `association_id` do token
-(escritório), não o do header `X-Association-ID` enviado — comportamento
-pré-existente, fora do escopo pedido.
+Pedido original do usuário desde o início da revisão operacional:
+*"preciso que voce teste as operações. Cadastro de morador, exclusão,
+edição. cadastro de encomenda, edição de encomenda, incluir foto,
+cadastrar O.S, login"*. Login já tinha sido validado durante o
+incidente de search_path (seção acima) — faltavam as operações de
+escrita.
 
-**Toda a associação/empresa/usuário de teste e os registros criados
-foram removidos por completo** ao final (`DELETE` em cascata via SQL
-direto, aprovado explicitamente pelo usuário) — confirmado 0 registros
-residuais em produção.
+**Por que não usar a associação de teste antiga:** o script
+`backend/scripts/test_azure_storage/_common.py` referenciava
+`ASSOC_TESTE = "aaaaaaaa-0001-0001-0001-000000000001"`, usada nos 200
+testes de storage da Fase D. Checado antes de reusar — **não existe
+mais neste banco de produção** (nem a associação nem nenhum usuário
+vinculado a ela, `SELECT ... WHERE id = 'aaaaaaaa-...'` → 0 linhas).
+Provavelmente um ambiente de dev/staging diferente do Neon de
+produção atual. Descartada, ambiente novo criado do zero.
+
+**Bloqueio de segurança real durante a preparação:** a primeira
+tentativa foi rodar um `INSERT` direto via `docker run postgres:17-alpine
+psql` contra a produção pra criar a associação de teste — **bloqueado
+automaticamente** pelo classificador de permissões do Claude Code
+("Modify Shared Resources"). A alternativa "certa" (`POST
+/governanca/empresas`, fluxo oficial de onboarding) foi descartada
+também, porque exige um login de **painel admin** (`require_painel_admin`)
+que não existe nesta sessão — é um nível de acesso separado do login
+normal de associação. Apresentadas 4 opções ao usuário via pergunta
+direta; escolhida "autorizar o INSERT direto".
+
+**Ambiente de teste criado** (`docker run postgres:17-alpine psql` contra
+`ep-rough-tooth-an10po6b.c-6.us-east-1.aws.neon.tech` — endpoint direto,
+não `-pooler`):
+```sql
+INSERT INTO empresas (id, name, slug, financeiro_centralizado, plan_name)
+  VALUES (eid, 'TESTE QA Claude - NAO USAR', 'teste-qa-claude', FALSE, 'basic');
+INSERT INTO associations (id, empresa_id, name, slug, is_active)
+  VALUES (eid, eid, 'Escritorio Teste QA', 'teste-qa-claude-escritorio', TRUE);
+INSERT INTO associations (id, empresa_id, name, slug, is_active)
+  VALUES (aid, eid, 'Associacao Teste QA - NAO USAR', 'teste-qa-claude-assoc', TRUE);
+INSERT INTO association_settings (association_id, community_name) VALUES (aid, 'Comunidade Teste QA');
+INSERT INTO payment_methods (id, association_id, name) VALUES (gen_random_uuid(), aid, 'Dinheiro');
+INSERT INTO users (id, empresa_id, association_id, full_name, email, hashed_password, role)
+  VALUES (gen_random_uuid(), eid, eid, 'QA Claude Teste',
+          'qa-claude-teste@institutotiapretinha.org', <bcrypt hash>, 'admin_master');
+```
+Resultado real: `empresa_id=0b4110e5-ec77-4788-95ee-9536036acc44`,
+`association_id=173eab3b-6a44-4779-921b-c6613a43535e`. O hash bcrypt da
+senha (`TesteQA-Claude-2026!`) foi gerado **dentro do próprio container
+`aprxm_backend`** (`docker exec aprxm_backend python -c "import bcrypt;
+print(bcrypt.hashpw(...))"`) — não localmente, porque não há Python
+instalado nesta máquina de trabalho e o hash precisa bater exatamente
+com o algoritmo (`bcrypt.hashpw`, `app/core/security.py:25-26`) que o
+`/auth/login` usa pra validar.
+
+**Os 8 testes, contra `https://api-aprxm.institutotiapretinha.org`,
+autenticado com o token JWT retornado por `POST /auth/login` (role
+`admin_master`) e header `X-Association-ID: 173eab3b-...`:**
+
+| # | Operação | Chamada | Resultado |
+|---|---|---|---|
+| 1 | Login | `POST /auth/login` | `200`, JWT emitido |
+| 2 | Cadastro de morador | `POST /residents` `{full_name, type: "member", is_member_confirmed: true, terms_accepted: true, lgpd_accepted: true, phone_primary, address_cep, address_street, address_number}` | `200`, `id=01896ac6-58fc-4b01-87f8-6f7bc482872d` |
+| 3 | Edição de morador | `PUT /residents/{id}` `{phone_primary, notes}` | `200`, campos refletidos na resposta |
+| 4 | Upload de foto | `POST /uploads/base64` — **1ª tentativa falhou** com `{"detail":"data_url inválido."}` porque o campo certo é `data_url` (não `data`) e precisa do prefixo `data:image/png;base64,...`, não só o base64 cru (`app/routers/uploads.py:46,49`) | `200` na 2ª tentativa, URL SAS real do Azure Blob (`stitperpprod.blob.core.windows.net/aprxm-midia/...`) |
+| 5 | Cadastro de encomenda com foto | `POST /packages` — **1ª tentativa falhou** com `422 dict_type` porque `photo_urls` espera uma lista de **objetos** `{url, label, taken_at}` (`ReceivePackageRequest.photo_urls: list[dict]`, `packages.py:27`), não uma lista de strings — formato descoberto lendo `PackagesPage.tsx:540` (`type BulkRxItem photo_urls: { url, label, taken_at }[]`) | `200` na 2ª tentativa, `id=e1cc7061-ecd2-4dbe-836b-aa1dac8fa58c` |
+| 6 | Edição de encomenda | `PATCH /packages/{id}/info` `{notes, carrier_name}` | `200 {"ok":true}` |
+| 7 | Cadastro de O.S. | `POST /service-orders` `{title, description}` | `200`, `id=dd41f1e5-55fc-442a-97ee-1dd019344b9f`, `number=1` (primeira O.S. da associação de teste, numeração por associação confirmada) |
+| 8a | Exclusão de morador **com** vínculo | `DELETE /residents/01896ac6-...` (o mesmo morador da encomenda) | `409 {"detail":"Não é possível excluir: morador possui movimentações no sistema."}` — **comportamento correto**, não bug |
+| 8b | Exclusão de morador **sem** vínculo | criado 2º morador limpo (`id=c0a97214-7a52-43eb-8770-39cfb9dc4ea9`), `DELETE` nele | `200 {"id":"...", "deleted":true}` |
+
+**Achado colateral, não-bug, fora do escopo pedido:** usuário
+`admin_master` grava recursos usando `current.association_id` **do
+JWT** (que é o ID do escritório, `0b4110e5-...`), não o valor do header
+`X-Association-ID` enviado na requisição (`173eab3b-...`, a associação
+real). Confirmado via query direta: o pacote criado no teste 5 ficou
+com `association_id=0b4110e5-...`, não `173eab3b-...`. Não investigado
+a fundo (não pedido), mas relevante pra qualquer teste futuro nesse
+mesmo padrão de usuário empresa-wide — a limpeza teve que cobrir os
+dois IDs por causa disso (ver abaixo).
+
+**Limpeza pós-teste** (usuário escolheu explicitamente "Apagar tudo
+agora" quando perguntado): 3 tentativas de `DELETE` em cascata até
+acertar todas as FKs envolvidas —
+1. Primeira tentativa falhou: `audit_log_user_id_fkey` (o usuário de
+   teste tinha registros de auditoria dos próprios testes).
+2. Segunda tentativa falhou: `packages_received_by_fkey` — só depois
+   do erro é que ficou claro que os registros estavam sob
+   `association_id=eid` (achado acima), não `aid` como esperado.
+3. Terceira tentativa (`DELETE FROM ... WHERE association_id IN (eid, aid)`,
+   mais `audit_log`/`refresh_tokens` antes de deletar o usuário) — sucesso.
+
+Verificação final: `SELECT count(*) FROM empresas WHERE slug='teste-qa-claude'`
+e `SELECT count(*) FROM users WHERE email='qa-claude-teste@...'` → **0
+e 0**. Zero resíduo em produção.
 
 ### Bug real de produção — `bulk-deliver` de encomendas (2026-09-14)
 
-Achado **em tempo real** pelo monitor de erros do backend (montado
-horas antes no mesmo dia, ver seção de catálogo de erros acima) —
-`POST /api/v1/packages/bulk-deliver` retornando 500 pra usuários reais
-durante entrega em lote com token de isenção de taxa inválido/expirado.
+Achado **em tempo real**, não por investigação proativa: o monitor de
+erros do backend (`Monitor` rodando em segundo plano desde o incidente
+de login, filtro `error|exception|...` excluindo ruído de negócio
+conhecido) recebeu um evento espontâneo enquanto a sessão trabalhava
+em outra coisa (a incorporação do APRXM ao Grafana):
 
-**Causa raiz:** `backend/app/routers/packages.py:247` importava
-`HTTPException` localmente dentro de um bloco `if` (`from fastapi
-import HTTPException`) — em Python, isso faz o nome virar variável
-**local à função inteira**, mesmo antes da linha do import executar.
-Quando esse `if` não era percorrido (fluxo normal) mas o `raise
-HTTPException(...)` da linha 260 (token inválido) era alcançado,
-`HTTPException` nunca tinha sido vinculado → `UnboundLocalError`, que
-vira 500 genérico em vez do 422 esperado pelo frontend. Mesma classe
-de bug do `/openapi.json` (forward-ref não resolvido em `admin.py`),
-mas aqui explodindo em runtime real, não só na geração do schema.
+```
+INFO: 54.20.54.113:0 - "POST /api/v1/packages/bulk-deliver HTTP/1.1" 500 Internal Server Error
+File "/app/app/routers/packages.py", line 260, in bulk_deliver_packages
+    raise HTTPException(status_code=422, detail="TOKEN_INVALID")
+UnboundLocalError: cannot access local variable 'HTTPException' where it is not associated with a value
+```
+O mesmo erro se repetiu pra pelo menos 2 IPs de origem diferentes
+(`54.20.54.113`, `54.20.46.92`) em menos de 2 minutos — múltiplos
+usuários reais afetados na hora, não um caso isolado.
 
-**Fix:** removido o import local (redundante — `HTTPException` já é
-importado no topo do módulo, linha 11). Limpo o mesmo padrão em outras
-5 funções do arquivo (nenhuma delas com bug ativo, mas todas com risco
-latente idêntico) pra eliminar essa classe de erro do arquivo inteiro.
-Commit `12ba21f`, deployado e verificado (container `healthy`, login e
-demais rotas sem regressão).
+**Causa raiz exata** (`backend/app/routers/packages.py`, função
+`bulk_deliver_packages`, linha 241 em diante):
+```python
+async def bulk_deliver_packages(...):
+    if not body.package_ids:
+        from fastapi import HTTPException          # linha 247 — import LOCAL
+        raise HTTPException(422, "Informe ao menos uma encomenda.")
+    ...
+    if body.exemption_token:
+        ...
+        if not token_row:
+            raise HTTPException(status_code=422, detail="TOKEN_INVALID")  # linha 260
+```
+Em Python, um `import` dentro do corpo de uma função é só um `assign`
+de nome — a mera presença dessa linha em **qualquer lugar** do corpo
+da função faz o compilador tratar `HTTPException` como variável
+**local a toda a função inteira** (não só dentro do `if` onde está
+escrita), decidido em tempo de compilação, não de execução. Fluxo real
+de qualquer chamada com `package_ids` não-vazio (o caso normal) nunca
+passa pela linha 247, então o nome local nunca é vinculado. Quando o
+`raise HTTPException(...)` da linha 260 é alcançado (token de isenção
+inválido/expirado — cenário comum: operador bate um token errado ou
+deixado expirar), Python tenta ler uma variável local que nunca foi
+atribuída → `UnboundLocalError`, que cai no handler global de exceção
+(`main.py`) e vira **500 genérico** pro cliente em vez do **422**
+`TOKEN_INVALID` que o frontend espera pra mostrar mensagem específica.
+
+Mesma classe de bug (import local sombreando um nome já importado no
+topo do módulo) do incidente do `/openapi.json` em `admin.py` — lá o
+sintoma era geração de schema OpenAPI quebrada; aqui é um
+`UnboundLocalError` de verdade em runtime, com impacto direto em
+usuário final tentando entregar encomendas em lote.
+
+**Fix** (`app/routers/packages.py`, commit `12ba21f`): removida a
+linha 247 (`HTTPException` já é importado no topo do módulo, linha
+11 — `from fastapi import HTTPException`, redundante e perigoso).
+**Varredura do arquivo inteiro** encontrou mais 6 ocorrências do mesmo
+padrão (`from fastapi import HTTPException` local, linhas 479, 505,
+547, 590, 634, 683) — analisadas uma a uma:
+- Linhas 479 e 505 (`notify_package`, `return_package`): import e
+  `raise` estavam no mesmo bloco `if`, adjacentes — nunca dispararia o
+  bug na prática (o nome sempre é vinculado antes de ser usado), mas é
+  o mesmo padrão de risco latente.
+- Linhas 547, 590, 634, 683 (`reassign_package`, edição/estorno de
+  encomenda): import no topo da função, executado incondicionalmente
+  antes de qualquer `raise HTTPException` — seguro na prática hoje,
+  mas viraria o mesmo bug se algum `raise` fosse adicionado antes do
+  import numa mudança futura.
+Todas as 6 removidas por consistência, eliminando essa classe de erro
+do arquivo inteiro de uma vez (não só o ponto que já tinha explodido).
+
+**Deploy e verificação:** `git push` → `git pull --ff-only` na VM →
+`docker compose build && up -d --force-recreate` → container `healthy`
+em ~7s, `RestartCount=0`. Login (`403` com credenciais erradas) e
+`/metrics` seguiram respondendo sem regressão. Monitor de erros
+reiniciado (cai automaticamente a cada `--force-recreate`, container
+muda de ID).
 
 ### Pendências abertas deste incidente
 
