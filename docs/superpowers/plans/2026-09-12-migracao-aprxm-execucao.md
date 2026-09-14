@@ -646,12 +646,15 @@ documento). Não confundir os dois ao mexer com backup/restore.
   "destino"). Precisa de um destino de backup genuinamente separado
   (outro projeto/branch Neon, ou snapshot automático do próprio Neon)
   — decisão e connection string corretos ainda pendentes do usuário.
-- 🟡 `DATAWAREHOUSE_APRXM_DATABASE_URL` (`presidencia_service.py`,
-  engine separado de analytics) **continua no endpoint `-pooler`** —
-  não testado se sofre do mesmo bug de `search_path` (não é usado pelo
-  fluxo de login/CRUD principal, só pelo painel de presidência/ETL,
-  então não bloqueou nada até agora). Mesma troca pro endpoint direto
-  deve ser avaliada se aparecer erro parecido por ali.
+- ✅ **`DATAWAREHOUSE_APRXM_DATABASE_URL` migrado pro endpoint direto
+  (2026-09-14)** — mesma troca aplicada ao login, preventiva (nunca
+  chegou a dar erro, mas evita o mesmo bug de `search_path` acontecer
+  no painel de presidência/ETL mais tarde). Validado: endpoint direto
+  responde `search_path=public` e enxerga as 42 tabelas do DW antes da
+  troca; container recriado, `healthy`, `RestartCount=0`, sem erros no
+  boot. **Não validado de ponta a ponta** (uma query real via
+  `/presidencia/status` autenticado) — requer login de usuário real,
+  não testado nesta sessão.
 - 🟡 Testes funcionais de escrita (cadastro/edição/exclusão de morador,
   encomenda + foto, ordem de serviço) pedidos pelo usuário **ainda não
   executados** — só login e guard de auth foram confirmados. Requer
@@ -719,8 +722,8 @@ majoritariamente rede/domínio e a migração de storage.
 16. 🔴 **Backup real de produção do Neon** — ainda não existe (tentativa
     anterior mirou o próprio banco de produção por engano, revertida
     sem dano). Ver Fase H pro relato completo.
-17. 🟡 **`DATAWAREHOUSE_APRXM_DATABASE_URL` ainda no endpoint `-pooler`**
-    — não testado se tem o mesmo bug de `search_path` do item 14. Ver
-    Fase H.
+17. ✅ **`DATAWAREHOUSE_APRXM_DATABASE_URL` migrado pro endpoint direto**
+    — 2026-09-14, preventivo. Falta validação de ponta a ponta com
+    login real. Ver Fase H.
 18. 🟡 **Testes funcionais de escrita** (morador, encomenda+foto, O.S.)
     pedidos pelo usuário — não executados ainda. Ver Fase H.
