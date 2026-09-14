@@ -226,9 +226,9 @@ removida, só parou de ser chamada por cron.
   `0 12,20 * * *`) — **não** via crontab manual como rascunhado
   originalmente (ver "O que foi feito com acesso real à VM" no topo do
   documento). `vercel.json` já estava sem essas 2 entradas.
-- ⏸️ **Único item real ainda pendente:** validar a 1ª execução
-  *agendada* (não manual) às 20h UTC de hoje ou 12h UTC de amanhã —
-  confirmar em `~/itp-stack/tarefas-timing/aprxm-etl.jsonl` na VM.
+- ✅ **Validado em 2026-09-13**: `aprxm-etl.jsonl` mostra 3 execuções
+  agendadas reais (20h de 12/09, 12h e 20h de 13/09), todas
+  `exit_code: 0`. Fase A 100% fechada.
 
 ---
 
@@ -334,9 +334,12 @@ fora do FastAPI.
   `aprxm-sync-pix`) — **não** via `backend/deploy/crontab.aprxm` manual
   como rascunhado originalmente. `vercel.json` zerado de crons **depois**
   de confirmar os 9 rodando na VM, nunca antes (mesma cautela da Fase A).
-- ⏸️ **Único item real ainda pendente:** validar os primeiros ciclos
-  *agendados* (não manuais) de cada um nos próximos dias — conferir
-  `~/itp-stack/tarefas-timing/<id>.jsonl` na VM.
+- ✅ **Validado em 2026-09-13**: todos os 6 confirmados rodando sozinhos
+  no horário certo, `exit_code: 0` (`aprxm-vacuum` 03h, `aprxm-sync-pix`
+  08h, `aprxm-mensalidade-overdue` 09h, `aprxm-daily-tasks-reminders` 10h,
+  `aprxm-demands-reminders` 11h, `aprxm-crm-scoring` 06h). Só
+  `aprxm-mensalidade-generate` ainda sem execução real (só roda dia 1 do
+  mês). Fase B 100% fechada.
 
 ---
 
@@ -546,9 +549,9 @@ majoritariamente rede/domínio e a migração de storage.
    `aprxm-mensalidade-overdue`, `aprxm-crm-scoring`,
    `aprxm-demands-reminders`, `aprxm-daily-tasks-reminders`,
    `aprxm-sync-pix`). `vercel.json` zerado de crons.
-6. 🟡 **Validar os primeiros ciclos agendados de verdade** (não manuais)
-   de todos os 9 — conferir `~/itp-stack/tarefas-timing/<id>.jsonl` na VM
-   nos próximos dias. Único item que só o tempo resolve.
+6. ✅ **Ciclos agendados de verdade validados (2026-09-13)** — 8 dos 9
+   já rodaram sozinhos com `exit_code: 0` (só `mensalidade-generate`
+   falta, roda 1x/mês). Fases A e B 100% fechadas.
 7. ✅ **Domínio + TLS público provisionado** (Fase E) — DNS criado pelo
    usuário via portal Azure (identidade da VM não tinha permissão pra
    automatizar), Traefik emitiu o certificado Let's Encrypt real assim
