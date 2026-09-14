@@ -12,6 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
 
 from app.config import get_settings, validate_production_config
+from app.core.metrics import http_request_duration_seconds, http_requests_total
 from app.database import init_db
 from app.db.migrations import run_migrations, seed_local_dev
 from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, metrics, notifications, packages, painel_auth, presidencia, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
@@ -112,8 +113,20 @@ async def _log_request(path: str, method: str, status_code: int, duration_ms: in
 async def request_timing_middleware(request: Request, call_next):
     start = time.monotonic()
     response = await call_next(request)
-    duration_ms = int((time.monotonic() - start) * 1000)
+    duration_s = time.monotonic() - start
+    duration_ms = int(duration_s * 1000)
     path = request.url.path
+
+    # Rota templated (ex: /api/v1/residents/{resident_id}), nao o path cru --
+    # cardinalidade baixa e fixa, disponivel em request.scope apos o roteamento
+    # (que ja aconteceu dentro do call_next acima). Endpoints que nao batem
+    # em nenhuma rota (404) caem no path cru mesmo, volume baixo o suficiente
+    # pra nao ser problema de cardinalidade na pratica.
+    route = request.scope.get("route")
+    route_template = route.path if route is not None else path
+    http_request_duration_seconds.labels(method=request.method, route=route_template, status_code=response.status_code).observe(duration_s)
+    http_requests_total.labels(method=request.method, route=route_template, status_code=response.status_code).inc()
+
     if path not in _SKIP_LOG and not path.startswith("/api/v1/ti/"):
         user_id = _extract_user_id_from_request(request)
         # Fire-and-forget: não bloquear a resposta esperando o INSERT do log.

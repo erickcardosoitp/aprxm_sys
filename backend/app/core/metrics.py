@@ -26,11 +26,31 @@ Duas categorias, por design:
 import asyncio
 import logging
 
-from prometheus_client import CollectorRegistry, Gauge
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
 logger = logging.getLogger("aprxm.metrics")
 
 registry = CollectorRegistry()
+
+# ── HTTP (duração/contagem por rota) — base do Apdex no Grafana ────────────
+# Mesmo padrao do erp_itp (metrics.service.ts: httpDuration/httpCounter),
+# buckets pensados pro threshold de Apdex T=0.5s (satisfeito <=T, tolerando
+# <=4T=2s). Labels por "route" (path template, ex: /residents/{id}), nao
+# path cru -- evita cardinalidade alta (um UUID por requisicao viraria uma
+# serie nova cada vez).
+http_request_duration_seconds = Histogram(
+    "aprxm_http_request_duration_seconds",
+    "Duração das requisições HTTP (segundos) — base pro Apdex no Grafana",
+    ["method", "route", "status_code"],
+    buckets=[0.05, 0.1, 0.2, 0.5, 1, 2, 4, 8],
+    registry=registry,
+)
+http_requests_total = Counter(
+    "aprxm_http_requests_total",
+    "Total de requisições HTTP, por rota e status",
+    ["method", "route", "status_code"],
+    registry=registry,
+)
 
 # ── Totais cumulativos (consultar via increase() no Grafana) ───────────────
 moradores_cadastrados_total = Gauge(
