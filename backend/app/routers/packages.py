@@ -244,7 +244,6 @@ async def bulk_deliver_packages(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     if not body.package_ids:
-        from fastapi import HTTPException
         raise HTTPException(422, "Informe ao menos uma encomenda.")
 
     # Validate exemption token for the whole batch
@@ -477,7 +476,6 @@ async def notify_package(
     from datetime import datetime
     pkg = await session.get(Package, package_id)
     if not pkg or str(pkg.association_id) != str(current.association_id):
-        from fastapi import HTTPException
         raise HTTPException(404, "Encomenda não encontrada.")
     pkg.status = PackageStatus.notified
     pkg.updated_at = datetime.utcnow()
@@ -503,7 +501,6 @@ async def return_package(
     from datetime import datetime
     pkg = await session.get(Package, package_id)
     if not pkg or str(pkg.association_id) != str(current.association_id):
-        from fastapi import HTTPException
         raise HTTPException(404, "Encomenda não encontrada.")
     pkg.status = PackageStatus.returned
     pkg.return_reason = body.reason
@@ -545,7 +542,6 @@ async def reassign_package(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from datetime import datetime
-    from fastapi import HTTPException
 
     pkg = await session.get(Package, package_id)
     if not pkg or str(pkg.association_id) != str(current.association_id):
@@ -588,7 +584,6 @@ async def edit_package_info(
     current: CurrentUser = Depends(require_module_action("packages", "edit")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    from fastapi import HTTPException
     from datetime import datetime
     pkg = await session.get(Package, package_id)
     if not pkg or str(pkg.association_id) != str(current.association_id):
@@ -632,7 +627,6 @@ async def edit_delivery_info(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from datetime import datetime
-    from fastapi import HTTPException
     from app.core.security import verify_password
     from sqlmodel import select as sq_select
     from app.models.user import User
@@ -681,7 +675,6 @@ async def reverse_delivery(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from datetime import datetime
-    from fastapi import HTTPException
     from sqlmodel import select as sq_select
     from app.core.security import verify_password
     from app.models.user import User
