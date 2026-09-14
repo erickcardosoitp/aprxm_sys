@@ -1022,25 +1022,33 @@ muda de ID).
 
 ### Pendências abertas deste incidente
 
-- 🔴 **Backup real de produção do Neon do APRXM ainda não existe.** A
-  tentativa acima mirou o alvo errado (o próprio banco de produção como
-  "destino"). Precisa de um destino de backup genuinamente separado
-  (outro projeto/branch Neon, ou snapshot automático do próprio Neon)
-  — decisão e connection string corretos ainda pendentes do usuário.
+- 🔴 **Backup real de produção do Neon do APRXM ainda não existe.**
+  **Adiado a pedido do usuário (2026-09-14): "vamos fazer isso mais
+  tarde em relação ao aprxm".** A tentativa acima mirou o alvo errado
+  (o próprio banco de produção como "destino"). Precisa de um destino
+  de backup genuinamente separado (outro projeto/branch Neon, ou
+  snapshot automático do próprio Neon) — decisão e connection string
+  corretos ainda pendentes do usuário.
 - ✅ **`DATAWAREHOUSE_APRXM_DATABASE_URL` migrado pro endpoint direto
   (2026-09-14)** — mesma troca aplicada ao login, preventiva (nunca
   chegou a dar erro, mas evita o mesmo bug de `search_path` acontecer
   no painel de presidência/ETL mais tarde). Validado: endpoint direto
   responde `search_path=public` e enxerga as 42 tabelas do DW antes da
   troca; container recriado, `healthy`, `RestartCount=0`, sem erros no
-  boot. **Não validado de ponta a ponta** (uma query real via
-  `/presidencia/status` autenticado) — requer login de usuário real,
-  não testado nesta sessão.
-- 🟡 Testes funcionais de escrita (cadastro/edição/exclusão de morador,
-  encomenda + foto, ordem de serviço) pedidos pelo usuário **ainda não
-  executados** — só login e guard de auth foram confirmados. Requer
-  usuário/associação de teste ou autorização explícita pra gravar dado
-  real em produção.
+  boot; ETL rodado manualmente com sucesso de ponta a ponta depois da
+  troca (ver "Integração completa com o catálogo de erros" acima).
+  🟡 **Ainda não validado com login de usuário real** (uma query via
+  `/presidencia/status` autenticado) — **adiado junto com o item
+  acima**, a pedido do usuário.
+- ✅ **Testes funcionais de escrita** (cadastro/edição/exclusão de
+  morador, encomenda + foto, ordem de serviço) — executados
+  2026-09-14 contra associação de teste isolada, todos passaram. Ver
+  seção "Testes funcionais de escrita" acima pro detalhamento
+  completo.
+- 🔴 **Corte da Fase I** (desligar de vez a function serverless do
+  backend na Vercel) — **adiado junto com os itens acima**, a pedido
+  do usuário. Já não recebe tráfego normal (só ficaria como fallback
+  se alguém reverter o rewrite dos frontends).
 
 ---
 
@@ -1092,6 +1100,8 @@ majoritariamente rede/domínio e a migração de storage.
 12. 🔴 **Corte** (Fase I) — a function serverless do backend na Vercel
     já não recebe tráfego normal (só ficaria como fallback se alguém
     reverter o rewrite). Falta decidir quando desligá-la de vez.
+    **Adiado a pedido do usuário (2026-09-14)**, junto com os itens 16
+    e 17.
 13. ✅ **Lifecycle policy do Azure Blob (Cool tier)** — aplicada
     2026-09-14. Ver Fase D §9.
 14. ✅ **Login e todas as queries autenticadas voltando 500** (bug real
@@ -1102,7 +1112,8 @@ majoritariamente rede/domínio e a migração de storage.
     `admin.py`, corrigido 2026-09-14 (commit `60df65c`). Ver Fase H.
 16. 🔴 **Backup real de produção do Neon** — ainda não existe (tentativa
     anterior mirou o próprio banco de produção por engano, revertida
-    sem dano). Ver Fase H pro relato completo.
+    sem dano). **Adiado a pedido do usuário (2026-09-14)**. Ver Fase H
+    pro relato completo.
 17. ✅ **`DATAWAREHOUSE_APRXM_DATABASE_URL` migrado pro endpoint direto**
     — 2026-09-14, preventivo. Falta validação de ponta a ponta com
     login real. Ver Fase H.
