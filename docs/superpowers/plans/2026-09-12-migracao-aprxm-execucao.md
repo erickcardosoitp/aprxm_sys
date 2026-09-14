@@ -778,6 +778,50 @@ as 2 pastas existem agora com os dashboards certos em cada uma.
   `postgres_exporter` apontando pra ele. Adicionar isso é tarefa maior
   (exporter novo + configuração de rede pro Neon).
 
+### Testes funcionais de escrita (2026-09-14)
+
+A pedido do usuário ("preciso que voce teste as operações"), testado
+via API real (produção) contra uma associação/empresa de teste
+("TESTE QA Claude - NAO USAR") criada especificamente pra isso, com
+usuário `admin_master` próprio. **Todos os 8 passos passaram:** login,
+cadastro de morador, edição de morador, upload de foto (Azure Blob
+real), cadastro de encomenda com foto, edição de encomenda, cadastro
+de O.S., exclusão de morador (bloqueada corretamente quando há
+vínculo — `409` — e permitida quando não há). Achado colateral não-bug:
+usuário `admin_master` grava usando o `association_id` do token
+(escritório), não o do header `X-Association-ID` enviado — comportamento
+pré-existente, fora do escopo pedido.
+
+**Toda a associação/empresa/usuário de teste e os registros criados
+foram removidos por completo** ao final (`DELETE` em cascata via SQL
+direto, aprovado explicitamente pelo usuário) — confirmado 0 registros
+residuais em produção.
+
+### Bug real de produção — `bulk-deliver` de encomendas (2026-09-14)
+
+Achado **em tempo real** pelo monitor de erros do backend (montado
+horas antes no mesmo dia, ver seção de catálogo de erros acima) —
+`POST /api/v1/packages/bulk-deliver` retornando 500 pra usuários reais
+durante entrega em lote com token de isenção de taxa inválido/expirado.
+
+**Causa raiz:** `backend/app/routers/packages.py:247` importava
+`HTTPException` localmente dentro de um bloco `if` (`from fastapi
+import HTTPException`) — em Python, isso faz o nome virar variável
+**local à função inteira**, mesmo antes da linha do import executar.
+Quando esse `if` não era percorrido (fluxo normal) mas o `raise
+HTTPException(...)` da linha 260 (token inválido) era alcançado,
+`HTTPException` nunca tinha sido vinculado → `UnboundLocalError`, que
+vira 500 genérico em vez do 422 esperado pelo frontend. Mesma classe
+de bug do `/openapi.json` (forward-ref não resolvido em `admin.py`),
+mas aqui explodindo em runtime real, não só na geração do schema.
+
+**Fix:** removido o import local (redundante — `HTTPException` já é
+importado no topo do módulo, linha 11). Limpo o mesmo padrão em outras
+5 funções do arquivo (nenhuma delas com bug ativo, mas todas com risco
+latente idêntico) pra eliminar essa classe de erro do arquivo inteiro.
+Commit `12ba21f`, deployado e verificado (container `healthy`, login e
+demais rotas sem regressão).
+
 ### Pendências abertas deste incidente
 
 - 🔴 **Backup real de produção do Neon do APRXM ainda não existe.** A
@@ -864,5 +908,17 @@ majoritariamente rede/domínio e a migração de storage.
 17. ✅ **`DATAWAREHOUSE_APRXM_DATABASE_URL` migrado pro endpoint direto**
     — 2026-09-14, preventivo. Falta validação de ponta a ponta com
     login real. Ver Fase H.
-18. 🟡 **Testes funcionais de escrita** (morador, encomenda+foto, O.S.)
-    pedidos pelo usuário — não executados ainda. Ver Fase H.
+18. ✅ **Testes funcionais de escrita** (morador criar/editar/excluir,
+    encomenda+foto criar/editar, O.S. criar) — executados 2026-09-14
+    contra associação de teste isolada criada e depois removida por
+    completo (sem resíduo em produção). Todos passaram, incluindo a
+    regra de negócio correta bloqueando exclusão de morador com
+    vínculo. Ver Fase H.
+19. ✅ **`bulk-deliver` de encomendas retornando 500 com token de
+    isenção inválido** — `UnboundLocalError` por import local de
+    `HTTPException` dentro de um `if` (mesmo padrão de bug já visto no
+    `admin.py` do `/openapi.json`, mas causando erro em runtime em vez
+    de só na geração do schema). Achado em produção em tempo real pelo
+    monitor de erros do backend, afetando múltiplos usuários reais.
+    Corrigido 2026-09-14 (commit `12ba21f`), mesmo padrão limpo em
+    outras 5 funções do arquivo. Ver Fase H.
