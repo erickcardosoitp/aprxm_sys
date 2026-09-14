@@ -1821,6 +1821,19 @@ def _write_gold_clickhouse(gold_frames: dict[str, pd.DataFrame]) -> tuple[int, l
                         df_clean[col] = df_clean[col].dt.to_timestamp()
                     except Exception:
                         df_clean[col] = df_clean[col].astype(str)
+                elif dtype_str == "object":
+                    # dtype "object" esconde o tipo real (date/datetime/float
+                    # misturado com NaN vira object, nao float64) -- inspeciona
+                    # o primeiro valor nao-nulo e recasta pro dtype real antes
+                    # de decidir o tipo ClickHouse, senao vira String e quebra
+                    # na insercao (ClickHouse rejeita float/date em coluna String).
+                    sample = df_clean[col].dropna()
+                    if not sample.empty:
+                        first = sample.iloc[0]
+                        if isinstance(first, (datetime, date)):
+                            df_clean[col] = pd.to_datetime(df_clean[col], errors="coerce")
+                        elif isinstance(first, (int, float)):
+                            df_clean[col] = pd.to_numeric(df_clean[col], errors="coerce")
             try:
                 cols_ddl = ", ".join(
                     f"`{c}` {_pandas_dtype_to_clickhouse(str(df_clean[c].dtype))}"
