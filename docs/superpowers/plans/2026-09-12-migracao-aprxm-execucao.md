@@ -1231,8 +1231,7 @@ majoritariamente rede/domínio e a migração de storage.
 12. 🔴 **Corte** (Fase I) — a function serverless do backend na Vercel
     já não recebe tráfego normal (só ficaria como fallback se alguém
     reverter o rewrite). Falta decidir quando desligá-la de vez.
-    **Adiado a pedido do usuário (2026-09-14)**, junto com os itens 16
-    e 17.
+    **Adiado a pedido do usuário (2026-09-14)**, junto com o item 16.
 13. ✅ **Lifecycle policy do Azure Blob (Cool tier)** — aplicada
     2026-09-14. Ver Fase D §9.
 14. ✅ **Login e todas as queries autenticadas voltando 500** (bug real
@@ -1245,19 +1244,17 @@ majoritariamente rede/domínio e a migração de storage.
     anterior mirou o próprio banco de produção por engano, revertida
     sem dano). **Adiado a pedido do usuário (2026-09-14)**. Ver Fase H
     pro relato completo.
-17. ✅ **`DATAWAREHOUSE_APRXM_DATABASE_URL` migrado pro endpoint direto**
-    — 2026-09-14, preventivo. Falta validação de ponta a ponta com
-    login real. Ver Fase H.
+17. ❌→✅ **`DATAWAREHOUSE_APRXM_DATABASE_URL` migrado pro endpoint
+    direto Neon** (2026-09-14, preventivo) — **superado pela Fase K**:
+    o destino inteiro saiu do Neon e foi pro ClickHouse self-hosted, o
+    ajuste de endpoint direto ficou sem efeito prático (não é mais
+    Neon). Ver Fase K.
 18. ✅ **Testes funcionais de escrita** (morador criar/editar/excluir,
     encomenda+foto criar/editar, O.S. criar) — executados 2026-09-14
     contra associação de teste isolada criada e depois removida por
     completo (sem resíduo em produção). Todos passaram, incluindo a
     regra de negócio correta bloqueando exclusão de morador com
     vínculo. Ver Fase H.
-19a. ✅ **Banco de dados migrado do Neon pra Postgres na própria VM**
-    (Fase J, decisão do usuário fora do escopo original) — concluída
-    2026-09-14, ~1min30s de indisponibilidade real, backup automático
-    pro Neon (agora réplica) configurado e testado. Ver Fase J acima.
 19. ✅ **`bulk-deliver` de encomendas retornando 500 com token de
     isenção inválido** — `UnboundLocalError` por import local de
     `HTTPException` dentro de um `if` (mesmo padrão de bug já visto no
@@ -1266,3 +1263,54 @@ majoritariamente rede/domínio e a migração de storage.
     monitor de erros do backend, afetando múltiplos usuários reais.
     Corrigido 2026-09-14 (commit `12ba21f`), mesmo padrão limpo em
     outras 5 funções do arquivo. Ver Fase H.
+20. ✅ **Banco de dados migrado do Neon pra Postgres na própria VM**
+    (Fase J, decisão do usuário fora do escopo original) — concluída
+    2026-09-14, ~1min30s de indisponibilidade real, backup automático
+    pro Neon (agora réplica) configurado e testado. Ver Fase J.
+21. ✅ **`POST /finance/transactions` 500 pra mensalidade sem registro
+    prévio** — `ON CONFLICT` usava coluna errada (`reference_month`,
+    drift entre model e constraint real `uq_mensalidade_resident_due`
+    em `due_date`). Achado em produção pelo monitor de erros, corrigido
+    2026-09-14 (commit `23b4832`).
+22. ✅ **Data warehouse migrado do Neon (`aprxm-analytics`) pro
+    ClickHouse self-hosted** (Fase K, decisão do usuário — Fabric
+    gratuito é licença por usuário, não serve pra ETL de time) —
+    concluída 2026-09-14. Container na VM, loader adaptado (2 bugs reais
+    corrigidos rodando contra dado de produção), ETL validado
+    (`status: success`, 39 tabelas Gold). Ver Fase K.
+23. ✅ **Ferramentas de consulta/navegação do ClickHouse instaladas na
+    VM** (2026-09-14): Play UI (atalho "DW", só em `127.0.0.1`, sem
+    domínio) pra SQL manual; **DBeaver Community** instalado e
+    conectado (driver JDBC oficial baixado) pra navegação visual de
+    tabela em grade — mesma experiência de "abrir e ver os dados" que
+    faltava só com o Play UI.
+24. 🔴 **Power BI Service (nuvem, atualização agendada) não está
+    conectado ao ClickHouse** — hoje o Power BI aponta pro Neon
+    (`aprxm-analytics`, internet pública, sem gateway). Com o DW agora
+    numa rede privada da VM, conectar o Power BI Service exige um
+    **On-premises Data Gateway** rodando 24/7 em alguma máquina Windows
+    com acesso à VM — projeto novo, ainda não iniciado. Discutido com o
+    usuário 2026-09-14, decidido tratar como item separado depois.
+25. 🟡 **341 encomendas paradas há +15 dias e 7 sessões de caixa
+    abertas** — thresholds vermelhos confirmados no dashboard Grafana
+    logo no primeiro deploy (ver seção "Correção do dashboard KPI
+    BUSINESS" acima). Sinalizado, **não investigado** (fora do escopo
+    pedido na ocasião) — provavelmente vale uma investigação de negócio
+    separada.
+26. 🟡 **WebAuthn (`webauthn.py`) não loga erro real de servidor** antes
+    de converter pra `HTTPException` — falha de verdade (não rejeição
+    normal de credencial) fica invisível pro catálogo de erros. Achado
+    durante o levantamento de cobertura de erros (2026-09-14), não
+    corrigido ainda (fora do escopo daquele levantamento).
+27. 🟡 **`admin_master` grava recursos usando `association_id` do JWT**
+    (ID do escritório) em vez do header `X-Association-ID` enviado —
+    achado colateral durante os testes funcionais de escrita
+    (2026-09-14), não investigado a fundo. Risco: dado indo pra
+    associação errada em qualquer fluxo parecido com usuário
+    empresa-wide.
+28. 🟡 **`prometheus.yml` e dashboards do Grafana na VM são cópia
+    manual**, não symlink do checkout `~/erp_itp` — `git pull` sozinho
+    não atualiza o que está rodando (já mordeu 2x: blackbox target do
+    APRXM e os 2 dashboards novos precisaram de `cp` manual). Considerar
+    trocar por symlink numa próxima sessão pra eliminar essa classe de
+    erro.
