@@ -634,8 +634,9 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
           receive_batch_id: brxBatchId,
         })
         received++
-      } catch {
-        errors.push(item.resident_name + (item.tracking_code ? ` (${item.tracking_code})` : ''))
+      } catch (e: any) {
+        const nome = item.resident_name + (item.tracking_code ? ` (${item.tracking_code})` : '')
+        errors.push(`${nome}: ${apiErr(e, 'Erro ao registrar.')}`)
       }
     }
     setBrxResult({ received, errors })
