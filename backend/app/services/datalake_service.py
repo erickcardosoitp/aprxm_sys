@@ -1839,11 +1839,15 @@ def _write_gold_clickhouse(gold_frames: dict[str, pd.DataFrame]) -> tuple[int, l
                     f"`{c}` {_pandas_dtype_to_clickhouse(str(df_clean[c].dtype))}"
                     for c in df_clean.columns
                 )
+                # DROP + CREATE (nao "IF NOT EXISTS"): o tipo das colunas pode
+                # mudar de uma rodada pra outra (ex. coluna que só tinha NaN
+                # antes e agora tem dado real) -- "IF NOT EXISTS" deixaria o
+                # schema antigo preso pra sempre, quebrando o insert_df.
+                client.command(f"DROP TABLE IF EXISTS `{table_name}`")
                 client.command(
-                    f"CREATE TABLE IF NOT EXISTS `{table_name}` ({cols_ddl}) "
+                    f"CREATE TABLE `{table_name}` ({cols_ddl}) "
                     "ENGINE = MergeTree ORDER BY tuple()"
                 )
-                client.command(f"TRUNCATE TABLE `{table_name}`")
                 client.insert_df(table_name, df_clean)
                 total += len(df_clean)
                 logger.info("Analytics(ClickHouse) %-35s %5d rows", table_name, len(df_clean))
