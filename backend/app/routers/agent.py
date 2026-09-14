@@ -1,4 +1,5 @@
 import json
+import logging
 from uuid import UUID
 
 import httpx
@@ -11,6 +12,8 @@ from app.config import get_settings
 from app.core.resilience import http_cb
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
+
+logger = logging.getLogger("aprxm.agent")
 
 router = APIRouter(prefix="/agent", tags=["Simplifica"])
 settings = get_settings()
@@ -453,8 +456,11 @@ async def agent_chat(
     if settings.groq_api_key:
         try:
             return await _agent_chat_groq(body.message, aid, session)
-        except Exception:
-            pass  # fallback pro classificador por regex abaixo
+        except Exception as e:
+            # Fallback pro classificador por regex abaixo continua valendo
+            # (UX nao quebra), mas a falha do Groq precisa ficar visivel pro
+            # catalogo de erros -- antes era engolida sem log nenhum.
+            logger.error("[ERROR] Groq chat falhou, usando fallback por regex: %s", e)
 
     intent, params = _classify(body.message)
 

@@ -4,6 +4,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
@@ -13,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.tenant import CurrentUser, get_current_user
 from app.database import AsyncSessionLocal, get_session
+
+logger = logging.getLogger("aprxm.demands")
 
 router = APIRouter(prefix="/demands", tags=["Demandas"])
 
@@ -237,8 +240,11 @@ async def trigger_reminders_job() -> dict:
                 so_ref = f" (OS #{so_num})" if so_num else ""
                 msg = f'⏰ Lembrete: prazo da demanda "{title}"{so_ref} vence hoje — responsável: {atn}'
                 await post_system_message(str(assoc_id), msg, session)
-            except Exception:
-                pass
+            except Exception as e:
+                # Uma demanda com falha no chat nao deve travar o lembrete
+                # das outras, mas a falha precisa ficar visivel pro catalogo
+                # de erros -- antes era engolida sem log nenhum.
+                logger.error("[ERROR] Lembrete de demanda %s: falha ao postar mensagem de chat: %s", demand_id, e)
 
             # Email
             if email:
@@ -249,8 +255,8 @@ async def trigger_reminders_job() -> dict:
                         subject=f"⏰ Prazo hoje: {title}",
                         html=reminder_html(title, due_fmt, str(so_num) if so_num else None),
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("[ERROR] Lembrete de demanda %s: falha ao enviar e-mail pra %s: %s", demand_id, email, e)
 
             await session.execute(text(
                 "UPDATE demands SET reminded_at = NOW() WHERE id = :id"

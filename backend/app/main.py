@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 import traceback
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, dai
 from app.routers import settings as settings_router
 
 settings = get_settings()
+logger = logging.getLogger("aprxm")
 
 
 @asynccontextmanager
@@ -123,7 +125,13 @@ async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
     # estrutura interna de codigo/banco pra qualquer chamador (inclusive nao autenticado);
     # o trace continua indo pro log do servidor de qualquer forma.
     trace = traceback.format_exc()
-    print(f"[UNHANDLED] {type(exc).__name__}: {exc}\n{trace}")
+    # Palavra "ERROR" garantida no inicio da linha (independente do nome da
+    # excecao) -- o coletor de erros do parque ITP so enfileira uma linha de
+    # log se ela bater no regex error|exception|fatal|panic; antes disso o
+    # prefixo [UNHANDLED] sozinho podia nao casar com excecoes custom sem
+    # "Error"/"Exception" no nome, mascarando o bug do catalogo (achado
+    # 2026-09-14, ver docs/superpowers/plans/2026-09-12-migracao-aprxm-execucao.md).
+    logger.error("[ERROR] Unhandled exception: %s: %s\n%s", type(exc).__name__, exc, trace)
     if settings.app_env == "production":
         return JSONResponse(status_code=500, content={"detail": "Erro interno do servidor."})
     return JSONResponse(

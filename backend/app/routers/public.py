@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from app.models.resident import Resident, ResidentStatus, ResidentType
 from app.services.storage_service import StorageService
 
 router = APIRouter(prefix="/public", tags=["Público"])
+logger = logging.getLogger("aprxm.frontend")
 
 
 class PublicRegisterRequest(BaseModel):
@@ -203,3 +205,29 @@ async def public_submit_update_request(
            "notes": body.notes})
     await session.commit()
     return {"ok": True, "resident_name": resident[1]}
+
+
+class FrontendLogRequest(BaseModel):
+    app: str  # "frontend" | "painel" | "presidencia"
+    message: str
+    stack: str | None = None
+    url: str | None = None
+    user_agent: str | None = None
+
+
+@router.post("/frontend-logs", summary="Reporte de erro não tratado do cliente (crash React/JS)")
+async def report_frontend_log(body: FrontendLogRequest) -> dict:
+    # Best-effort, sem auth (o crash pode acontecer antes do login existir) e
+    # sem gravar em banco -- so' precisa aparecer no docker logs pro coletor
+    # de erros do parque ITP (Aplicacao=APRXM) pegar, mesmo padrao usado pelo
+    # erp_itp/site institucional. Tamanho limitado pra nao virar vetor de
+    # flood de log por payload gigante.
+    logger.error(
+        "[ERROR] Frontend crash (%s): %s | url=%s | ua=%s\n%s",
+        body.app[:40],
+        body.message[:2000],
+        (body.url or "")[:300],
+        (body.user_agent or "")[:200],
+        (body.stack or "")[:4000],
+    )
+    return {"ok": True}

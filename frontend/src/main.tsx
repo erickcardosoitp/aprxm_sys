@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Analytics } from '@vercel/analytics/react'
 import App from './App'
 import { ErrorBoundary } from './ErrorBoundary'
+import { installGlobalErrorReporting } from './lib/reportError'
 import './index.css'
+
+installGlobalErrorReporting()
 
 const queryClient = new QueryClient({
   defaultOptions: {

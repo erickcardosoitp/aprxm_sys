@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { reportError } from './lib/reportError'
 
 interface Props { children: ReactNode }
 interface State { error: Error | null }
@@ -12,6 +13,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[APRXM] Render error:', error, info)
+    reportError(error.message, error.stack)
   }
 
   render() {

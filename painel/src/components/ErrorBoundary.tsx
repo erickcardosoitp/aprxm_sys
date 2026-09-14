@@ -9,6 +9,10 @@ interface State {
   error: Error | null
 }
 
+// Ate 2026-09-14 o painel nao tinha nenhum Error Boundary -- um crash de
+// render derrubava a tela inteira em branco, sem log nenhum (nem local, nem
+// no catalogo de erros do parque ITP). Mesmo padrao ja usado em
+// frontend/ e presidencia/.
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null }
 
@@ -25,16 +29,16 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-surface p-6 text-center">
-          <p className="text-lg font-semibold text-ink">Algo quebrou nessa tela</p>
-          <pre className="max-w-xl overflow-auto rounded-lg border border-border bg-surface-muted p-3 text-left text-xs text-red-600">
+        <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 p-6 text-center">
+          <p className="text-lg font-semibold text-gray-900">Algo quebrou nessa tela</p>
+          <pre className="max-w-xl overflow-auto rounded-lg border border-gray-200 bg-white p-3 text-left text-xs text-red-600">
             {this.state.error.message}
             {'\n\n'}
             {this.state.error.stack}
           </pre>
           <button
             onClick={() => this.setState({ error: null })}
-            className="rounded-md bg-marque-500 px-4 py-2 text-sm font-medium text-white hover:bg-marque-700"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             Tentar de novo
           </button>
