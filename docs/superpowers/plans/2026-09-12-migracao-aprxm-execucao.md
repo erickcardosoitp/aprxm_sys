@@ -542,6 +542,124 @@ período) e a Fase I (desligar de vez a function na Vercel).
 
 ---
 
+## Fase H — Achados reais durante a validação (2026-09-14)
+
+Sessão diferente da que fez a migração original (2026-09-12/13),
+acionada pelo usuário para revisar a operação do APRXM já rodando na VM
+("garantir que a operação do APROXIMA esteja ok"). Achados de produção,
+não relacionados ao código da migração em si — mas só ficaram visíveis
+*por causa* da migração (mudança de Vercel serverless, N instâncias,
+pra VM, processo único e persistente).
+
+### Incidente 1 — login e todas as queries autenticadas voltavam 500
+
+**Sintoma:** `POST /api/v1/auth/login` retornava 500 com
+`asyncpg.exceptions.UndefinedTableError: relation "users" does not
+exist` — bug pré-existente, não causado por nenhuma sessão, só
+descoberto agora porque ninguém tinha testado login de ponta a ponta
+contra o backend novo da VM ainda.
+
+**Causa raiz confirmada:** `SHOW search_path;` numa conexão nova através
+do endpoint `-pooler` do Neon (PgBouncer, modo transaction pooling)
+retornava **vazio**. Duas tentativas de fix não resolveram sozinhas:
+- `ALTER ROLE neondb_owner SET search_path = public;` — fica salvo em
+  `pg_roles.rolconfig`, mas o PgBouncer não propaga esse default de
+  role pras sessões que ele multiplexa.
+- `connect_args={"server_settings": {"search_path": "public"}}` no
+  asyncpg (`database.py`) — mecanismo correto do lado do cliente, mas o
+  PgBouncer também não repassa esse parâmetro de startup pro backend
+  real (limitação conhecida de pooling em modo transação: só uma lista
+  restrita de parâmetros é encaminhada).
+
+**Fix definitivo aplicado:** trocar `DATABASE_URL` (produção, `~/itp-stack/aprxm_backend.env`
+na VM) do endpoint `ep-rough-tooth-an10po6b-pooler.c-6.us-east-1.aws.neon.tech`
+pro endpoint direto **sem `-pooler`**
+(`ep-rough-tooth-an10po6b.c-6.us-east-1.aws.neon.tech`) — bypassa o
+PgBouncer por completo. Seguro porque a arquitetura mudou: o pooler
+existia pra absorver N instâncias serverless da Vercel, cada uma com
+seu próprio pool pequeno; na VM é **1 processo persistente** com
+`pool_size=3, max_overflow=7` (≤10 conexões fixas) — não precisa mais
+de multiplexação externa. `connect_args.server_settings.search_path`
+em `database.py`/`presidencia_service.py` (commit `60df65c`) foi mantido
+como camada defensiva adicional, mesmo não sendo suficiente sozinho.
+
+**Não documentado em nenhum outro lugar:** a troca do `DATABASE_URL` é
+só um arquivo `.env` vivo na VM (nunca vai pro git, por padrão do
+projeto) — **fica registrado aqui** como referência futura. Se o
+container for recriado do zero sem esse `.env`, o bug volta.
+
+**Verificado:** `POST /auth/login` com credenciais erradas → 403
+`{"detail":"Credenciais inválidas."}` (era 500). `GET /residents` sem
+token → 401 `{"detail":"Not authenticated"}` (era 500 também, por
+tabela cascata).
+
+### Incidente 2 — `/openapi.json` 500 (não relacionado ao Neon)
+
+`GET /openapi.json` (e por extensão qualquer client OpenAPI/Swagger
+gerado automaticamente) retornava 500:
+`PydanticUserError: TypeAdapter[...ForwardRef('Response')...] is not
+fully defined`. Causa: `backend/app/routers/admin.py`, função
+`blank_proof_of_residence`, assinatura `) -> "Response":` — forward
+reference em string pro tipo `Response`, mas o único import de
+`Response` no arquivo era local (dentro da própria função, como
+`FastAPIResponse`), nunca no escopo do módulo — o Pydantic não
+conseguia resolver a referência ao gerar o schema OpenAPI completo.
+`/docs` funcionava normalmente (não depende do schema completo), só o
+JSON cru quebrava.
+
+**Fix:** import de `Response` promovido pro topo do arquivo, anotação
+trocada de `-> "Response":` pra `-> Response:` (sem string). Commit
+`60df65c`, deployado e verificado (`/openapi.json` → 200).
+
+### Falso alarme do Grafana durante o redeploy
+
+O redeploy do fix acima (`docker compose up -d --force-recreate
+aprxm_backend`) disparou um alerta `[FIRING]`→`[RESOLVED]` de "container
+parou de reportar métricas" — blip normal de ~5s durante a troca do
+container (kill do antigo → create → healthcheck do novo), dentro da
+janela de avaliação da regra. Confirmado via `docker events` e
+`RestartCount=0`: não foi crash-loop nem falha real, só o próprio
+redeploy sendo capturado pela janela de alerta.
+
+### Quase-incidente evitado — script de backup apontou pra produção por engano
+
+Nesta mesma sessão, uma tentativa de configurar backup do `aprxm_db`
+(banco local vazio na VM, artefato não usado — ver nota abaixo) usando
+uma connection string do Neon fornecida pelo usuário como "destino de
+backup" **era na verdade o banco de produção real**. Um `pg_restore
+--clean --if-exists` chegou a rodar contra produção antes do engano ser
+percebido — sem dano real só porque a origem do dump (`aprxm_db` local)
+tem 0 tabelas (842 bytes, dump vazio). Revertido por completo: script,
+dumps, entrada no `neon_sync.env` e no `tarefas-registro.json`
+removidos. **Confirmado que os 61 tabelas de produção seguem intactas.**
+
+**Nota importante pra próximas sessões:** `aprxm_db` (Postgres local da
+VM, container `itp_postgres`) é um artefato vazio, sobrando de algum
+provisionamento — **o banco de produção real do APRXM nunca saiu do
+Neon** (só o *compute* migrou pra VM, ver escopo fechado no topo deste
+documento). Não confundir os dois ao mexer com backup/restore.
+
+### Pendências abertas deste incidente
+
+- 🔴 **Backup real de produção do Neon do APRXM ainda não existe.** A
+  tentativa acima mirou o alvo errado (o próprio banco de produção como
+  "destino"). Precisa de um destino de backup genuinamente separado
+  (outro projeto/branch Neon, ou snapshot automático do próprio Neon)
+  — decisão e connection string corretos ainda pendentes do usuário.
+- 🟡 `DATAWAREHOUSE_APRXM_DATABASE_URL` (`presidencia_service.py`,
+  engine separado de analytics) **continua no endpoint `-pooler`** —
+  não testado se sofre do mesmo bug de `search_path` (não é usado pelo
+  fluxo de login/CRUD principal, só pelo painel de presidência/ETL,
+  então não bloqueou nada até agora). Mesma troca pro endpoint direto
+  deve ser avaliada se aparecer erro parecido por ali.
+- 🟡 Testes funcionais de escrita (cadastro/edição/exclusão de morador,
+  encomenda + foto, ordem de serviço) pedidos pelo usuário **ainda não
+  executados** — só login e guard de auth foram confirmados. Requer
+  usuário/associação de teste ou autorização explícita pra gravar dado
+  real em produção.
+
+---
+
 ## Pendências para as próximas vezes — da mais fácil pra mais difícil
 
 **Atualizado 2026-09-12 após acesso SSH real à VM** — praticamente tudo
@@ -592,3 +710,17 @@ majoritariamente rede/domínio e a migração de storage.
     reverter o rewrite). Falta decidir quando desligá-la de vez.
 13. ✅ **Lifecycle policy do Azure Blob (Cool tier)** — aplicada
     2026-09-14. Ver Fase D §9.
+14. ✅ **Login e todas as queries autenticadas voltando 500** (bug real
+    de produção, achado só depois da migração) — corrigido
+    2026-09-14, endpoint Neon trocado de `-pooler` pra direto. Ver Fase
+    H acima pro detalhamento completo.
+15. ✅ **`/openapi.json` 500** — forward-ref não resolvido em
+    `admin.py`, corrigido 2026-09-14 (commit `60df65c`). Ver Fase H.
+16. 🔴 **Backup real de produção do Neon** — ainda não existe (tentativa
+    anterior mirou o próprio banco de produção por engano, revertida
+    sem dano). Ver Fase H pro relato completo.
+17. 🟡 **`DATAWAREHOUSE_APRXM_DATABASE_URL` ainda no endpoint `-pooler`**
+    — não testado se tem o mesmo bug de `search_path` do item 14. Ver
+    Fase H.
+18. 🟡 **Testes funcionais de escrita** (morador, encomenda+foto, O.S.)
+    pedidos pelo usuário — não executados ainda. Ver Fase H.
