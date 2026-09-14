@@ -128,12 +128,23 @@ aprxm_sys"**.
       recadastro necessário pós-cutover — identificar quem são antes do corte
 
 ### Storage
-- [ ] Criar Storage Account `staprxmmidia` (LRS)
-- [ ] Criar container de fotos (substitui bucket Supabase `aprxm-midia`)
-- [ ] Copiar arquivos Supabase → Azure Blob (`azcopy`)
-- [ ] Reescrever `storage_service.py` pro SDK Azure Blob
-- [ ] `AZURE_STORAGE_CONNECTION_STRING` via Key Vault
-- [ ] Testar upload/download em staging
+
+✅ **Concluído em 2026-09-14** (execução real divergiu deste rascunho —
+ver detalhe completo em
+[`2026-09-12-migracao-aprxm-execucao.md`](2026-09-12-migracao-aprxm-execucao.md#fase-d--storage-supabase-storage--azure-blob--concluída-2026-09-14)):
+reaproveitada a Storage Account `stitperpprod` já existente (erp_itp),
+não criada uma nova `staprxmmidia` — container próprio `aprxm-midia`
+isola os dois sistemas. 13.433 arquivos migrados (script próprio em
+lote, não `azcopy`), `storage_service.py` já no SDK Azure Blob, chave
+de acesso via env var (`AZURE_STORAGE_KEY`), não Key Vault. Testado com
+200 casos funcionais reais.
+
+- [x] Storage Account reaproveitada: `stitperpprod` (não `staprxmmidia`)
+- [x] Container `aprxm-midia` criado (substitui bucket Supabase)
+- [x] Copiar arquivos Supabase → Azure Blob (script Python próprio)
+- [x] Reescrever `storage_service.py` pro SDK Azure Blob
+- [x] Credencial via env var (`AZURE_STORAGE_KEY`) — Key Vault não usado
+- [x] Testar upload/download (200 testes funcionais reais)
 - [ ] Criar container `datalake` (substitui bucket R2 `aprxm-datalake`)
 - [ ] Copiar 180 objetos R2 → Azure Blob
 - [ ] Atualizar `datalake_service.py` (client S3/boto3 → Azure Blob ou manter S3-compat)

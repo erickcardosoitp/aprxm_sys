@@ -370,62 +370,72 @@ fora do FastAPI.
 
 ---
 
-## Fase D — Storage: Supabase Storage → Azure Blob
+## Fase D — Storage: Supabase Storage → Azure Blob ✅ concluída (2026-09-14)
 
 Decisão do §6.4 do doc anterior.
 
-### Levantamento de volume ✅ concluído (2026-09-12)
+### Levantamento de volume ✅ concluído (2026-09-12), corrigido (2026-09-14)
 
-Bucket `aprxm-midia`, consultado direto via API do Supabase Storage:
+**Correção crítica:** o levantamento inicial usava `list()` do SDK
+`supabase-py`, sem paginação — capturava só os primeiros 1000 itens por
+chamada e não looper. Refeito via cliente REST próprio
+(`backend/scripts/_supabase_rest.py`) com paginação manual por `offset`:
 
-| Métrica | Valor |
-|---|---|
-| Total de arquivos | **2.750** |
-| Total | **204,25 MB** |
-
-Por subpasta (tipo de uso):
-
-| Pasta | Arquivos | Tamanho |
+| Métrica | Valor levantado (errado) | Valor real |
 |---|---|---|
-| `packages/` | 2.695 | 162,05 MB |
-| `task-comments/` | 23 | 35,91 MB |
-| `chat/` | 15 | 4,66 MB |
-| `assoc-logos/` | 5 | 0,45 MB |
-| `signatures/` | 5 | 0,44 MB |
-| outros (`public`, `feed`, `daily-tasks`, `financeiro`) | 6 | ~0,76 MB |
+| Total de arquivos | ~~2.750~~ | **13.433** |
+| Total | ~~204,25 MB~~ | **924,4 MB** |
 
-Por extensão: `jpg` (1.639, 174,6 MB), `png` (1.082, 19,6 MB), `jpeg` (13,
-5,2 MB), `webm` — áudio (13, 4,6 MB), `pdf`/`xlsx`/`txt` (3, ~0,26 MB).
-
-**Conclusão prática:** volume pequeno (204 MB, 2.750 objetos) — a
-migração de arquivos em si é rápida (minutos, não horas), o esforço real
-desta fase está nos passos 3-5 abaixo (script + troca de client), não no
-volume de dados.
+Volume real 5x maior que o estimado — ainda assim pequeno o bastante pra
+migrar em lote sem downtime.
 
 O client de upload/leitura é um único módulo,
 `backend/app/services/storage_service.py` (`StorageService`, usado por
-`app/routers/uploads.py` e `app/routers/public.py`) — troca de SDK fica
+`app/routers/uploads.py` e `app/routers/public.py`) — troca de SDK ficou
 concentrada ali, não espalhada pelo código.
 
-### Passos restantes
+### Execução ✅ concluída (2026-09-14)
 
-1. ~~Levantar volume~~ ✅ acima.
-2. Provisionar container no Azure Blob (mesmo padrão do erp_itp).
-3. Escrever script de migração (lote, com log de progresso e retry) que
-   copia Supabase → Azure Blob preservando os paths/nomes usados como
-   referência no banco. **Achado:** os endpoints de upload (`uploads.py`,
-   `public.py`) retornam a URL pública crua pro chamador persistir onde
-   quiser — não há uma tabela/coluna fixa e única de referência; mapear
-   caso a caso (moradores/encomendas, comentários de tarefa, chat,
-   logo da associação, assinaturas, financeiro) antes de migrar os paths.
-4. Trocar o client em `storage_service.py` de Supabase pra Azure Blob
-   SDK, mantendo a mesma interface pública (`upload`, `upload_base64`,
-   `delete`) — os 2 routers que chamam `StorageService` não precisam
-   mudar.
-5. Trocar env vars (`SUPABASE_URL`/`SUPABASE_SERVICE_KEY`/
-   `SUPABASE_STORAGE_BUCKET` → equivalentes do Azure Blob).
-6. Rodar os dois em paralelo (dual-write ou pelo menos dual-read) durante
-   a validação antes de desligar o Supabase de vez.
+1. ✅ Levantar volume real (13.433 arquivos / 924,4 MB) — acima.
+2. ✅ Container `aprxm-midia` provisionado no Azure Blob, **conta
+   `stitperpprod` reaproveitada** do erp_itp (containers isolados por
+   nome: `aprxm-midia` pra APRXM, `arquivos` pro erp_itp).
+3. ✅ Script de migração em lote
+   (`backend/scripts/migrate_storage_to_azure.py`), rodado localmente
+   pelo usuário (não na sessão do Claude, pra não travar a sessão numa
+   transferência longa) — `ThreadPoolExecutor(max_workers=8)`, log de
+   progresso a cada 500 arquivos com %/ETA. **Resultado: 13.433/13.433
+   migrados, 0 falhas.**
+4. ✅ Client trocado em `storage_service.py` pra `azure.storage.blob`
+   (`BlobServiceClient` + SAS por URL), mesma interface pública
+   (`upload`, `upload_base64`, `delete`) — os 2 routers que chamam
+   `StorageService` não mudaram.
+5. ✅ Env vars trocadas: `AZURE_STORAGE_ACCOUNT` / `AZURE_STORAGE_KEY` /
+   `AZURE_STORAGE_CONTAINER=aprxm-midia` em `backend/.env` (produção via
+   `erp_itp_backend.env` na VM, mesma conta).
+6. ✅ Banco atualizado (`--update-db` do script de migração) — 19 colunas
+   simples + 3 colunas JSON array reescritas em lote (URL antiga →
+   nova), sem sync incremental pós-corte (decisão explícita: sem
+   catch-up de uploads durante a janela, aceitável pro volume).
+7. ✅ **Verificação pós-migração**
+   (`backend/scripts/verify_storage_migration.py`): nenhuma referência
+   residual a `supabase.co` em nenhuma coluna text/jsonb do schema;
+   12.800 URLs únicas do Azure no banco, todas resolvendo HTTP 200;
+   13.433 blobs no Azure vs. 12.800 referenciados (633 órfãos —
+   esperado, registros deletados/arquivos antigos sem referência ativa).
+8. ✅ **200 testes funcionais reais** contra a associação de teste
+   isolada (`aaaaaaaa-0001-0001-0001-000000000001`), em
+   `backend/scripts/test_azure_storage/` (upload variado, upload
+   base64, delete + escopo, leitura de dados reais migrados,
+   concorrência + edge cases de nome/path traversal) — **200/200
+   passaram**.
+9. 🟡 **Pendente, não bloqueante:** política de lifecycle automática
+   (Hot → Cool após 90 dias, prefixo `aprxm-midia/`) — falhou por falta
+   de permissão ARM (`managementPolicies/write`) na identidade da VM
+   (só tem escopo data-plane). Aplicar manualmente via portal Azure
+   (Storage Account `stitperpprod` → Data management → Lifecycle
+   management) ou conceder `Storage Account Contributor` à identidade
+   antes de tentar via CLI de novo.
 
 ---
 
@@ -540,7 +550,9 @@ majoritariamente rede/domínio e a migração de storage.
 1. ✅ Lista real das 35+ env vars — feito (`.env.example` na raiz).
 2. ❌→✅ `DATABASE_URL_DIRECT` **não é legado** (correção de levantamento
    anterior) — não remover, está em uso real (`admin.py:472`).
-3. ✅ Volume do Supabase Storage levantado — 2.750 arquivos, 204,25 MB.
+3. ✅ Volume do Supabase Storage levantado — **corrigido em 2026-09-14**:
+   13.433 arquivos, 924,4 MB (o número de 2.750/204 MB era um bug de
+   paginação do SDK, não o volume real).
 4. ✅ **Backend deployado na VM** — container `aprxm_backend` rodando,
    healthy, `mem_limit: 2g`, só acessível em `127.0.0.1:8003` por
    enquanto (sem domínio público ainda).
@@ -563,10 +575,11 @@ majoritariamente rede/domínio e a migração de storage.
 9. ✅ **Rewrite dos 3 `vercel.json` + deploy dos frontends** (Fase G) —
    feito, testado de ponta a ponta através do domínio público de cada
    frontend (não só direto na VM).
-10. 🔴 **Migração de arquivos Supabase → Azure Blob** (Fase D, passos 2-6)
-    — levantamento já feito; é a fase com mais trabalho de código novo
-    (client de storage em `storage_service.py`, script de migração em
-    lote, mapear onde cada URL é referenciada no banco).
+10. ✅ **Migração de arquivos Supabase → Azure Blob** (Fase D) —
+    **concluída 2026-09-14**: 13.433/13.433 arquivos migrados (0
+    falhas), banco atualizado, verificação pós-migração sem
+    inconsistências, 200 testes funcionais reais passando. Ver Fase D
+    acima para detalhe completo.
 11. 🟡 **Validação paralela** (Fase H) — observar os 3 frontends rodando
     contra a VM por um período antes de considerar o corte definitivo.
     Diferente do rascunho original: não é mais "rodar VM e Vercel lado a
@@ -575,3 +588,6 @@ majoritariamente rede/domínio e a migração de storage.
 12. 🔴 **Corte** (Fase I) — a function serverless do backend na Vercel
     já não recebe tráfego normal (só ficaria como fallback se alguém
     reverter o rewrite). Falta decidir quando desligá-la de vez.
+13. 🟡 **Lifecycle policy do Azure Blob (Cool tier)** — não bloqueante,
+    pendente de permissão ARM (`Storage Account Contributor`) na
+    identidade da VM, ou aplicação manual via portal. Ver Fase D §9.
