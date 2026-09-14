@@ -639,6 +639,63 @@ provisionamento — **o banco de produção real do APRXM nunca saiu do
 Neon** (só o *compute* migrou pra VM, ver escopo fechado no topo deste
 documento). Não confundir os dois ao mexer com backup/restore.
 
+### Integração completa com o catálogo de erros do parque ITP (2026-09-14)
+
+A pedido do usuário, levantamento completo de todas as fontes de erro do
+APRXM (frontend, backend, banco, integrações) e conexão com o catálogo
+de erros compartilhado (`erp_itp/catalogo-erros`, ver
+`erp_itp/CATALOGO-ERROS.md`) — sistema já preparado pra reconhecer
+`Aplicacao=APRXM` no schema, mas sem nenhuma fonte de dado real
+alimentando isso ainda.
+
+**Situação antes do levantamento:**
+- `aprxm_backend` não estava na lista de containers monitorados
+  (`catalogo-erros/config.py`) — os 2 bugs de 500 achados mais cedo
+  neste mesmo dia (login/search_path, `/openapi.json`) só foram vistos
+  por investigação manual via SSH, nunca teriam chegado ao catálogo.
+- Handler global de exceção (`main.py`) usava `print("[UNHANDLED]...")`
+  sem garantir a palavra "error"/"exception" — o coletor só enfileira
+  log que bate no regex `error|exception|fatal|panic`; dependia do nome
+  da classe da exceção conter uma dessas palavras.
+- Nenhum dos 3 frontends (`frontend/`, `painel/`, `presidencia/`)
+  reportava crash pra lugar nenhum — só `console.error` local (quando
+  existia Error Boundary; `painel/` não tinha nenhum). Sem cobertura de
+  erro fora da árvore React (`window.onerror`/`unhandledrejection`).
+- 2 pontos de integração externa engolindo falha sem log nível error:
+  fallback do Groq (chat "Simplifica", `agent.py`) e envio de e-mail de
+  lembrete de demanda (`demands.py`).
+- Demais integrações (Azure Blob, R2/datalake, push VAPID, PIX sync)
+  já propagavam/logavam corretamente — confirmado por auditoria, não
+  precisaram de mudança.
+
+**O que foi feito (commit `786714c` em `aprxm_sys`, `1703852`/`17038523`
+em `erp_itp`):**
+1. `catalogo-erros/config.py` (erp_itp): `aprxm_backend` adicionado à
+   lista de containers monitorados, `aplicacao_sugerida: "APRXM"`.
+2. `main.py`: handler global trocado pra `logger.error("[ERROR] ...")`.
+3. Novo endpoint `POST /api/v1/public/frontend-logs` (sem auth, mesmo
+   padrão do erp_itp/site institucional) — recebe crash do cliente,
+   loga em nível ERROR, não grava em banco.
+4. `agent.py`/`demands.py`: os 2 silenciamentos corrigidos, agora logam
+   em ERROR antes de continuar com o fallback/próximo item.
+5. Os 3 frontends ganharam `lib/reportError.ts` (Error Boundary +
+   listeners globais de erro/promise rejeitada, reportando pro endpoint
+   novo) — `painel/` ganhou Error Boundary pela primeira vez.
+6. Testado ponta a ponta: crash de teste enviado pro endpoint novo,
+   confirmado aparecendo no `docker logs` com `[ERROR]` (formato que o
+   coletor reconhece). Coletor roda a cada 5 min via cron
+   (`catalogo-erros-coletor`) já apontando pro checkout atualizado.
+
+**Fonte 2 (cron/tarefas) já cobria APRXM desde antes** (criada em outra
+sessão no mesmo dia, ver achado do bug de `exit_code` do ETL acima) —
+esse levantamento fechou a Fonte 1 (logs de container) e adicionou
+cobertura de frontend, que não existia em nenhuma fonte.
+
+**Não coberto ainda** (fora do escopo deste levantamento, registrar
+pra depois): WebAuthn (`webauthn.py`) converte erro pra `HTTPException`
+sem logar — falhas reais de servidor ali (não rejeição normal de
+credencial) ficam invisíveis; avaliar se vale logar antes de re-raise.
+
 ### Pendências abertas deste incidente
 
 - 🔴 **Backup real de produção do Neon do APRXM ainda não existe.** A
