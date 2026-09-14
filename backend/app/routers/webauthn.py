@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from typing import Any
 
 import webauthn
@@ -25,6 +26,7 @@ from app.core.tenant import CurrentUser, get_current_user
 from app.database import get_session
 
 router = APIRouter(prefix="/auth/webauthn", tags=["WebAuthn"])
+logger = logging.getLogger("aprxm.webauthn")
 
 
 def _rp_id() -> str:
@@ -120,6 +122,10 @@ async def register_complete(
     except HTTPException:
         raise
     except Exception as e:
+        # Antes essa falha virava 400 pro cliente sem nenhum log -- rejeicao
+        # normal de credencial invalida e bug de configuracao (RP ID/origin
+        # errado, etc.) ficavam igualmente invisiveis pro catalogo de erros.
+        logger.error("[ERROR] WebAuthn: falha na verificacao de registro (user_id=%s): %s", current.user_id, e)
         raise HTTPException(400, f"Falha na verificação: {e}")
 
     cred_id_b64 = base64.urlsafe_b64encode(verification.credential_id).decode().rstrip("=")
@@ -272,6 +278,10 @@ async def authenticate_complete(
     except HTTPException:
         raise
     except Exception as e:
+        # Mesma lacuna do registro (ver comentario acima): rejeicao normal
+        # (assinatura invalida, replay) e bug real de configuracao ficavam
+        # igualmente invisiveis pro catalogo de erros.
+        logger.error("[ERROR] WebAuthn: falha na verificacao de autenticacao (user_id=%s): %s", body.user_id, e)
         raise HTTPException(401, f"Falha na autenticação: {e}")
 
     await session.execute(text("""
