@@ -1,11 +1,27 @@
 """Métricas de negócio (Prometheus), mesmo padrão já usado no erp_itp
-(apps/backend/src/metrics/metrics.service.ts): gauges agregados em TODAS
-as associações, refrescados a cada 60s via loop de fundo -- não bate no
+(apps/backend/src/metrics/metrics.service.ts): agregados em TODAS as
+associações, refrescados a cada 60s via loop de fundo -- não bate no
 banco a cada scrape do Prometheus (que roda de 15 em 15s).
 
-Pedido do usuário (2026-09-14): APRXM "tem bastante movimentação" e
-precisava dos mesmos indicadores de negócio que o erp_itp já tem no
-Grafana (dashboard KPI BUSINESS).
+Duas categorias, por design:
+
+1. **Totais cumulativos** (`_total`): contagem/soma desde sempre (nunca
+   diminui), pra ser consultada no Grafana via `increase(metric[$__range])`.
+   Isso deixa o período (hoje, 24h, 7 dias, mês, qualquer range
+   arbitrário) **inteiramente a cargo do seletor de tempo do Grafana**,
+   sem hardcode de "hoje"/"CURRENT_DATE" no lado do backend -- achado
+   real (2026-09-14): a primeira versão desta feature usava
+   `CURRENT_DATE` direto na query, então os paineis "hoje"/"24h" no
+   Grafana ignoravam qualquer filtro de tempo que o usuário escolhesse
+   ali, sempre mostrando o dia corrente do servidor. Mesmo funcionando
+   como `Gauge` do lado do `prometheus_client` (a lib não tem um tipo
+   "counter que aceita `.set()`"), o valor em si só cresce -- o
+   `increase()` do PromQL funciona igual em cima disso.
+2. **Snapshots de estado atual** (sem sufixo `_total`): quantidade
+   *agora*, não windowed -- correto como gauge de verdade (ex.: quantas
+   encomendas estão paradas agora, não quantas ficaram paradas "hoje").
+   Vários destes são indicadores críticos de risco operacional, não só
+   contadores informativos.
 """
 import asyncio
 import logging
@@ -16,24 +32,51 @@ logger = logging.getLogger("aprxm.metrics")
 
 registry = CollectorRegistry()
 
+# ── Totais cumulativos (consultar via increase() no Grafana) ───────────────
+moradores_cadastrados_total = Gauge(
+    "aprxm_moradores_cadastrados_total", "Total histórico de moradores cadastrados (increase() pro período)", registry=registry)
+encomendas_recebidas_total = Gauge(
+    "aprxm_encomendas_recebidas_total", "Total histórico de encomendas recebidas (increase() pro período)", registry=registry)
+os_criadas_total = Gauge(
+    "aprxm_os_criadas_total", "Total histórico de ordens de serviço criadas (increase() pro período)", registry=registry)
+receita_reais_total = Gauge(
+    "aprxm_receita_reais_total", "Receita acumulada (transações de entrada) em reais (increase() pro período)", registry=registry)
+
+# ── Snapshots de estado atual ───────────────────────────────────────────────
 associacoes_ativas = Gauge(
     "aprxm_associacoes_ativas", "Associações ativas no sistema", registry=registry)
 moradores_ativos = Gauge(
     "aprxm_moradores_ativos", "Moradores ativos (todas as associações)", registry=registry)
-moradores_cadastrados_hoje = Gauge(
-    "aprxm_moradores_cadastrados_hoje", "Moradores cadastrados hoje", registry=registry)
-encomendas_hoje = Gauge(
-    "aprxm_encomendas_hoje", "Encomendas recebidas hoje", registry=registry)
+moradores_suspensos = Gauge(
+    "aprxm_moradores_suspensos", "Moradores com status suspenso -- indicador crítico de inadimplência/disciplina", registry=registry)
 encomendas_pendentes = Gauge(
     "aprxm_encomendas_pendentes", "Encomendas aguardando retirada/notificação (status received/notified)", registry=registry)
+encomendas_paradas_15d = Gauge(
+    "aprxm_encomendas_paradas_15d", "Encomendas recebidas há mais de 15 dias e ainda não entregues -- indicador crítico de backlog", registry=registry)
 os_abertas = Gauge(
     "aprxm_os_abertas", "Ordens de serviço pendentes ou em andamento", registry=registry)
-os_criadas_hoje = Gauge(
-    "aprxm_os_criadas_hoje", "Ordens de serviço criadas hoje", registry=registry)
-receita_hoje_reais = Gauge(
-    "aprxm_receita_hoje_reais", "Receita (transações de entrada) lançada hoje, em reais", registry=registry)
+mensalidades_vencidas = Gauge(
+    "aprxm_mensalidades_vencidas", "Mensalidades com status overdue -- indicador crítico de saúde financeira", registry=registry)
+caixas_abertas = Gauge(
+    "aprxm_caixas_abertas", "Sessões de caixa com status open -- indicador crítico de risco operacional (caixa esquecido aberto)", registry=registry)
 
 _REFRESH_INTERVAL_S = 60
+
+_QUERIES = [
+    # (gauge, sql)
+    (moradores_cadastrados_total, "SELECT count(*) FROM residents"),
+    (encomendas_recebidas_total, "SELECT count(*) FROM packages"),
+    (os_criadas_total, "SELECT count(*) FROM service_orders"),
+    (receita_reais_total, "SELECT COALESCE(sum(amount), 0) FROM transactions WHERE type = 'income'"),
+    (associacoes_ativas, "SELECT count(*) FROM associations WHERE is_active = TRUE"),
+    (moradores_ativos, "SELECT count(*) FROM residents WHERE status = 'active'"),
+    (moradores_suspensos, "SELECT count(*) FROM residents WHERE status = 'suspended'"),
+    (encomendas_pendentes, "SELECT count(*) FROM packages WHERE status IN ('received', 'notified')"),
+    (encomendas_paradas_15d, "SELECT count(*) FROM packages WHERE status IN ('received', 'notified') AND received_at < NOW() - INTERVAL '15 days'"),
+    (os_abertas, "SELECT count(*) FROM service_orders WHERE status IN ('pending', 'in_progress')"),
+    (mensalidades_vencidas, "SELECT count(*) FROM mensalidades WHERE status = 'overdue'"),
+    (caixas_abertas, "SELECT count(*) FROM cash_sessions WHERE status = 'open'"),
+]
 
 
 async def _atualizar_metricas_negocio() -> None:
@@ -41,35 +84,10 @@ async def _atualizar_metricas_negocio() -> None:
 
     from app.database import AsyncSessionLocal
 
-    queries = [
-        "SELECT count(*) FROM associations WHERE is_active = TRUE",
-        "SELECT count(*) FROM residents WHERE status = 'active'",
-        "SELECT count(*) FROM residents WHERE created_at::date = CURRENT_DATE",
-        "SELECT count(*) FROM packages WHERE received_at::date = CURRENT_DATE",
-        "SELECT count(*) FROM packages WHERE status IN ('received', 'notified')",
-        "SELECT count(*) FROM service_orders WHERE status IN ('pending', 'in_progress')",
-        "SELECT count(*) FROM service_orders WHERE created_at::date = CURRENT_DATE",
-        "SELECT COALESCE(sum(amount), 0) FROM transactions WHERE type = 'income' AND created_at::date = CURRENT_DATE",
-    ]
     async with AsyncSessionLocal() as session:
-        # Uma genexpr com `await` dentro vira um async generator (nao um
-        # generator normal) -- tuple unpack direto falhava com
-        # "cannot unpack non-iterable async_generator object" (achado
-        # 2026-09-14, primeiro deploy desta feature). Sequencial, mesma
-        # sessao/conexao, sem paralelismo real de qualquer forma.
-        resultados = []
-        for q in queries:
-            resultados.append((await session.execute(text(q))).scalar() or 0)
-        assocs, mor_ativos, mor_hoje, enc_hoje, enc_pend, os_ab, os_hoje, receita = resultados
-
-    associacoes_ativas.set(assocs)
-    moradores_ativos.set(mor_ativos)
-    moradores_cadastrados_hoje.set(mor_hoje)
-    encomendas_hoje.set(enc_hoje)
-    encomendas_pendentes.set(enc_pend)
-    os_abertas.set(os_ab)
-    os_criadas_hoje.set(os_hoje)
-    receita_hoje_reais.set(float(receita))
+        for gauge, sql in _QUERIES:
+            valor = (await session.execute(text(sql))).scalar() or 0
+            gauge.set(float(valor))
 
 
 async def _loop_metricas_negocio() -> None:
