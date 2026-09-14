@@ -754,6 +754,20 @@ blackbox target do domínio APRXM só foi refletido porque foi copiado
 manualmente na hora, não por `git pull`) — vale considerar trocar por
 symlink numa próxima sessão pra eliminar essa classe de erro de vez.
 
+**Correção 2026-09-14 (mesma sessão):** o dashboard novo tinha ido
+parar na mesma pasta `ITP` do Grafana (o `dashboard.yml` só tinha 1
+provider, sem separação por app). Reorganizado em 2 providers/pastas
+separados (`dashboards-json/itp/` → pasta `ITP`,
+`dashboards-json/aprxm/` → pasta `APRXM` nova) — mudança de *provider*
+(não só de conteúdo de dashboard) exige **restart do Grafana**, não só
+esperar o polling de 30s. **Achado no mesmo passo**: nem o
+`itp-visao-geral.json` atualizado nem o `aprxm-kpi-business.json` novo
+tinham sido de fato copiados pro `~/itp-stack` da VM antes disso —
+mesma classe de problema do `prometheus.yml` (ver acima), confirmando
+que é um padrão recorrente a resolver de vez (symlink) numa próxima
+sessão. Confirmado via API do Grafana (`/api/search?type=dash-db`) que
+as 2 pastas existem agora com os dashboards certos em cada uma.
+
 **Não implementado nesta rodada** (fora de escopo, registrar pra depois):
 - Métricas HTTP (duração/contagem por rota, tipo `http_requests_total`
   do `erp_itp`) — só as métricas de negócio foram adicionadas. Sem
