@@ -67,13 +67,15 @@ export function EscModal({ title, onClose, children, footer }: {
   children: ReactNode
   footer?: ReactNode
 }) {
+  const titleId = `esc-modal-title-${title.replace(/\W+/g, '-')}`
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+         role="dialog" aria-modal="true" aria-labelledby={titleId}
          style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
       <div className="w-full max-w-md bg-white shadow-2xl border" style={{ borderColor: BORDER }}>
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: BORDER }}>
-          <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+          <h2 id={titleId} className="text-sm font-semibold text-slate-800">{title}</h2>
+          <button onClick={onClose} aria-label="Fechar" className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 flex flex-col gap-3 max-h-[70vh] overflow-y-auto">{children}</div>
         {footer && <div className="px-5 py-3 border-t flex justify-end gap-2" style={{ borderColor: BORDER }}>{footer}</div>}

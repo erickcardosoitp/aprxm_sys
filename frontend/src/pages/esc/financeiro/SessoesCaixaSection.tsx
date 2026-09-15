@@ -142,11 +142,11 @@ export default function SessoesCaixaSection() {
       </div>
 
       {detalhe && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="sessao-detalhe-title">
           <div className="w-full max-w-sm bg-white shadow-2xl border" style={{ borderColor: BORDER }}>
             <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: BORDER }}>
-              <h2 className="text-sm font-semibold text-slate-800">Sessão de caixa — {detalhe.unidade}</h2>
-              <button onClick={() => setDetalhe(null)} className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+              <h2 id="sessao-detalhe-title" className="text-sm font-semibold text-slate-800">Sessão de caixa — {detalhe.unidade}</h2>
+              <button onClick={() => setDetalhe(null)} aria-label="Fechar" className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
             </div>
             <div className="px-5 py-4 flex flex-col gap-2">
               {[

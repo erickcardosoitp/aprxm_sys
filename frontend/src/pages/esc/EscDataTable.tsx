@@ -65,13 +65,17 @@ export function useSort<T extends Record<string, any>>(rows: T[]) {
 
 export function SortTh({ label, sortKey, activeKey, dir, onClick, align = 'left' }:
   { label: string; sortKey: string | number | symbol; activeKey: string | number | symbol | null; dir: 'asc' | 'desc'; onClick: () => void; align?: 'left' | 'right' }) {
+  const isActive = activeKey === sortKey
   return (
     <th onClick={onClick}
+        role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
+        aria-sort={isActive ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
         className={`py-2 ${align === 'right' ? 'text-right px-4' : 'text-left pr-4'} font-medium whitespace-nowrap cursor-pointer select-none hover:text-slate-700`}
         style={{ color: TEXT_MUTED }}>
       <span className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end w-full' : ''}`}>
         {label}
-        {activeKey === sortKey && (dir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+        {isActive && (dir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
       </span>
     </th>
   )
