@@ -302,6 +302,7 @@ class CriarContaPagarRequest(BaseModel):
 
 class CriarPayableCategoriaRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    transaction_category_id: UUID | None = None
 
 
 @router.get("/cadastros/categorias-contas-pagar", summary="Categorias de contas a pagar da empresa")
@@ -318,7 +319,9 @@ async def criar_payable_categoria(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    cat_id = await EscService(session).criar_payable_categoria(current.empresa_id, body.name, current.user_id)
+    cat_id = await EscService(session).criar_payable_categoria(
+        current.empresa_id, body.name, current.user_id, body.transaction_category_id
+    )
     await _audit(session, current, "criar_categoria_contas_pagar", "payable_categories", cat_id, body.name)
     await session.commit()
     return {"id": str(cat_id), "ok": True}
@@ -327,6 +330,7 @@ async def criar_payable_categoria(
 class EditarPayableCategoriaRequest(BaseModel):
     name: str | None = None
     is_active: bool | None = None
+    transaction_category_id: UUID | None = None
 
 
 @router.put("/cadastros/categorias-contas-pagar/{categoria_id}", summary="Editar/desativar categoria de conta a pagar")

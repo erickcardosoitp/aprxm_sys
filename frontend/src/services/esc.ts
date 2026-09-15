@@ -71,7 +71,8 @@ export const escService = {
   criarForma: (body: any) => api.post('/esc/cadastros/formas-pagamento', body),
   editarForma: (id: string, body: any) => api.put(`/esc/cadastros/formas-pagamento/${id}`, body),
   categoriasContasPagar: () => api.get('/esc/cadastros/categorias-contas-pagar'),
-  criarCategoriaContasPagar: (name: string) => api.post('/esc/cadastros/categorias-contas-pagar', { name }),
+  criarCategoriaContasPagar: (name: string, transaction_category_id?: string) =>
+    api.post('/esc/cadastros/categorias-contas-pagar', { name, transaction_category_id }),
   editarCategoriaContasPagar: (id: string, body: any) => api.put(`/esc/cadastros/categorias-contas-pagar/${id}`, body),
 
   produtos: () => api.get('/esc/cadastros/produtos'),

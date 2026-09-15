@@ -86,20 +86,26 @@ export function CategoriasSection() {
 
 export function CategoriasContasPagarSection() {
   const [rows, setRows] = useState<any[]>([])
+  const [dreCategorias, setDreCategorias] = useState<any[]>([])
   const [name, setName] = useState('')
+  const [dreCategoriaId, setDreCategoriaId] = useState('')
   const [saving, setSaving] = useState(false)
   const [editTarget, setEditTarget] = useState<any | null>(null)
   const [editName, setEditName] = useState('')
+  const [editDreCategoriaId, setEditDreCategoriaId] = useState('')
 
   const load = () => escService.categoriasContasPagar().then((r) => setRows(r.data)).catch(() => {})
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    escService.categorias().then((r) => setDreCategorias(r.data.filter((c: any) => c.type === 'expense'))).catch(() => {})
+  }, [])
 
   const add = async () => {
     if (!name.trim()) { toast.error('Informe o nome.'); return }
     setSaving(true)
     try {
-      await escService.criarCategoriaContasPagar(name.trim())
-      setName(''); toast.success('Categoria criada.'); load()
+      await escService.criarCategoriaContasPagar(name.trim(), dreCategoriaId || undefined)
+      setName(''); setDreCategoriaId(''); toast.success('Categoria criada.'); load()
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao criar.') }
     finally { setSaving(false) }
   }
@@ -107,7 +113,10 @@ export function CategoriasContasPagarSection() {
   const saveEdit = async () => {
     if (!editTarget || !editName.trim()) { toast.error('Informe o nome.'); return }
     try {
-      await escService.editarCategoriaContasPagar(editTarget.id, { name: editName.trim() })
+      await escService.editarCategoriaContasPagar(editTarget.id, {
+        name: editName.trim(),
+        ...(editDreCategoriaId ? { transaction_category_id: editDreCategoriaId } : {}),
+      })
       toast.success('Categoria atualizada.'); setEditTarget(null); load()
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao editar.') }
   }
@@ -123,20 +132,28 @@ export function CategoriasContasPagarSection() {
     <div className="px-6 py-4 max-w-2xl h-full overflow-y-auto" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
       <p className="text-xs mb-3" style={{ color: TEXT_MUTED }}>
         Categorias usadas só em Contas a Pagar (ex: Aluguel, Energia, Manutenção) — conceito separado das
-        categorias de movimentação do Financeiro.
+        categorias de movimentação do Financeiro. Vincular a uma categoria de Despesa faz a baixa dessa
+        conta aparecer categorizada na DRE, em vez de cair genérica em "Despesas Gerais".
       </p>
       <div className="flex gap-2 mb-4">
         <input className={escInputCls} style={escInputStyle} placeholder="Nova categoria de conta a pagar" value={name}
                onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <select className={escInputCls} style={{ ...escInputStyle, maxWidth: 180 }} value={dreCategoriaId} onChange={(e) => setDreCategoriaId(e.target.value)}>
+          <option value="">Sem categoria na DRE</option>
+          {dreCategorias.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
         <EscButton onClick={add} disabled={saving}><Plus className="w-4 h-4" /></EscButton>
       </div>
       <ul className="border-t" style={{ borderColor: BORDER }}>
         {rows.length === 0 && <li className="py-6 text-center text-sm" style={{ color: TEXT_MUTED, fontFamily: "'IBM Plex Mono', monospace" }}>nenhuma categoria cadastrada</li>}
         {rows.map((c) => (
           <li key={c.id} className="flex items-center justify-between py-2 border-b text-sm" style={{ borderColor: BORDER, opacity: c.is_active ? 1 : 0.5 }}>
-            <span>{c.name}{!c.is_active && <span className="ml-2 text-[10px]" style={{ color: TEXT_MUTED }}>(inativa)</span>}</span>
+            <span>
+              {c.name}{!c.is_active && <span className="ml-2 text-[10px]" style={{ color: TEXT_MUTED }}>(inativa)</span>}
+              {c.transaction_category_name && <span className="ml-2 text-[10px]" style={{ color: TEXT_MUTED }}>→ DRE: {c.transaction_category_name}</span>}
+            </span>
             <div className="flex items-center gap-2">
-              <button onClick={() => { setEditTarget(c); setEditName(c.name) }} className="text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
+              <button onClick={() => { setEditTarget(c); setEditName(c.name); setEditDreCategoriaId(c.transaction_category_id ?? '') }} className="text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
               <button onClick={() => toggleActive(c)} className="text-xs underline" style={{ color: TEXT_MUTED }}>{c.is_active ? 'desativar' : 'reativar'}</button>
             </div>
           </li>
@@ -148,6 +165,12 @@ export function CategoriasContasPagarSection() {
           footer={<><EscButton variant="ghost" onClick={() => setEditTarget(null)}>Cancelar</EscButton><EscButton onClick={saveEdit}>Salvar</EscButton></>}>
           <EscField label="Nome" required>
             <input className={escInputCls} style={escInputStyle} value={editName} onChange={(e) => setEditName(e.target.value)} />
+          </EscField>
+          <EscField label="Categoria na DRE">
+            <select className={escInputCls} style={escInputStyle} value={editDreCategoriaId} onChange={(e) => setEditDreCategoriaId(e.target.value)}>
+              <option value="">Sem categoria na DRE</option>
+              {dreCategorias.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
           </EscField>
         </EscModal>
       )}

@@ -262,17 +262,30 @@ class EscService:
     # ── Contas a Pagar ───────────────────────────────────────────────────
 
     async def list_payable_categorias(self, empresa_id) -> list[dict]:
-        rows = (await self.session.execute(text(
-            "SELECT id, name, is_active FROM payable_categories WHERE empresa_id = :eid ORDER BY name"
-        ), {"eid": str(empresa_id)})).fetchall()
-        return [{"id": str(r[0]), "name": r[1], "is_active": r[2]} for r in rows]
+        rows = (await self.session.execute(text("""
+            SELECT pc.id, pc.name, pc.is_active, pc.transaction_category_id, tc.name
+            FROM payable_categories pc
+            LEFT JOIN transaction_categories tc ON tc.id = pc.transaction_category_id
+            WHERE pc.empresa_id = :eid ORDER BY pc.name
+        """), {"eid": str(empresa_id)})).fetchall()
+        return [
+            {
+                "id": str(r[0]), "name": r[1], "is_active": r[2],
+                "transaction_category_id": str(r[3]) if r[3] else None,
+                "transaction_category_name": r[4],
+            }
+            for r in rows
+        ]
 
-    async def criar_payable_categoria(self, empresa_id, name: str, user_id) -> UUID:
+    async def criar_payable_categoria(self, empresa_id, name: str, user_id, transaction_category_id: UUID | None = None) -> UUID:
         row = (await self.session.execute(text("""
-            INSERT INTO payable_categories (id, empresa_id, name, is_active, created_by)
-            VALUES (gen_random_uuid(), :eid, :name, TRUE, :uid)
+            INSERT INTO payable_categories (id, empresa_id, name, is_active, created_by, transaction_category_id)
+            VALUES (gen_random_uuid(), :eid, :name, TRUE, :uid, :tcid)
             RETURNING id
-        """), {"eid": str(empresa_id), "name": name, "uid": str(user_id)})).fetchone()
+        """), {
+            "eid": str(empresa_id), "name": name, "uid": str(user_id),
+            "tcid": str(transaction_category_id) if transaction_category_id else None,
+        })).fetchone()
         return row[0]
 
     async def editar_payable_categoria(self, categoria_id: UUID, empresa_id, body, user_id) -> dict:
@@ -281,6 +294,8 @@ class EscService:
             sets.append("name = :name"); params["name"] = body.name
         if body.is_active is not None:
             sets.append("is_active = :active"); params["active"] = body.is_active
+        if body.transaction_category_id is not None:
+            sets.append("transaction_category_id = :tcid"); params["tcid"] = str(body.transaction_category_id)
         if not sets:
             return {}
         sets.append("updated_at = NOW()")
@@ -451,27 +466,33 @@ class EscService:
     async def baixar_conta_pagar(self, conta_id: UUID, ids: list[str], amount: Decimal,
                                   cash_session_id: UUID | None, user_id) -> dict:
         conta = (await self.session.execute(text(
-            "SELECT c.association_id, c.amount, c.amount_paid, c.status, c.description, pc.name AS categoria "
+            "SELECT c.association_id, c.amount, c.amount_paid, c.status, c.description, "
+            "pc.name AS categoria, pc.transaction_category_id "
             "FROM contas_pagar c LEFT JOIN payable_categories pc ON pc.id = c.payable_category_id "
             "WHERE c.id = :id AND c.association_id = ANY(:ids)"
         ), {"id": str(conta_id), "ids": ids})).fetchone()
         if not conta:
             raise NotFoundError("Conta a pagar")
-        assoc_id, conta_amount, amount_paid, status, conta_desc, categoria_nome = conta
+        assoc_id, conta_amount, amount_paid, status, conta_desc, categoria_nome, transaction_category_id = conta
         if status == "paid":
             raise UnprocessableError("Conta já está totalmente paga.")
         novo_pago = amount_paid + amount
         if novo_pago > conta_amount:
             raise UnprocessableError(f"Valor excede o saldo devedor (R$ {conta_amount - amount_paid:.2f}).")
 
+        # transaction_category_id vem do vinculo opcional payable_categories ->
+        # transaction_categories (v26) -- sem vinculo, cai generico em "Despesas
+        # Gerais" na DRE (comportamento antigo, mantido de proposito).
         desc = f"Baixa conta a pagar — {categoria_nome}: {conta_desc}" if categoria_nome else f"Baixa de conta a pagar: {conta_desc}"
         tx_row = (await self.session.execute(text("""
-            INSERT INTO transactions (id, association_id, cash_session_id, type, amount, description, created_by)
-            VALUES (gen_random_uuid(), :aid, :sid, 'expense', :amount, :desc, :uid)
+            INSERT INTO transactions (id, association_id, cash_session_id, type, amount, description, category_id, created_by)
+            VALUES (gen_random_uuid(), :aid, :sid, 'expense', :amount, :desc, :cid, :uid)
             RETURNING id
         """), {
             "aid": str(assoc_id), "sid": str(cash_session_id) if cash_session_id else None,
-            "amount": amount, "desc": desc, "uid": str(user_id),
+            "amount": amount, "desc": desc,
+            "cid": str(transaction_category_id) if transaction_category_id else None,
+            "uid": str(user_id),
         })).fetchone()
 
         await self.session.execute(text("""

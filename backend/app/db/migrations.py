@@ -28,7 +28,7 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 async def _create_base_schema(session) -> None:
     """Cria o schema do zero num banco 100% vazio (sem o dump de referencia).
@@ -1637,6 +1637,28 @@ async def _apply_versioned_migrations(session) -> None:
     except Exception as exc:
         await session.rollback()
         print(f"[MIGRATION v25] falhou (nao-fatal): {exc}")
+
+    # v26: payable_categories.transaction_category_id -- payable_categories
+    # (categoria de Contas a Pagar) e' deliberadamente desacoplada de
+    # transaction_categories (categoria de movimentacao/DRE) desde a v14, mas
+    # isso fazia toda baixa de conta a pagar cair generica em "Despesas
+    # Gerais" na DRE, perdendo a categorizacao (achado real, checklist ESC
+    # 2026-07-23). Vinculo agora e' opcional (NULL = comportamento antigo,
+    # continua caindo em Despesas Gerais) -- decisao do usuario 2026-09-15.
+    try:
+        await session.execute(text(
+            "ALTER TABLE payable_categories "
+            "ADD COLUMN IF NOT EXISTS transaction_category_id UUID REFERENCES transaction_categories(id)"
+        ))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (26, 'v26: payable_categories.transaction_category_id (categoria de contas a pagar chega na DRE)') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v26] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:
