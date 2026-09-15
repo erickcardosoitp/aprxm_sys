@@ -20,7 +20,7 @@ export default function InventarioEncomendasSection() {
   const [detail, setDetail] = useState<any | null>(null)
 
   useEffect(() => {
-    escService.associacoes().then((r) => setUnits((r.data as Assoc[]).filter((a) => a.id !== empresaId))).catch(() => {})
+    escService.associacoes().then((r) => setUnits((r.data as Assoc[]).filter((a) => a.id !== empresaId))).catch(() => toast.error('Erro ao carregar unidades.'))
   }, [empresaId])
 
   const gerar = async () => {

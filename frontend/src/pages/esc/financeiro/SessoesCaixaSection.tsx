@@ -40,7 +40,7 @@ export default function SessoesCaixaSection() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { escService.associacoes().then((r) => setAssociacoes(r.data)).catch(() => {}) }, [])
+  useEffect(() => { escService.associacoes().then((r) => setAssociacoes(r.data)).catch(() => toast.error('Erro ao carregar unidades.')) }, [])
   useEffect(() => { load() }, [unidade])
 
   const handleReabrir = async () => {

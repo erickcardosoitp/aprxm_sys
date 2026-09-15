@@ -77,7 +77,7 @@ export default function MovimentacoesSection() {
   const [detalhe, setDetalhe] = useState<Row | null>(null)
   const detalheRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { escService.usuarios().then((r) => setUsuarios(r.data)).catch(() => {}) }, [])
+  useEffect(() => { escService.usuarios().then((r) => setUsuarios(r.data)).catch(() => toast.error('Erro ao carregar usuários.')) }, [])
 
   const params = useMemo(() => {
     const { date_from, date_to } = periodoToRange(periodo)

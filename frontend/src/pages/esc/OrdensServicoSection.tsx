@@ -41,7 +41,7 @@ export default function OrdensServicoSection() {
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { escService.associacoes().then((r) => setAssociacoes(r.data)).catch(() => {}) }, [])
+  useEffect(() => { escService.associacoes().then((r) => setAssociacoes(r.data)).catch(() => toast.error('Erro ao carregar unidades.')) }, [])
 
   const params = useMemo(() => {
     const p: Record<string, any> = { skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE }

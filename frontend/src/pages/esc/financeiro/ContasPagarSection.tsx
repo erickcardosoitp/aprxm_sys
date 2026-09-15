@@ -56,8 +56,8 @@ export default function ContasPagarSection() {
 
   useEffect(() => { load() }, [status, unidade])
   useEffect(() => {
-    escService.associacoes().then((r) => setAssociacoes(r.data)).catch(() => {})
-    escService.categoriasContasPagar().then((r) => setCategorias(r.data)).catch(() => {})
+    escService.associacoes().then((r) => setAssociacoes(r.data)).catch(() => toast.error('Erro ao carregar unidades.'))
+    escService.categoriasContasPagar().then((r) => setCategorias(r.data)).catch(() => toast.error('Erro ao carregar categorias.'))
   }, [])
 
   const loadTemplates = () => {
@@ -125,7 +125,7 @@ export default function ContasPagarSection() {
     setBaixaAmount(String((c.amount - c.amount_paid).toFixed(2)))
     setBaixaCashSessionId('')
     setCaixasUnidade([])
-    escService.caixasAbertos(c.association_id).then((r) => setCaixasUnidade(r.data)).catch(() => {})
+    escService.caixasAbertos(c.association_id).then((r) => setCaixasUnidade(r.data)).catch(() => toast.error('Erro ao carregar caixas abertos.'))
   }
 
   const handleBaixar = async () => {

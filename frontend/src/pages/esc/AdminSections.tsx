@@ -27,7 +27,7 @@ export function PermissoesSection() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    escService.getAccessGroups().then((r) => setGroups(r.data || {})).catch(() => {})
+    escService.getAccessGroups().then((r) => setGroups(r.data || {})).catch(() => toast.error('Erro ao carregar grupos de permissão.'))
   }, [])
 
   const has = (role: string, mod: string, perm: string) => (groups[role]?.[mod] ?? []).includes(perm)

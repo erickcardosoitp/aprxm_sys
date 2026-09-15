@@ -16,7 +16,7 @@ export function CategoriasSection() {
   const [editTarget, setEditTarget] = useState<any | null>(null)
   const [editName, setEditName] = useState('')
 
-  const load = () => escService.categorias().then((r) => setRows(r.data)).catch(() => {})
+  const load = () => escService.categorias().then((r) => setRows(r.data)).catch(() => toast.error('Erro ao carregar categorias.'))
   useEffect(() => { load() }, [])
 
   const add = async () => {
@@ -94,10 +94,10 @@ export function CategoriasContasPagarSection() {
   const [editName, setEditName] = useState('')
   const [editDreCategoriaId, setEditDreCategoriaId] = useState('')
 
-  const load = () => escService.categoriasContasPagar().then((r) => setRows(r.data)).catch(() => {})
+  const load = () => escService.categoriasContasPagar().then((r) => setRows(r.data)).catch(() => toast.error('Erro ao carregar categorias.'))
   useEffect(() => {
     load()
-    escService.categorias().then((r) => setDreCategorias(r.data.filter((c: any) => c.type === 'expense'))).catch(() => {})
+    escService.categorias().then((r) => setDreCategorias(r.data.filter((c: any) => c.type === 'expense'))).catch(() => toast.error('Erro ao carregar categorias de DRE.'))
   }, [])
 
   const add = async () => {
@@ -185,7 +185,7 @@ export function FormasPagamentoSection() {
   const [editTarget, setEditTarget] = useState<any | null>(null)
   const [editName, setEditName] = useState('')
 
-  const load = () => escService.formasPagamento().then((r) => setRows(r.data)).catch(() => {})
+  const load = () => escService.formasPagamento().then((r) => setRows(r.data)).catch(() => toast.error('Erro ao carregar formas de pagamento.'))
   useEffect(() => { load() }, [])
 
   const add = async () => {
@@ -256,7 +256,7 @@ export function ProdutosSection() {
   const [saving, setSaving] = useState(false)
   const [conflito, setConflito] = useState<{ divergentes: any[]; novo_valor: string } | null>(null)
 
-  const load = () => escService.produtos().then((r) => setRows(r.data)).catch(() => {})
+  const load = () => escService.produtos().then((r) => setRows(r.data)).catch(() => toast.error('Erro ao carregar produtos.'))
   useEffect(() => { load() }, [])
 
   const openEdit = (p: any) => {

@@ -31,7 +31,7 @@ export default function UsuariosSection() {
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    escService.associacoes().then((r) => setUnits((r.data as Assoc[]).filter((a) => a.id !== empresaId))).catch(() => {})
+    escService.associacoes().then((r) => setUnits((r.data as Assoc[]).filter((a) => a.id !== empresaId))).catch(() => toast.error('Erro ao carregar unidades.'))
   }, [empresaId])
 
   const openNew = () => { setEditTarget(null); setForm({ ...EMPTY }); setShowForm(true) }
