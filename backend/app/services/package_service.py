@@ -55,7 +55,9 @@ class PackageService:
 
         if resident_id:
             resident = await self._resolve_resident(resident_id, association_id)
-            if resident and resident.status not in (ResidentStatus.active,):
+            if not resident:
+                raise UnprocessableError("Morador não encontrado nesta associação.")
+            if resident.status not in (ResidentStatus.active,):
                 raise UnprocessableError("Morador suspenso ou inativo. Não é possível receber encomendas.")
 
         package = Package(
@@ -107,9 +109,12 @@ class PackageService:
             raise UnprocessableError("Encomenda já foi entregue.")
 
         # Determine if fee applies
-        resident = await self._resolve_resident(
-            delivered_to_resident_id or package.resident_id, association_id
-        )
+        if delivered_to_resident_id:
+            resident = await self._resolve_resident(delivered_to_resident_id, association_id)
+            if not resident:
+                raise UnprocessableError("Morador não encontrado nesta associação.")
+        else:
+            resident = await self._resolve_resident(package.resident_id, association_id)
         if resident and resident.status not in (ResidentStatus.active,):
             raise UnprocessableError("Morador suspenso ou inativo. Não é possível entregar encomendas.")
         is_active_member = self._is_active_member(resident)
