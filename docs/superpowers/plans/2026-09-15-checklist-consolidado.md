@@ -42,10 +42,10 @@ Status: `🔴` crítico, `🟠` alto, `🟡` médio, `🟢` decisão de escopo,
   qualquer unidade) — o checklist antigo generalizou errado a partir do
   padrão de OS. Já tem paginação real e filtro de data
   (`skip`/`limit`, `date_from`/`date_to`) — isso nunca foi o problema.
-- [ ] **Associações: só editar, não criar** no ESC — `PUT
-  /cadastros/associacoes/{id}` existe (`esc.py:68`), mas criar/(des)ativar
-  unidade nova continua só no router de superadmin de plataforma, fora
-  do alcance do admin da própria empresa.
+- [x] **Associações: só editar, não criar** no ESC — ✅ **Não é bug,
+  confirmado com o usuário 2026-09-15.** Criação de associação nova é
+  intencionalmente restrita ao painel de superadmin da plataforma, não
+  ao ESC — mesmo padrão de decisão do item de Encomendas acima.
 - [ ] **Administração → Estoque é cópia read-only e incompleta de
   Cadastros → Comprovantes de Residência** — decisão de produto
   pendente (dar paridade de edição, ou remover a duplicata).
