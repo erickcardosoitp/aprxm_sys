@@ -126,13 +126,15 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
 - [x] **Endpoint `GET /esc/administracao/permissoes` não usado** — ✅
   já não existe mais no código (removido em algum momento, claim
   obsoleta).
-- [ ] **Detecção de forma de pagamento por `ILIKE '%pix%'`/`'%dinheiro%'`**
-  no nome digitado — confirmado ainda real, presente em 6 arquivos
-  (`financeiro.py`, `esc_service.py`, `finance_service.py`, `admin.py`,
-  `finance.py`, `cash_boxes.py`). **Não é pendência pequena** — fix
-  correto exigiria coluna `type` em `payment_methods` + atualizar os 6
-  pontos. Registrado como risco conhecido, não uma tarefa de "fixar
-  agora".
+- [x] **Detecção de forma de pagamento por `ILIKE '%pix%'`/`'%dinheiro%'`**
+  no nome digitado — ✅ **Resolvido 2026-09-15**. Real em 10 pontos de
+  4 arquivos (não 6 — `admin.py`/`finance.py` já não tinham mais esse
+  padrão quando reverificado de perto). Migration v27:
+  `payment_methods.type` (pix/dinheiro/outro) com backfill único,
+  substitui a inferência por nome nos 4 arquivos
+  (`esc_service.py`, `finance_service.py`, `cash_boxes.py`,
+  `financeiro.py`). Seletor de tipo no frontend ao criar/editar forma
+  de pagamento. Deployado e migration confirmada em produção.
 - [x] **Checagem de e-mail duplicado é global, não por `empresa_id`**
   — ✅ **confirmado intencional**: `users.email` tem `UNIQUE` no
   próprio schema do banco (`uq_users_email`) — login único na
