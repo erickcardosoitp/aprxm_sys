@@ -109,7 +109,7 @@ async def saldo_consolidado(
                      ELSE (SELECT COALESCE(SUM(t.amount),0) FROM transactions t
                            JOIN payment_methods pm ON pm.id = t.payment_method_id
                            WHERE t.cash_session_id = cs.id AND t.type = 'income'
-                             AND pm.name ILIKE '%pix%'
+                             AND pm.type = 'pix'
                              AND t.reversed_at IS NULL AND t.is_reversal = false)
                 END
             ), 0) AS pix,
@@ -118,7 +118,7 @@ async def saldo_consolidado(
                      ELSE (SELECT COALESCE(SUM(t.amount),0) FROM transactions t
                            WHERE t.cash_session_id = cs.id AND t.type = 'income'
                              AND (t.payment_method_id IS NULL OR t.payment_method_id NOT IN (
-                                 SELECT id FROM payment_methods WHERE name ILIKE '%pix%'))
+                                 SELECT id FROM payment_methods WHERE type = 'pix'))
                              AND t.reversed_at IS NULL AND t.is_reversal = false)
                 END
             ), 0) AS dinheiro
