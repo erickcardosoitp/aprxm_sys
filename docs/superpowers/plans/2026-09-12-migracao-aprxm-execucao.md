@@ -1462,11 +1462,16 @@ majoritariamente rede/domínio e a migração de storage.
     deixar sujeira. De agora em diante, `git pull` no `~/erp_itp` +
     `docker kill -s HUP itp_prometheus` (Prometheus) ou restart do
     Grafana (mudança de provider) já bastam.
-29. 🟢 **Azure Blob Storage (`aprxm-midia`) — backup pro SharePoint em
-    andamento** (2026-09-14): script incremental criado e testado,
-    backfill inicial dos 13.892 arquivos rodando (0 falhas até agora),
-    cron diário às 4h já agendado. Ver "4º backup" em "Backups em
-    produção — visão geral".
+29. ✅ **Azure Blob Storage (`aprxm-midia`) — backup pro SharePoint
+    concluído** (2026-09-14): backfill inicial finalizado —
+    **13.882/13.887 enviados, 5 falhas** (todas `503 Service
+    Unavailable`, throttling transitório do Graph API, não erro de
+    conteúdo — o manifesto não marca esses 5 como enviados, então a
+    próxima rodada diária já reprocessa sozinha, sem ação manual).
+    Estrutura confirmada no SharePoint: 8 pastas na raiz de
+    `Backups/aprxm_azure_blob/` batendo com as associações/prefixos
+    reais do container. Cron diário às 4h agendado. Ver "4º backup" em
+    "Backups em produção — visão geral".
 30. ✅ **Terceira camada de redundância pros 3 backups de banco**
     (erp_itp, APRXM Postgres, APRXM ClickHouse) — todos sobem cópia pro
     SharePoint desde 2026-09-14. Ver item 23b e "Backups em produção".
