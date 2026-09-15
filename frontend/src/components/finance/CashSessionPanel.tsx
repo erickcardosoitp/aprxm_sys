@@ -49,7 +49,7 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
   const [settings, setSettings] = useState<AssociationSettings | null>(null)
 
   useEffect(() => {
-    settingsService.get().then(r => setSettings(r.data)).catch(() => {})
+    settingsService.get().then(r => setSettings(r.data)).catch(() => toast.error('Erro ao carregar configurações.'))
   }, [])
   const [blindPix, setBlindPix] = useState('')
   const [blindDinheiro, setBlindDinheiro] = useState('')
@@ -206,7 +206,7 @@ function CloseModal({ session, onDone, onCancel, onRefresh }: CloseModalProps) {
         await api.post(`/finance/sessions/${session.id}/quebra`, {
           tipo,
           amount: Math.abs(result.diff).toFixed(2),
-        }).catch(() => {})
+        }).catch(() => toast.error('Erro ao registrar quebra de caixa — confira manualmente.'))
       }
       printClosingReceipt(transactions, result, (settings as any)?.association_name ?? '')
       onRefresh()

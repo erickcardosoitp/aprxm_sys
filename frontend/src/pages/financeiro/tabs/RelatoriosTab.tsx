@@ -78,7 +78,7 @@ export default function RelatoriosTab() {
     setLoadingBalance(true)
     api.get<BalanceSummary>('/finance/balance-summary')
       .then(r => setBalanceSummary(r.data))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar saldo em caixa.'))
       .finally(() => setLoadingBalance(false))
   }, [])
 

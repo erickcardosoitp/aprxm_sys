@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { printCarne as printCarneUtil } from '../../utils/printCarne'
+import { formatCep } from '../../utils'
 import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2, Download, Printer, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
@@ -253,13 +254,13 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
   const [expenseSigHas, setExpenseSigHas] = useState(false)
 
   useEffect(() => {
-    settingsService.get().then(r => setSettings(r.data)).catch(() => {})
+    settingsService.get().then(r => setSettings(r.data)).catch(() => toast.error('Erro ao carregar configurações.'))
     financeService.listOpenSessionsPicker().then(r => {
       setOpenSessions(r.data as any)
       const mine = r.data.find(s => s.is_mine)
       if (mine) setSelectedSessionId(mine.id)
       // no auto-fallback: if no own session, user must pick explicitly
-    }).catch(() => {})
+    }).catch(() => toast.error('Erro ao carregar sessões de caixa abertas.'))
   }, [])
 
   useEffect(() => {
@@ -972,7 +973,7 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                             <p className="text-xs text-blue-600">
                               {resident.type === 'guest' ? 'Visitante (não associado)' : 'Associado'}
                               {resident.phone_primary ? ` · ${resident.phone_primary}` : ''}
-                              {resident.address_cep ? ` · CEP ${resident.address_cep}` : ''}
+                              {resident.address_cep ? ` · CEP ${formatCep(resident.address_cep)}` : ''}
                             </p>
                             {paymentHistory?.is_delinquent && (
                               <p className="text-xs text-red-600 font-semibold mt-0.5 flex items-center gap-1">

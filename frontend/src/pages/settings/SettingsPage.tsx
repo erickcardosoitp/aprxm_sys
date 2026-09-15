@@ -163,10 +163,10 @@ export default function SettingsPage() {
       }
     }
     loadCadastros()
-    api.get<SangriaDest[]>('/finance/sangria-destinations').then(r => setSangriaDests(r.data)).catch(() => {})
-    api.get('/carriers').then(r => setCarriers(r.data)).catch(() => {})
-    api.get('/carriers/deliverers').then(r => setDeliverers(r.data)).catch(() => {})
-    api.get<OSPhase[]>('/service-order-phases/all').then(r => setOsPhases(r.data)).catch(() => {})
+    api.get<SangriaDest[]>('/finance/sangria-destinations').then(r => setSangriaDests(r.data)).catch(() => toast.error('Erro ao carregar destinos de sangria.'))
+    api.get('/carriers').then(r => setCarriers(r.data)).catch(() => toast.error('Erro ao carregar transportadoras.'))
+    api.get('/carriers/deliverers').then(r => setDeliverers(r.data)).catch(() => toast.error('Erro ao carregar entregadores.'))
+    api.get<OSPhase[]>('/service-order-phases/all').then(r => setOsPhases(r.data)).catch(() => toast.error('Erro ao carregar fases de O.S.'))
   }, [canSeeAssociation])
 
   const handleSaveCadastros = async () => {
@@ -326,7 +326,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!canSeeAssociation) return
     api.get<{ id: string; full_name: string; role: string }[]>('/admin/users')
-      .then(r => setUsers(r.data)).catch(() => {})
+      .then(r => setUsers(r.data)).catch(() => toast.error('Erro ao carregar usuários.'))
   }, [canSeeAssociation])
 
   // ── Save Caixa settings ──

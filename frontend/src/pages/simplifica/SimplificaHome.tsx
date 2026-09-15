@@ -42,7 +42,7 @@ export default function SimplificaHome() {
   const fetchCaixas = () => {
     api.get<CaixaAberto[]>('/finance/sessions/open')
       .then(r => setCaixas(r.data ?? []))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar caixas abertos.'))
       .finally(() => setLoadingCaixa(false))
   }
 

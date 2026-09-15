@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import toast from 'react-hot-toast'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { Users, Package, Wrench, Wallet, BarChart2, RefreshCw, Home, Wifi, Droplets, Bus, Bug, GraduationCap, UserCircle2, MapPin, CheckCircle2, TrendingUp, TrendingDown, DollarSign, AlertCircle } from 'lucide-react'
@@ -429,7 +430,7 @@ function OverviewTab() {
 
   useEffect(() => {
     if (isSuperAdmin) {
-      api.get<OrgOption[]>('/superadmin/organizations').then(r => setOrgs(r.data)).catch(() => {})
+      api.get<OrgOption[]>('/superadmin/organizations').then(r => setOrgs(r.data)).catch(() => toast.error('Erro ao carregar organizações.'))
     }
   }, [isSuperAdmin])
 
@@ -443,7 +444,7 @@ function OverviewTab() {
   }, [selectedOrg, isSuperAdmin])
 
   useEffect(() => {
-    api.get('/financeiro/summary').then(r => setFinanceSummary(r.data)).catch(() => {})
+    api.get('/financeiro/summary').then(r => setFinanceSummary(r.data)).catch(() => toast.error('Erro ao carregar resumo financeiro.'))
   }, [])
 
   useEffect(() => {

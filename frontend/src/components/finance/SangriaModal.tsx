@@ -23,7 +23,7 @@ export function SangriaModal({ onClose, onSuccess, title = 'Registrar Saída' }:
   const [destinations, setDestinations] = useState<Dest[]>([])
 
   useEffect(() => {
-    api.get<Dest[]>('/finance/sangria-destinations').then(r => setDestinations(r.data)).catch(() => {})
+    api.get<Dest[]>('/finance/sangria-destinations').then(r => setDestinations(r.data)).catch(() => toast.error('Erro ao carregar destinos de sangria.'))
   }, [])
 
   const destination = destinations.length > 0

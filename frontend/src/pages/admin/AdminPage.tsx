@@ -952,7 +952,7 @@ function CaixaAdminTab() {
   useEffect(() => {
     api.get('/finance/balance-summary')
       .then(r => setBalance(r.data))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar saldo em caixa.'))
       .finally(() => setLoading(false))
   }, [])
 

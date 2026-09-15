@@ -27,7 +27,7 @@ export default function ConciliacaoTab() {
 
   useEffect(() => {
     loadPixPending()
-    api.get<CashBox[]>('/cash-boxes').then(r => setCashBoxes(r.data)).catch(() => {})
+    api.get<CashBox[]>('/cash-boxes').then(r => setCashBoxes(r.data)).catch(() => toast.error('Erro ao carregar caixas.'))
   }, [])
 
   const loadPixPending = async (showHistory = pixShowHistory) => {

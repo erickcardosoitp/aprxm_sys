@@ -262,7 +262,7 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
     if (residentMeta?.resident_id) {
       api.get<{ id: string; full_name: string }[]>('/residents', {
         params: { responsible_id: residentMeta.resident_id, type: 'dependent' }
-      }).then(r => setDependents(r.data)).catch(() => {})
+      }).then(r => setDependents(r.data)).catch(() => toast.error('Erro ao carregar dependentes.'))
     }
   }
 

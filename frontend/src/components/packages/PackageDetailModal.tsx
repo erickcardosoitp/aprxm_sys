@@ -28,7 +28,7 @@ export function PackageDetailModal({ pkg: initialPkg, onClose, onDeliverClick, o
   const [notifying, setNotifying] = useState(false)
 
   useEffect(() => {
-    api.get<Package>(`/packages/${initialPkg.id}`).then(r => setPkg(r.data)).catch(() => {})
+    api.get<Package>(`/packages/${initialPkg.id}`).then(r => setPkg(r.data)).catch(() => toast.error('Erro ao carregar dados da encomenda.'))
   }, [initialPkg.id])
   const [showReturnForm, setShowReturnForm] = useState(false)
   const [returnReason, setReturnReason] = useState('')

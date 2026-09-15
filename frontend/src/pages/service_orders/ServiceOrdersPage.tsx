@@ -258,7 +258,7 @@ function NewOSModal({ onClose, onCreated }: NewOSModalProps) {
 
   const [allUsers, setAllUsers] = useState<UserResult[]>([])
   useEffect(() => {
-    api.get('/admin/users').then(r => setAllUsers(r.data)).catch(() => {})
+    api.get('/admin/users').then(r => setAllUsers(r.data)).catch(() => toast.error('Erro ao carregar usuários.'))
   }, [])
 
   const searchAssigned = (q: string) => {
@@ -3583,7 +3583,7 @@ export default function ServiceOrdersPage({ criarMode = false, consultarMode = f
       api.get<ServiceOrder[]>('/service-orders').then(r => {
         const mine = r.data.filter(o => o.assigned_to === fullName || (o as any).created_by_name === fullName)
         setPickerOrders(mine)
-      }).catch(() => {})
+      }).catch(() => toast.error('Erro ao carregar suas O.S.'))
       return
     }
   }, [])

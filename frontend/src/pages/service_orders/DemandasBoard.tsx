@@ -401,7 +401,7 @@ export default function DemandasBoard({ canWrite, serviceOrderId }: { canWrite: 
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
-    api.get<UserOption[]>('/admin/users?active_only=true').then(r => setUsers(r.data.filter(u => u.is_active !== false))).catch(() => {})
+    api.get<UserOption[]>('/admin/users?active_only=true').then(r => setUsers(r.data.filter(u => u.is_active !== false))).catch(() => toast.error('Erro ao carregar usuários.'))
   }, [])
 
   const handleSaved = (saved: Demand) => {

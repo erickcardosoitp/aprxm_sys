@@ -658,7 +658,7 @@ const loadSessions = async () => {
   useEffect(() => { if (tab === 'relatorios') loadRelatorios() }, [tab])
 
   useEffect(() => {
-    if (canSeeTotals) settingsService.get().then(r => setSettings(r.data)).catch(() => {})
+    if (canSeeTotals) settingsService.get().then(r => setSettings(r.data)).catch(() => toast.error('Erro ao carregar configurações.'))
   }, [canSeeTotals])
 const todayLabel = new Date().toLocaleDateString('pt-BR')
   const activeTxs = transactions.filter(t => !t.reversed_at && !t.is_reversal)

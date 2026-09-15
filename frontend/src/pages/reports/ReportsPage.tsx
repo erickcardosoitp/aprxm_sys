@@ -862,7 +862,7 @@ export default function ReportsPage() {
   useEffect(() => {
     api.get('/admin/users', { params: { active_only: true } })
       .then(r => setOperators(r.data))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar operadores.'))
   }, [])
 
   useEffect(() => {

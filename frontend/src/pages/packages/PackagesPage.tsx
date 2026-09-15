@@ -16,7 +16,7 @@ import { STATUS_LABELS, STATUS_COLORS, apiErr } from '../../components/packages/
 import { packageService } from '../../services/packages'
 import type { ReceiveHistoryEntry } from '../../services/packages'
 import { financeService } from '../../services/finance'
-import { maskCpf } from '../../utils'
+import { maskCpf, formatCep } from '../../utils'
 import { uploadService } from '../../services/upload'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../../services/api'
@@ -127,9 +127,9 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
     if (consultarMode) { setShowConsultarPicker(true); return }
     if (minhasMode)    {
       setShowMinhasPicker(true)
-      packageService.receiveHistory({ limit: 50 }).then(r => setMinhasHistory(r.data)).catch(() => {})
+      packageService.receiveHistory({ limit: 50 }).then(r => setMinhasHistory(r.data)).catch(() => toast.error('Erro ao carregar histórico de recebimentos.'))
       api.get<Package[]>('/packages', { params: { statuses: 'delivered', delivered_by_me: true } })
-        .then(r => setMinhasDelivered(r.data.slice(0, 50))).catch(() => {})
+        .then(r => setMinhasDelivered(r.data.slice(0, 50))).catch(() => toast.error('Erro ao carregar entregas.'))
       return
     }
     const action = searchParams.get('action')
@@ -779,7 +779,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
     ]).then(([rc, rd]) => {
       setCarrierOpts(rc.data)
       setDelivererOpts(rd.data)
-    }).catch(() => {}).finally(() => setDelivererOptsLoading(false))
+    }).catch(() => toast.error('Erro ao carregar transportadoras/entregadores.')).finally(() => setDelivererOptsLoading(false))
   }
   useEffect(() => { loadDelivererOpts() }, [])
   useEffect(() => { if (showReceiveMode) loadDelivererOpts() }, [showReceiveMode])
@@ -1846,7 +1846,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                               </div>
                               <p className="text-xs text-gray-400 truncate">
                                 {r.cpf ? `CPF: ${maskCpf(r.cpf)}` : ''}
-                                {r.address_cep ? ` · CEP: ${r.address_cep}` : ''}
+                                {r.address_cep ? ` · CEP: ${formatCep(r.address_cep)}` : ''}
                                 {r.phone_primary ? ` · ${r.phone_primary}` : ''}
                               </p>
                             </div>

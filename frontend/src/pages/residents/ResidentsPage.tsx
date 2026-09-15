@@ -222,7 +222,7 @@ function ResidentForm({ initial, onSave, onCancel }: {
 
   useEffect(() => {
     if (initial?.responsible_id && initial.type === 'dependent') {
-      api.get<Resident>(`/residents/${initial.responsible_id}`).then(r => setResponsibleName(r.data.full_name)).catch(() => {})
+      api.get<Resident>(`/residents/${initial.responsible_id}`).then(r => setResponsibleName(r.data.full_name)).catch(() => toast.error('Erro ao carregar responsável.'))
     }
   }, [])
 
@@ -830,7 +830,7 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
     if (resident.type === 'member') {
       api.get<Resident[]>('/residents', { params: { type: 'dependent', responsible_id: resident.id, limit: 50 } })
         .then(res => setDependents(res.data))
-        .catch(() => {})
+        .catch(() => toast.error('Erro ao carregar dependentes.'))
     }
   }, [resident.id])
 
@@ -1513,7 +1513,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
       setShowPickerMapa(true)
       api.get<Resident[]>('/residents', { params: { status: 'active', type: 'member' } })
         .then(r => setMapaData(r.data.sort((a, b) => a.full_name.localeCompare(b.full_name))))
-        .catch(() => {})
+        .catch(() => toast.error('Erro ao carregar mapa de moradores.'))
       return
     }
   }, [])
@@ -1523,7 +1523,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
     if (delinquentIds.size === 0) { setInadimplentesData([]); return }
     api.get<Resident[]>('/residents', { params: { status: 'active' } })
       .then(res => setInadimplentesData(res.data.filter(r => delinquentIds.has(r.id))))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar inadimplentes.'))
   }, [inadimplentesMode, delinquentIds])
 
   const anySimplificaModalOpen = showForm || !!profileResident
@@ -1538,7 +1538,7 @@ export default function ResidentsPage({ cadastrarMode = false, consultarMode = f
     const rtype = typeByTab[tab] ?? 'member'
     api.get<{ sem_cep: number; sem_telefone: number; sem_cpf: number; inadimplentes: number }>(
       '/residents/kpis', { params: { resident_type: rtype } }
-    ).then(r => setKpis(r.data)).catch(() => {})
+    ).then(r => setKpis(r.data)).catch(() => toast.error('Erro ao carregar indicadores.'))
   }
 
   useEffect(() => { loadCounts(); loadKpis('associados') }, [])
