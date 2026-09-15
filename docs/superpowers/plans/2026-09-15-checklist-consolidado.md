@@ -213,14 +213,9 @@ verificação profunda de hoje, que focou no checklist ESC). Marcar como
   de PDF da conferência, desconferir com motivo obrigatório (auditoria).
   O spec antigo procurava pelo nome errado ("inventário", não "sessões
   conferidas") — nada a construir.
-- [x] **Branch protection exigindo status check do CodeQL** — 🔴
-  **tentado e revertido 2026-09-15**: ativado nos 3 repos via API do
-  GitHub (`Analyze (javascript-typescript)` + `Analyze (python)` onde
-  aplicável), mas **bloqueou push direto no `main`** logo no primeiro
-  commit seguinte — o GitHub aplica "required status checks" em
-  qualquer push pro branch protegido, não só em merge de PR, e o fluxo
-  real deste projeto (aqui e no dia a dia) é push direto, sem PR.
-  Revertido nos 3 repos pra não travar o próprio deploy. **Decisão
-  pendente do usuário:** migrar pra fluxo de PR (aí a proteção faz
-  sentido) ou desistir da automação e só checar os alertas do CodeQL
-  manualmente de vez em quando (aba Security de cada repo).
+- [x] **Branch protection exigindo status check do CodeQL** — ✅
+  **Resolvido de vez 2026-09-15**: reativado nos 3 repos, e o projeto
+  migrou pra fluxo de PR (decisão do usuário) — daqui pra frente,
+  mudança vira branch → push → PR → CodeQL roda → merge, em vez de
+  push direto no `main`. Este próprio commit é o teste de ponta a ponta
+  do novo fluxo.
