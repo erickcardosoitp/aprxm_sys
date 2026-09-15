@@ -1421,13 +1421,17 @@ majoritariamente rede/domínio e a migração de storage.
     (2026-09-14), não investigado a fundo. Risco: dado indo pra
     associação errada em qualquer fluxo parecido com usuário
     empresa-wide.
-29. 🟡 **Azure Blob Storage (`aprxm-midia`) sem backup automático** —
-    depende só da durabilidade nativa do Azure (LRS), sem cópia externa
-    independente. Não levantado como pendência até agora; avaliar numa
-    próxima sessão. Ver "Backups em produção — visão geral".
 28. 🟡 **`prometheus.yml` e dashboards do Grafana na VM são cópia
     manual**, não symlink do checkout `~/erp_itp` — `git pull` sozinho
     não atualiza o que está rodando (já mordeu 2x: blackbox target do
     APRXM e os 2 dashboards novos precisaram de `cp` manual). Considerar
     trocar por symlink numa próxima sessão pra eliminar essa classe de
     erro.
+29. 🟢 **Azure Blob Storage (`aprxm-midia`) — backup pro SharePoint em
+    andamento** (2026-09-14): script incremental criado e testado,
+    backfill inicial dos 13.892 arquivos rodando (0 falhas até agora),
+    cron diário às 4h já agendado. Ver "4º backup" em "Backups em
+    produção — visão geral".
+30. ✅ **Terceira camada de redundância pros 3 backups de banco**
+    (erp_itp, APRXM Postgres, APRXM ClickHouse) — todos sobem cópia pro
+    SharePoint desde 2026-09-14. Ver item 23b e "Backups em produção".
