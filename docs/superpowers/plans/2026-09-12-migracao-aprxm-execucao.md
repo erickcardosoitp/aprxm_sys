@@ -685,18 +685,20 @@ um On-premises Data Gateway) — trabalho novo, ainda não feito.
 
 ## Backups em produção — visão geral (atualizado 2026-09-14)
 
-Três backups independentes rodam na VM, todos via cron nativo
+Quatro backups independentes rodam na VM, todos via cron nativo
 (`tarefas_runner.py`), com retenção de 7 dias de dumps locais em
-`/home/itpadmin/backups/`, e **desde 2026-09-14 todos os 3 também sobem
-uma cópia extra pro SharePoint** (site "Data Engineering", biblioteca
-`Documentos`, uma pasta por sistema em `Backups/`), como terceira camada
-de redundância — armazenamento já pago via M365, custo marginal zero:
+`/home/itpadmin/backups/` (os 3 primeiros), e **todos os 4 sobem cópia
+extra pro SharePoint** (site "Data Engineering", biblioteca
+`Documentos`, uma pasta por sistema em `Backups/`), como camada de
+redundância adicional — armazenamento já pago via M365, custo marginal
+zero:
 
 | O quê | Script | Destino(s) | Frequência | Desde |
 |---|---|---|---|---|
 | **Postgres do erp_itp** (`itp_postgres`/`erp_itp_db`) | `tarefas/pg-sync-to-neon.sh` (id `pg-sync-to-neon`) | Dump local → `pg_restore` num projeto Neon separado (réplica morna) → SharePoint `Backups/erp_itp/` | a cada 6h | 2026-09-08 (Neon), 2026-09-14 (SharePoint) |
 | **Postgres do APRXM** (`itp_postgres`/`aprxm_db`, produção real desde a Fase J) | `tarefas/aprxm-backup-to-neon.sh` (id `aprxm-backup-to-neon`) | Dump local → `pg_restore` no **mesmo projeto Neon que era o banco primário do APRXM** antes da Fase J (reaproveitado como réplica) → SharePoint `Backups/aprxm_postgres/` | a cada 6h | 2026-09-14 (Fase J e SharePoint) |
 | **ClickHouse do APRXM** (`aprxm_clickhouse`/`aprxm_analytics`, data warehouse da Fase K) | `tarefas/aprxm-clickhouse-backup.sh` (id `aprxm-clickhouse-backup`) | `BACKUP DATABASE` nativo → `.zip` local → SharePoint `Backups/aprxm_clickhouse/` (dado é 100% regenerável rodando o `aprxm-etl` de novo, o backup só evita esperar a próxima rodada) | a cada 6h | 2026-09-14 (Fase K e SharePoint) |
+| **Azure Blob do APRXM** (`aprxm-midia`, Fase D, 13.892 arquivos) | `tarefas/aprxm-blob-backup-to-sharepoint.py` (id `aprxm-blob-backup-to-sharepoint`) | Sync incremental (manifesto local por `etag`) direto pro SharePoint `Backups/aprxm_azure_blob/` — sem réplica intermediária, o Azure já tem durabilidade nativa (LRS), o SharePoint é a cópia *externa* | diário, 4h | 2026-09-14 |
 
 **Todos os 3 testados de ponta a ponta** (não só "configurados"): o do
 ClickHouse teve `BACKUP`/`RESTORE` reais validados numa database
@@ -731,14 +733,44 @@ precisa de `set -a; source ...; set +a` (aplicado nos 3 scripts),
 senão o upload falha com `KeyError: 'MS_TENANT_ID'` mesmo com o arquivo
 sendo lido corretamente.
 
-**O que ainda não tem backup automático:** o Azure Blob Storage
-(`aprxm-midia`, Fase D, 924 MB/13.433 arquivos) não tem rotina de
-backup própria — depende só da durabilidade nativa do Azure Storage
-(LRS/replicação interna da Microsoft), sem cópia externa. Diferente dos
-3 backups de banco acima, replicar isso pro SharePoint seria um projeto
-maior (volume bem mais alto, sync incremental necessário) — não
-levantado como pendência crítica até agora; avaliar numa próxima sessão
-se o usuário quiser.
+### 4º backup: Azure Blob Storage → SharePoint ✅ concluído (2026-09-14)
+
+O Azure Blob (`aprxm-midia`, Fase D) não tinha nenhuma rotina de backup
+própria — dependia só da durabilidade nativa do Azure Storage
+(LRS/replicação interna da Microsoft), sem cópia externa. A pedido do
+usuário, resolvido no mesmo padrão dos outros 3, com uma diferença
+importante: volume real é 13.892 arquivos (cresceu desde os 13.433 da
+migração original) — **full re-upload toda vez seria lento e
+desnecessário**, então o script é genuinamente incremental.
+
+**`tarefas/aprxm-blob-backup-to-sharepoint.py`:**
+- Lista todos os blobs do container, compara `etag` contra um
+  **manifesto local** (`/home/itpadmin/backups/aprxm_blob_sharepoint_manifest.json`,
+  `blob_name → etag` da última rodada já enviada) — só processa
+  novo/alterado. Manifesto salvo a cada 500 arquivos (progresso parcial
+  sobrevive a uma interrupção no meio do backfill inicial).
+- Upload via Graph API: PUT direto pra arquivo <4MB (maioria das fotos),
+  upload session (chunked) pros raros >4MB (áudio/vídeo) — mesmo padrão
+  dos outros backups.
+- `ThreadPoolExecutor(max_workers=6)`, token do Graph renovado a cada 50
+  minutos (evita expirar em rodadas longas).
+- Estrutura de pastas do blob preservada 1:1 (`association_id/subpasta/
+  arquivo`) dentro de `Backups/aprxm_azure_blob/` — Graph API já cria as
+  pastas intermediárias sozinho a partir do path no upload.
+- Agendado **diário às 4h** (não a cada 6h como os outros — fotos de
+  encomenda não mudam nesse ritmo, e evita throttling desnecessário do
+  Graph API), id `aprxm-blob-backup-to-sharepoint`.
+
+**Bug real encontrado e corrigido durante o teste:** as duas fontes de
+env var (`erp_itp_backend.env` pro Graph, `aprxm_backend.env` pro Azure
+Storage) **definem as mesmas variáveis `AZURE_STORAGE_*` com valores
+diferentes** (`erp_itp` usa o container `arquivos`, APRXM usa
+`aprxm-midia` — mesma conta Azure reaproveitada, containers diferentes,
+ver Fase D). Sourcing na ordem errada (`erp_itp` por último) fazia o
+script enxergar **o container errado** (`arquivos`, 599 blobs do
+erp_itp) sem erro nenhum — só descoberto comparando a contagem total
+contra o número já confirmado na Fase D (13.433+). Corrigido invertendo
+a ordem (`aprxm_backend.env` sourced por último, vence o conflito).
 
 ---
 
