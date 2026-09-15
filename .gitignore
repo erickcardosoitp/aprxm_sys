@@ -59,3 +59,10 @@ backend/.env.vercel
 # Backups de banco (dados sensiveis - nunca commitar)
 *.dump
 backend/scripts/storage_migration_mapping.json
+
+# Config local de ferramentas (Claude Code, MCP, Serena, Wrangler)
+.claude/
+.mcp.json
+backend/.mcp.json
+.serena/
+.wrangler/

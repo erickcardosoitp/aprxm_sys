@@ -1,172 +1,118 @@
 # CLAUDE.md — APRXM
 
+ERP/SaaS multi-tenant — Instituto Tia Pretinha (`c:\aprxm_sass`)
+
+> 📐 **Detalhe técnico de arquitetura, domínios, incidentes e dívidas conhecidas:
+> ver [ARQUITETURA.md](ARQUITETURA.md).** Este arquivo é só regra de trabalho.
+
+---
+
 ## Regras de comportamento
 
 - Respostas curtas e diretas. Sem introduções, sem resumos finais.
-- Não explique código a menos que explicitamente pedido.
-- Não analise o projeto inteiro. Trabalhe apenas com os arquivos mencionados.
+- Não explique código a menos que pedido.
+- Não analise o projeto inteiro. Trabalhe só com os arquivos mencionados.
 - Não repita contexto já dado no prompt.
-- Retorne apenas trechos relevantes, nunca arquivos completos.
-- Use diff quando a mudança for pontual.
-- Sem comentários óbvios no código.
-- Sem docstrings em funções simples.
+- Retorne apenas trechos relevantes, nunca arquivos completos. Diff quando pontual.
+- Sem comentário óbvio, sem docstring em função simples.
+- Se a resposta passar de 10 linhas, reduzir.
 
 ---
 
-## 🧠 Prioridade de Contexto
+## ⚡ Economia de tokens (crítico)
 
-- Sempre seguir este CLAUDE.md antes de qualquer outra análise
-- Não carregar múltiplos arquivos automaticamente
-- Se faltar contexto, pedir ao usuário ao invés de assumir
-
----
-
-## 📂 Estratégia de Leitura
-
-- Trabalhar com **1 arquivo por vez**
-- Só analisar múltiplos arquivos se explicitamente solicitado
-- Nunca varrer diretórios
-- Ignorar arquivos não mencionados
-- Antes de ler um arquivo-fonte, seguir o fluxo do Serena MCP abaixo
+- Limite padrão: 10 linhas por resposta.
+- Preferir só código. Sem explicação implícita, sem alternativas múltiplas.
+- Formato: 1) código/diff 2) opcional 1 linha de contexto.
 
 ---
 
-## 🧭 Navegação de Código — Serena MCP (padrão obrigatório)
+## 🧭 Navegação de código — Serena MCP (obrigatório)
 
-Serena é o mecanismo **primário** de navegação e entendimento de código neste repositório. Ele indexa símbolos (classes, funções, métodos) e suas relações — usá-lo antes de ler arquivos evita carregar código irrelevante no contexto.
+Serena é o mecanismo **primário** de navegação. Antes de ler qualquer arquivo-fonte:
 
-**Fluxo obrigatório antes de qualquer leitura de arquivo-fonte:**
+1. Localizar símbolos via `get_symbols_overview` / `find_symbol` — nunca abrir arquivo
+   "pra ver o que tem dentro".
+2. Entender uma peça via `find_referencing_symbols`, `find_implementations`,
+   `find_declaration` — não relendo o arquivo inteiro.
+3. Preferir navegação semântica a busca textual. `Grep` só para string literal sem
+   estrutura de símbolo (texto de UI, valor de config).
+4. Ler só o menor trecho necessário depois que o Serena apontou símbolo + arquivo + linha.
+5. Nunca varrer diretório nem abrir arquivo completo "só para garantir".
+6. Reaproveitar descobertas já feitas na sessão.
+7. Ao editar: identificar símbolo via Serena, então preferir `replace_symbol_body` /
+   `insert_after_symbol` a diff manual quando a edição for de um símbolo inteiro.
 
-1. Localizar os símbolos relevantes primeiro via Serena (`get_symbols_overview`, `find_symbol`) — nunca abrir um arquivo "para ver o que tem dentro".
-2. Para entender uma peça de código, usar Serena para inspecionar definição, referências, implementações, chamadores/chamados e dependências (`find_referencing_symbols`, `find_implementations`, `find_declaration`) — não repetir isso lendo o arquivo inteiro manualmente.
-3. Preferir navegação semântica (símbolos) a busca textual. `Grep`/`grep` só quando a busca for por string literal sem estrutura de símbolo (ex.: texto de UI, valor de config).
-4. Ler apenas o menor trecho de código necessário depois que o Serena já apontou o local exato (símbolo + arquivo + linha) — nunca o arquivo inteiro, salvo necessidade explícita.
-5. Nunca varrer diretórios inteiros nem abrir arquivos completos "só para garantir", a menos que o Serena não tenha conseguido resolver a informação.
-6. Reaproveitar descobertas já feitas na sessão (símbolos já localizados, referências já mapeadas) em vez de repetir buscas.
-7. Ao editar código: primeiro identificar o(s) símbolo(s) afetado(s) via Serena, depois inspecionar somente a implementação necessária antes de editar (preferir `replace_symbol_body`/`insert_after_symbol`/`insert_before_symbol` a diffs manuais quando a edição for de um símbolo inteiro).
-8. Cair para inspeção direta de arquivo **somente** quando o Serena não tiver informação suficiente ou quando a própria implementação (não a estrutura) precisar ser lida linha a linha.
-
-**Por que esse fluxo existe:** reduz uso de contexto e consumo de tokens (lê-se só o necessário, não arquivos/diretórios inteiros), acelera a navegação em um repositório grande (30 routers, dezenas de milhares de linhas) e aumenta a precisão — encontrar o símbolo certo via referências é mais confiável que grep/leitura manual em arquivos deste tamanho (ex.: `finance.py` 92K, `daily_tasks.py` 56K).
-
-Esta regra é permanente e vale para toda sessão neste repositório, não apenas quando solicitado.
-
----
-
-## ⚡ Economia de Tokens (CRÍTICO)
-
-- Limite padrão: respostas até 10 linhas
-- Preferir apenas código quando possível
-- Evitar explicações, mesmo implícitas
-- Não sugerir alternativas múltiplas
-- Não detalhar decisões
+**Por quê:** repositório grande (30 routers, `finance.py` 92K, `daily_tasks.py` 56K).
+Ler só o necessário economiza contexto e é mais preciso que grep.
 
 ---
 
-## 🧩 Modo de Resposta
+## 🗄️ Banco de dados
 
-Formato padrão:
+Acesso via **MCP Neon** (projeto `APRXM`, id `shy-sun-98696640`). Existe também o
+projeto `aprxm-analytics` (OLAP/Power BI) — não confundir.
 
-1. Código (ou diff)
-2. (Opcional) 1 linha de contexto
-
----
-
-## 🚨 Regra Crítica
-
-Se a tarefa envolver:
-- múltiplos arquivos
-- arquitetura
-- refatoração ampla
-
-→ NÃO executar direto  
-→ pedir confirmação e escopo
+- **DDL/UPDATE em massa exigem aprovação do usuário** — o classificador bloqueia.
+  Uma statement por chamada (multi-statement é barrado).
+- **Nunca bypassar `association_id`.** Não há RLS de rede de segurança.
+- **Nunca `DROP ... CASCADE`** sem antes checar `pg_depend`. Já derrubou coluna de
+  produção (incidente 020, ver ARQUITETURA.md §6).
+- Migration real é `backend/app/db/migrations.py` + `SCHEMA_VERSION`, **não** os `.sql`
+  em `database/migrations/` (histórico). Todo bloco precisa ser replay-safe —
+  ao bumpar a versão, os anteriores reexecutam.
+- Dados de teste/seed vivem em `database/seeds/`, nunca em `migrations/`.
 
 ---
 
-## 🔁 Controle de Escopo
+## 🧱 Backend
 
-- Não expandir o escopo da tarefa
-- Não antecipar próximas etapas
-- Resolver apenas o que foi pedido
-
----
-
-## Projeto
-
-ERP/SaaS multi-tenant — Instituto Tia Pretinha (`c:\aprxm_sass`)
-
-**Stack:**
-- Backend: Python 3.10 / FastAPI / SQLModel / PostgreSQL (asyncpg)
-- Frontend: React 18 / Vite / Tailwind CSS (mobile-first)
-- Auth: JWT Bearer (`jose` + `passlib[bcrypt]`)
-- Deploy: **Tudo na Vercel** (frontend + backend). `git push origin main` dispara deploy automático. `.vercel/project.json` aponta para `aprxm-sys_frontend`. Backend em `backend/vercel.json` via `@vercel/python`.
-
-**Multi-tenancy:** toda tabela tem `association_id UUID NOT NULL`. Nunca bypassar esse filtro.
-
-**Código em inglês. UI em pt-BR.**
+- Regra de negócio **só** em `services/`. Router faz parsing/auth/auditoria/commit.
+- Nunca quebrar isolamento por `association_id`.
+- Filtro de produção: usar `PROD_ASSOC_FILTER` (`app/db/helpers.py`) — não replicar a string.
+- Paginação real (`skip`/`limit` + `{total, items}`), nunca `LIMIT` fixo.
+- Sem `except Exception: pass`. Logar com `logger.exception` + erro específico.
+- Imports absolutos. Sem blob binário no banco (usar Cloudinary/R2).
 
 ---
 
-## Estrutura relevante
-backend/app/
-main.py # FastAPI app + lifespan
-config.py # Settings (pydantic-settings)
-services/
-finance_service.py # CashSession + Sangria
-package_service.py # Package lifecycle + taxa R$2.50
+## 🎯 Frontend
 
-frontend/src/
-pages/
-finance/FinancePage.tsx
-packages/PackagesPage.tsx
-components/
-packages/SignaturePad.tsx
-packages/PhotoCapture.tsx
-
-database/schema.sql # DDL completo (enums, triggers, RLS)
-
+- Componentes funcionais + hooks, pequenos. Lógica fora do JSX.
+- Evitar re-render: `useCallback` em `fetchFn` passado para tabela.
+- Listas grandes precisam paginação server-side (moradores ~1.800, encomendas ~5.400).
+- Sem `.catch(() => {})` silencioso — sempre feedback ao usuário.
+- Acessibilidade: `aria-label` em botão só-ícone, `aria-sort` em cabeçalho ordenável.
+- Mobile-first — o app roda em campo, no celular.
 
 ---
 
-## Módulos
+## 🚨 Escopo
 
-| Módulo | Notas |
-|--------|-------|
-| Finance | CashSession open/close, Sangria (foto obrigatória), TransactionCategory, PaymentMethod |
-| Logistics | Package: received → notified → delivered/returned; taxa R$2.50 se não-membro |
-| Residents | `member` (CPF required) vs `guest`; `ResidentStatus` controla elegibilidade de taxa |
-| OS | ServiceOrder + PDF (fpdf2); numeração auto-incremental por tenant |
-| Mensalidades | `mensalidades` tabela principal. Pagamentos históricos (sem forma de pagamento) estão em `migration_payments` (campo `competencia`, não `reference_month`). Inadimplência usa `due_date < grace_cutoff` (não reference_month). `monthly_payment_day` no morador define o dia de vencimento; se NULL, usa padrão da geração. |
+Se a tarefa envolver múltiplos arquivos, arquitetura ou refatoração ampla:
+**não executar direto** → pedir confirmação e escopo.
+
+Não expandir escopo, não antecipar próximas etapas, resolver só o que foi pedido.
 
 ---
 
-## Padrões
+## Módulos — regras de negócio que não se deduz do código
 
-- 100% OOP, SOLID, Clean Architecture
-- Lógica de negócio em `services/`
-- Sem blobs binários no DB (usar Cloudinary/S3)
-- Imports absolutos no backend
-- Componentes React funcionais + hooks
-
----
-
-## 🧱 Backend Rules
-
-- Nunca quebrar isolamento por `association_id`
-- Não mover lógica para controllers
-- Services são a única fonte de regra de negócio
+| Módulo | Nota |
+|---|---|
+| **Mensalidades** | Pagamentos históricos em `migration_payments` (campo `competencia`, não `reference_month`). Inadimplência usa `due_date < grace_cutoff`. `monthly_payment_day` do morador define vencimento. |
+| **Finance** | "Saldo em caixa" = receita−despesa de manual + migração + **sessões conferidas**. Sessão aberta nunca entra. Conferida usa `closing_balance − opening_balance` (valor físico), não recalcula por transação. |
+| **Logistics** | received → notified → delivered/returned. Taxa R$ 2,50 se não-membro. Sangria exige foto. |
+| **Residents** | `member` exige CPF, `guest` não. `ResidentStatus` controla elegibilidade de taxa. |
+| **ESC/Escritório** | Usuários empresa-wide têm `association_id` NULL — lookups por `association_id` os excluem. Considerar sempre. |
 
 ---
 
-## 🎯 Frontend Rules
+## Stack
 
-- Evitar re-render desnecessário
-- Componentes pequenos e reutilizáveis
-- Lógica fora do JSX quando possível
+Python 3.10 · FastAPI · SQLModel · PostgreSQL (asyncpg) · React 18 · Vite · Tailwind
+Auth: JWT Bearer (`jose` + `passlib[bcrypt]`). Deploy: Vercel (`git push origin main`).
 
----
+## UI
 
-## 🔥 Instrução Final
-
-Se a resposta passar de 10 linhas, reduzir automaticamente.  
-Se possível, responder apenas com código.
+Sem parágrafo explicativo de cálculo nas telas. Código em inglês, UI em pt-BR.

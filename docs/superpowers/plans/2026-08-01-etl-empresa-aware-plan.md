@@ -2,8 +2,10 @@
 
 Spec: [2026-08-01-etl-empresa-aware-design.md](../specs/2026-08-01-etl-empresa-aware-design.md)
 
-⚠️ **2 pontos exigem ação sua fora do código** (criar env var no Vercel, disparar ETL
-manual logado) — marcados abaixo com ⏸.
+✅ **Atualização:** os 2 pontos que pareciam exigir ação manual sua não exigem mais —
+Vercel CLI autenticado dá acesso pra criar a env var, e `POST /datalake/run` usa
+`CRON_SECRET` (header), não JWT de admin, então dá pra disparar o ETL direto. Marcas ⏸
+abaixo viram "eu faço", só reporto o resultado.
 
 ---
 
