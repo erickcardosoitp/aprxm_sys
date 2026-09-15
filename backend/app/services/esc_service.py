@@ -221,8 +221,8 @@ class EscService:
                 COALESCE(SUM(CASE WHEN t.type = 'income' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS entradas,
                 COALESCE(SUM(CASE WHEN t.type = 'expense' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS saidas,
                 COALESCE(SUM(CASE WHEN t.is_reversal THEN t.amount ELSE 0 END), 0) AS estornos,
-                COALESCE(SUM(CASE WHEN t.type = 'income' AND pm.name ILIKE '%pix%' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS bruto_pix,
-                COALESCE(SUM(CASE WHEN t.type = 'income' AND (pm.name ILIKE '%dinheiro%' OR t.payment_method_id IS NULL) AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS bruto_dinheiro,
+                COALESCE(SUM(CASE WHEN t.type = 'income' AND pm.type = 'pix' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS bruto_pix,
+                COALESCE(SUM(CASE WHEN t.type = 'income' AND (pm.type = 'dinheiro' OR t.payment_method_id IS NULL) AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS bruto_dinheiro,
                 COALESCE(SUM(CASE WHEN t.type = 'sangria' AND NOT t.is_reversal THEN t.amount ELSE 0 END), 0) AS baixas,
                 cs.quebra_caixa, cs.difference AS sobra_falta,
                 COUNT(DISTINCT men.id) AS qtd_mensalidades,
@@ -709,17 +709,17 @@ class EscService:
 
     async def list_formas(self, empresa_id) -> list[dict]:
         rows = (await self.session.execute(text("""
-            SELECT id, name, is_active FROM payment_methods
+            SELECT id, name, is_active, type FROM payment_methods
             WHERE empresa_id = :eid ORDER BY name
         """), {"eid": str(empresa_id)})).fetchall()
-        return [{"id": str(r[0]), "name": r[1], "is_active": r[2]} for r in rows]
+        return [{"id": str(r[0]), "name": r[1], "is_active": r[2], "type": r[3]} for r in rows]
 
-    async def criar_forma(self, empresa_id, name: str, user_id) -> UUID:
+    async def criar_forma(self, empresa_id, name: str, type_: str, user_id) -> UUID:
         row = (await self.session.execute(text("""
-            INSERT INTO payment_methods (id, association_id, empresa_id, name, is_active, created_by)
-            VALUES (gen_random_uuid(), NULL, :eid, :name, TRUE, :uid)
+            INSERT INTO payment_methods (id, association_id, empresa_id, name, type, is_active, created_by)
+            VALUES (gen_random_uuid(), NULL, :eid, :name, :type, TRUE, :uid)
             RETURNING id
-        """), {"eid": str(empresa_id), "name": name, "uid": str(user_id)})).fetchone()
+        """), {"eid": str(empresa_id), "name": name, "type": type_, "uid": str(user_id)})).fetchone()
         return row[0]
 
     async def editar_forma(self, forma_id: UUID, empresa_id, body, user_id) -> dict:
@@ -728,6 +728,8 @@ class EscService:
             sets.append("name = :name"); params["name"] = body.name
         if body.is_active is not None:
             sets.append("is_active = :active"); params["active"] = body.is_active
+        if body.type is not None:
+            sets.append("type = :type"); params["type"] = body.type
         if not sets:
             return {}
         sets.append("updated_at = NOW()")

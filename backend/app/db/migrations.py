@@ -28,7 +28,7 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 async def _create_base_schema(session) -> None:
     """Cria o schema do zero num banco 100% vazio (sem o dump de referencia).
@@ -1659,6 +1659,37 @@ async def _apply_versioned_migrations(session) -> None:
     except Exception as exc:
         await session.rollback()
         print(f"[MIGRATION v26] falhou (nao-fatal): {exc}")
+
+    # v27: payment_methods.type -- ate aqui, todo lugar que precisava saber se
+    # uma forma de pagamento e' PIX/dinheiro/outro detectava por
+    # `name ILIKE '%pix%'`/`'%dinheiro%'` (10 pontos em 4 arquivos) -- fragil,
+    # quebra se alguem cadastrar a forma com nome diferente do esperado
+    # (achado real, checklist ESC 2026-07-23, item de risco conhecido).
+    # Coluna nova com CHECK, backfill unico pelo mesmo heuristico ILIKE (unica
+    # vez que roda, nao em todo request) pras formas ja cadastradas.
+    try:
+        await session.execute(text("""
+            ALTER TABLE payment_methods
+            ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'outro'
+            CHECK (type IN ('pix', 'dinheiro', 'outro'))
+        """))
+        await session.execute(text("""
+            UPDATE payment_methods SET type = CASE
+                WHEN name ILIKE '%pix%' THEN 'pix'
+                WHEN name ILIKE '%dinheiro%' OR name ILIKE '%espécie%' THEN 'dinheiro'
+                ELSE 'outro'
+            END
+            WHERE type = 'outro'
+        """))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (27, 'v27: payment_methods.type (substitui deteccao fragil por ILIKE de nome)') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v27] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:

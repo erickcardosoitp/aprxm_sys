@@ -1114,7 +1114,7 @@ async def register_orphan_as_income(
     pm_id = body.payment_method_id
     if not pm_id:
         pm_row = (await session.execute(
-            text("SELECT id FROM payment_methods WHERE association_id=:aid AND name ILIKE '%pix%' LIMIT 1"),
+            text("SELECT id FROM payment_methods WHERE association_id=:aid AND type = 'pix' LIMIT 1"),
             {"aid": aid},
         )).fetchone()
         if pm_row:
@@ -1207,7 +1207,7 @@ async def stream_reconciliation(
                 LEFT JOIN residents r ON r.id = t.resident_id
                 WHERE t.association_id = :aid
                   AND t.type = 'income'
-                  AND pm.name ILIKE '%pix%'
+                  AND pm.type = 'pix'
                   AND t.reversed_at IS NULL
                   AND NOT EXISTS (
                     SELECT 1 FROM reconciliations rec WHERE rec.transaction_id = t.id

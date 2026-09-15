@@ -655,6 +655,7 @@ class CategoriaRequest(BaseModel):
 
 class FormaPagamentoRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    type: str = Field(default="outro", pattern="^(pix|dinheiro|outro)$")
 
 
 @router.get("/cadastros/categorias", summary="Categorias de transação da empresa")
@@ -714,7 +715,7 @@ async def criar_forma(
     current: CurrentUser = Depends(require_empresa_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    forma_id = await EscService(session).criar_forma(current.empresa_id, body.name, current.user_id)
+    forma_id = await EscService(session).criar_forma(current.empresa_id, body.name, body.type, current.user_id)
     await _audit(session, current, "criar_forma_pagamento", "payment_methods", forma_id, body.name)
     await session.commit()
     return {"id": str(forma_id), "ok": True}
@@ -723,6 +724,7 @@ async def criar_forma(
 class EditarFormaRequest(BaseModel):
     name: str | None = None
     is_active: bool | None = None
+    type: str | None = Field(default=None, pattern="^(pix|dinheiro|outro)$")
 
 
 @router.put("/cadastros/formas-pagamento/{forma_id}", summary="Editar/desativar forma de pagamento")

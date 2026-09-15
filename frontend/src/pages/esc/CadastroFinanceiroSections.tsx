@@ -178,12 +178,16 @@ export function CategoriasContasPagarSection() {
   )
 }
 
+const TIPO_FORMA_LABEL: Record<string, string> = { pix: 'PIX', dinheiro: 'Dinheiro', outro: 'Outro' }
+
 export function FormasPagamentoSection() {
   const [rows, setRows] = useState<any[]>([])
   const [name, setName] = useState('')
+  const [tipo, setTipo] = useState('outro')
   const [saving, setSaving] = useState(false)
   const [editTarget, setEditTarget] = useState<any | null>(null)
   const [editName, setEditName] = useState('')
+  const [editTipo, setEditTipo] = useState('outro')
 
   const load = () => escService.formasPagamento().then((r) => setRows(r.data)).catch(() => toast.error('Erro ao carregar formas de pagamento.'))
   useEffect(() => { load() }, [])
@@ -192,8 +196,8 @@ export function FormasPagamentoSection() {
     if (!name.trim()) { toast.error('Informe o nome.'); return }
     setSaving(true)
     try {
-      await escService.criarForma({ name: name.trim() })
-      setName(''); toast.success('Forma de pagamento criada.'); load()
+      await escService.criarForma({ name: name.trim(), type: tipo })
+      setName(''); setTipo('outro'); toast.success('Forma de pagamento criada.'); load()
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao criar.') }
     finally { setSaving(false) }
   }
@@ -201,7 +205,7 @@ export function FormasPagamentoSection() {
   const saveEdit = async () => {
     if (!editTarget || !editName.trim()) { toast.error('Informe o nome.'); return }
     try {
-      await escService.editarForma(editTarget.id, { name: editName.trim() })
+      await escService.editarForma(editTarget.id, { name: editName.trim(), type: editTipo })
       toast.success('Forma de pagamento atualizada.'); setEditTarget(null); load()
     } catch (e: any) { toast.error(e.response?.data?.detail ?? 'Erro ao editar.') }
   }
@@ -217,19 +221,28 @@ export function FormasPagamentoSection() {
     <div className="px-6 py-4 max-w-2xl h-full overflow-y-auto" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
       <p className="text-xs mb-3" style={{ color: TEXT_MUTED }}>
         Formas de pagamento aceitas nas movimentações do Financeiro — valem para toda a empresa.
+        O tipo (PIX/Dinheiro/Outro) é usado pra separar totais de caixa — escolha certo, não depende mais do nome digitado.
       </p>
       <div className="flex gap-2 mb-4">
         <input className={escInputCls} style={escInputStyle} placeholder="Nova forma de pagamento" value={name}
                onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <select className={escInputCls} style={{ ...escInputStyle, maxWidth: 140 }} value={tipo} onChange={(e) => setTipo(e.target.value)}>
+          <option value="pix">PIX</option>
+          <option value="dinheiro">Dinheiro</option>
+          <option value="outro">Outro</option>
+        </select>
         <EscButton onClick={add} disabled={saving}><Plus className="w-4 h-4" /></EscButton>
       </div>
       <ul className="border-t" style={{ borderColor: BORDER }}>
         {rows.length === 0 && <li className="py-6 text-center text-sm" style={{ color: TEXT_MUTED, fontFamily: "'IBM Plex Mono', monospace" }}>nenhuma forma de pagamento cadastrada</li>}
         {rows.map((p) => (
           <li key={p.id} className="flex items-center justify-between py-2 border-b text-sm" style={{ borderColor: BORDER, opacity: p.is_active ? 1 : 0.5 }}>
-            <span>{p.name}{!p.is_active && <span className="ml-2 text-[10px]" style={{ color: TEXT_MUTED }}>(inativa)</span>}</span>
+            <span>
+              {p.name}{!p.is_active && <span className="ml-2 text-[10px]" style={{ color: TEXT_MUTED }}>(inativa)</span>}
+              <span className="ml-2 text-[10px]" style={{ color: TEXT_MUTED }}>[{TIPO_FORMA_LABEL[p.type] ?? p.type}]</span>
+            </span>
             <div className="flex items-center gap-2">
-              <button onClick={() => { setEditTarget(p); setEditName(p.name) }} className="text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
+              <button onClick={() => { setEditTarget(p); setEditName(p.name); setEditTipo(p.type ?? 'outro') }} className="text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
               <button onClick={() => toggleActive(p)} className="text-xs underline" style={{ color: TEXT_MUTED }}>{p.is_active ? 'desativar' : 'reativar'}</button>
             </div>
           </li>
@@ -241,6 +254,13 @@ export function FormasPagamentoSection() {
           footer={<><EscButton variant="ghost" onClick={() => setEditTarget(null)}>Cancelar</EscButton><EscButton onClick={saveEdit}>Salvar</EscButton></>}>
           <EscField label="Nome" required>
             <input className={escInputCls} style={escInputStyle} value={editName} onChange={(e) => setEditName(e.target.value)} />
+          </EscField>
+          <EscField label="Tipo" required>
+            <select className={escInputCls} style={escInputStyle} value={editTipo} onChange={(e) => setEditTipo(e.target.value)}>
+              <option value="pix">PIX</option>
+              <option value="dinheiro">Dinheiro</option>
+              <option value="outro">Outro</option>
+            </select>
           </EscField>
         </EscModal>
       )}

@@ -1244,13 +1244,12 @@ class FinanceService:
                     CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_pix, 0)
                          ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
                               AND (t.reversed_at IS NULL AND t.is_reversal = false)
-                              AND pm.name ILIKE '%pix%' THEN t.amount ELSE 0 END), 0)
+                              AND pm.type = 'pix' THEN t.amount ELSE 0 END), 0)
                     END AS total_pix,
                     CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_dinheiro, 0)
                          ELSE COALESCE(SUM(CASE WHEN t.type = 'income'
                               AND (t.reversed_at IS NULL AND t.is_reversal = false)
-                              AND (pm.name ILIKE '%dinheiro%' OR pm.name ILIKE '%espécie%'
-                                   OR pm.name ILIKE '%especie%' OR t.payment_method_id IS NULL)
+                              AND (pm.type = 'dinheiro' OR t.payment_method_id IS NULL)
                               THEN t.amount ELSE 0 END), 0)
                     END AS total_dinheiro,
                     CASE WHEN cs.origin = 'Manual' THEN COALESCE(cs.manual_total_bruto, 0)
@@ -1338,7 +1337,7 @@ class FinanceService:
                    COALESCE((SELECT SUM(t.amount) FROM transactions t
                              JOIN payment_methods pm ON pm.id = t.payment_method_id
                               WHERE t.cash_session_id = cs.id AND t.type = 'income'
-                                AND pm.name ILIKE '%%pix%%'
+                                AND pm.type = 'pix'
                                 AND t.reversed_at IS NULL AND t.is_reversal = false), 0) AS total_pix_income
               FROM cash_sessions cs
               LEFT JOIN users u ON u.id = cs.opened_by
@@ -1500,7 +1499,7 @@ class FinanceService:
                 LEFT JOIN users u_rev ON u_rev.id = cs.reviewed_by
                 LEFT JOIN packages pkg ON pkg.id = t.package_id
                 WHERE t.association_id = :aid AND t.type = 'income'
-                  AND pm.name ILIKE '%pix%%' {batched_filter}
+                  AND pm.type = 'pix' {batched_filter}
                 ORDER BY t.id, rec.status NULLS LAST, bs.batched_at NULLS FIRST
             ) sub
             ORDER BY sub.transaction_at DESC LIMIT 300
