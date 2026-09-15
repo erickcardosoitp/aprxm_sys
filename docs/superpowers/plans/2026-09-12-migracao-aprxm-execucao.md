@@ -1003,8 +1003,9 @@ recarregar sem downtime (o container não roda com
 funciona, mas o sinal `SIGHUP` sempre funciona nativamente no
 Prometheus). Isso já tinha acontecido silenciosamente antes (o
 blackbox target do domínio APRXM só foi refletido porque foi copiado
-manualmente na hora, não por `git pull`) — vale considerar trocar por
-symlink numa próxima sessão pra eliminar essa classe de erro de vez.
+manualmente na hora, não por `git pull`) — **resolvido definitivamente
+em 2026-09-14, trocado por symlink** (ver item 28 da lista de
+pendências no fim do documento).
 
 **Correção 2026-09-14 (mesma sessão):** o dashboard novo tinha ido
 parar na mesma pasta `ITP` do Grafana (o `dashboard.yml` só tinha 1
@@ -1344,11 +1345,11 @@ majoritariamente rede/domínio e a migração de storage.
     falhas), banco atualizado, verificação pós-migração sem
     inconsistências, 200 testes funcionais reais passando. Ver Fase D
     acima para detalhe completo.
-11. 🟡 **Validação paralela** (Fase H) — observar os 3 frontends rodando
-    contra a VM por um período antes de considerar o corte definitivo.
-    Diferente do rascunho original: não é mais "rodar VM e Vercel lado a
-    lado" como alternativa — a VM **já é** o caminho real de tráfego
-    desde a Fase G. É mais observação/monitoramento do que decisão.
+11. ✅ **Validação paralela** (Fase H) — encerrada 2026-09-14 a critério
+    do usuário: backend/banco já rodavam 100% na VM há tempo suficiente,
+    sem incidente relevante não capturado (os achados reais da Fase H
+    foram todos tratados). Corte da Vercel (item 12) já executado depois
+    disso, então a validação cumpriu o papel.
 12. ✅ **Corte** (Fase I) — projeto `aprxm-sys-backend` removido por
     completo da Vercel 2026-09-14, a pedido explícito do usuário depois
     de confirmar que o Postgres já estava 100% na VM (Fase J). Os 3
@@ -1425,29 +1426,42 @@ majoritariamente rede/domínio e a migração de storage.
     **On-premises Data Gateway** rodando 24/7 em alguma máquina Windows
     com acesso à VM — projeto novo, ainda não iniciado. Discutido com o
     usuário 2026-09-14, decidido tratar como item separado depois.
-25. 🟡 **341 encomendas paradas há +15 dias e 7 sessões de caixa
+25. 🟢 **341 encomendas paradas há +15 dias e 7 sessões de caixa
     abertas** — thresholds vermelhos confirmados no dashboard Grafana
-    logo no primeiro deploy (ver seção "Correção do dashboard KPI
-    BUSINESS" acima). Sinalizado, **não investigado** (fora do escopo
-    pedido na ocasião) — provavelmente vale uma investigação de negócio
-    separada.
-26. 🟡 **WebAuthn (`webauthn.py`) não loga erro real de servidor** antes
-    de converter pra `HTTPException` — falha de verdade (não rejeição
-    normal de credencial) fica invisível pro catálogo de erros. Achado
-    durante o levantamento de cobertura de erros (2026-09-14), não
-    corrigido ainda (fora do escopo daquele levantamento).
+    logo no primeiro deploy. **Decisão do usuário (2026-09-14): não
+    investigar agora, manter só como alerta monitorado** — o dashboard
+    já cobre isso, sem necessidade de ação adicional por ora.
+26. ✅ **WebAuthn (`webauthn.py`) não logava erro real de servidor** —
+    **já corrigido antes desta sessão** (commit `d5e98a5`, "fix: falha
+    de verificacao WebAuthn vira 400/401 sem nenhum log"), confirmado
+    lendo o código atual: `logger.error("[ERROR] WebAuthn: ...")`
+    presente nos dois pontos (registro e autenticação) antes do
+    `HTTPException`. Item estava desatualizado na lista — o achado
+    original (do levantamento de cobertura de erros) foi resolvido numa
+    sessão anterior, só não tinha sido marcado aqui.
 27. 🟡 **`admin_master` grava recursos usando `association_id` do JWT**
     (ID do escritório) em vez do header `X-Association-ID` enviado —
     achado colateral durante os testes funcionais de escrita
     (2026-09-14), não investigado a fundo. Risco: dado indo pra
     associação errada em qualquer fluxo parecido com usuário
     empresa-wide.
-28. 🟡 **`prometheus.yml` e dashboards do Grafana na VM são cópia
-    manual**, não symlink do checkout `~/erp_itp` — `git pull` sozinho
-    não atualiza o que está rodando (já mordeu 2x: blackbox target do
-    APRXM e os 2 dashboards novos precisaram de `cp` manual). Considerar
-    trocar por symlink numa próxima sessão pra eliminar essa classe de
-    erro.
+28. ✅ **`prometheus.yml`/`blackbox.yml` e dashboards do Grafana
+    trocados por symlink** (2026-09-14) — eliminava a classe de erro
+    "`git pull` no `~/erp_itp` não atualiza o que está rodando" (já
+    tinha mordido 2x). Verificado sem drift de conteúdo antes de trocar
+    (`diff -rq` limpo, só um `.bak` velho movido pra
+    `~/old_backups_monitoring/`). Symlinks criados:
+    `itp-stack/monitoring/prometheus/{prometheus,blackbox}.yml` e
+    `itp-stack/monitoring/grafana/{dashboards-json,provisioning/{datasources,dashboards,alerting}}`
+    → apontando direto pro checkout `~/erp_itp/infra/monitoring/...`.
+    **Testado de ponta a ponta:** `prometheus`/`grafana` recriados,
+    Prometheus com 10 targets ativos e Grafana com 15 dashboards
+    (config carregada sem erro via symlink); teste definitivo — editar
+    o arquivo real do checkout refletiu **instantaneamente** no arquivo
+    "vivo" (via symlink), sem `cp` manual, revertido em seguida sem
+    deixar sujeira. De agora em diante, `git pull` no `~/erp_itp` +
+    `docker kill -s HUP itp_prometheus` (Prometheus) ou restart do
+    Grafana (mudança de provider) já bastam.
 29. 🟢 **Azure Blob Storage (`aprxm-midia`) — backup pro SharePoint em
     andamento** (2026-09-14): script incremental criado e testado,
     backfill inicial dos 13.892 arquivos rodando (0 falhas até agora),
