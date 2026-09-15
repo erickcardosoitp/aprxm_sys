@@ -14,15 +14,16 @@ Status: `🔴` crítico, `🟠` alto, `🟡` médio, `🟢` decisão de escopo,
 
 ## 🔴 Crítico
 
-- [ ] **Categoria de Contas a Pagar não chega na DRE.** Confirmado
-  ainda aberto em `backend/app/services/esc_service.py:468-475`
-  (`baixar_conta_pagar`): o `INSERT INTO transactions` da baixa não
-  seta `category_id` — só põe o nome da categoria no texto livre da
-  descrição. Uma conta categorizada como "Aluguel" continua caindo
-  genérica em "Despesas Gerais" no DRE, perdendo a categorização.
-  (`payable_categories` é tabela própria, diferente de
-  `transaction_categories` que a DRE lê — precisa mapear uma pra
-  outra, ou linkar direto.)
+- [x] **Categoria de Contas a Pagar não chega na DRE.** ✅ **Resolvido
+  2026-09-15** (decisão do usuário: mapear `payable_category` →
+  `transaction_category`, não deixar como estava). Migration v26 add
+  `payable_categories.transaction_category_id` (vínculo opcional,
+  `payable_categories` continua conceito próprio da v14, só ganhou
+  ponte pra DRE). `baixar_conta_pagar` agora grava `category_id` real
+  na transação quando o vínculo existe. Frontend: seletor de categoria
+  de DRE (só tipo despesa) ao criar/editar categoria de Contas a Pagar,
+  nome vinculado exibido na listagem. Deployado e migration confirmada
+  aplicada em produção (`schema_migrations` versão 26).
 - [x] **`erp_itp` sem Dependabot nem CodeQL configurados.** ✅
   **Resolvido 2026-09-15**: `.github/dependabot.yml` (npm/pip/docker/
   github-actions cobrindo `apps/backend`, `apps/frontend`, raiz,
@@ -46,9 +47,15 @@ Status: `🔴` crítico, `🟠` alto, `🟡` médio, `🟢` decisão de escopo,
   confirmado com o usuário 2026-09-15.** Criação de associação nova é
   intencionalmente restrita ao painel de superadmin da plataforma, não
   ao ESC — mesmo padrão de decisão do item de Encomendas acima.
-- [ ] **Administração → Estoque é cópia read-only e incompleta de
-  Cadastros → Comprovantes de Residência** — decisão de produto
-  pendente (dar paridade de edição, ou remover a duplicata).
+- [x] **Administração → Estoque é cópia read-only e incompleta de
+  Cadastros → Comprovantes de Residência** — ✅ **Resolvido
+  2026-09-15**. Achado real: as 2 telas já renderizavam o mesmo
+  componente editável (`ComprovantesEstoqueSection`) — o "read-only"
+  do checklist antigo já estava desatualizado. Decisão do usuário:
+  Estoque fica só em Administração; Cadastros fica só sobre o produto
+  (preço, já coberto pela aba "Produtos"). Removida a aba duplicada de
+  Cadastros + endpoint `GET /esc/administracao/estoque` e
+  `escService.estoque()` mortos (nunca eram chamados de verdade).
 
 ## 🟡 Médio — qualidade de dado, tradução, UI
 
