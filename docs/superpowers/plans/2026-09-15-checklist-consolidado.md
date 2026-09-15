@@ -101,18 +101,37 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
   reconferida nesta rodada**): ~292 CEPs, ~1.361 telefones, ~429
   números de endereço de moradores em branco.
 
-## 🟢 Decisão de escopo (não são bugs)
+## 🔵 Backlog (não pendência, projeto planejado)
 
-- [ ] Endpoint `GET /esc/administracao/permissoes` não é chamado por
-  nenhuma tela — usar ou remover.
-- [ ] Detecção de forma de pagamento por `ILIKE '%pix%'`/`'%dinheiro%'`
-  no nome digitado (`esc.py`) — frágil se alguém digitar diferente.
-- [ ] Checagem de e-mail duplicado ao criar usuário é global, não por
-  `empresa_id` — confirmar se é intencional (provável: login é único
-  na plataforma).
-- [ ] Qualquer admin de empresa pode criar outro usuário com cargo
-  `admin_master` sem restrição adicional — confirmar se é a regra
-  desejada.
+- [ ] **Automatizar deploy do backend (CI/CD real via GitHub Actions)**
+  — hoje é 100% manual: SSH na VM, `git pull --ff-only`, `docker
+  compose build`, `up -d --force-recreate`. Sem histórico visual (só
+  `docker ps`/`docker logs` na VM). Ideia: workflow que builda e faz
+  deploy via SSH a cada push no `main` (ou só em tag/PR aprovado),
+  registrado no GitHub como os outros deploys (Vercel já é automático
+  pro frontend). **Adicionado ao backlog 2026-09-15 a pedido do
+  usuário — priorizar as pendências pequenas antes.**
+
+## 🟢 Decisão de escopo — reverificado 2026-09-15
+
+- [x] **Endpoint `GET /esc/administracao/permissoes` não usado** — ✅
+  já não existe mais no código (removido em algum momento, claim
+  obsoleta).
+- [ ] **Detecção de forma de pagamento por `ILIKE '%pix%'`/`'%dinheiro%'`**
+  no nome digitado — confirmado ainda real, presente em 6 arquivos
+  (`financeiro.py`, `esc_service.py`, `finance_service.py`, `admin.py`,
+  `finance.py`, `cash_boxes.py`). **Não é pendência pequena** — fix
+  correto exigiria coluna `type` em `payment_methods` + atualizar os 6
+  pontos. Registrado como risco conhecido, não uma tarefa de "fixar
+  agora".
+- [x] **Checagem de e-mail duplicado é global, não por `empresa_id`**
+  — ✅ **confirmado intencional**: `users.email` tem `UNIQUE` no
+  próprio schema do banco (`uq_users_email`) — login único na
+  plataforma inteira por design, não bug.
+- [x] **Admin de empresa podia criar `admin_master` sem restrição** —
+  ✅ **já estava corrigido**: `criar_usuario()` já bloqueia
+  (`esc_service.py:578-579`) — só `admin_master`/`superadmin` pode
+  criar outro `admin_master`/`superadmin`.
 
 ## ✅ Verificado resolvido nesta rodada (estava desatualizado nos docs antigos)
 
