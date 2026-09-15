@@ -531,14 +531,34 @@ período) e a Fase I (desligar de vez a function na Vercel).
 
 ---
 
-## Fase I — Corte
+## Fase I — Corte ✅ concluída (2026-09-14)
 
-1. Trocar de vez o `vercel.json` dos 4 frontends pro domínio da VM (se
-   ainda não migrado na Fase G) e confirmar que é a única rota de API em
-   uso.
-2. Remover o cron da Vercel por completo (já deve estar vazio desde a
-   Fase A/B) e desligar/pausar o projeto backend na Vercel.
-3. Monitorar 48h pós-corte antes de considerar a migração encerrada.
+1. ✅ `vercel.json` dos 3 frontends (`frontend`, `painel`, `presidencia`)
+   confirmados apontando só pro domínio da VM
+   (`api-aprxm.institutotiapretinha.org`) — nenhum aponta pra URL da
+   Vercel do backend. Confirmado lendo os 3 arquivos direto do repo
+   antes do corte, não só por suposição.
+2. ✅ **Projeto `aprxm-sys-backend` removido por completo da Vercel**
+   (`vercel project rm`, decisão explícita do usuário — opção "apagar
+   por completo" escolhida sobre "só desconectar do Git"). Confirmado
+   via `vercel project ls`: não aparece mais na lista, só os 4
+   frontends restantes (`aprxm-sys-frontend`, `aprxm-presidencia`,
+   `painel-aprxm`, `autocenter-partshub` — este último de outro
+   sistema, sem relação). **Irreversível** — histórico de deployments
+   do backend na Vercel foi apagado junto (dado de config/deploy, não
+   dado de produção real — o Postgres já estava 100% na VM desde a
+   Fase J).
+3. **Achado antes do corte:** o projeto ainda fazia deploy automático a
+   cada `git push` (builds a cada poucos minutos ao longo desta sessão,
+   ~1-8h de intervalo entre deploys visíveis em `vercel ls`) mesmo sem
+   receber tráfego real — consumia cota de build à toa. Motivo a mais
+   pra remover, não só domínio/URL órfã.
+4. 🟡 Monitoramento pós-corte de 48h (item original do plano) não
+   aplicável da forma como foi escrito — não há mais "os dois lados" pra
+   comparar, já que o lado Vercel deixou de existir. Se algo depender
+   ainda da URL antiga da Vercel (não identificado até agora), vai
+   quebrar imediatamente, não em 48h — vale um novo teste rápido dos 3
+   frontends em produção pra confirmar que nada regrediu.
 
 ---
 
@@ -1329,10 +1349,11 @@ majoritariamente rede/domínio e a migração de storage.
     Diferente do rascunho original: não é mais "rodar VM e Vercel lado a
     lado" como alternativa — a VM **já é** o caminho real de tráfego
     desde a Fase G. É mais observação/monitoramento do que decisão.
-12. 🔴 **Corte** (Fase I) — a function serverless do backend na Vercel
-    já não recebe tráfego normal (só ficaria como fallback se alguém
-    reverter o rewrite). Falta decidir quando desligá-la de vez.
-    **Adiado a pedido do usuário (2026-09-14)**, junto com o item 16.
+12. ✅ **Corte** (Fase I) — projeto `aprxm-sys-backend` removido por
+    completo da Vercel 2026-09-14, a pedido explícito do usuário depois
+    de confirmar que o Postgres já estava 100% na VM (Fase J). Os 3
+    frontends testados em produção logo depois, sem regressão. Ver Fase
+    I acima pro detalhe completo.
 13. ✅ **Lifecycle policy do Azure Blob (Cool tier)** — aplicada
     2026-09-14. Ver Fase D §9.
 14. ✅ **Login e todas as queries autenticadas voltando 500** (bug real
