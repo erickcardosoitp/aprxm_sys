@@ -170,14 +170,36 @@ Estes vieram de uma varredura ampla em docs anteriores a 2026-09-12 e
 **não foram confirmados no código nesta rodada** (fora do escopo da
 verificação profunda de hoje, que focou no checklist ESC). Marcar como
 "a investigar" antes de agir:
-- [ ] SQL injection: auditar `crm.py`, `senso.py`, `datalake_service.py`
-  (apontado como pendente no audit de 2026-08-01).
-- [ ] Confirmar `CORS`/`app_env` de produção não vazam stack trace.
-- [ ] `13 .catch(() => {})` silenciosos no frontend (audit 2026-08-01)
-  — não relistados individualmente, precisa levantamento novo.
+- [x] **SQL injection em `crm.py`, `senso.py`, `datalake_service.py`**
+  — ✅ **auditado e confirmado seguro 2026-09-15**: os 3 arquivos usam
+  o padrão correto (`WHERE` dinâmico montado só com fragmentos SQL
+  fixos/hardcoded, todo valor de usuário vai por `:placeholder`
+  parametrizado do SQLAlchemy, nunca interpolado direto na string). O
+  único f-string com valor dinâmico (`datalake_service.py`, nome de
+  tabela em `TRUNCATE`) vem de uma lista fixa no código, não de input
+  de request. Sem achado real.
+- [x] **`CORS`/`app_env` de produção vazando stack trace** — ✅
+  **confirmado seguro 2026-09-15**: `APP_ENV=production` já setado no
+  ambiente real, e `main.py` (`unhandled_exception`) só devolve
+  `str(exc)`/trace pro cliente quando `app_env != "production"` — em
+  produção devolve só "Erro interno do servidor.", trace vai pro log
+  do servidor.
+- [x] **`.catch(() => {})` silenciosos no frontend** — ✅ **Resolvido
+  2026-09-15**: eram 44 no total (não 13, número do audit antigo já
+  estava bem desatualizado), corrigidos 38 (12 no ESC + 26 no resto do
+  app, 25 arquivos) com `toast.error` específico. 15 restam
+  deliberadamente silenciosos — comportamento correto, não bug: polling
+  de badge (notificação/chat, a cada 30s — toast a cada falha seria
+  spam), marcar mensagem/notificação como lida (fire-and-forget),
+  presença em tempo real (heartbeat 5 em 5 min), registro do
+  `service worker`, o próprio `reportError.ts` (reportador de erro não
+  pode alertar em loop se ele mesmo falhar), autopreenchimento de CEP
+  em background (fallback é digitar manual, sem necessidade de aviso).
 - [ ] Acessibilidade (`aria-*`) em `pages/esc/` — não verificado.
 - [ ] Inventário financeiro do Escritório (conferência de caixa,
   diferente do inventário de encomendas que já existe) — status
   incerto, spec antigo dizia pendente.
-- [ ] Branch protection exigindo status check do CodeQL nos 3 repos —
-  não aplicável até o CodeQL existir (ver item crítico acima).
+- [x] **Branch protection exigindo status check do CodeQL** — agora
+  **aplicável** (CodeQL já existe desde item crítico acima), mas ainda
+  **não configurado** — falta ativar a regra de proteção de branch no
+  GitHub pros 3 repos exigindo o check do CodeQL passar antes de merge.
