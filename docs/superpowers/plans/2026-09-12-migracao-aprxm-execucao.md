@@ -687,30 +687,58 @@ um On-premises Data Gateway) — trabalho novo, ainda não feito.
 
 Três backups independentes rodam na VM, todos via cron nativo
 (`tarefas_runner.py`), com retenção de 7 dias de dumps locais em
-`/home/itpadmin/backups/`:
+`/home/itpadmin/backups/`, e **desde 2026-09-14 todos os 3 também sobem
+uma cópia extra pro SharePoint** (site "Data Engineering", biblioteca
+`Documentos`, uma pasta por sistema em `Backups/`), como terceira camada
+de redundância — armazenamento já pago via M365, custo marginal zero:
 
-| O quê | Script | Destino | Frequência | Desde |
+| O quê | Script | Destino(s) | Frequência | Desde |
 |---|---|---|---|---|
-| **Postgres do erp_itp** (`itp_postgres`/`erp_itp_db`) | `tarefas/pg-sync-to-neon.sh` (id `pg-sync-to-neon`) | Dump local + `pg_restore` num projeto Neon separado (réplica morna) | a cada 6h | 2026-09-08 |
-| **Postgres do APRXM** (`itp_postgres`/`aprxm_db`, produção real desde a Fase J) | `tarefas/aprxm-backup-to-neon.sh` (id `aprxm-backup-to-neon`) | Dump local + `pg_restore` no **mesmo projeto Neon que era o banco primário do APRXM** antes da Fase J — reaproveitado como réplica, não mais fonte de verdade | a cada 6h | 2026-09-14 (Fase J) |
-| **ClickHouse do APRXM** (`aprxm_clickhouse`/`aprxm_analytics`, data warehouse da Fase K) | `tarefas/aprxm-clickhouse-backup.sh` (id `aprxm-clickhouse-backup`) | `BACKUP DATABASE` nativo do ClickHouse → `.zip` local em `/home/itpadmin/backups/` (sem réplica remota — dado é 100% regenerável rodando o `aprxm-etl` de novo, o backup só evita esperar a próxima rodada) | a cada 6h | 2026-09-14 (Fase K) |
+| **Postgres do erp_itp** (`itp_postgres`/`erp_itp_db`) | `tarefas/pg-sync-to-neon.sh` (id `pg-sync-to-neon`) | Dump local → `pg_restore` num projeto Neon separado (réplica morna) → SharePoint `Backups/erp_itp/` | a cada 6h | 2026-09-08 (Neon), 2026-09-14 (SharePoint) |
+| **Postgres do APRXM** (`itp_postgres`/`aprxm_db`, produção real desde a Fase J) | `tarefas/aprxm-backup-to-neon.sh` (id `aprxm-backup-to-neon`) | Dump local → `pg_restore` no **mesmo projeto Neon que era o banco primário do APRXM** antes da Fase J (reaproveitado como réplica) → SharePoint `Backups/aprxm_postgres/` | a cada 6h | 2026-09-14 (Fase J e SharePoint) |
+| **ClickHouse do APRXM** (`aprxm_clickhouse`/`aprxm_analytics`, data warehouse da Fase K) | `tarefas/aprxm-clickhouse-backup.sh` (id `aprxm-clickhouse-backup`) | `BACKUP DATABASE` nativo → `.zip` local → SharePoint `Backups/aprxm_clickhouse/` (dado é 100% regenerável rodando o `aprxm-etl` de novo, o backup só evita esperar a próxima rodada) | a cada 6h | 2026-09-14 (Fase K e SharePoint) |
 
 **Todos os 3 testados de ponta a ponta** (não só "configurados"): o do
 ClickHouse teve `BACKUP`/`RESTORE` reais validados numa database
-temporária (`aprxm_analytics_restore_test`, criada e apagada na hora),
-confirmando contagem de linhas batendo antes de agendar no cron.
+temporária (`aprxm_analytics_restore_test`, criada e apagada na hora);
+os 3 uploads pro SharePoint confirmados via `GET
+/drives/{id}/root:/Backups/{pasta}:/children` mostrando o arquivo com o
+tamanho batendo; todos os 3 scripts rodados também via
+`tarefas_runner.py` (mesmo mecanismo do cron real), `exit_code: 0`.
 
-**Nota de segurança/permissão:** o container `aprxm_clickhouse` roda
-como uid `101` (usuário interno `clickhouse`), diferente do uid `1001`
-(`itpadmin`) dono do `/home/itpadmin/backups` — resolvido com uma ACL
-pontual (`setfacl -m u:101:rwx /home/itpadmin/backups`), sem abrir
-permissão pra outros usuários do sistema.
+**Nota de segurança/permissão (ClickHouse):** o container
+`aprxm_clickhouse` roda como uid `101` (usuário interno `clickhouse`),
+diferente do uid `1001` (`itpadmin`) dono do `/home/itpadmin/backups` —
+resolvido com uma ACL pontual (`setfacl -m u:101:rwx
+/home/itpadmin/backups`) pra escrever o `.zip`, e um `chmod 644` via
+`docker exec -u root` logo após o `BACKUP DATABASE` pra `itpadmin`
+conseguir ler o arquivo e subir pro SharePoint (o comando nativo cria o
+arquivo com permissão `640`, ilegível fora do container).
+
+**Integração SharePoint (2026-09-14):** script novo e reutilizável
+`tarefas/upload_sharepoint_backup.py` — usa a mesma credencial Graph API
+já existente (`MS_TENANT_ID`/`MS_CLIENT_ID`/`MS_CLIENT_SECRET`, client
+credentials flow, mesmo app registration `ERP ITP - Login SSO` que o
+`catalogo-erros` já usa), upload via **upload session** (chunked,
+suporta qualquer tamanho de arquivo, não só <4MB). Site "Data
+Engineering" criado pelo usuário manualmente no portal (criação de site
+via Graph app-only é instável/pouco documentada, não vale a pena
+automatizar) — **precisou conceder `Sites.ReadWrite.All`** (permissão
+de aplicativo, com consentimento de admin) ao app registration, que só
+tinha leitura antes. **Achado real ao integrar:** `source arquivo.env`
+sozinho em bash não exporta as variáveis pro processo Python filho —
+precisa de `set -a; source ...; set +a` (aplicado nos 3 scripts),
+senão o upload falha com `KeyError: 'MS_TENANT_ID'` mesmo com o arquivo
+sendo lido corretamente.
 
 **O que ainda não tem backup automático:** o Azure Blob Storage
-(`aprxm-midia`, Fase D) não tem rotina de backup própria — depende só
-da durabilidade nativa do Azure Storage (LRS/replicação interna da
-Microsoft), sem cópia externa. Não levantado como pendência até agora;
-avaliar se vale a pena numa próxima sessão.
+(`aprxm-midia`, Fase D, 924 MB/13.433 arquivos) não tem rotina de
+backup própria — depende só da durabilidade nativa do Azure Storage
+(LRS/replicação interna da Microsoft), sem cópia externa. Diferente dos
+3 backups de banco acima, replicar isso pro SharePoint seria um projeto
+maior (volume bem mais alto, sync incremental necessário) — não
+levantado como pendência crítica até agora; avaliar numa próxima sessão
+se o usuário quiser.
 
 ---
 
@@ -1331,6 +1359,12 @@ majoritariamente rede/domínio e a migração de storage.
     `BACKUP`/`RESTORE` nativo, cron a cada 6h, `BACKUP`/`RESTORE` real
     validado numa database temporária antes de agendar. Ver "Backups em
     produção — visão geral".
+23b. ✅ **Terceira camada de redundância no SharePoint** (2026-09-14) —
+    os 3 backups (erp_itp, APRXM Postgres, APRXM ClickHouse) agora sobem
+    cópia também pro site "Data Engineering" (SharePoint), pasta própria
+    por sistema. Precisou de `Sites.ReadWrite.All` no app registration
+    (só tinha leitura) e correção de um bug real de `source`/env vars
+    não propagando pro processo Python filho. Ver "Backups em produção".
 24. 🔴 **Power BI Service (nuvem, atualização agendada) não está
     conectado ao ClickHouse** — hoje o Power BI aponta pro Neon
     (`aprxm-analytics`, internet pública, sem gateway). Com o DW agora
