@@ -56,8 +56,6 @@ export const escService = {
   mensalidadesDelinquent: (params?: Record<string, any>) => api.get('/mensalidades/delinquent', { params }),
   mensalidadesPaid: (params?: Record<string, any>) => api.get('/mensalidades/paid', { params }),
 
-  estoque: () => api.get('/esc/administracao/estoque'),
-
   infra: () => api.get('/esc/ti/infra'),
 
   // ── escrita (Fase 11) ──

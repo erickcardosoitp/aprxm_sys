@@ -1,7 +1,6 @@
 import { FolderKanban } from 'lucide-react'
 import EscModulePage from './EscModulePage'
 import UsuariosSection from './UsuariosSection'
-import ComprovantesEstoqueSection from './ComprovantesEstoqueSection'
 import EncomendasSection from './EncomendasSection'
 import OrdensServicoSection from './OrdensServicoSection'
 import AssociacoesSection from './AssociacoesSection'
@@ -34,10 +33,6 @@ export default function CadastrosPage() {
         {
           key: 'ordens', label: 'Ordens de Serviço',
           content: <OrdensServicoSection />,
-        },
-        {
-          key: 'comprovantes', label: 'Comprovantes de Residência',
-          content: <ComprovantesEstoqueSection />,
         },
         {
           key: 'categorias', label: 'Categorias',

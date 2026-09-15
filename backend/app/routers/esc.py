@@ -524,14 +524,6 @@ async def list_taxa_entrega_prevista(
 # Administração
 # ──────────────────────────────────────────────────────────────────────────
 
-@router.get("/administracao/estoque", summary="Estoque (comprovante de residência) por unidade")
-async def list_estoque(
-    current: CurrentUser = Depends(require_empresa_admin),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    return await EscService(session).list_comprovantes_estoque(current.empresa_id)
-
-
 # ──────────────────────────────────────────────────────────────────────────
 # TI (reaproveita a logica de /ti/health, escopo empresa)
 # ──────────────────────────────────────────────────────────────────────────
