@@ -91,7 +91,7 @@ interface EscDataTableProps {
   rowActions?: (row: any) => React.ReactNode
   reloadKey?: number
   statusFilter?: boolean  // filtro Ativos/Inativos/Todos (usa row.is_active), padrão Ativos
-  filterKeys?: { key: string; label: string }[]  // filtros por coluna (opções auto-derivadas dos dados)
+  filterKeys?: { key: string; label: string; labelMap?: Record<string, string> }[]  // filtros por coluna (opções auto-derivadas dos dados; labelMap traduz o valor cru exibido)
 }
 
 export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarAction, rowActions, reloadKey, statusFilter, filterKeys }: EscDataTableProps) {
@@ -176,7 +176,7 @@ export default function EscDataTable({ columns, fetchFn, searchKeys, toolbarActi
             style={{ borderColor: BORDER, color: TEXT_MUTED }}
           >
             <option value="">{f.label}: todos</option>
-            {(filterOptions[f.key] ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+            {(filterOptions[f.key] ?? []).map((o) => <option key={o} value={o}>{f.labelMap?.[o] ?? o}</option>)}
           </select>
         ))}
         <span className="text-xs" style={{ color: TEXT_MUTED }}>

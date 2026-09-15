@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant import CurrentUser, get_current_user, financeiro_scope
 from app.database import get_session
+from app.db.helpers import PROD_ASSOC_FILTER
 from app.services.reconciliation_service import ReconciliationService
 
 router = APIRouter(prefix="/financeiro", tags=["Financeiro"])
@@ -245,7 +246,7 @@ async def list_caixas_abertos(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
-    rows = (await session.execute(text("""
+    rows = (await session.execute(text(f"""
         SELECT s.id, a.name AS unidade, s.opened_at, u.full_name AS aberto_por,
                s.opening_balance
                + COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0)
@@ -255,7 +256,7 @@ async def list_caixas_abertos(
         LEFT JOIN users u ON u.id = s.opened_by
         LEFT JOIN transactions t ON t.cash_session_id = s.id
         WHERE s.association_id = ANY(:ids) AND s.status = 'open'
-          AND a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'
+          AND {PROD_ASSOC_FILTER}
         GROUP BY s.id, a.name, s.opened_at, u.full_name, s.opening_balance
         ORDER BY a.name
     """), {"ids": ids})).fetchall()
@@ -282,7 +283,7 @@ async def list_saldo_caixa_realizado(
     #    perceber corrige com uma entrada manual depois — nao e' papel desta query
     #    "adivinhar" isso, ela so' reflete o que foi confirmado na conferencia.
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
-    rows = (await session.execute(text("""
+    rows = (await session.execute(text(f"""
         WITH sem_sessao AS (
             SELECT t.association_id,
                    SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE -t.amount END) AS saldo
@@ -303,7 +304,7 @@ async def list_saldo_caixa_realizado(
         LEFT JOIN sem_sessao ss ON ss.association_id = a.id
         LEFT JOIN conferidas cf ON cf.association_id = a.id
         WHERE a.id = ANY(:ids)
-          AND a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'
+          AND {PROD_ASSOC_FILTER}
         ORDER BY a.name
     """), {"ids": ids})).fetchall()
     return [{"association_id": str(r[0]), "unidade": r[1], "saldo": float(r[2])} for r in rows]
@@ -345,7 +346,7 @@ async def movimento_por_unidade(
     ids = [str(i) for i in await financeiro_scope(current, session, unidade)]
     now = datetime.utcnow()
     _date_from, _date_to, _ = _resolve_period(period, now, date_from, date_to)
-    rows = (await session.execute(text("""
+    rows = (await session.execute(text(f"""
         SELECT a.id, a.name AS unidade,
                COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) AS entrou,
                COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS saiu,
@@ -355,7 +356,7 @@ async def movimento_por_unidade(
             AND t.transaction_at >= :date_from AND t.transaction_at < :date_to
             AND t.reversed_at IS NULL AND t.is_reversal = false
         WHERE a.id = ANY(:ids)
-          AND a.plan_name IS DISTINCT FROM 'Homologação' AND a.name NOT LIKE '%DELETADO%'
+          AND {PROD_ASSOC_FILTER}
         GROUP BY a.id, a.name
         ORDER BY a.name
     """), {"ids": ids, "date_from": _date_from, "date_to": _date_to})).fetchall()
@@ -815,7 +816,7 @@ async def get_dre(
     for r in rows_all:
         tipo, subtipo, cat, op, amt, desc, dt, tem_sessao, sangria_reason, payable_cat = r
         amt = float(amt)
-        linha = {"descricao": desc or cat or payable_cat or sangria_reason or subtipo or "—", "valor": round(amt, 2), "data": str(dt)}
+        linha = {"descricao": desc or cat or payable_cat or sangria_reason or SUBTYPE_MAP.get(subtipo, subtipo) or "—", "valor": round(amt, 2), "data": str(dt)}
         if tipo == "income":
             label = _group_label_rec(agrupar_por, subtipo, cat, op)
             receitas.setdefault(label, []).append(linha)

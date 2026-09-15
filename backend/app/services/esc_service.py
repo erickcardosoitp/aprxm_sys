@@ -78,7 +78,7 @@ class EscService:
     async def list_usuarios(self, empresa_id) -> list[dict]:
         rows = (await self.session.execute(text("""
             SELECT u.id, u.full_name, u.email, u.role, u.is_active, u.last_login_at,
-                   COALESCE(a.name, 'Escritório') AS unidade
+                   COALESCE(a.name, 'Escritório') AS unidade, u.phone
             FROM users u
             LEFT JOIN associations a ON a.id = u.association_id
             WHERE u.empresa_id = :eid
@@ -86,7 +86,7 @@ class EscService:
         """), {"eid": str(empresa_id)})).fetchall()
         return [{"id": str(r[0]), "full_name": r[1], "email": r[2], "role": r[3],
                  "is_active": r[4], "last_login_at": str(r[5]) if r[5] else None,
-                 "unidade": r[6]} for r in rows]
+                 "unidade": r[6], "phone": r[7]} for r in rows]
 
     async def list_encomendas(self, empresa_id, date_from: str | None, date_to: str | None,
                                skip: int, limit: int, search: str | None) -> tuple[list[dict], int]:

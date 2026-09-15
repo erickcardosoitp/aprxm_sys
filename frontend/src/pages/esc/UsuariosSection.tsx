@@ -7,13 +7,19 @@ import { escService } from '../../services/esc'
 import { useAuthStore } from '../../store/authStore'
 
 const ROLES = ['admin_master', 'superadmin', 'diretoria', 'conselho', 'admin', 'conferente', 'diretoria_adjunta', 'operator', 'viewer']
+const ROLE_LABEL: Record<string, string> = {
+  admin_master: 'Admin Master', superadmin: 'Superadmin', diretoria: 'Diretoria', conselho: 'Conselho',
+  admin: 'Administrador', conferente: 'Conferente', diretoria_adjunta: 'Diretoria Adjunta',
+  operator: 'Operador', viewer: 'Visualizador',
+}
 
 interface UserRow {
   id: string; full_name: string; email: string; role: string; unidade: string; is_active: boolean
+  phone: string | null; last_login_at: string | null
 }
 interface Assoc { id: string; name: string }
 
-const EMPTY = { full_name: '', email: '', password: '', role: 'operator', association_id: '' }
+const EMPTY = { full_name: '', email: '', password: '', role: 'operator', association_id: '', phone: '' }
 
 export default function UsuariosSection() {
   const empresaId = useAuthStore((s) => s.empresaId)
@@ -32,7 +38,8 @@ export default function UsuariosSection() {
   const openEdit = (u: UserRow) => {
     setEditTarget(u)
     setForm({ full_name: u.full_name, email: u.email, password: '', role: u.role,
-              association_id: u.unidade === 'Escritório' ? '' : (units.find((x) => x.name === u.unidade)?.id ?? '') })
+              association_id: u.unidade === 'Escritório' ? '' : (units.find((x) => x.name === u.unidade)?.id ?? ''),
+              phone: u.phone ?? '' })
     setShowForm(true)
   }
 
@@ -44,11 +51,12 @@ export default function UsuariosSection() {
     setSaving(true)
     try {
       const association_id = form.association_id || null
+      const phone = form.phone.trim() || null
       if (editTarget) {
-        await escService.editarUsuario(editTarget.id, { full_name: form.full_name, email: form.email, role: form.role, association_id })
+        await escService.editarUsuario(editTarget.id, { full_name: form.full_name, email: form.email, role: form.role, association_id, phone })
         toast.success('Usuário atualizado.')
       } else {
-        await escService.criarUsuario({ full_name: form.full_name, email: form.email, password: form.password, role: form.role, association_id })
+        await escService.criarUsuario({ full_name: form.full_name, email: form.email, password: form.password, role: form.role, association_id, phone })
         toast.success('Usuário criado.')
       }
       setShowForm(false); setEditTarget(null); setReloadKey((k) => k + 1)
@@ -80,16 +88,17 @@ export default function UsuariosSection() {
         searchKeys={['full_name', 'email']}
         reloadKey={reloadKey}
         statusFilter
-        filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'role', label: 'Cargo' }]}
+        filterKeys={[{ key: 'unidade', label: 'Unidade' }, { key: 'role', label: 'Cargo', labelMap: ROLE_LABEL }]}
         toolbarAction={
           <EscButton onClick={openNew}><span className="inline-flex items-center gap-1"><Plus className="w-4 h-4" />Novo usuário</span></EscButton>
         }
         columns={[
           { key: 'full_name', label: 'Nome' },
           { key: 'email', label: 'E-mail' },
-          { key: 'role', label: 'Cargo' },
+          { key: 'role', label: 'Cargo', render: (r) => ROLE_LABEL[r.role] ?? r.role },
           { key: 'unidade', label: 'Unidade' },
           { key: 'is_active', label: 'Ativo', render: (r) => (r.is_active ? 'Sim' : 'Não') },
+          { key: 'last_login_at', label: 'Último acesso', render: (r) => (r.last_login_at ? new Date(r.last_login_at).toLocaleString('pt-BR') : 'Nunca') },
         ]}
         rowActions={(r: UserRow) => (
           <div className="inline-flex gap-2 justify-end">
@@ -123,9 +132,12 @@ export default function UsuariosSection() {
               <input className={escInputCls} style={escInputStyle} type="text" value={form.password} onChange={(e) => set('password', e.target.value)} />
             </EscField>
           )}
+          <EscField label="Telefone">
+            <input className={escInputCls} style={escInputStyle} placeholder="(00) 00000-0000" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
+          </EscField>
           <EscField label="Cargo" required>
             <select className={escInputCls} style={escInputStyle} value={form.role} onChange={(e) => set('role', e.target.value)}>
-              {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+              {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r] ?? r}</option>)}
             </select>
           </EscField>
           <EscField label="Unidade" hint="Escritório = acesso à empresa toda (ESC). Uma unidade = acesso restrito a ela.">

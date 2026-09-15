@@ -59,28 +59,47 @@ Status: `🔴` crítico, `🟠` alto, `🟡` médio, `🟢` decisão de escopo,
 
 ## 🟡 Médio — qualidade de dado, tradução, UI
 
-Não reverificados individualmente nesta rodada (baixo risco, sem
-impacto funcional) — herdados do audit de 2026-07-23, presume-se
-abertos até confirmação:
-- [ ] Usuários: enum de cargo (`admin_master`, `diretoria_adjunta`...)
-  exibido cru, sem tradução.
-- [ ] Usuários: campo `phone` sem input no formulário (campo morto no
-  backend).
-- [ ] Usuários: `last_login_at` retornado pela API mas nunca exibido.
-- [ ] Movimentações: filtro "Cargo" e coluna "Status Morador" exibidos
-  crus (`active/inactive/suspended`).
-- [ ] DRE: `income_subtype` cru quando falta descrição/categoria, em
-  vez de usar o `SUBTYPE_MAP` já existente no mesmo arquivo.
-- [ ] DRE: `sub_agrupar_por` implementado no backend, nunca usado no
-  frontend (funcionalidade morta).
-- [ ] Contas a Receber: zero filtros (busca/unidade/período), sem
-  paginação nas duas abas.
-- [ ] Sangrias: valor sem formatação pt-BR; filtro de data não exposto
-  na UI (backend já suporta).
-- [ ] `EscInfraSection`: falha silenciosa, sem mensagem de erro visível.
-- [ ] Dado incompleto em produção (contagem de 2026-08-01, não
-  reconferida): ~292 CEPs, ~1.361 telefones, ~429 números de endereço
-  de moradores em branco.
+Reverificados individualmente em 2026-09-15 — a maioria já estava
+corrigida (não marcada), só 2 itens reais precisaram de ação:
+
+- [x] **Usuários: enum de cargo cru, campo `phone` sem input,
+  `last_login_at` nunca exibido** — ✅ **Resolvido 2026-09-15**, os 3
+  eram reais. `UsuariosSection.tsx`: mapa `ROLE_LABEL` (select +
+  coluna + filtro, via novo `labelMap` opcional em `EscDataTable`),
+  campo Telefone no formulário (backend já aceitava `phone`, só
+  faltava a UI e o `SELECT` incluir a coluna), coluna "Último acesso"
+  adicionada.
+- [x] **Movimentações: filtro "Cargo"/coluna "Status Morador" crus** —
+  ✅ **já estava corrigido** (`CARGO_LABEL`/`STATUS_MORADOR_LABEL` já
+  usados no filtro e na coluna) — item do checklist antigo já
+  desatualizado.
+- [x] **DRE: `income_subtype` cru no fallback da descrição da linha**
+  — ✅ **Resolvido 2026-09-15**, era real:
+  `financeiro.py` (endpoint `/financeiro/dre`) tinha o `SUBTYPE_MAP`
+  aplicado certo no *agrupamento* mas não no *fallback da descrição de
+  cada linha* — corrigido pra usar `SUBTYPE_MAP.get(subtipo, subtipo)`.
+- [x] **DRE: `sub_agrupar_por` "morto"** — ✅ **não é código morto**,
+  claim antigo errado: já é usado de verdade no DRE de associação
+  (`frontend/src/pages/financeiro/tabs/DRETab.tsx`). Só não existe (por
+  enquanto) na versão agregada do ESC (`DRESection.tsx`) — gap de
+  paridade de feature entre as 2 telas, não bug; não implementado
+  agora (fora do escopo de "corrigir o que existe").
+- [x] **Contas a Receber: "zero filtros", sem paginação** — ✅
+  **claim parcialmente desatualizada**: já tem busca por morador +
+  filtro de unidade, valores/competência já formatados pt-BR.
+  Paginação de servidor genuinamente ainda não existe (carrega a lista
+  toda), mas o dataset aqui é só "pendentes" (bem menor que o do CRM) —
+  risco baixo, não mexido agora.
+- [x] **Sangrias: valor sem formatação pt-BR, filtro de data ausente**
+  — ✅ **já estava corrigido**: `fmt()` pt-BR e os 2 campos de data já
+  existem na UI — item do checklist antigo já desatualizado.
+- [x] **`EscInfraSection`: falha silenciosa** — ✅ **já estava
+  corrigido**: já mostra mensagem de erro visível
+  ("Erro ao carregar dados de infraestrutura...") — item do checklist
+  antigo já desatualizado.
+- [ ] Dado incompleto em produção (contagem de 2026-08-01, **não
+  reconferida nesta rodada**): ~292 CEPs, ~1.361 telefones, ~429
+  números de endereço de moradores em branco.
 
 ## 🟢 Decisão de escopo (não são bugs)
 
