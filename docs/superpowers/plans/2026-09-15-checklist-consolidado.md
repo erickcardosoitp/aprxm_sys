@@ -204,10 +204,14 @@ verificação profunda de hoje, que focou no checklist ESC). Marcar como
   de PDF da conferência, desconferir com motivo obrigatório (auditoria).
   O spec antigo procurava pelo nome errado ("inventário", não "sessões
   conferidas") — nada a construir.
-- [x] **Branch protection exigindo status check do CodeQL** — ✅
-  **Resolvido 2026-09-15**: ativado nos 3 repos (`aprxm_sys`, `erp_itp`,
-  `website_tia_pretinha`) via API do GitHub, exigindo
-  `Analyze (javascript-typescript)` (+ `Analyze (python)` nos 2 que têm
-  backend Python) antes de merge no `main`. Confirmado nos 3 que o
-  CodeQL já rodava com esses nomes exatos de check antes de configurar
-  a regra.
+- [x] **Branch protection exigindo status check do CodeQL** — 🔴
+  **tentado e revertido 2026-09-15**: ativado nos 3 repos via API do
+  GitHub (`Analyze (javascript-typescript)` + `Analyze (python)` onde
+  aplicável), mas **bloqueou push direto no `main`** logo no primeiro
+  commit seguinte — o GitHub aplica "required status checks" em
+  qualquer push pro branch protegido, não só em merge de PR, e o fluxo
+  real deste projeto (aqui e no dia a dia) é push direto, sem PR.
+  Revertido nos 3 repos pra não travar o próprio deploy. **Decisão
+  pendente do usuário:** migrar pra fluxo de PR (aí a proteção faz
+  sentido) ou desistir da automação e só checar os alertas do CodeQL
+  manualmente de vez em quando (aba Security de cada repo).
