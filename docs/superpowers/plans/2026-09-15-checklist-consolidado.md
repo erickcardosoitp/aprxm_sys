@@ -196,10 +196,18 @@ verificação profunda de hoje, que focou no checklist ESC). Marcar como
   pode alertar em loop se ele mesmo falhar), autopreenchimento de CEP
   em background (fallback é digitar manual, sem necessidade de aviso).
 - [ ] Acessibilidade (`aria-*`) em `pages/esc/` — não verificado.
-- [ ] Inventário financeiro do Escritório (conferência de caixa,
-  diferente do inventário de encomendas que já existe) — status
-  incerto, spec antigo dizia pendente.
-- [x] **Branch protection exigindo status check do CodeQL** — agora
-  **aplicável** (CodeQL já existe desde item crítico acima), mas ainda
-  **não configurado** — falta ativar a regra de proteção de branch no
-  GitHub pros 3 repos exigindo o check do CodeQL passar antes de merge.
+- [x] **Inventário financeiro do Escritório (conferência de caixa)** —
+  ✅ **não é gap, confirmado 2026-09-15**: já existe, só com outro
+  nome — `Financeiro → Sessões de Caixa` (`SessoesCaixaSection.tsx`)
+  já cobre a mesma função: lista de sessões conferidas por unidade,
+  detalhe (quebra de caixa, sobra/falta, PIX/dinheiro contado), 2ª via
+  de PDF da conferência, desconferir com motivo obrigatório (auditoria).
+  O spec antigo procurava pelo nome errado ("inventário", não "sessões
+  conferidas") — nada a construir.
+- [x] **Branch protection exigindo status check do CodeQL** — ✅
+  **Resolvido 2026-09-15**: ativado nos 3 repos (`aprxm_sys`, `erp_itp`,
+  `website_tia_pretinha`) via API do GitHub, exigindo
+  `Analyze (javascript-typescript)` (+ `Analyze (python)` nos 2 que têm
+  backend Python) antes de merge no `main`. Confirmado nos 3 que o
+  CodeQL já rodava com esses nomes exatos de check antes de configurar
+  a regra.
