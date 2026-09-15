@@ -195,7 +195,16 @@ verificação profunda de hoje, que focou no checklist ESC). Marcar como
   `service worker`, o próprio `reportError.ts` (reportador de erro não
   pode alertar em loop se ele mesmo falhar), autopreenchimento de CEP
   em background (fallback é digitar manual, sem necessidade de aviso).
-- [ ] Acessibilidade (`aria-*`) em `pages/esc/` — não verificado.
+- [x] **Acessibilidade (`aria-*`) em `pages/esc/`** — ✅ **Resolvido
+  2026-09-15**: confirmado zero `aria-*` em 29 arquivos. Corrigidos os
+  2 gaps reais de maior alcance (componentes centrais, ~15 telas
+  afetadas): `SortTh` era `<th onClick>` sem suporte a teclado nem
+  `aria-sort` — agora navegável via Tab/Enter/Espaço, anuncia estado de
+  ordenação. `EscModal` + 2 modais customizados ganharam
+  `role="dialog"`/`aria-modal`/`aria-labelledby` + `aria-label` no
+  botão fechar. Botões de ícone individuais (Pencil/Trash2 etc.) já
+  tinham `title`, aceito como nome acessível pela maioria dos leitores
+  de tela — não mexidos (baixo retorno por arquivo tocado).
 - [x] **Inventário financeiro do Escritório (conferência de caixa)** —
   ✅ **não é gap, confirmado 2026-09-15**: já existe, só com outro
   nome — `Financeiro → Sessões de Caixa` (`SessoesCaixaSection.tsx`)
