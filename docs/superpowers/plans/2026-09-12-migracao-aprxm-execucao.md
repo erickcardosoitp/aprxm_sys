@@ -664,12 +664,53 @@ capacidade paga (mínimo ~US$ 262-1.088/mês) pra esse tamanho de dado.
    `127.0.0.1:8123` da VM (a pedido do usuário — "não precisa de
    domínio, vai ficar somente no servidor") — acesso via túnel SSH
    (`ssh -L 8123:127.0.0.1:8123 ...`), nunca exposta publicamente.
+7. **Navegação visual de tabelas (DBeaver):** Play UI é só SQL manual
+   (mesma limitação do console do BigQuery) — pra navegação tipo
+   Excel/pgAdmin (clica na tabela, vê a grade, sem escrever `SELECT`),
+   instalado **DBeaver Community Edition** direto na VM
+   (`/home/itpadmin/apps/dbeaver/`, atalho na área de trabalho), já
+   conectado no ClickHouse (driver JDBC oficial baixado automaticamente
+   no primeiro uso). Acessado pela própria sessão gráfica (x2go) da VM,
+   sem exposição de rede nova.
+8. **Backup do ClickHouse configurado (2026-09-14)** — ver seção
+   "Backups em produção — visão geral" logo abaixo.
 
 **Não coberto ainda / pendência aberta:** Power BI hoje conecta direto
 no Neon via internet pública (fácil, sem gateway). Com o DW agora numa
 rede privada da VM, vai precisar de driver ODBC/JDBC do ClickHouse
 instalado onde o Power BI roda **e** (exposição pública com TLS **ou**
 um On-premises Data Gateway) — trabalho novo, ainda não feito.
+
+---
+
+## Backups em produção — visão geral (atualizado 2026-09-14)
+
+Três backups independentes rodam na VM, todos via cron nativo
+(`tarefas_runner.py`), com retenção de 7 dias de dumps locais em
+`/home/itpadmin/backups/`:
+
+| O quê | Script | Destino | Frequência | Desde |
+|---|---|---|---|---|
+| **Postgres do erp_itp** (`itp_postgres`/`erp_itp_db`) | `tarefas/pg-sync-to-neon.sh` (id `pg-sync-to-neon`) | Dump local + `pg_restore` num projeto Neon separado (réplica morna) | a cada 6h | 2026-09-08 |
+| **Postgres do APRXM** (`itp_postgres`/`aprxm_db`, produção real desde a Fase J) | `tarefas/aprxm-backup-to-neon.sh` (id `aprxm-backup-to-neon`) | Dump local + `pg_restore` no **mesmo projeto Neon que era o banco primário do APRXM** antes da Fase J — reaproveitado como réplica, não mais fonte de verdade | a cada 6h | 2026-09-14 (Fase J) |
+| **ClickHouse do APRXM** (`aprxm_clickhouse`/`aprxm_analytics`, data warehouse da Fase K) | `tarefas/aprxm-clickhouse-backup.sh` (id `aprxm-clickhouse-backup`) | `BACKUP DATABASE` nativo do ClickHouse → `.zip` local em `/home/itpadmin/backups/` (sem réplica remota — dado é 100% regenerável rodando o `aprxm-etl` de novo, o backup só evita esperar a próxima rodada) | a cada 6h | 2026-09-14 (Fase K) |
+
+**Todos os 3 testados de ponta a ponta** (não só "configurados"): o do
+ClickHouse teve `BACKUP`/`RESTORE` reais validados numa database
+temporária (`aprxm_analytics_restore_test`, criada e apagada na hora),
+confirmando contagem de linhas batendo antes de agendar no cron.
+
+**Nota de segurança/permissão:** o container `aprxm_clickhouse` roda
+como uid `101` (usuário interno `clickhouse`), diferente do uid `1001`
+(`itpadmin`) dono do `/home/itpadmin/backups` — resolvido com uma ACL
+pontual (`setfacl -m u:101:rwx /home/itpadmin/backups`), sem abrir
+permissão pra outros usuários do sistema.
+
+**O que ainda não tem backup automático:** o Azure Blob Storage
+(`aprxm-midia`, Fase D) não tem rotina de backup própria — depende só
+da durabilidade nativa do Azure Storage (LRS/replicação interna da
+Microsoft), sem cópia externa. Não levantado como pendência até agora;
+avaliar se vale a pena numa próxima sessão.
 
 ---
 
@@ -1240,10 +1281,12 @@ majoritariamente rede/domínio e a migração de storage.
     H acima pro detalhamento completo.
 15. ✅ **`/openapi.json` 500** — forward-ref não resolvido em
     `admin.py`, corrigido 2026-09-14 (commit `60df65c`). Ver Fase H.
-16. 🔴 **Backup real de produção do Neon** — ainda não existe (tentativa
-    anterior mirou o próprio banco de produção por engano, revertida
-    sem dano). **Adiado a pedido do usuário (2026-09-14)**. Ver Fase H
-    pro relato completo.
+16. ❌→✅ **Backup real de produção** — a tentativa original (mirar o
+    próprio Neon como "destino de backup" por engano, revertida sem
+    dano) foi **superada pela Fase J**: o Postgres primário do APRXM
+    migrou pra VM, e o Neon virou automaticamente o destino de backup
+    (`aprxm-backup-to-neon`, a cada 6h, testado). Ver seção "Backups em
+    produção — visão geral".
 17. ❌→✅ **`DATAWAREHOUSE_APRXM_DATABASE_URL` migrado pro endpoint
     direto Neon** (2026-09-14, preventivo) — **superado pela Fase K**:
     o destino inteiro saiu do Neon e foi pro ClickHouse self-hosted, o
@@ -1284,6 +1327,10 @@ majoritariamente rede/domínio e a migração de storage.
     conectado (driver JDBC oficial baixado) pra navegação visual de
     tabela em grade — mesma experiência de "abrir e ver os dados" que
     faltava só com o Play UI.
+23a. ✅ **Backup do ClickHouse configurado e testado** (2026-09-14) —
+    `BACKUP`/`RESTORE` nativo, cron a cada 6h, `BACKUP`/`RESTORE` real
+    validado numa database temporária antes de agendar. Ver "Backups em
+    produção — visão geral".
 24. 🔴 **Power BI Service (nuvem, atualização agendada) não está
     conectado ao ClickHouse** — hoje o Power BI aponta pro Neon
     (`aprxm-analytics`, internet pública, sem gateway). Com o DW agora
@@ -1308,6 +1355,10 @@ majoritariamente rede/domínio e a migração de storage.
     (2026-09-14), não investigado a fundo. Risco: dado indo pra
     associação errada em qualquer fluxo parecido com usuário
     empresa-wide.
+29. 🟡 **Azure Blob Storage (`aprxm-midia`) sem backup automático** —
+    depende só da durabilidade nativa do Azure (LRS), sem cópia externa
+    independente. Não levantado como pendência até agora; avaliar numa
+    próxima sessão. Ver "Backups em produção — visão geral".
 28. 🟡 **`prometheus.yml` e dashboards do Grafana na VM são cópia
     manual**, não symlink do checkout `~/erp_itp` — `git pull` sozinho
     não atualiza o que está rodando (já mordeu 2x: blackbox target do
