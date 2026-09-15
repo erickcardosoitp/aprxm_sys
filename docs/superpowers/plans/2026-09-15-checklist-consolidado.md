@@ -97,20 +97,29 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
   corrigido**: já mostra mensagem de erro visível
   ("Erro ao carregar dados de infraestrutura...") — item do checklist
   antigo já desatualizado.
-- [ ] Dado incompleto em produção (contagem de 2026-08-01, **não
-  reconferida nesta rodada**): ~292 CEPs, ~1.361 telefones, ~429
-  números de endereço de moradores em branco.
+- [x] **Dado incompleto em produção** — ✅ **reconferido 2026-09-15**
+  (2.147 moradores no total): CEP em branco 292→**277** (melhorou),
+  número de endereço 429→**420** (melhorou), **telefone em branco
+  1.361→1.653 (piorou +292)**. Não corrigido agora (é qualidade de
+  dado, não bug de código) — o aumento de telefone em branco vale
+  investigação separada (moradores novos sem coleta de telefone? tela
+  de cadastro mudou?), registrado aqui como achado, não resolvido.
 
 ## 🔵 Backlog (não pendência, projeto planejado)
 
-- [ ] **Automatizar deploy do backend (CI/CD real via GitHub Actions)**
-  — hoje é 100% manual: SSH na VM, `git pull --ff-only`, `docker
-  compose build`, `up -d --force-recreate`. Sem histórico visual (só
-  `docker ps`/`docker logs` na VM). Ideia: workflow que builda e faz
-  deploy via SSH a cada push no `main` (ou só em tag/PR aprovado),
-  registrado no GitHub como os outros deploys (Vercel já é automático
-  pro frontend). **Adicionado ao backlog 2026-09-15 a pedido do
-  usuário — priorizar as pendências pequenas antes.**
+- [x] **Automatizar deploy do backend (CI/CD real via GitHub Actions)**
+  — ✅ **Resolvido 2026-09-15**. Tentativa 1 (SSH remoto via
+  `appleboy/ssh-action`) falhou — NSG do Azure bloqueia o IP dinâmico
+  do runner hospedado do GitHub (`timeout` na porta 22); não abrimos o
+  firewall pra internet geral. Solução final: **runner self-hosted
+  instalado na própria VM** (systemd service, `vm-itp-prod-aprxm`,
+  conexão só outbound pro GitHub, nenhuma porta nova aberta). Achado
+  real na instalação: SELinux (Enforcing, Oracle Linux) bloqueava o
+  `runsvc.sh` com `203/EXEC` — contexto `user_home_t` não pode rodar
+  como serviço systemd; corrigido com `semanage fcontext` + `restorecon`
+  pra `bin_t`. Testado de ponta a ponta via PR real: merge → workflow
+  dispara no runner da VM → `git pull` + `docker build/up` + health
+  check → 11 segundos, sucesso, backend saudável em produção.
 
 ## 🟢 Decisão de escopo — reverificado 2026-09-15
 
