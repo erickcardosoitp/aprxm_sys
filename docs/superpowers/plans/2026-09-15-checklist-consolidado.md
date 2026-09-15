@@ -23,20 +23,25 @@ Status: `🔴` crítico, `🟠` alto, `🟡` médio, `🟢` decisão de escopo,
   (`payable_categories` é tabela própria, diferente de
   `transaction_categories` que a DRE lê — precisa mapear uma pra
   outra, ou linkar direto.)
-- [ ] **`erp_itp` sem Dependabot nem CodeQL configurados.** Confirmado
-  agora: `~/erp_itp/.github/dependabot.yml` não existe, nenhum workflow
-  `*codeql*`. Citado como pendente em 3 documentos antigos diferentes
-  — nunca foi feito. Simples de resolver (arquivo de config + habilitar
-  no GitHub).
+- [x] **`erp_itp` sem Dependabot nem CodeQL configurados.** ✅
+  **Resolvido 2026-09-15**: `.github/dependabot.yml` (npm/pip/docker/
+  github-actions cobrindo `apps/backend`, `apps/frontend`, raiz,
+  `catalogo-erros`, `catalogo-erros-viewer/{frontend,backend}`) e
+  `.github/workflows/codeql.yml` (javascript-typescript + python, push/
+  PR/semanal) criados e confirmados ativos via API do GitHub
+  (`Dependabot Updates` e `CodeQL` como workflows `active`).
 
 ## 🟠 Alto
 
-- [ ] **Encomendas: 100% somente-leitura no ESC** (só `GET`, sem
-  criar/editar) — confirmado em `esc.py:92-105`. **Diferente do que o
-  checklist de 07-23 dizia**: já tem paginação real e filtro de data
-  (`skip`/`limit` até 200, `date_from`/`date_to`) — só falta a escrita.
-  Ordens de Serviço, pro contraste, **já têm CRUD completo no ESC**
-  (criar/editar/excluir, `esc.py:130-195`) — Encomendas ficou pra trás.
+- [x] **Encomendas: 100% somente-leitura no ESC** — ✅ **Não é bug,
+  confirmado com o usuário 2026-09-15.** `EncomendasSection.tsx` é uma
+  tabela de leitura pura por design (sem botão criar/editar) —
+  encomenda é recebida fisicamente na portaria/associação, não faz
+  sentido criar/editar remotamente do Escritório. Diferente de Ordens
+  de Serviço (que legitimamente podem ser abertas remotamente pra
+  qualquer unidade) — o checklist antigo generalizou errado a partir do
+  padrão de OS. Já tem paginação real e filtro de data
+  (`skip`/`limit`, `date_from`/`date_to`) — isso nunca foi o problema.
 - [ ] **Associações: só editar, não criar** no ESC — `PUT
   /cadastros/associacoes/{id}` existe (`esc.py:68`), mas criar/(des)ativar
   unidade nova continua só no router de superadmin de plataforma, fora
