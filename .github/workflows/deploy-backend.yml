@@ -1,0 +1,31 @@
+name: Deploy backend (VM)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            cd /home/itpadmin/aprxm_sys
+            git fetch origin
+            git checkout main
+            git reset --hard origin/main
+            cd /home/itpadmin/itp-stack
+            docker compose build aprxm_backend
+            docker compose up -d --force-recreate aprxm_backend
+            sleep 6
+            docker ps --filter name=aprxm_backend --format '{{.Names}} {{.Status}}'
+            curl -sf http://127.0.0.1:8003/health || (echo "health check failed" && exit 1)
