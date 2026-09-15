@@ -112,7 +112,7 @@ class PackageService:
         if delivered_to_resident_id:
             resident = await self._resolve_resident(delivered_to_resident_id, association_id)
             if not resident:
-                raise UnprocessableError("Morador não encontrado nesta associação.")
+                raise UnprocessableError("Morador informado não pertence a este condomínio.")
         else:
             resident = await self._resolve_resident(package.resident_id, association_id)
         if resident and resident.status not in (ResidentStatus.active,):
