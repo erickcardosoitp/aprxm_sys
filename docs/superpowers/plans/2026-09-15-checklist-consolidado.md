@@ -191,6 +191,46 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
   `rules.yaml` original guardados antes de cada mudança
   (`rules.yaml.bak-*`).
 
+## 🔵 Backlog — ETL / Data Warehouse, concluído 2026-09-16
+
+- [x] **Arquitetura do ETL/DW mapeada, validada e ajustada.** ✅
+  **Concluído 2026-09-16.** Confirmado ponta a ponta (não presumido —
+  cada peça checada na VM/produção):
+  - **Compute**: `run_etl.py` roda dentro do container `aprxm_backend`
+    (`docker exec aprxm_backend python -m app.jobs.run_etl`), não em
+    função serverless nem no Cloudflare (Workers não suporta
+    pandas/pyarrow — avaliado e descartado).
+  - **Storage (Bronze/Prata/Ouro)**: bucket R2 `aprxm-datalake` (conta
+    Cloudflare `cdc5f5f5...`), pastas `bronze/atual/`,
+    `bronze/historico/{ano}/{mes}/{dia}/`, `prata/{data}/`,
+    `ouro/{dominio}/`. É o equivalente ao GCS na analogia com
+    BigQuery — mantido separado do compute de propósito (redundância,
+    não compete por disco da VM que já está monitorado por alerta de
+    90%).
+  - **Camada servida pro DBeaver/BI**: só **Ouro** é replicado pro
+    ClickHouse (`aprxm_analytics`, container na VM) — 39 tabelas
+    agregadas, 2.602 linhas/90KB total hoje. Bronze/Prata nunca chegam
+    no ClickHouse, ficam só no R2 como staging/histórico.
+  - **Particionamento no ClickHouse**: avaliado e **descartado por
+    decisão técnica** — volume atual (2.602 linhas) não justifica
+    `PARTITION BY` (zero ganho de performance, tabelas são recriadas
+    do zero a cada rodada, não incremental). Revisitar só se o Gold
+    virar granular por transação em vez de agregado.
+  - **Agendamento**: reduzido de 2x/dia (`0 12,20 * * *`) pra 1x/dia
+    às 7h Brasília / 10h UTC (`0 10 * * *`), processando D-1 — decisão
+    do usuário, sem lógica de delta amarrada ao horário antigo
+    (confirmado no código antes de mudar). Aplicado no crontab da VM e
+    sincronizado em `tarefas-registro.json`, backups dos dois antes da
+    mudança.
+  - **Ferramenta de consulta**: DBeaver (desktop, já instalado)
+    substituiu o Play UI do navegador — mesma função, melhor UX,
+    conexão via túnel SSH (porta 8123 não exposta publicamente).
+    CloudBeaver e ferramenta própria avaliados e descartados
+    (reinventar o que o DBeaver já faz, sem ganho real).
+  - Atalho **ETL** criado na área de trabalho da VM (logo oficial
+    Cloudflare, cor de marca `#F38020`), abre direto o bucket
+    `aprxm-datalake` no dashboard R2.
+
 ## 🟢 Decisão de escopo — reverificado 2026-09-15
 
 - [x] **Endpoint `GET /esc/administracao/permissoes` não usado** — ✅
