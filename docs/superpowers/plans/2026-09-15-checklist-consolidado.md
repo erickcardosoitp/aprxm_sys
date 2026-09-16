@@ -132,12 +132,30 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
   crítico/alto no lote), mas a métrica ficou **congelada em `1`** nesse
   intervalo todo. A regra do Grafana checava só `valor == 1 por 30min`,
   sem checar frescor do dado — disparou em cima de um valor de horas
-  atrás, não de um problema ativo. Corrigido: `expr` da regra agora exige
-  `node_textfile_mtime_seconds{file="...teto.prom"}` recente (<30min),
-  usando métrica que o `node_exporter` já expõe nativamente (nenhuma
-  métrica nova criada). Confirmado: query testada direto no Prometheus
-  (retorna vazio com dado congelado), estado da regra no Grafana caiu de
-  `firing` pra `Pending (NoData)`, e-mail `[RESOLVED]` recebido.
+  atrás, não de um problema ativo.
+  - **Tentativa 1** (`catalogo_erros_teto_atingido == 1 and (...) < 1800`):
+    corrigiu o falso positivo original, mas criou um novo — o operador
+    `and` do PromQL remove a série inteira (não retorna 0) quando o lado
+    direito é falso, virando "sem dado", que o Grafana trata como alerta
+    especial `DatasourceNoData` **independente da configuração
+    `no_data_state`** (achado adicional: essa versão do Grafana, 13.2.1,
+    não aplica `no_data_state` do arquivo de provisionamento — todas as
+    7 regras mostravam `NoData` ao vivo mesmo com valores diferentes no
+    YAML; não investigado a fundo por ser fora do escopo imediato).
+  - **Correção final**: reescrita a expressão pra nunca retornar "sem
+    dado" — `catalogo_erros_teto_atingido * scalar(time() -
+    node_textfile_mtime_seconds{file="...teto.prom"} < bool 1800)`.
+    Multiplica o valor real (0 ou 1) por um booleano de frescor
+    convertido pra escalar (`scalar()`, necessário porque `*` entre dois
+    vetores de métricas diferentes não casa por padrão) — sempre produz
+    um número, elimina o problema de "sem dado" na raiz, não só
+    contorna a configuração do Grafana.
+  - Confirmado: query testada direto no Prometheus (retorna `0`, nunca
+    vazio, com dado congelado), estado da regra caiu de `firing` pra
+    `inactive`/`health: ok`, estável por múltiplos ciclos de avaliação
+    seguidos (~6min). E-mails `[RESOLVED]` de ambos os disparos (original
+    e o `DatasourceNoData` da tentativa 1) recebidos, nenhum novo disparo
+    depois da correção final.
 - [x] **Processo órfão do coletor travando os locks.** ✅ Achado
   colateral (não é bug do sistema — era resquício de teste manual meu
   via SSH que não morreu ao encerrar a sessão): matado, locks (
