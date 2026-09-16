@@ -207,31 +207,28 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0f2a4a] p-4">
-      <div className="absolute inset-0 opacity-5"
-        style={{ backgroundImage: 'radial-gradient(circle at 25% 25%, #4a90d9 0%, transparent 50%), radial-gradient(circle at 75% 75%, #26619c 0%, transparent 50%)' }} />
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+      style={{ background: 'linear-gradient(160deg, #0a1e38 0%, #0f2a4a 45%, #123356 100%)' }}>
 
-      <div className="relative w-full max-w-sm">
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+      {/* Textura de fundo: grid sutil + glow duplo, mais sofisticado que gradiente liso */}
+      <div className="absolute inset-0 opacity-[0.07]"
+        style={{
+          backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
+          backgroundSize: '48px 48px',
+        }} />
+      <div className="absolute inset-0"
+        style={{ backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(74,144,217,0.16) 0%, transparent 45%), radial-gradient(circle at 80% 85%, rgba(38,97,156,0.20) 0%, transparent 45%)' }} />
+
+      <div className="relative w-full max-w-[380px]">
+        <div className="bg-white rounded-2xl overflow-hidden"
+          style={{ boxShadow: '0 24px 60px -12px rgba(10,30,56,0.45), 0 0 0 1px rgba(255,255,255,0.06)' }}>
           {/* Header */}
-          <div className="bg-[#1a1a2e] px-8 py-7 text-center">
-            <img src="/logo.png" alt="APRXM" className="h-10 w-auto mx-auto mb-2 object-contain" />
-            <p className="text-blue-200/60 text-xs">Gestão Comunitária</p>
+          <div className="bg-[#0f1b30] px-9 py-9 text-center">
+            <img src="/logo.png" alt="APRXM" className="h-9 w-auto mx-auto mb-3 object-contain" />
+            <p className="text-blue-200/50 text-[11px] uppercase tracking-[0.15em] font-medium">Gestão Comunitária</p>
           </div>
 
-          {/* Steps indicator */}
-          <div className="flex border-b border-gray-100">
-            {(['email', 'org', 'password'] as Step[]).map((s, i) => (
-              <div key={s} className={`flex-1 py-2 text-center text-xs font-medium transition-colors ${
-                step === s ? 'text-[#26619c] border-b-2 border-[#26619c]' :
-                i < ['email','org','password'].indexOf(step) ? 'text-green-500' : 'text-gray-300'
-              }`}>
-                {i + 1}
-              </div>
-            ))}
-          </div>
-
-          <div key={step} className="px-8 py-7">
+          <div key={step} className="px-9 py-8">
 
             {/* Step 1: Email */}
             {step === 'email' && (
@@ -403,8 +400,8 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p className="text-center text-blue-200/40 text-xs mt-5">
-          APRXM v1.0 · Associação de Moradores
+        <p className="text-center text-blue-200/30 text-[11px] mt-6 tracking-wide">
+          APRXM · Associação de Moradores
         </p>
       </div>
     </div>
