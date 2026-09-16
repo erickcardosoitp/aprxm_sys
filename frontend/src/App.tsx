@@ -70,7 +70,6 @@ const SimplificaCaixa      = lazyWithReload(() => import('./pages/simplifica/Sim
 const SimplificaEncomendas = lazyWithReload(() => import('./pages/simplifica/SimplificaEncomendas'))
 const SimplificaMoradores  = lazyWithReload(() => import('./pages/simplifica/SimplificaMoradores'))
 const SimplificaOrdens     = lazyWithReload(() => import('./pages/simplifica/SimplificaOrdens'))
-const SimplificaChat       = lazyWithReload(() => import('./pages/simplifica/SimplificaChat'))
 const SimplificaConfig     = lazyWithReload(() => import('./pages/simplifica/SimplificaConfig'))
 
 // Carregamento imediato — rotas críticas de primeiro acesso
@@ -96,7 +95,6 @@ const GeralPage         = lazyWithReload(() => import('./pages/geral/GeralPage')
 const ReportsPage       = lazyWithReload(() => import('./pages/reports/ReportsPage'))
 const LogsPage          = lazyWithReload(() => import('./pages/logs/LogsPage'))
 const TIPage            = lazyWithReload(() => import('./pages/ti/TIPage'))
-const ChatPage          = lazyWithReload(() => import('./pages/chat/ChatPage'))
 const HelpPage          = lazyWithReload(() => import('./pages/help/HelpPage'))
 const EscCadastrosPage      = lazyWithReload(() => import('./pages/esc/CadastrosPage'))
 const EscMoradoresPage      = lazyWithReload(() => import('./pages/esc/MoradoresPage'))
@@ -213,7 +211,6 @@ export default function App() {
           <Route path="esc/acervo"         element={<RequireEsc><Suspense fallback={<PageLoader />}><EscAcervoPage /></Suspense></RequireEsc>} />
           <Route path="logs"           element={<RequireNotOffice><RequireAdmin><Suspense fallback={<PageLoader />}><LogsPage /></Suspense></RequireAdmin></RequireNotOffice>} />
           <Route path="ti"             element={<RequireAdmin><Suspense fallback={<PageLoader />}><TIPage /></Suspense></RequireAdmin>} />
-          <Route path="chat"           element={<Suspense fallback={<PageLoader />}><ChatPage /></Suspense>} />
           <Route path="crm"            element={<Navigate to="/financeiro" replace />} />
           <Route path="agentes"        element={<Navigate to="/financeiro" replace />} />
           <Route path="help"           element={<Navigate to="/help/abrir-caixa" replace />} />
@@ -237,7 +234,6 @@ export default function App() {
           <Route path="encomendas"    element={<Suspense fallback={<PageLoader />}><SimplificaEncomendas /></Suspense>} />
           <Route path="moradores"     element={<Suspense fallback={<PageLoader />}><SimplificaMoradores /></Suspense>} />
           <Route path="ordens"        element={<Suspense fallback={<PageLoader />}><SimplificaOrdens /></Suspense>} />
-          <Route path="chat"          element={<Suspense fallback={<PageLoader />}><SimplificaChat /></Suspense>} />
           <Route path="configuracoes" element={<Suspense fallback={<PageLoader />}><SimplificaConfig /></Suspense>} />
         </Route>
 

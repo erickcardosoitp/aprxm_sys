@@ -72,7 +72,6 @@ pages/simplifica/
   SimplificaHome.tsx          — grade principal (6 setores)
   SimplificaLayout.tsx        — guard de rota + layout base
   SimplificaConfig.tsx        — configurações (fonte, tema, voltar)
-  SimplificaChat.tsx          — chat direto
   SimplificaCaixa.tsx         — caixa (usa TransactionModal/SangriaModal inline)
   SimplificaEncomendas.tsx    — encomendas (orquestra PackagesPage em modo)
   SimplificaMoradores.tsx     — moradores (navegação + telas inline futuras)

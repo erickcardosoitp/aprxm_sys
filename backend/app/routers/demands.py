@@ -234,18 +234,6 @@ async def trigger_reminders_job() -> dict:
             demand_id, title, assoc_id, atn, so_id, email, full_name, so_num = r
             due_fmt = date.today().strftime("%d/%m/%Y")
 
-            # Chat message
-            try:
-                from app.routers.chat import post_system_message
-                so_ref = f" (OS #{so_num})" if so_num else ""
-                msg = f'⏰ Lembrete: prazo da demanda "{title}"{so_ref} vence hoje — responsável: {atn}'
-                await post_system_message(str(assoc_id), msg, session)
-            except Exception as e:
-                # Uma demanda com falha no chat nao deve travar o lembrete
-                # das outras, mas a falha precisa ficar visivel pro catalogo
-                # de erros -- antes era engolida sem log nenhum.
-                logger.error("[ERROR] Lembrete de demanda %s: falha ao postar mensagem de chat: %s", demand_id, e)
-
             # Email
             if email:
                 try:

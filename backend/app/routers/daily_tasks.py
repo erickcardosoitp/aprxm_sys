@@ -3,36 +3,20 @@ from __future__ import annotations
 from datetime import date, date as date_type, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
-from app.core.tenant import CurrentUser, get_current_user
-from app.database import AsyncSessionLocal, get_session
-from app.routers.chat import post_system_message
+from app.core.tenant import CurrentUser, get_current_user, group_association_ids
+from app.database import get_session
 
 router = APIRouter(prefix="/daily-tasks", tags=["Tarefas Diárias"])
 
 
 async def _group_assoc_ids(association_id: str, session: AsyncSession) -> list[str]:
-    row = (await session.execute(
-        text("SELECT chat_group FROM associations WHERE id = :aid"),
-        {"aid": association_id},
-    )).fetchone()
-    group = row[0] if row else None
-    if group:
-        rows = (await session.execute(
-            text("SELECT id FROM associations WHERE chat_group = :g"),
-            {"g": group},
-        )).fetchall()
-    else:
-        rows = (await session.execute(
-            text("SELECT id FROM associations WHERE id = :aid"),
-            {"aid": association_id},
-        )).fetchall()
-    return [str(r[0]) for r in rows]
+    ids, _ = await group_association_ids(session, association_id)
+    return ids
 
 
 class CreateDailyTaskRequest(BaseModel):
@@ -189,16 +173,6 @@ async def create_task(
         "created_by": str(current.user_id),
         "status": initial_status,
     })).fetchone()
-    # Chat: postar mensagem automática ao criar tarefa
-    try:
-        so_ref = f' (OS: {body.service_order_title})' if body.service_order_title else ''
-        responsible = body.assigned_to_name or 'equipe'
-        badge = f"[{current.association_name}] " if current.association_name else ""
-        msg = f'{badge}📋 Tarefa criada: "{body.title}"{so_ref} → {responsible}'
-        await post_system_message(str(current.association_id), msg, session)
-    except Exception:
-        pass
-
     await session.commit()
 
     if body.assigned_to and str(body.assigned_to) != str(current.user_id):
@@ -1120,52 +1094,13 @@ async def report_pdf(
     )
 
 
-async def trigger_task_reminders_job() -> dict:
-    """Lembretes de tarefa no Chat. Chamada pela rota HTTP (manual/debug)
-    e pelo cron nativo (app/jobs/run_cron.py)."""
-    sent = 0
-
-    async with AsyncSessionLocal() as session:
-        rows = (await session.execute(text("""
-            SELECT t.id, t.title, t.association_id, t.assigned_to_name,
-                   t.reminder_at, u.full_name
-            FROM daily_tasks t
-            LEFT JOIN users u ON u.id = t.assigned_to AND u.association_id = t.association_id
-            WHERE t.reminder_at <= NOW()
-              AND t.status != 'concluida'
-              AND t.reminded_at IS NULL
-        """))).fetchall()
-
-        for r in rows:
-            task_id, title, assoc_id, atn, reminder_at, full_name = r
-            responsible = atn or full_name or "equipe"
-            try:
-                from app.routers.chat import post_system_message
-                msg = f'⏰ Lembrete: tarefa "{title}" vence agora — responsável: {responsible}'
-                await post_system_message(str(assoc_id), msg, session)
-            except Exception:
-                pass
-            await session.execute(
-                text("UPDATE daily_tasks SET reminded_at = NOW() WHERE id = :id"),
-                {"id": str(task_id)},
-            )
-            sent += 1
-
-        await session.commit()
-
-    return {"sent": sent}
-
-
-@router.api_route("/reminders/trigger", methods=["GET", "POST"], summary="Cron: disparar lembretes de tarefas no Chat")
-async def trigger_task_reminders(
-    authorization: str | None = Header(None),
-) -> dict:
-    settings = get_settings()
-    if settings.cron_secret:
-        if authorization != f"Bearer {settings.cron_secret}":
-            raise HTTPException(401, "Não autorizado")
-
-    return await trigger_task_reminders_job()
+# trigger_task_reminders_job / rota /reminders/trigger removidas em 2026-09-16
+# (descontinuacao do chat interno, decisao do usuario -- Teams e' o unico canal
+# de comunicacao daqui pra frente). O job so' postava lembrete no chat, sem
+# nenhum canal alternativo (diferente de demands.py, que tambem manda e-mail) --
+# manter so' marcaria reminded_at sem nunca avisar ninguem. Se lembrete de
+# tarefa via Teams for necessario, e' feature nova a especificar, nao um
+# reaproveitamento deste job.
 
 
 # ── Rotas com parâmetro de path (devem vir DEPOIS das rotas fixas) ─────────────
