@@ -43,16 +43,13 @@ async def _demands_reminders() -> dict:
     return await trigger_reminders_job()
 
 
-async def _daily_tasks_reminders() -> dict:
-    from app.routers.daily_tasks import trigger_task_reminders_job
-    return await trigger_task_reminders_job()
-
+# daily-tasks-reminders removido em 2026-09-16 (dependia so' do chat interno,
+# descontinuado -- ver daily_tasks.py). Registro do cron na VM tambem removido.
 
 # Jobs sem sessao propria (abrem a sessao internamente, via AsyncSessionLocal)
 NO_SESSION_JOBS = {
     "vacuum": _vacuum,
     "demands-reminders": _demands_reminders,
-    "daily-tasks-reminders": _daily_tasks_reminders,
 }
 
 # Jobs que recebem a sessao de fora

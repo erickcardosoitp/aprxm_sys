@@ -15,7 +15,7 @@ from app.config import get_settings, validate_production_config
 from app.core.metrics import http_request_duration_seconds, http_requests_total
 from app.database import init_db
 from app.db.migrations import run_migrations, seed_local_dev
-from app.routers import admin, agent, auth, carriers, cash_boxes, chat, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, metrics, notifications, packages, painel_auth, presidencia, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
+from app.routers import admin, agent, auth, carriers, cash_boxes, crm, daily_tasks, datalake, demands, esc, finance, financeiro, geral, governanca, mensalidades, metrics, notifications, packages, painel_auth, presidencia, public, reports, residents, senso, service_order_phases, service_orders, superadmin, ti, uploads, transfers, webauthn
 from app.routers import settings as settings_router
 
 settings = get_settings()
@@ -79,7 +79,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 _SKIP_LOG = {
     "/health", "/api/v1/health",
-    "/api/v1/notifications/unread-count", "/api/v1/chat/unread-count",
+    "/api/v1/notifications/unread-count",
     "/", "/favicon.ico", "/favicon.png", "/robots.txt",
 }
 
@@ -181,7 +181,6 @@ app.include_router(agent.router, prefix=PREFIX)
 app.include_router(cash_boxes.router, prefix=PREFIX)
 app.include_router(carriers.router, prefix=PREFIX)
 app.include_router(demands.router, prefix=PREFIX)
-app.include_router(chat.router, prefix=PREFIX)
 app.include_router(notifications.router, prefix=PREFIX)
 app.include_router(webauthn.router, prefix=PREFIX)
 app.include_router(datalake.router, prefix=PREFIX)

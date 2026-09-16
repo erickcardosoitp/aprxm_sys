@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenant import CurrentUser, get_current_user
+from app.core.tenant import CurrentUser, get_current_user, group_association_ids
 from app.database import get_session
 
 router = APIRouter(prefix="/reports", tags=["Relatórios"])
@@ -384,19 +384,8 @@ async def export_mensalidades(
 # ─── Entregas ─────────────────────────────────────────────────────────────────
 
 async def _aids_for_report(session: AsyncSession, aid: str) -> list[str]:
-    row = (await session.execute(
-        text("SELECT chat_group FROM associations WHERE id = :aid"), {"aid": aid}
-    )).fetchone()
-    group = row[0] if row else None
-    if group:
-        rows = (await session.execute(
-            text("SELECT id FROM associations WHERE chat_group = :g"), {"g": group}
-        )).fetchall()
-    else:
-        rows = (await session.execute(
-            text("SELECT id FROM associations WHERE id = :aid"), {"aid": aid}
-        )).fetchall()
-    return [str(r[0]) for r in rows]
+    ids, _ = await group_association_ids(session, aid)
+    return ids
 
 
 async def _query_entregas(

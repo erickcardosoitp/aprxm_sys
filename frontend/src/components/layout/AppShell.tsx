@@ -1,6 +1,6 @@
 import { type ComponentType, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, FolderKanban, HelpCircle, Image, LogOut, MessageSquare, Package, Palette, RefreshCw, RotateCcw, Settings, ShieldCheck, TrendingUp, UserCheck, Users } from 'lucide-react'
+import { Activity, BarChart2, Bell, Building2, Check, ChevronDown, DollarSign, Download, FileText, FolderKanban, HelpCircle, Image, LogOut, Package, Palette, RefreshCw, RotateCcw, Settings, ShieldCheck, TrendingUp, UserCheck, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { jwtDecode } from 'jwt-decode'
 import api from '../../services/api'
@@ -85,10 +85,6 @@ export function AppShell() {
   const menuRef = useRef<HTMLDivElement>(null)
   const [envOpen, setEnvOpen] = useState(false)
   const envRef = useRef<HTMLDivElement>(null)
-
-  const [chatUnread, setChatUnread] = useState(0)
-  const chatLastReadRef = useRef<string>(localStorage.getItem('chatLastRead') ?? new Date(0).toISOString())
-  const isOnChat = location.pathname === '/chat'
 
   const [notifOpen, setNotifOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -205,26 +201,6 @@ export function AppShell() {
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [role, fetchUnread])
-
-  useEffect(() => {
-    if (!role || isOnChat) return
-    const fetchChatUnread = () => {
-      api.get<{ count: number }>('/chat/unread-count', { params: { since: chatLastReadRef.current } })
-        .then(r => setChatUnread(r.data.count))
-        .catch(() => {})
-    }
-    fetchChatUnread()
-    const id = setInterval(fetchChatUnread, 30_000)
-    return () => clearInterval(id)
-  }, [role, isOnChat])
-
-  useEffect(() => {
-    if (!isOnChat) return
-    setChatUnread(0)
-    const now = new Date().toISOString()
-    localStorage.setItem('chatLastRead', now)
-    chatLastReadRef.current = now
-  }, [isOnChat])
 
   const openNotifs = async () => {
     setNotifOpen(true)
@@ -516,29 +492,6 @@ export function AppShell() {
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
             />
           </label>
-
-          {/* Chat */}
-          <NavLink
-            to="/chat"
-            className={({ isActive }) =>
-              `p-2.5 rounded-xl transition ${isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}`
-            }
-            onClick={() => {
-              setChatUnread(0)
-              const now = new Date().toISOString()
-              localStorage.setItem('chatLastRead', now)
-              chatLastReadRef.current = now
-            }}
-          >
-            <div className="relative">
-              <MessageSquare className="w-5 h-5" />
-              {chatUnread > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">
-                  {chatUnread > 9 ? '9+' : chatUnread}
-                </span>
-              )}
-            </div>
-          </NavLink>
 
           {/* Notifications */}
           <div className="relative" ref={notifRef}>

@@ -368,6 +368,39 @@ async def resolve_scope(
     return [r[0] for r in rows]
 
 
+async def group_association_ids(session: AsyncSession, association_id: str) -> tuple[list[str], dict[str, str]]:
+    """Associacoes do mesmo `chat_group` manual (coluna em `associations`),
+    ou so' a propria se nao tiver grupo. Extraido de chat.py/reports.py/
+    service_orders.py/daily_tasks.py em 2026-09-16 (4 copias identicas viraram
+    esta) na remocao do modulo de chat — NAO e' exclusivo de chat:
+    service_orders/daily_tasks (visao cross-associacao) e reports.py
+    (relatorio de Entregas) dependem dele. Mantido com semantica identica
+    (mesma coluna/regra) de proposito — unificar com resolve_scope() acima
+    (baseado em empresa_id) e' decisao de produto separada, ver aviso no
+    docstring de resolve_scope.
+
+    Retorna (lista de ids como str, mapa id->nome).
+    """
+    row = (await session.execute(
+        text("SELECT chat_group FROM associations WHERE id = :aid"),
+        {"aid": association_id},
+    )).fetchone()
+    group = row[0] if row else None
+    if group:
+        rows = (await session.execute(
+            text("SELECT id, name FROM associations WHERE chat_group = :g"),
+            {"g": group},
+        )).fetchall()
+    else:
+        rows = (await session.execute(
+            text("SELECT id, name FROM associations WHERE id = :aid"),
+            {"aid": association_id},
+        )).fetchall()
+    ids = [str(r[0]) for r in rows]
+    names = {str(r[0]): r[1] for r in rows}
+    return ids, names
+
+
 def require_esc_module(module: str):
     """Dependency factory: require_empresa_admin + permissao de 'view' no modulo (access_groups)."""
 

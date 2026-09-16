@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.tenant import CurrentUser, get_current_user, require_module_action
+from app.core.tenant import CurrentUser, get_current_user, group_association_ids, require_module_action
 from app.database import get_session
 from app.models.service_order import ServiceOrderPriority, ServiceOrderStatus
 from app.models.user import User
@@ -18,24 +18,8 @@ router = APIRouter(prefix="/service-orders", tags=["Ordens de Serviço"])
 
 async def _get_group_assoc_ids(association_id: str, session: AsyncSession) -> tuple[list[UUID], dict[str, str]]:
     """Returns (list_of_uuids_in_same_group, {id: name} map). Falls back to just the current assoc."""
-    row = (await session.execute(
-        text("SELECT chat_group FROM associations WHERE id = :aid"),
-        {"aid": association_id},
-    )).fetchone()
-    group = row[0] if row else None
-    if group:
-        rows = (await session.execute(
-            text("SELECT id, name FROM associations WHERE chat_group = :g"),
-            {"g": group},
-        )).fetchall()
-    else:
-        rows = (await session.execute(
-            text("SELECT id, name FROM associations WHERE id = :aid"),
-            {"aid": association_id},
-        )).fetchall()
-    ids = [UUID(str(r[0])) for r in rows]
-    names = {str(r[0]): r[1] for r in rows}
-    return ids, names
+    ids, names = await group_association_ids(session, association_id)
+    return [UUID(i) for i in ids], names
 
 
 class CreateSORequest(BaseModel):
@@ -117,20 +101,6 @@ async def create_so(
         created_by=current.user_id,
         **body.model_dump(),
     )
-    # Post to chat for all members
-    try:
-        from app.routers.chat import post_system_message
-        area_part = f" | Área: {body.area}" if body.area else ""
-        priority_map = {"low": "Baixa", "medium": "Média", "high": "Alta", "critical": "Crítica"}
-        priority_pt = priority_map.get(str(body.priority.value if hasattr(body.priority, 'value') else body.priority), str(body.priority))
-        badge = f"[{current.association_name}] " if current.association_name else ""
-        chat_msg = f"{badge}📋 OS #{so.number} aberta: \"{body.title}\" | Prioridade: {priority_pt}{area_part}"
-        if body.assigned_to_name:
-            chat_msg += f" | Responsável: {body.assigned_to_name}"
-        await post_system_message(str(current.association_id), chat_msg, session)
-    except Exception:
-        pass
-
     if body.assigned_to and str(body.assigned_to) != str(current.user_id):
         await _notif(
             str(current.association_id), str(body.assigned_to),
@@ -613,21 +583,6 @@ async def create_task(
     })
     row = result.fetchone()
     await session.commit()
-
-    if body.assigned_to_name:
-        try:
-            from app.routers.chat import post_system_message
-            so_num = await session.execute(
-                text("SELECT order_number FROM service_orders WHERE id = :id"),
-                {"id": str(so_id)},
-            )
-            num = so_num.scalar()
-            title = body.title
-            msg = f'📋 {body.assigned_to_name} foi atribuído(a) à tarefa "{title}" da OS #{num}'
-            await post_system_message(str(current.association_id), msg, session)
-            await session.commit()
-        except Exception:
-            pass
 
     if body.assigned_to:
         import asyncio
