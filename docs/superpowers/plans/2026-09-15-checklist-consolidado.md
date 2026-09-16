@@ -121,6 +121,58 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
   dispara no runner da VM → `git pull` + `docker build/up` + health
   check → 11 segundos, sucesso, backend saudável em produção.
 
+## 🟠 Alto — resolvido 2026-09-15/16 (incidente de monitoramento)
+
+- [x] **Alerta "Catálogo de erros — teto de classificações atingido
+  repetidamente" disparando falso positivo por horas.** ✅ **Resolvido
+  2026-09-16.** Causa raiz real: `catalogo_erros_teto_atingido` é uma
+  métrica textfile escrita só quando o coletor roda de verdade — depois
+  de uma rodada bater o teto (legítimo, 21:56:42) o scheduler adaptativo
+  corretamente agendou a próxima varredura pra ~6h depois (sem item
+  crítico/alto no lote), mas a métrica ficou **congelada em `1`** nesse
+  intervalo todo. A regra do Grafana checava só `valor == 1 por 30min`,
+  sem checar frescor do dado — disparou em cima de um valor de horas
+  atrás, não de um problema ativo. Corrigido: `expr` da regra agora exige
+  `node_textfile_mtime_seconds{file="...teto.prom"}` recente (<30min),
+  usando métrica que o `node_exporter` já expõe nativamente (nenhuma
+  métrica nova criada). Confirmado: query testada direto no Prometheus
+  (retorna vazio com dado congelado), estado da regra no Grafana caiu de
+  `firing` pra `Pending (NoData)`, e-mail `[RESOLVED]` recebido.
+- [x] **Processo órfão do coletor travando os locks.** ✅ Achado
+  colateral (não é bug do sistema — era resquício de teste manual meu
+  via SSH que não morreu ao encerrar a sessão): matado, locks (
+  `catalogo-erros-coletor.lock`, `claude-cli-global.lock`) limpos.
+  Pipeline real nunca esteve travado — rodava e agendava normalmente o
+  tempo todo (confirmado via `catalogo-erros-cron-state.json` e log).
+- [x] **Sem watchdog real pra travamento genuíno do coletor.** ✅
+  **Resolvido 2026-09-16.** Antes só existia timeout por chamada
+  individual à IA (`TIMEOUT_MAXIMO_S`, 5min) — nada limitava o processo
+  Python como um todo. Adicionado `timeout 3300` (55min, acima do pior
+  caso teórico de 5 classificações × 2 contas × 5min) envolvendo a
+  chamada do `coletor.py` em `cron_coletor.sh`. Se travar de verdade,
+  o wrapper mata o processo, loga `ERRO: código 124` e reagenda retry em
+  5min — já usa o mecanismo de log/retry que já existia pra qualquer
+  outra falha do coletor. Testado em cópia isolada (não tocou estado de
+  produção): trava simulada → morto pelo timeout → erro logado → retry
+  agendado corretamente.
+- [x] **Auditoria completa das 7 regras de alerta do Grafana.** ✅
+  Revisão manual de cada `expr`/`no_data_state`: as outras 6 (site fora
+  do ar, disco cheio, memória crítica, container caído, taxa de erro
+  HTTP, coletor sem execução recente) já usavam métricas de scrape
+  contínuo ou já checavam frescor por design — só a regra do teto tinha
+  o bug de métrica congelada. Nenhuma regra órfã/duplicada encontrada.
+- [x] **Mensagens de alerta em bloco único, sem estrutura, difíceis de
+  ler no e-mail.** ✅ **Resolvido 2026-09-16.** As 7 regras reformatadas
+  com estrutura padrão (O QUE ACONTECEU / POR QUE IMPORTA / O QUE
+  FAZER) e quebras de linha reais — o backend já envia em `<pre>`
+  (`metrics.controller.ts`), então só faltava o texto ter `\n` de
+  verdade. Testado ponta a ponta: e-mail de teste manual disparado via
+  webhook real (`POST /api/metrics/alerta-grafana`), confirmado no log
+  do backend (`EmailService`) que foi enviado com sucesso pra
+  `monitoramento@institutotiapretinha.org`. Backups do
+  `rules.yaml` original guardados antes de cada mudança
+  (`rules.yaml.bak-*`).
+
 ## 🟢 Decisão de escopo — reverificado 2026-09-15
 
 - [x] **Endpoint `GET /esc/administracao/permissoes` não usado** — ✅
