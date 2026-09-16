@@ -57,45 +57,33 @@ Levantar caso de uso real antes de implementar.
 
 ---
 
-## 3. "Acabar com o chat"
+## 3. "Acabar com o chat" — ✅ CONCLUÍDO 2026-09-16
 
-Contexto parcial de hoje: investigamos o módulo "Porta a Porta" e
-descobrimos que não existe mais como módulo isolado (virou parte do
-cadastro padrão de morador). O pedido de hoje sobre "chat" não foi
-detalhado — **precisa esclarecer**: é o módulo `ChatPage.tsx` (chat
-interno do app, mencionado nos `.catch()` corrigidos hoje) que o
-usuário quer remover? Motivo (baixo uso? redundante com WhatsApp?
-manutenção)? Mapear dependências antes de tocar (mesmo cuidado que
-tivemos hoje com "Porta a Porta" — conferir se não é usado por outro
-módulo antes de remover).
+Decisão: Teams será o único canal de comunicação da equipe. Chat
+interno removido por completo (PR #82), incluindo `SimplificaChat.tsx`
+(achado real: era só um wrapper mobile do mesmo chat, não produto
+separado). Ver detalhe completo em
+`2026-09-15-checklist-consolidado.md`.
 
 ---
 
-## 4. Remodelar frontend
+## 4. Remodelar frontend — parcialmente iniciado 2026-09-16
 
-Sem escopo definido ainda. Perguntas em aberto pra próxima sessão:
-- Remodelar o quê — visual (design system/UI), ou estrutural (rotas,
-  organização de código)?
+Tela de login do app principal redesenhada (PR #83), direção
+"corporativo/sóbrio" escolhida pelo usuário. Escopo maior ainda em
+aberto:
+- Resto do app (não só login) — visual (design system/UI), ou
+  estrutural (rotas, organização de código)?
 - Todos os 4 frontends (`frontend`, `painel`, `presidencia`,
   `simplifica`) ou um específico?
-- Existe referência visual/wireframe, ou começamos do zero definindo
-  direção?
+- Existe referência visual/wireframe, ou seguimos a mesma direção
+  "corporativo/sóbrio" já validada no login?
 
 ---
 
-## 5. Investigar lentidão
+## 5. Investigar lentidão — ❌ CANCELADO 2026-09-16
 
-Sem sintoma específico relatado ainda. Pra investigar de verdade,
-precisa de:
-- Onde é lento — tela específica, ação específica, ou geral?
-- Desde quando (sempre foi assim, ou começou depois de alguma mudança
-  — ex. a migração VM de hoje, ou algo antes)?
-- Volume de dado envolvido (a `CrmSection`/`EscDataTable` já tinham
-  histórico de carregar lista inteira sem paginação — parte já
-  corrigida hoje, mas vale re-perfilar depois do carregamento real de
-  produção).
-- Métricas HTTP/Apdex já existem no Grafana (instrumentado em sessão
-  anterior) — primeiro lugar a olhar antes de adivinhar.
+Usuário decidiu não seguir com esse item.
 
 ---
 

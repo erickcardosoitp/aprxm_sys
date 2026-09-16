@@ -231,6 +231,43 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
     Cloudflare, cor de marca `#F38020`), abre direto o bucket
     `aprxm-datalake` no dashboard R2.
 
+## 🟠 Alto — item 3 e 4 da agenda de amanhã, concluídos 2026-09-16
+
+- [x] **"Acabar com o chat" — decisão: Teams será o único canal de
+  comunicação da equipe.** ✅ **Concluído 2026-09-16** (PR #82).
+  Mapeamento prévio (agente de exploração) encontrou entrelaçamento
+  real com `chat_group` (agrupamento manual de associações usado por
+  `reports.py`/`service_orders.py`/`daily_tasks.py`, não exclusivo do
+  chat) — extraído pra `app/core/tenant.py` como
+  `group_association_ids()` antes de remover `chat.py`, zero call site
+  tocado nos 3 arquivos dependentes. **Achado real durante a execução**:
+  `SimplificaChat.tsx` não era produto separado (como o mapeamento
+  inicial presumiu) — era só um wrapper mobile do mesmo `ChatPage.tsx`,
+  removido junto (incluindo o tile "Chat" na home do Simplifica).
+  Job `aprxm-daily-tasks-reminders` **descontinuado por completo**
+  (endpoint + dispatcher de cron + crontab da VM + registro de
+  tarefas) — só postava no chat, sem canal alternativo; manter só
+  marcaria `reminded_at` sem nunca avisar ninguém. As outras 3
+  chamadas a `post_system_message` (`demands.py`, `service_orders.py`
+  x2) tinham notificação/e-mail real em paralelo, removidas sem perda
+  de funcionalidade. Tabelas `chat_messages`/`chat_message_reads`
+  **mantidas no banco** (DDL destrutivo exige aprovação separada,
+  histórico preservado). Validado: backend importa sem erro, frontend
+  compila e builda, deploy em produção confirmado saudável
+  (`/api/v1/chat/unread-count` retorna 404 como esperado).
+- [x] **"Remodelar frontend" — primeiro passo: tela de login.** ✅
+  **Concluído 2026-09-16** (PR #83), direção "mais corporativo/sóbrio"
+  escolhida pelo usuário. Removido indicador numérico de passos (1/2/3,
+  parecia wizard genérico), fundo trocado de gradiente CSS liso pra
+  textura de grid sutil + glow duplo, tipografia do header refinada,
+  sombra do card mais suave/tintada. Zero mudança de lógica/fluxo de
+  autenticação (multi-step, WebAuthn, acessos recentes intactos).
+  Testado visualmente via screenshot antes do commit. Escopo maior de
+  "remodelar frontend" (qual dos 4 apps, visual vs estrutural) segue em
+  aberto — isso cobriu só a tela de login do app principal.
+- [x] **"Investigar lentidão"** — ❌ **cancelado pelo usuário
+  2026-09-16**, sai da lista de pendências.
+
 ## 🟢 Decisão de escopo — reverificado 2026-09-15
 
 - [x] **Endpoint `GET /esc/administracao/permissoes` não usado** — ✅
