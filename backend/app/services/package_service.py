@@ -55,7 +55,14 @@ class PackageService:
 
         if resident_id:
             resident = await self._resolve_resident(resident_id, association_id)
-            if resident and resident.status not in (ResidentStatus.active,):
+            if not resident:
+                # resident_id não existe ou pertence a outra associação (tenant
+                # diferente) -- sem essa checagem explícita, o resident_id bruto
+                # seguia pro INSERT em Package e só era barrado pelo trigger de
+                # banco check_package_resident_tenant, virando 500 em vez de
+                # erro tratado (CAT-0153/CAT-0180).
+                raise UnprocessableError("Morador não encontrado nesta associação.")
+            if resident.status not in (ResidentStatus.active,):
                 raise UnprocessableError("Morador suspenso ou inativo. Não é possível receber encomendas.")
 
         package = Package(
@@ -110,6 +117,13 @@ class PackageService:
         resident = await self._resolve_resident(
             delivered_to_resident_id or package.resident_id, association_id
         )
+        if delivered_to_resident_id and not resident:
+            # delivered_to_resident_id explícito não existe ou pertence a outra
+            # associação -- sem essa checagem, o valor bruto seguia pro UPDATE
+            # em Package.delivered_to_resident_id e só era barrado pelo trigger
+            # de banco check_package_resident_tenant, virando 500 em vez de
+            # erro tratado (CAT-0153/CAT-0180).
+            raise UnprocessableError("Morador não encontrado nesta associação.")
         if resident and resident.status not in (ResidentStatus.active,):
             raise UnprocessableError("Morador suspenso ou inativo. Não é possível entregar encomendas.")
         is_active_member = self._is_active_member(resident)
