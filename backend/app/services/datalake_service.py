@@ -213,10 +213,17 @@ def _merge_bronze(existing: pd.DataFrame, delta: pd.DataFrame, id_col: str = "id
 
 
 async def _fetch(session: AsyncSession, sql: str) -> pd.DataFrame:
-    rows = (await session.execute(text(sql))).fetchall()
+    result = await session.execute(text(sql))
+    cols = list(result.keys())
+    rows = result.fetchall()
     if not rows:
-        return pd.DataFrame()
-    df = pd.DataFrame(rows, columns=list(rows[0]._mapping.keys()))
+        # Preserva os nomes de coluna mesmo com 0 linhas -- sem isso, uma
+        # rodada de delta vazio produz DataFrame sem NENHUMA coluna, e
+        # _merge_bronze nao tem como reconciliar coluna nova nenhuma (achado
+        # real 2026-09-18, mesmo bug do KeyError em confirmed_at, causa raiz
+        # de verdade era aqui, nao so' no merge).
+        return pd.DataFrame(columns=cols)
+    df = pd.DataFrame(rows, columns=cols)
     # Converte UUID e tipos asyncpg nao suportados pelo PyArrow
     for col in df.columns:
         if df[col].dtype == object:
