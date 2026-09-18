@@ -268,6 +268,64 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
 - [x] **"Investigar lentidão"** — ❌ **cancelado pelo usuário
   2026-09-16**, sai da lista de pendências.
 
+## 🔵 Backlog — BI completo (Power BI), início 2026-09-17
+
+- [x] **Ferramenta de BI decidida: Power BI** (não Metabase/Grafana como
+  eu recomendava). ✅ Decisão do usuário 2026-09-17, ciente do
+  trade-off: exige Gateway de Dados Local (Windows, 24/7) OU exposição
+  pública da fonte de dados — optou por expor.
+- [x] **ClickHouse exposto publicamente com segurança em camadas.** ✅
+  Porta 8123 aberta em todas as interfaces (era só `127.0.0.1`), mas
+  protegida no NSG por **Service Tag `PowerBI`** (só IPs oficiais do
+  serviço, mantido pela própria Microsoft — nenhuma lista de IP pra
+  manter manualmente) + regra temporária de IP pro desenvolvimento no
+  Power BI Desktop. Usuário dedicado `powerbi` criado
+  (`readonly=2` — permite o driver ajustar settings de sessão sem abrir
+  mão do bloqueio de escrita; `readonly=1` inicial quebrava o driver
+  ODBC, achado real). Testado: `DROP TABLE` negado, acesso a outros
+  bancos invisível (sem `GRANT`).
+- [x] **MinIO avaliado como alternativa e descartado.** ✅ Mesma regra
+  de exposição se aplicaria (rede, não tecnologia), mas pior fit:
+  arquivo estático sem motor SQL — sem jeito de investigar/consultar se
+  a camada Ouro tiver problema. Fonte via R2 direto também avaliada e
+  descartada pelo mesmo motivo.
+- [x] **Catálogo de erros replicado pro ClickHouse.** ✅ Descoberta: o
+  catálogo real vive em parquet particionado
+  (`~/itp-stack/catalogo-erros-parquet`, lido hoje só pelo
+  `catalogo-erros-viewer` via DuckDB), não em banco. Criada tabela
+  `catalogo_erros.erros` (3.090 linhas), com tarefa agendada
+  (`sync-catalogo-erros-clickhouse`, 15 em 15 min, registrada em
+  `tarefas-registro.json` + crontab) que roda dentro do
+  `aprxm_backend` (reaproveita pandas/clickhouse_connect já
+  instalados, sem dependência nova). Achado real corrigido: primeira
+  versão do script duplicava dado a cada rodada (`docker cp` numa
+  pasta já existente aninha em vez de substituir, e o `rm -rf` de
+  limpeza falhava por permissão — container roda non-root, `docker cp`
+  grava como root) — corrigido com `docker exec -u root` antes de cada
+  cópia; confirmado idempotente rodando 2x seguidas (3090 → 3090).
+- [x] **Driver ODBC do ClickHouse no Windows.** ✅ 2 problemas reais
+  encontrados e corrigidos: instalação MSI silenciosa falhava com
+  `ACCESS_DENIED` (sessão sem privilégio de administrador — corrigido
+  rodando o instalador elevado); antes disso, uma tentativa anterior
+  tinha deixado entrada de registro ODBC órfã (driver "registrado" sem
+  o `.dll` existir em disco), limpa antes de reinstalar.
+- [ ] **Pendências reais, não concluídas:** Gateway de Dados Local **não
+  foi necessário** (decisão de expor em vez disso) — mas se a decisão
+  mudar no futuro, fica documentado que precisaria de uma VM Windows
+  separada (Gateway não roda em Linux). Relatório Power BI criado pelo
+  usuário com as duas fontes (Gold do APRXM + catálogo de erros), mas
+  **ainda não publicado/testado o refresh agendado via Power BI
+  Service** — próxima validação pendente.
+- [x] **Tailscale configurado como acesso alternativo (não substitui o
+  X2Go).** ✅ Motivado por o IP dinâmico do usuário mudar
+  com frequência, exigindo reconfiguração manual do NSG a cada sessão
+  de trabalho remoto. VM (Oracle Linux, `tailscaled` via repo oficial)
+  e PC Windows do usuário na mesma rede privada (100.x.x.x), SSH
+  testado com sucesso por cima do Tailscale. **Decisão explícita do
+  usuário: NSG não foi restringido** — X2Go continua usando acesso por
+  IP público normalmente, Tailscale é caminho adicional, não
+  substituição.
+
 ## 🟢 Decisão de escopo — reverificado 2026-09-15
 
 - [x] **Endpoint `GET /esc/administracao/permissoes` não usado** — ✅
