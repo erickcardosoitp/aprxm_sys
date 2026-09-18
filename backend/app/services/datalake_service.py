@@ -190,6 +190,14 @@ def _merge_bronze(existing: pd.DataFrame, delta: pd.DataFrame, id_col: str = "id
     if existing.empty:
         return delta
     if delta.empty:
+        # Reconcilia colunas novas (ex: coluna adicionada numa migration
+        # recente) que o bronze existente no R2 ainda nao tem -- sem isso,
+        # uma rodada sem nenhum registro alterado devolve o schema antigo e
+        # quebra qualquer codigo Gold que espere a coluna nova (achado real
+        # 2026-09-18, KeyError em residents.confirmed_at).
+        for col in delta.columns:
+            if col not in existing.columns:
+                existing[col] = pd.NA
         return existing
 
     combined = pd.concat([existing, delta], ignore_index=True)
