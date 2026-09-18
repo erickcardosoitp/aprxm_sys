@@ -83,6 +83,7 @@ class Resident(SQLModel, table=True):
     move_in_date: date | None = None
     move_out_date: date | None = None
     is_member_confirmed: bool = Field(default=False)
+    confirmed_at: datetime | None = None
     wants_to_join: bool | None = None
     monthly_payment_day: int | None = None
     proof_of_payment_url: str | None = None
