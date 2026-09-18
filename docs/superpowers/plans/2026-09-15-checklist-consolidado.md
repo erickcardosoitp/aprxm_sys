@@ -379,6 +379,72 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
   seção anterior (BI Power BI), continua válido/reaproveitado sem
   mudança para o Metabase.
 
+## 🔵 Backlog — analytics avançado (funil, coorte, histórico), 2026-09-18
+
+- [x] **Foto do recibo deixou de ser obrigatória em sangria/zerar caixa.** ✅
+  Decisão do usuário — 3 endpoints backend + 3 pontos frontend ajustados
+  (campo continua existindo, só não bloqueia mais o envio).
+- [x] **Migration v28: `residents.confirmed_at`.** ✅ Habilita funil de
+  conversão real (guest/dependent → member), populado no momento exato
+  da conversão (mesmo ponto que já setava `move_in_date`). Sem backfill
+  — impossível saber retroativamente quando confirmações passadas
+  aconteceram.
+- [x] **3 tabelas Gold novas**, todas confirmadas com dado real em
+  produção após o ETL rodar: `funil_conversao_mensal` (conversões por
+  mês/associação — vazia por enquanto, só passa a ter dado a partir de
+  hoje), `coorte_retencao_mensalidades` (% da coorte de entrada ainda
+  pagando N meses depois, mostra qualidade de associados novos ao
+  longo do tempo), `moradores_historico_diario` (mesmo cálculo do
+  `panorama_moradores`, mas **acumula por dia** em vez de substituir —
+  `panorama_moradores` continua intacto, sem quebrar quem já consome).
+- [x] **3 bugs reais de ETL encontrados e corrigidos durante o teste**
+  (não só a feature nova — problemas estruturais que afetavam
+  qualquer coluna adicionada no futuro):
+  1. `_fetch()` devolvia `DataFrame()` totalmente vazio (sem nenhuma
+     coluna) quando uma query trazia 0 linhas — corrigido pegando as
+     colunas de `result.keys()` do SQLAlchemy, disponível
+     independente de ter linha ou não.
+  2. `_merge_bronze()` devolvia o bronze antigo sem reconciliar
+     colunas novas quando o delta vinha vazio — corrigido como
+     segunda camada de proteção (o fix #1 já resolve a causa raiz,
+     esse fica como defesa extra).
+  3. ClickHouse rejeitava `CREATE TABLE` do `moradores_historico_diario`
+     ("Sorting key contains nullable columns") — corrigido com
+     `SETTINGS allow_nullable_key = 1`.
+- [x] **Arquitetura append-only pontual**: `_write_gold_clickhouse`
+  ganhou `APPEND_ONLY_GOLD_TABLES` (só `moradores_historico_diario`
+  por enquanto) — usa `CREATE IF NOT EXISTS` + `ReplacingMergeTree`
+  (dedup por `id_associacao+data`) em vez do `DROP+CREATE` padrão.
+  Todas as outras ~40 tabelas Gold continuam exatamente como estavam
+  — decisão consciente de não converter tudo pra diário de uma vez
+  (ver análise abaixo).
+- [x] **Análise de granularidade diária (pedido do usuário) — decisão:
+  não converter tudo.** As ~40 tabelas Gold se dividem em 3 categorias
+  reais: (1) já diárias ou convertíveis fácil (baseadas em evento com
+  timestamp exato); (2) snapshot do momento, sem série histórica —
+  exigem a mudança de arquitetura acima, feita só pra moradores por
+  enquanto; (3) mensais por definição de negócio (cobrança,
+  mensalidade) — "virar diário" mudaria o que a métrica significa, não
+  é só trocar `groupby`. A maioria das métricas novas pedidas
+  (faturamento/lucro bruto diário, qtd de vendas diárias, índice de
+  operação, fluxo de caixa acumulado) **não precisou de ETL novo** —
+  já dava pra calcular direto no Metabase a partir de `receita_diaria`
+  (que já é diária).
+- [x] **6 cards novos no dashboard Metabase**: faturamento bruto
+  diário, lucro bruto diário, qtd de vendas diárias, índice de
+  operação, fluxo de caixa acumulado (proxy — não é o saldo
+  operacional exato de sessão conferida, é tendência), moradores
+  ativos ao longo do tempo, coorte de retenção. Dashboard agora com 28
+  cards em 4 abas. Todos testados via API antes de entregar (nenhum
+  "card cego").
+- [ ] **Pendências reais, não concluídas**: sazonalidade ano-a-ano —
+  só 8 meses de dado (jan-set/2026), não dá pra comparar ano contra
+  ano ainda, não é bug, é maturidade de dado (a query já pode ser
+  escrita pra funcionar sozinha assim que passar de 1 ano). Alertas
+  preditivos automáticos (ex: "vai zerar o caixa em X semanas no ritmo
+  atual") — não implementado, fica pra quando o BI tiver mais uso
+  real.
+
 ## 🟢 Decisão de escopo — reverificado 2026-09-15
 
 - [x] **Endpoint `GET /esc/administracao/permissoes` não usado** — ✅
