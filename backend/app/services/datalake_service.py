@@ -1943,7 +1943,8 @@ def _write_gold_clickhouse(gold_frames: dict[str, pd.DataFrame]) -> tuple[int, l
                     order_cols = "id_associacao, data" if "data" in df_clean.columns else "tuple()"
                     client.command(
                         f"CREATE TABLE IF NOT EXISTS `{table_name}` ({cols_ddl}) "
-                        f"ENGINE = ReplacingMergeTree ORDER BY ({order_cols})"
+                        f"ENGINE = ReplacingMergeTree ORDER BY ({order_cols}) "
+                        "SETTINGS allow_nullable_key = 1"
                     )
                 else:
                     # DROP + CREATE (nao "IF NOT EXISTS"): o tipo das colunas
