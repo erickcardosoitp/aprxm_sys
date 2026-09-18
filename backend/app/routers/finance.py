@@ -76,7 +76,7 @@ class SangriaRequest(BaseModel):
     amount: Decimal = Field(gt=0, description="Valor da sangria")
     reason: str = Field(min_length=5, description="Justificativa")
     destination: str = Field(min_length=3, description="Destino do valor (ex: banco, cofre)")
-    receipt_photo_url: str = Field(description="URL da foto do recibo")
+    receipt_photo_url: str | None = Field(default=None, description="URL da foto do recibo (opcional)")
     category_id: UUID | None = None
     cash_box_id: UUID | None = None
 

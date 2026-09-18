@@ -105,7 +105,6 @@ export default function FluxoCaixaSection() {
 
   const handleZerar = async () => {
     if (motivo.trim().length < 5) { toast.error('Motivo precisa de pelo menos 5 caracteres.'); return }
-    if (!fotoRecibo) { toast.error('Foto do recibo é obrigatória.'); return }
     const alvos = saldoFisico.filter((c) => c.saldo > 0)
     setSaving(true)
     try {
@@ -236,7 +235,7 @@ export default function FluxoCaixaSection() {
               placeholder="Ex: repasse consolidado pra tesouraria da empresa" />
           </EscField>
           <PhotoCapture
-            label="Foto do recibo *"
+            label="Foto do recibo (opcional)"
             onCapture={(entry) => setFotoRecibo(entry.url)}
             onUpload={(file) => uploadService.uploadFile(file, 'financeiro/zeramentos')}
           />

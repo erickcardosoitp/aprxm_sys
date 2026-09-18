@@ -19,7 +19,7 @@ export const financeService = {
     amount: number
     reason: string
     destination: string
-    receipt_photo_url: string
+    receipt_photo_url?: string
     category_id?: string
   }) => api.post<Transaction>('/finance/sessions/sangria', data),
 

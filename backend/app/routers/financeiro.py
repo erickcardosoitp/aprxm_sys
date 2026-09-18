@@ -371,7 +371,7 @@ async def movimento_por_unidade(
 class ZerarCaixaTotalRequest(BaseModel):
     association_id: UUID
     reason: str = Field(min_length=5, max_length=255)
-    receipt_photo_url: str = Field(min_length=1)
+    receipt_photo_url: str | None = None
 
 
 @router.post("/zerar-caixa-total", summary="Zeramento do saldo realizado total de uma unidade — sangria sem caixa")
@@ -418,7 +418,7 @@ async def zerar_caixa_total(
 class ZerarCaixaRequest(BaseModel):
     session_id: UUID
     reason: str = Field(min_length=5, max_length=255)
-    receipt_photo_url: str = Field(min_length=1)
+    receipt_photo_url: str | None = None
 
 
 @router.post("/zerar-caixa", summary="Zeramento administrativo remoto (ESC) — sangria com foto de recibo")
