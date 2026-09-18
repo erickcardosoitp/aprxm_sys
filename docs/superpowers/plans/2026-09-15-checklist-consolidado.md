@@ -326,6 +326,59 @@ corrigida (não marcada), só 2 itens reais precisaram de ação:
   IP público normalmente, Tailscale é caminho adicional, não
   substituição.
 
+## 🔵 Backlog — BI, decisão final: Metabase (não Power BI), 2026-09-17/18
+
+- [x] **Ferramenta trocada de Power BI pra Metabase.** ✅ Decisão do
+  usuário 2026-09-17, revertendo a escolha anterior do mesmo dia: o
+  Power BI Pro do plano nonprofit (necessário pra publicar/compartilhar
+  relatório) **não é gratuito** — é desconto (~R$28/licença/mês), não
+  isenção total. Diante do custo recorrente, optou por Metabase
+  (open-source, AGPL fora da pasta `enterprise/`, confirmado direto na
+  licença do repositório — não em página de marketing). Toda a infra
+  montada pro Power BI (ClickHouse exposto, usuário `powerbi`, driver
+  ODBC) **não foi descartada** — o Metabase reaproveita a mesma conexão
+  ClickHouse/usuário, então o trabalho não foi perdido.
+- [x] **SSO Microsoft no Metabase avaliado e descartado.** ✅ Checado
+  direto na documentação oficial (não presumido): SAML e OIDC (únicos
+  jeitos de fazer login corporativo Microsoft/Azure AD) são features
+  **pagas** (Pro/Enterprise) no Metabase — confirmado nos arquivos
+  `authenticating-with-saml.md`/`authenticating-with-oidc.md` do
+  repositório oficial (`plans-blockquote` marcando como paga). Só
+  Google Sign-In é grátis na edição open-source. Decisão: login
+  simples usuário/senha nativo do Metabase (grátis, sem dependência
+  de SSO).
+- [x] **Metabase implantado na VM.** ✅ Container `itp_metabase`
+  (imagem oficial `metabase/metabase:latest`) adicionado ao
+  `docker-compose.yml` da VM, roteado via Traefik com certificado
+  Let's Encrypt em `https://metabase.itp.institutotiapretinha.org`
+  (registro DNS tipo A criado no Azure DNS, zona já existente do
+  domínio). Backup do compose salvo antes de cada mudança.
+- [x] **Bug real de conexão descoberto e corrigido: hostname com
+  underscore quebra o driver ClickHouse do Metabase.** ✅ Achado
+  importante — `aprxm_clickhouse` (nome do container, com underscore)
+  fazia o driver JDBC oficial do ClickHouse duplicar a porta na URL de
+  conexão (`host:8123:8123`), erro **sem nenhum rastro em log** (nem
+  do Metabase em modo debug, nem do ClickHouse — a falha acontece no
+  parsing client-side, antes de qualquer tentativa de rede). Causa
+  raiz: bug conhecido do `java.net.URI` do próprio Java
+  ([JDK-8019345](https://bugs.openjdk.org/browse/JDK-8019345)), que
+  não interpreta porta corretamente quando o host tem underscore —
+  reportado e confirmado pelos mantenedores do Metabase em
+  [metabase/metabase#71011](https://github.com/metabase/metabase/issues/71011).
+  Corrigido sem renomear o container real (evita quebrar outros
+  serviços que já dependem do nome `aprxm_clickhouse`): adicionado um
+  **alias de rede Docker** sem underscore (`clickhouse-bi`) só pro
+  Metabase usar. Processo de diagnóstico documentado como referência:
+  testado via curl (rede/auth OK) → log do Metabase em debug (sem
+  detalhe) → captura do body da resposta HTTP real via DevTools do
+  navegador (`{"message":"Failed to create connection"}`, genérico) →
+  log do ClickHouse (zero rastro, prova que nunca saiu do driver) →
+  busca por issue conhecida no GitHub do Metabase → causa raiz
+  confirmada.
+- [x] **Catálogo de erros replicado pro ClickHouse** — já coberto na
+  seção anterior (BI Power BI), continua válido/reaproveitado sem
+  mudança para o Metabase.
+
 ## 🟢 Decisão de escopo — reverificado 2026-09-15
 
 - [x] **Endpoint `GET /esc/administracao/permissoes` não usado** — ✅
