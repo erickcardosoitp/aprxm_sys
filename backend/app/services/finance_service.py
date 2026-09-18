@@ -481,16 +481,14 @@ class FinanceService:
         amount: Decimal,
         reason: str,
         destination: str,
-        receipt_photo_url: str,
+        receipt_photo_url: str | None = None,
         category_id: UUID | None = None,
     ) -> Transaction:
         """
         Perform a sangria (cash withdrawal) from the open session.
-        Requires: amount, category, reason, destination and a receipt photo URL.
+        Requires: amount, category, reason, destination. Foto do recibo opcional
+        (decisao do usuario 2026-09-18 -- era obrigatoria antes).
         """
-        if not receipt_photo_url:
-            raise CashSessionError("Foto do recibo é obrigatória para realizar uma sangria.")
-
         session = await self.get_open_session(association_id, preferred_by=opened_by)
         if session.opened_by != opened_by:
             raise CashSessionError("Você só pode realizar sangria no seu próprio caixa.")

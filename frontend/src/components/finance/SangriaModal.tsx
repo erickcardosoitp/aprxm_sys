@@ -30,7 +30,7 @@ export function SangriaModal({ onClose, onSuccess, title = 'Registrar Saída' }:
     ? (destinations.find(d => d.id === destinationId)?.name ?? '')
     : destinationText
 
-  const canSubmit = amount && reason && destination && receiptPhotoUrl
+  const canSubmit = amount && reason && destination
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -40,7 +40,7 @@ export function SangriaModal({ onClose, onSuccess, title = 'Registrar Saída' }:
         amount: parseFloat(amount),
         reason,
         destination,
-        receipt_photo_url: receiptPhotoUrl,
+        receipt_photo_url: receiptPhotoUrl || undefined,
       })
       toast.success('Sangria registrada com sucesso!')
       onSuccess()
@@ -91,7 +91,7 @@ export function SangriaModal({ onClose, onSuccess, title = 'Registrar Saída' }:
             )}
           </div>
 
-          <PhotoCapture label="Foto do Recibo *" onCapture={entry => setReceiptPhotoUrl(entry.url)} />
+          <PhotoCapture label="Foto do Recibo (opcional)" onCapture={entry => setReceiptPhotoUrl(entry.url)} />
         </div>
 
         <button onClick={handleSubmit} disabled={!canSubmit || loading}
