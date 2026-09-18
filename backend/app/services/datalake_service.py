@@ -594,6 +594,16 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
         if not df.empty and "id_associacao" in df.columns and "empresa_id" not in df.columns:
             df = df.copy()
             df["empresa_id"] = df["id_associacao"].astype(str).map(assoc_empresa_map)
+        # Harmoniza nome_associacao pro "ultimo nome" (ex: "Associacao de
+        # Moradores de Congonha" -> "Congonha") -- so' na camada Gold/BI, nao
+        # toca o nome oficial da associacao no operacional (decisao do
+        # usuario 2026-09-18). Regex generico (nao hardcoded pra 2 nomes) pra
+        # nao quebrar se uma associacao nova entrar com prefixo parecido.
+        if not df.empty and "nome_associacao" in df.columns:
+            df = df.copy()
+            df["nome_associacao"] = df["nome_associacao"].astype(str).str.replace(
+                r"^Associa[çc][ãa]o de Moradores d[eo]s?\s+", "", regex=True, case=False
+            ).str.strip()
         dominio, arquivo = GOLD_PATHS.get(name, ("outros", name))
         key = f"ouro/{dominio}/{arquivo}.parquet"
         stats[name] = _upload_df(client, df, key)
