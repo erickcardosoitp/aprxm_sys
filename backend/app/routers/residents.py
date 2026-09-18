@@ -613,6 +613,8 @@ async def update_resident(
         resident.move_in_date = date.today()
 
     from datetime import datetime
+    if old_type != ResidentType.member and resident.type == ResidentType.member:
+        resident.confirmed_at = datetime.utcnow()
     resident.updated_at = datetime.utcnow()
     resident.updated_by = current.user_id
     session.add(resident)

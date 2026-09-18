@@ -108,7 +108,15 @@ GOLD_PATHS = {
     "aging_inadimplencia":           ("financeiro", "aging_inadimplencia"),
     "mensalidades_pagas_mensal":     ("financeiro", "mensalidades_pagas_mensal"),
     "recuperacao_inadimplencia":     ("financeiro", "recuperacao_inadimplencia"),
+    "moradores_historico_diario":    ("moradores",  "historico_diario"),
+    "funil_conversao_mensal":        ("moradores",  "funil_conversao"),
+    "coorte_retencao_mensalidades":  ("financeiro", "coorte_retencao"),
 }
+
+# Tabelas Gold que ACUMULAM historico em vez de serem substituidas por
+# completo a cada rodada do ETL (_write_gold_clickhouse trata via INSERT
+# incremental com ReplacingMergeTree, nao DROP+CREATE). Decisao 2026-09-18.
+APPEND_ONLY_GOLD_TABLES = {"moradores_historico_diario"}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -303,6 +311,7 @@ async def export_bronze(session: AsyncSession, today: str,
             SELECT id, association_id, type, status, full_name, cpf,
                    address_street, address_neighborhood, address_city, address_cep,
                    phone_primary, email, monthly_payment_day, is_member_confirmed,
+                   confirmed_at,
                    internet_access, has_sewage, has_pests, uses_public_transport,
                    neighborhood_problems, move_in_date, move_out_date,
                    created_at, updated_at
@@ -685,6 +694,67 @@ def build_gold(frames: dict[str, pd.DataFrame], silver: dict[str, pd.DataFrame],
             "confirmed": "confirmados",
         })
         up(df, "panorama_moradores")
+
+        # 3b. Historico diario do panorama (mesma coisa, mas ACUMULA por dia em
+        # vez de substituir -- panorama_moradores continua sendo so' o "agora"
+        # pra nao quebrar quem ja consome ele. Nome listado em
+        # APPEND_ONLY_GOLD_TABLES (_write_gold_clickhouse trata como INSERT
+        # incremental, nao DROP+CREATE). Decisao 2026-09-18: sem isso nao
+        # daria pra ver "moradores ativos" evoluindo dia a dia, so' o valor de
+        # hoje. So' acumula dado a partir de quando isso foi implantado --
+        # sem backfill do passado (nao existe snapshot antigo).
+        df_hist = df.copy()
+        df_hist.insert(0, "data", pd.Timestamp(_dt.date.today()))
+        up(df_hist, "moradores_historico_diario")
+
+    # 3c. Funil de conversao (visitante -> associado) -- so' existe a partir de
+    # residents.confirmed_at (migration v28, 2026-09-18). Residentes
+    # confirmados antes disso ficam de fora (sem data retroativa possivel).
+    if not res.empty and "confirmed_at" in res.columns:
+        conv = res[res["confirmed_at"].notna()].copy()
+        if not conv.empty:
+            conv["mes"] = _month(conv["confirmed_at"])
+            df = conv.groupby(["mes","association_id","association_name"]).agg(
+                conversoes=("id","count")
+            ).reset_index().rename(columns={
+                "association_id":"id_associacao","association_name":"nome_associacao",
+            })
+            up(df, "funil_conversao_mensal")
+
+    # 3d. Coorte de retencao de mensalidades -- pra cada associado, olha o mes
+    # que ele virou membro (confirmed_at, ou created_at se ja nasceu membro) e
+    # verifica, mes a mes depois disso, se teve mensalidade paga. Mostra se a
+    # qualidade dos associados novos esta melhorando ou piorando ao longo do
+    # tempo (2026-09-18, pedido do usuario).
+    if not res.empty and not mens.empty:
+        members = res[res["type"] == "member"].copy()
+        members["mes_entrada"] = _month(members["confirmed_at"].fillna(members["created_at"]))
+        members = members[members["mes_entrada"].notna()]
+        mens_paid = mens[mens["status"] == "paid"].copy()
+        if not members.empty and not mens_paid.empty:
+            mens_paid["mes_pagamento"] = _month(mens_paid["reference_month"].fillna(mens_paid["paid_at"]))
+            pay_months = mens_paid.groupby("resident_id")["mes_pagamento"].apply(set).to_dict()
+            _now_month = pd.Timestamp.now().to_period("M").to_timestamp()
+            rows = []
+            for _, r in members.iterrows():
+                entrada = r["mes_entrada"]
+                paid_set = pay_months.get(r["id"], set())
+                for n in range(0, 13):
+                    mes_alvo = entrada + pd.DateOffset(months=n)
+                    if mes_alvo > _now_month:
+                        break
+                    rows.append({
+                        "id_associacao": r["association_id"], "nome_associacao": r["association_name"],
+                        "mes_entrada": entrada, "mes_relativo": n,
+                        "ativo": int(mes_alvo in paid_set),
+                    })
+            if rows:
+                raw = pd.DataFrame(rows)
+                df = raw.groupby(["id_associacao","nome_associacao","mes_entrada","mes_relativo"]).agg(
+                    total=("ativo","count"), pagantes=("ativo","sum")
+                ).reset_index()
+                df["retencao_pct"] = (df["pagantes"] / df["total"] * 100).round(1)
+                up(df, "coorte_retencao_mensalidades")
 
     # 4. Taxa de cobranca — denominador = cobranças geradas no mês. Tambem
     # carrega vencidas (pending + due_date antes da tolerancia de 2 dias,
@@ -1849,15 +1919,28 @@ def _write_gold_clickhouse(gold_frames: dict[str, pd.DataFrame]) -> tuple[int, l
                     f"`{c}` {_pandas_dtype_to_clickhouse(str(df_clean[c].dtype))}"
                     for c in df_clean.columns
                 )
-                # DROP + CREATE (nao "IF NOT EXISTS"): o tipo das colunas pode
-                # mudar de uma rodada pra outra (ex. coluna que só tinha NaN
-                # antes e agora tem dado real) -- "IF NOT EXISTS" deixaria o
-                # schema antigo preso pra sempre, quebrando o insert_df.
-                client.command(f"DROP TABLE IF EXISTS `{table_name}`")
-                client.command(
-                    f"CREATE TABLE `{table_name}` ({cols_ddl}) "
-                    "ENGINE = MergeTree ORDER BY tuple()"
-                )
+                if table_name in APPEND_ONLY_GOLD_TABLES:
+                    # Acumula historico em vez de substituir (ver
+                    # APPEND_ONLY_GOLD_TABLES) -- CREATE IF NOT EXISTS (nunca
+                    # DROP) com ReplacingMergeTree pra dedup automatico se o
+                    # ETL rodar 2x no mesmo dia (mesma chave id_associacao+data
+                    # vira 1 versao so' apos merge/FINAL).
+                    order_cols = "id_associacao, data" if "data" in df_clean.columns else "tuple()"
+                    client.command(
+                        f"CREATE TABLE IF NOT EXISTS `{table_name}` ({cols_ddl}) "
+                        f"ENGINE = ReplacingMergeTree ORDER BY ({order_cols})"
+                    )
+                else:
+                    # DROP + CREATE (nao "IF NOT EXISTS"): o tipo das colunas
+                    # pode mudar de uma rodada pra outra (ex. coluna que só
+                    # tinha NaN antes e agora tem dado real) -- "IF NOT
+                    # EXISTS" deixaria o schema antigo preso pra sempre,
+                    # quebrando o insert_df.
+                    client.command(f"DROP TABLE IF EXISTS `{table_name}`")
+                    client.command(
+                        f"CREATE TABLE `{table_name}` ({cols_ddl}) "
+                        "ENGINE = MergeTree ORDER BY tuple()"
+                    )
                 client.insert_df(table_name, df_clean)
                 total += len(df_clean)
                 logger.info("Analytics(ClickHouse) %-35s %5d rows", table_name, len(df_clean))

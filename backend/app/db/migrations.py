@@ -28,7 +28,7 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 async def _create_base_schema(session) -> None:
     """Cria o schema do zero num banco 100% vazio (sem o dump de referencia).
@@ -1690,6 +1690,26 @@ async def _apply_versioned_migrations(session) -> None:
     except Exception as exc:
         await session.rollback()
         print(f"[MIGRATION v27] falhou (nao-fatal): {exc}")
+
+    # v28: residents.confirmed_at -- ate aqui nao existia registro de QUANDO um
+    # visitante (guest) virou associado (is_member_confirmed), so o estado
+    # atual. Isso impedia calcular funil de conversao real (BI, 2026-09-18).
+    # Sem backfill: nao ha como saber retroativamente a data exata de
+    # confirmacoes passadas -- fica NULL pros residentes ja confirmados antes
+    # desta migration, populado so' pra confirmacoes daqui pra frente.
+    try:
+        await session.execute(text("""
+            ALTER TABLE residents ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP
+        """))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (28, 'v28: residents.confirmed_at (habilita funil de conversao real, sem backfill)') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v28] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:
