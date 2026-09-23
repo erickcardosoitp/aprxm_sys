@@ -640,8 +640,17 @@ async def update_status(
     resident = result.scalar_one_or_none()
     if not resident:
         raise HTTPException(status_code=404, detail="Morador não encontrado.")
+    status_anterior = resident.status
     resident.status = status
     session.add(resident)
+    # updated_by guarda so o ultimo autor -- sem este registro, "quem
+    # suspendeu" se perde na proxima edicao (caso real de 2026-09-08).
+    if status_anterior != status:
+        from app.core.audit import audit
+        await audit(
+            session, current, "alterar_status_morador", "residents", resident.id,
+            f"status={status_anterior.value} -> {status.value}",
+        )
     return {"id": str(resident.id), "status": resident.status}
 
 

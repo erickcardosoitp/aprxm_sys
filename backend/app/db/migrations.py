@@ -18,6 +18,8 @@ COMO ADICIONAR UMA MIGRATION:
   4. registre em schema_migrations com ON CONFLICT DO NOTHING
 """
 
+import json
+
 from sqlalchemy import text
 
 from app.config import get_settings
@@ -28,7 +30,111 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 29
+
+# v29 -- ver bloco no fim de _apply_versioned_migrations. Constantes no nivel
+# do modulo pra poderem ser extraidas e testadas isoladamente num banco de
+# teste (mesmo SQL que roda em producao, sem copia manual).
+_V29_FUNCAO_SQL = """
+CREATE OR REPLACE FUNCTION set_audit_fields() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid     uuid   := NULLIF(current_setting('app.user_id', true), '')::uuid;
+    v_ignorar text[] := ARRAY['updated_at', 'updated_by'] || TG_ARGV;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.created_by IS NULL THEN NEW.created_by := v_uid; END IF;
+        IF NEW.created_at IS NULL THEN NEW.created_at := now(); END IF;
+        IF NEW.updated_by IS NULL THEN NEW.updated_by := NEW.created_by; END IF;
+        IF NEW.updated_at IS NULL THEN NEW.updated_at := NEW.created_at; END IF;
+        RETURN NEW;
+    END IF;
+
+    -- Gravacao sem mudanca real, ou so em coluna tecnica/calculada (TG_ARGV):
+    -- nao conta como atualizacao de cadastro.
+    IF (to_jsonb(NEW) - v_ignorar) = (to_jsonb(OLD) - v_ignorar) THEN
+        NEW.updated_at := OLD.updated_at;
+        NEW.updated_by := OLD.updated_by;
+        RETURN NEW;
+    END IF;
+
+    NEW.updated_at := now();
+    IF v_uid IS NOT NULL THEN
+        NEW.updated_by := v_uid;
+    ELSIF NEW.updated_by IS NOT DISTINCT FROM OLD.updated_by THEN
+        -- Sem usuario logado (cron/script) e o comando nao informou autor:
+        -- NULL = "sistema". Manter o autor antigo mentiria sobre quem mudou.
+        NEW.updated_by := NULL;
+    END IF;
+    RETURN NEW;
+END $$
+"""
+
+# Tabela -> colunas tecnicas/calculadas que nao contam como atualizacao de
+# cadastro. Nenhuma delas e' lida pelo ETL incremental (datalake_service.py
+# filtra por updated_at), entao nao bumpar nelas nao atrasa o data warehouse.
+_V29_TABELAS = {
+    "associations": [],
+    "association_settings": [],
+    "carriers": [],
+    "cash_boxes": ["balance"],
+    "contas_pagar": [],
+    "contas_pagar_templates": [],
+    "deliverers": [],
+    "demands": [],
+    "empresas": [],
+    "mensalidades": [],
+    "packages": [],
+    "payable_categories": [],
+    "payment_methods": [],
+    "products": [],
+    "residents": ["risk_score", "rfm_segment", "risk_updated_at"],
+    "role_permissions": [],
+    "sangria_destinations": [],
+    "service_orders": [],
+    "transaction_categories": [],
+    "transactions": [],
+    "user_association_roles": [],
+    "users": ["last_login_at", "last_association_id", "token_version"],
+}
+
+_V29_TABELAS_SQL = """
+DO $$
+DECLARE
+    cfg jsonb := '__CFG__'::jsonb;
+    t   text;
+    args text;
+BEGIN
+    FOR t IN SELECT jsonb_object_keys(cfg) LOOP
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)', t);
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES users(id)', t);
+        -- Sem DEFAULT no ADD: linha antiga fica NULL (data desconhecida) em vez
+        -- de receber a hora desta migration. O DEFAULT vale so pra linha nova.
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ', t);
+        EXECUTE format('ALTER TABLE %I ALTER COLUMN created_at SET DEFAULT now()', t);
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ', t);
+        EXECUTE format('ALTER TABLE %I ALTER COLUMN updated_at SET DEFAULT now()', t);
+
+        EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I', 'trg_' || t || '_set_updated_at', t);
+        EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I', 'trg_' || t || '_audit_fields', t);
+
+        -- Encomenda: quem recebeu e' quem criou (dado real, received_by e' NOT
+        -- NULL). Roda sem gatilho nenhum ativo, pra nao bumpar updated_at de
+        -- todas as encomendas com a hora da migration.
+        IF t = 'packages' THEN
+            UPDATE packages SET created_by = received_by WHERE created_by IS NULL;
+        END IF;
+
+        SELECT string_agg(quote_literal(c), ', ') INTO args
+        FROM jsonb_array_elements_text(cfg -> t) AS c;
+        EXECUTE format(
+            'CREATE TRIGGER %I BEFORE INSERT OR UPDATE ON %I '
+            'FOR EACH ROW EXECUTE FUNCTION set_audit_fields(%s)',
+            'trg_' || t || '_audit_fields', t, COALESCE(args, '')
+        );
+    END LOOP;
+END $$
+"""
 
 async def _create_base_schema(session) -> None:
     """Cria o schema do zero num banco 100% vazio (sem o dump de referencia).
@@ -1710,6 +1816,30 @@ async def _apply_versioned_migrations(session) -> None:
     except Exception as exc:
         await session.rollback()
         print(f"[MIGRATION v28] falhou (nao-fatal): {exc}")
+
+    # v29: criado em/por + atualizado em/por confiaveis em todo cadastro.
+    # Ate aqui updated_by era preenchido a mao em 14 pontos do codigo -- todo
+    # caminho que esquecia (ex: PATCH /residents/{id}/status) atualizava o
+    # horario mas deixava o autor antigo, mostrando a pessoa errada como autora
+    # (achado real 2026-09-23: reativacao feita por um usuario aparecia com o
+    # nome de outro, e quem suspendeu uma moradora em 08/09 ficou irrecuperavel).
+    # Agora um gatilho de banco preenche em qualquer INSERT/UPDATE, de qualquer
+    # caminho (ORM ou SQL cru); o usuario logado chega via app.user_id, setado
+    # por requisicao em get_current_user (ver app/database.py).
+    try:
+        await session.execute(text(_V29_FUNCAO_SQL))
+        await session.execute(text(
+            _V29_TABELAS_SQL.replace("__CFG__", json.dumps(_V29_TABELAS))
+        ))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (29, 'v29: gatilho set_audit_fields (criado/atualizado em/por) em 22 tabelas de cadastro') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v29] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:
