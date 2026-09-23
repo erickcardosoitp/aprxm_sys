@@ -21,6 +21,17 @@ jobs:
           cd /home/itpadmin/itp-stack
           docker compose build aprxm_backend
           docker compose up -d --force-recreate aprxm_backend
-          sleep 6
+          # Espera ate 90s: migration nova roda no startup e pode atrasar o
+          # boot (v29 levou >6s em 2026-09-23 -- o sleep fixo de 6s marcou
+          # falha num deploy que tinha subido certo).
+          for i in $(seq 1 45); do
+            if curl -sf http://127.0.0.1:8003/health > /dev/null; then
+              echo "health OK apos ~$((i * 2))s"
+              docker ps --filter name=aprxm_backend --format '{{.Names}} {{.Status}}'
+              exit 0
+            fi
+            sleep 2
+          done
           docker ps --filter name=aprxm_backend --format '{{.Names}} {{.Status}}'
-          curl -sf http://127.0.0.1:8003/health || (echo "health check failed" && exit 1)
+          docker logs aprxm_backend --tail 40
+          echo "health check failed apos 90s" && exit 1
