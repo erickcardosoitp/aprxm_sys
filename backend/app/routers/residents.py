@@ -263,6 +263,47 @@ async def create_resident(
     return _serialize(resident)
 
 
+def _condicao_nome(q: str, params: dict) -> tuple[str, str]:
+    """Busca por nome: cada palavra digitada precisa aparecer, em qualquer
+    ordem ("stephany gomdin" acha "Stephany Brenda Barreiro Gomdin").
+    Devolve (condicao do WHERE, expressao de relevancia pro ORDER BY):
+    nome exato, depois quem comeca com o termo, depois palavra que comeca
+    com ele -- sem isso, "ana" listava Adriana/Juliana antes de "Ana Paula" e
+    o front (que mostra 5-8) escondia quem a pessoa procurava.
+
+    f_unaccent(lower(r.full_name)) e' a expressao do indice
+    idx_residents_nome_busca (migration v30): mudar uma sem a outra faz o
+    Postgres voltar a varrer todos os moradores da associacao."""
+    def _escapa_like(s: str) -> str:
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    termos = q.lower().split()[:6]
+    conds = []
+    for i, termo in enumerate(termos):
+        params[f"nt{i}"] = f"%{_escapa_like(termo)}%"
+        conds.append(f"f_unaccent(lower(r.full_name)) LIKE f_unaccent(:nt{i})")
+    frase = " ".join(termos)
+    f = _escapa_like(frase)
+    params.update({
+        "nq": frase,
+        "nq_ini_pal": f"{f} %",   # "jose" -> "José Carlos" (palavra inteira no inicio)
+        "nq_ini": f"{f}%",        # "jose" -> "Joseane"
+        "nq_meio": f"% {f} %",    # "jose" -> "Maria José Silva"
+        "nq_fim": f"% {f}",       # "jose" -> "Maria José"
+        "nq_pal": f"% {f}%",      # "jose" -> "Maria Josefa"
+    })
+    nome = "f_unaccent(lower(r.full_name))"
+    relevancia = (
+        f"CASE WHEN {nome} = f_unaccent(:nq) THEN 0"
+        f" WHEN {nome} LIKE f_unaccent(:nq_ini_pal) THEN 1"
+        f" WHEN {nome} LIKE f_unaccent(:nq_ini) THEN 2"
+        f" WHEN {nome} LIKE f_unaccent(:nq_meio) OR {nome} LIKE f_unaccent(:nq_fim) THEN 3"
+        f" WHEN {nome} LIKE f_unaccent(:nq_pal) THEN 4"
+        " ELSE 5 END"
+    )
+    return (" AND ".join(conds) or "FALSE"), relevancia
+
+
 @router.get("/search", summary="Busca global de moradores (nome, telefone, endereço, CPF)")
 async def search_residents_global(
     q: str,
@@ -275,9 +316,16 @@ async def search_residents_global(
     q_clean = q.strip()
     if not q_clean:
         return []
-    q_digits = ''.join(c for c in q_clean if c.isdigit())
     type_clause = "AND r.type = :rtype" if type else ""
     street_clause = "AND r.address_street ILIKE :street_pat" if street else ""
+    params: dict = {
+        "aid": str(current.association_id),
+        "q": f"%{q_clean}%",
+        "qraw": f"%{q_clean.replace('.','').replace('-','')}%",
+        **( {"rtype": type} if type else {} ),
+        **( {"street_pat": f"%{street.strip()}%"} if street else {} ),
+    }
+    cond_nome, relevancia = _condicao_nome(q_clean, params)
     result = await session.execute(
         sa_text(f"""
             SELECT r.id, r.full_name, r.cpf, r.phone_primary, r.phone_secondary,
@@ -290,21 +338,15 @@ async def search_residents_global(
               {type_clause}
               {street_clause}
               AND (
-                unaccent(lower(r.full_name)) LIKE unaccent(lower(:q))
+                ({cond_nome})
                 OR r.cpf ILIKE :qraw
                 OR r.phone_primary ILIKE :q
                 OR r.phone_secondary ILIKE :q
               )
-            ORDER BY r.full_name
+            ORDER BY {relevancia}, r.full_name
             LIMIT 20
         """),
-        {
-            "aid": str(current.association_id),
-            "q": f"%{q_clean}%",
-            "qraw": f"%{q_clean.replace('.','').replace('-','')}%",
-            **( {"rtype": type} if type else {} ),
-            **( {"street_pat": f"%{street.strip()}%"} if street else {} ),
-        },
+        params,
     )
     rows = result.fetchall()
     return [
@@ -346,10 +388,14 @@ async def list_residents(
     if responsible_id:
         conditions.append("r.responsible_id = :rid")
         params["rid"] = str(responsible_id)
-    if q:
+    ordem = "r.full_name"
+    if q and q.strip():
+        q = q.strip()
         q_digits = ''.join(c for c in q if c.isdigit())
-        parts = ["unaccent(lower(r.full_name)) LIKE unaccent(lower(:q))", "r.phone_primary ILIKE :qp"]
-        params["q"] = f"%{q}%"; params["qp"] = f"%{q}%"
+        cond_nome, relevancia = _condicao_nome(q, params)
+        ordem = f"{relevancia}, r.full_name"
+        parts = [f"({cond_nome})", "r.phone_primary ILIKE :qp"]
+        params["qp"] = f"%{q}%"
         if q_digits:
             parts.append("r.phone_secondary ILIKE :qs")
             params["qs"] = f"%{q_digits}%"
@@ -364,7 +410,7 @@ async def list_residents(
         FROM residents r
         LEFT JOIN residents resp ON resp.id = r.responsible_id
         WHERE {where}
-        ORDER BY r.full_name
+        ORDER BY {ordem}
         LIMIT :lim OFFSET :off
     """), params)).fetchall()
     return [

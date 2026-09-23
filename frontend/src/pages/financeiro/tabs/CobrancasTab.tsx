@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Plus, Search, X, Users, MessageCircle, MapPin, Pencil, CalendarPlus } from 'lucide-react'
 import api from '../../../services/api'
+import { buscarMoradores, cancelarBuscaMoradores } from '../../../services/residentSearch'
 import toast from 'react-hot-toast'
 import { fmt, fmtDate, fmtDateOnly } from '../utils/formatters'
 import { printCarne as printCarneUtil } from '../../../utils/printCarne'
@@ -128,10 +129,10 @@ export default function CobrancasTab({ initialResidentId, initialResidentName }:
   }
 
   const searchResidents = async (q: string) => {
-    if (q.length < 2) { setResidentResults([]); return }
+    if (q.length < 2) { cancelarBuscaMoradores('cobrancas'); setResidentResults([]); return }
     try {
-      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      setResidentResults(res.data.slice(0, 6))
+      const data = await buscarMoradores<Resident>('cobrancas', q)
+      if (data !== null) setResidentResults(data.slice(0, 6))
     } catch { }
   }
 
