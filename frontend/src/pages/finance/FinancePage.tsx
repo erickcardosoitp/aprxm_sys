@@ -5,6 +5,7 @@ import { CashSessionPanel } from '../../components/finance/CashSessionPanel'
 import { SangriaModal } from '../../components/finance/SangriaModal'
 const TransactionModal = lazy(() => import('../../components/finance/TransactionModal').then(m => ({ default: m.TransactionModal })))
 import api from '../../services/api'
+import { buscarMoradores, cancelarBuscaMoradores } from '../../services/residentSearch'
 import { financeService } from '../../services/finance'
 import { settingsService } from '../../services/settings'
 import { useFinanceCategories, usePaymentMethods } from '../../hooks/useSharedData'
@@ -686,10 +687,10 @@ const todayLabel = new Date().toLocaleDateString('pt-BR')
   const searchOfflineResident = async (q: string) => {
     setOfflineResidentQuery(q)
     setOfflineResident(null)
-    if (q.length < 2) { setOfflineResidentResults([]); return }
+    if (q.length < 2) { cancelarBuscaMoradores('financeiro-avulso'); setOfflineResidentResults([]); return }
     try {
-      const r = await api.get<{ id: string; full_name: string; cpf?: string; phone_primary?: string }[]>('/residents/search', { params: { q } })
-      setOfflineResidentResults(r.data.slice(0, 6))
+      const data = await buscarMoradores<{ id: string; full_name: string; cpf?: string; phone_primary?: string }>('financeiro-avulso', q)
+      if (data !== null) setOfflineResidentResults(data.slice(0, 6))
     } catch { setOfflineResidentResults([]) }
   }
 

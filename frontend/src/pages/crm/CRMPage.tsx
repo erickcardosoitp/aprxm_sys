@@ -7,6 +7,7 @@ import {
   Trophy, TrendingUp, XCircle
 } from 'lucide-react'
 import api from '../../services/api'
+import { buscarMoradores, cancelarBuscaMoradores } from '../../services/residentSearch'
 import { uploadService } from '../../services/upload'
 import toast from 'react-hot-toast'
 import { usePaymentMethods } from '../../hooks/useSharedData'
@@ -247,10 +248,10 @@ export default function CRMPage() {
   }, [tab])
 
   const searchForCreate = async (q: string) => {
-    if (q.length < 2) { setResidentResults([]); return }
+    if (q.length < 2) { cancelarBuscaMoradores('crm-criar'); setResidentResults([]); return }
     try {
-      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      setResidentResults(res.data.slice(0, 6))
+      const data = await buscarMoradores<Resident>('crm-criar', q)
+      if (data !== null) setResidentResults(data.slice(0, 6))
     } catch { }
   }
 

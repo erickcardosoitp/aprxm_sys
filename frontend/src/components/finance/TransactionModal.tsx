@@ -4,6 +4,7 @@ import { formatCep } from '../../utils'
 import { X, ChevronLeft, ChevronRight, Search, AlertCircle, CheckCircle2, Download, Printer, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
+import { buscarMoradores, cancelarBuscaMoradores } from '../../services/residentSearch'
 import { financeService } from '../../services/finance'
 import { settingsService } from '../../services/settings'
 import { useAssociationSettings, useFinanceCategories, usePaymentMethods } from '../../hooks/useSharedData'
@@ -325,17 +326,19 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
     setFeeQuery(q)
     setNotFound(false)
     setRegisterAs(null)
-    if (q.length < 2) { setFeeResults([]); return }
+    if (q.length < 2) { cancelarBuscaMoradores('tx-taxa'); setFeeResults([]); setFeeSearching(false); return }
     setFeeSearching(true)
     try {
-      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      const results = res.data.slice(0, 8)
+      const data = await buscarMoradores<Resident>('tx-taxa', q)
+      if (data === null) return
+      const results = data.slice(0, 8)
       setFeeResults(results)
       if (results.length === 0) {
         setNotFound(true)
         setRegName(q)
       }
-    } catch { /* silent */ } finally { setFeeSearching(false) }
+      setFeeSearching(false)
+    } catch { setFeeSearching(false) }
   }
 
   const selectFeeResident = (r: Resident) => {
@@ -1367,10 +1370,10 @@ export function TransactionModal({ onClose, onSuccess, initialSubtype, initialTx
                               setPixPayerEntityId('')
                               if (e.target.value.length >= 3) {
                                 try {
-                                  const r = await api.get<{ id: string; full_name: string }[]>('/residents/search', { params: { q: e.target.value } })
-                                  setPixPayerResults(r.data.slice(0, 5))
+                                  const data = await buscarMoradores<{ id: string; full_name: string }>('tx-pix-pagador', e.target.value)
+                                  if (data !== null) setPixPayerResults(data.slice(0, 5))
                                 } catch { setPixPayerResults([]) }
-                              } else { setPixPayerResults([]) }
+                              } else { cancelarBuscaMoradores('tx-pix-pagador'); setPixPayerResults([]) }
                             }}
                             placeholder="Buscar por nome..."
                             className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm bg-white"

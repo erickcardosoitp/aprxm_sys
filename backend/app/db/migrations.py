@@ -30,7 +30,7 @@ settings = get_settings()
 
 # Bump a cada migration nova adicionada em _apply_versioned_migrations.
 # Cold starts onde applied_version == SCHEMA_VERSION saem em ~2ms (um SELECT).
-SCHEMA_VERSION = 29
+SCHEMA_VERSION = 30
 
 # v29 -- ver bloco no fim de _apply_versioned_migrations. Constantes no nivel
 # do modulo pra poderem ser extraidas e testadas isoladamente num banco de
@@ -1840,6 +1840,34 @@ async def _apply_versioned_migrations(session) -> None:
     except Exception as exc:
         await session.rollback()
         print(f"[MIGRATION v29] falhou (nao-fatal): {exc}")
+
+    # v30: indice que a busca de morador por nome usa de verdade. O
+    # idx_residents_name_trgm existente e' sobre full_name cru, mas toda busca
+    # compara unaccent(lower(full_name)) -- expressao diferente, o Postgres
+    # nunca usou o indice (EXPLAIN real 2026-09-23: varredura de todos os
+    # moradores da associacao). unaccent() nao e' IMMUTABLE, entao nao pode ir
+    # num indice direto: f_unaccent e' o wrapper padrao, com dicionario fixo.
+    # A expressao do indice tem que bater exatamente com a de
+    # routers/residents.py::_condicao_nome.
+    try:
+        await session.execute(text("""
+            CREATE OR REPLACE FUNCTION f_unaccent(t text) RETURNS text
+            LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+            AS $$ SELECT public.unaccent('public.unaccent'::regdictionary, t) $$
+        """))
+        await session.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_residents_nome_busca
+            ON residents USING gin (f_unaccent(lower(full_name)) gin_trgm_ops)
+        """))
+        await session.execute(text(
+            "INSERT INTO schema_migrations (version, description) "
+            "VALUES (30, 'v30: f_unaccent + indice trigram usavel na busca de morador por nome') "
+            "ON CONFLICT DO NOTHING"
+        ))
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        print(f"[MIGRATION v30] falhou (nao-fatal): {exc}")
 
 
 async def _assert_schema_bootstrapped() -> None:

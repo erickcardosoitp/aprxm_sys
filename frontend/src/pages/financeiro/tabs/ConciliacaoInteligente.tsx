@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Upload, CheckCheck, TrendingUp, AlertCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../../services/api'
+import { buscarMoradores, cancelarBuscaMoradores } from '../../../services/residentSearch'
 import { fmtCurrency } from '../utils/formatters'
 import type { ReconciliationItem } from '../types/financeiro'
 
@@ -187,10 +188,10 @@ export default function ConciliacaoInteligente() {
 
   // ── Resident search for manual confirm ───────────────────────────────────
   const searchResidents = async (q: string) => {
-    if (!confirmModal || q.length < 2) return
+    if (!confirmModal || q.length < 2) { cancelarBuscaMoradores('conciliacao'); return }
     try {
-      const res = await api.get<{ id: string; full_name: string }[]>(`/residents/search?q=${encodeURIComponent(q)}`)
-      setConfirmModal(m => m ? { ...m, residentResults: res.data } : m)
+      const data = await buscarMoradores<{ id: string; full_name: string }>('conciliacao', q)
+      if (data !== null) setConfirmModal(m => m ? { ...m, residentResults: data } : m)
     } catch { /* noop */ }
   }
 

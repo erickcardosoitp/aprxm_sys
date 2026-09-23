@@ -20,6 +20,7 @@ import { maskCpf, formatCep } from '../../utils'
 import { uploadService } from '../../services/upload'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../../services/api'
+import { buscarMoradores, cancelarBuscaMoradores } from '../../services/residentSearch'
 import { useAssociationProfile, useDelinquentResidents, usePaymentMethods } from '../../hooks/useSharedData'
 import { useAuthStore } from '../../store/authStore'
 import type { Package, Resident } from '../../types'
@@ -176,8 +177,8 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const cardReassignInputRef = useRef<HTMLInputElement>(null)
   const searchCardReassign = async (q: string) => {
     setCardReassignSearch(q)
-    if (q.length < 3) { setCardReassignResults([]); return }
-    try { const r = await api.get<any[]>(`/residents/search?q=${encodeURIComponent(q)}`); setCardReassignResults(r.data.slice(0, 5)) } catch { setCardReassignResults([]) }
+    if (q.length < 3) { cancelarBuscaMoradores('enc-card-reatribuir'); setCardReassignResults([]); return }
+    try { const data = await buscarMoradores('enc-card-reatribuir', q); if (data !== null) setCardReassignResults(data.slice(0, 5)) } catch { setCardReassignResults([]) }
   }
   const doCardReassign = async (pkgId: string, residentId: string, residentName: string) => {
     try {
@@ -342,10 +343,10 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
 
   const searchReassign = async (q: string) => {
     setReassignSearch(q)
-    if (q.length < 3) { setReassignResults([]); return }
+    if (q.length < 3) { cancelarBuscaMoradores('enc-reatribuir'); setReassignResults([]); return }
     try {
-      const res = await api.get<any[]>(`/residents/search?q=${encodeURIComponent(q)}`)
-      setReassignResults(res.data.slice(0, 6))
+      const data = await buscarMoradores('enc-reatribuir', q)
+      if (data !== null) setReassignResults(data.slice(0, 6))
     } catch { setReassignResults([]) }
   }
 
@@ -566,10 +567,10 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   const brxSearchRef = useRef<HTMLInputElement>(null)
 
   const searchBrxResidents = async (q: string) => {
-    if (q.length < 3) { setBrxResults([]); return }
+    if (q.length < 3) { cancelarBuscaMoradores('enc-lote'); setBrxResults([]); return }
     try {
-      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      setBrxResults(res.data.slice(0, 8))
+      const data = await buscarMoradores<Resident>('enc-lote', q, { espera: 0 })
+      if (data !== null) setBrxResults(data.slice(0, 8))
     } catch { /* silent */ }
   }
 
@@ -885,10 +886,15 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   }, [bulkRxQueue])
 
   const searchResidents = async (q: string) => {
-    if (q.length < 3) { setSearchResults([]); setSearchEmpty(false); setShowGuestForm(false); return }
+    if (q.length < 3) { cancelarBuscaMoradores('enc-receber'); setSearchResults([]); setSearchEmpty(false); setShowGuestForm(false); return }
+    // Some o "não encontrado" da busca anterior enquanto esta ainda espera
+    // o usuário parar de digitar -- senão o form de visitante piscava pra
+    // um nome que ia ser encontrado.
+    setSearchEmpty(false)
     try {
-      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      const results = res.data.slice(0, 8)
+      const data = await buscarMoradores<Resident>('enc-receber', q, { espera: 0 })
+      if (data === null) return
+      const results = data.slice(0, 8)
       setSearchResults(results)
       setSearchEmpty(results.length === 0)
       if (results.length > 0) setShowGuestForm(false)
@@ -909,20 +915,20 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
   }
 
   const searchResponsible = async (q: string) => {
-    if (q.length < 3) { setNewResResponsibleResults([]); return }
+    if (q.length < 3) { cancelarBuscaMoradores('enc-responsavel'); setNewResResponsibleResults([]); return }
     try {
-      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      setNewResResponsibleResults(res.data.filter(r => r.type === 'member' && !('responsible_id' in r && (r as any).responsible_id)).slice(0, 6))
+      const data = await buscarMoradores<Resident>('enc-responsavel', q, { espera: 0 })
+      if (data !== null) setNewResResponsibleResults(data.filter(r => r.type === 'member' && !('responsible_id' in r && (r as any).responsible_id)).slice(0, 6))
     } catch { }
   }
 
   const checkDuplicates = (name: string) => {
     if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
-    if (name.trim().length < 3) { setDuplicateMatches([]); return }
+    if (name.trim().length < 3) { cancelarBuscaMoradores('enc-duplicados'); setDuplicateMatches([]); return }
     duplicateTimer.current = setTimeout(async () => {
       try {
-        const res = await api.get<Resident[]>('/residents/search', { params: { q: name.trim() } })
-        setDuplicateMatches(res.data.slice(0, 5))
+        const data = await buscarMoradores<Resident>('enc-duplicados', name.trim(), { espera: 0 })
+        if (data !== null) setDuplicateMatches(data.slice(0, 5))
       } catch { setDuplicateMatches([]) }
     }, 400)
   }
@@ -1200,8 +1206,8 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                       setCardReassignRect({ top: r.bottom, left: r.left, width: r.width })
                       if (cardReassignTimer.current) clearTimeout(cardReassignTimer.current)
                       cardReassignTimer.current = setTimeout(() => {
-                        if (v.length >= 3) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setCardReassignResults(r.data.slice(0, 5))).catch(() => setCardReassignResults([]))
-                        else setCardReassignResults([])
+                        if (v.length >= 3) buscarMoradores('enc-card-reatribuir', v, { espera: 0 }).then(data => { if (data !== null) setCardReassignResults(data.slice(0, 5)) }).catch(() => setCardReassignResults([]))
+                        else { cancelarBuscaMoradores('enc-card-reatribuir'); setCardReassignResults([]) }
                       }, SEARCH_DELAY)
                     }}
                     placeholder="Buscar morador…"
@@ -2489,7 +2495,7 @@ export default function PackagesPage({ modalMode = false, retiradaMode = false, 
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Atribuir encomenda a outro morador/dependente:</p>
                     <div className="relative">
-                      <input value={reassignSearch} onChange={e => { const v = e.target.value; setReassignSearch(v); if (reassignTimer.current) clearTimeout(reassignTimer.current); reassignTimer.current = setTimeout(() => { if (v.length >= 3) api.get<any[]>(`/residents/search?q=${encodeURIComponent(v)}`).then(r => setReassignResults(r.data.slice(0, 6))).catch(() => setReassignResults([])); else setReassignResults([]) }, SEARCH_DELAY) }}
+                      <input value={reassignSearch} onChange={e => { const v = e.target.value; setReassignSearch(v); if (reassignTimer.current) clearTimeout(reassignTimer.current); reassignTimer.current = setTimeout(() => { if (v.length >= 3) buscarMoradores('enc-reatribuir', v, { espera: 0 }).then(data => { if (data !== null) setReassignResults(data.slice(0, 6)) }).catch(() => setReassignResults([])); else { cancelarBuscaMoradores('enc-reatribuir'); setReassignResults([]) } }, SEARCH_DELAY) }}
                         className={inputCls} placeholder="Buscar por nome ou CPF…" />
                       {reassignResults.length > 0 && (
                         <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">

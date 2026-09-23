@@ -9,6 +9,7 @@ import { financeService } from '../../services/finance'
 import { useAuthStore } from '../../store/authStore'
 import type { CashSession, Transaction, Resident } from '../../types'
 import api from '../../services/api'
+import { buscarMoradores, cancelarBuscaMoradores } from '../../services/residentSearch'
 
 const TransactionModal = lazy(() =>
   import('../../components/finance/TransactionModal').then(m => ({ default: m.TransactionModal }))
@@ -170,12 +171,14 @@ function ConsultarPagamentosSheet({ open, onClose }: { open: boolean; onClose: (
     setQuery(q)
     setSelected(null)
     setHistory(null)
-    if (q.length < 2) { setResults([]); return }
+    if (q.length < 2) { cancelarBuscaMoradores('simplifica-caixa'); setResults([]); setSearching(false); return }
     setSearching(true)
     try {
-      const r = await api.get<Resident[]>('/residents/search', { params: { q } })
-      setResults(r.data.slice(0, 6))
-    } catch { /* silent */ } finally { setSearching(false) }
+      const data = await buscarMoradores<Resident>('simplifica-caixa', q)
+      if (data === null) return
+      setResults(data.slice(0, 6))
+      setSearching(false)
+    } catch { setSearching(false) }
   }
 
   const select = async (r: Resident) => {

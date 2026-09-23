@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Users, Plus, X, ChevronLeft, ChevronRight, Search, UserPlus, FileText, AlertCircle, Printer, Merge } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
+import { buscarMoradores, cancelarBuscaMoradores } from '../../services/residentSearch'
 import { useAssociationSettings, useDelinquentResidents } from '../../hooks/useSharedData'
 import type { Resident, ResidentStatus, ResidentType } from '../../types'
 import { printCarne as printCarneUtil } from '../../utils/printCarne'
@@ -377,8 +378,8 @@ function ResidentForm({ initial, onSave, onCancel }: {
                           setResponsibleSearch(v)
                           if (responsibleTimer.current) clearTimeout(responsibleTimer.current)
                           responsibleTimer.current = setTimeout(() => {
-                            if (v.length >= 3) api.get<Resident[]>(`/residents/search?q=${encodeURIComponent(v)}&type=member`).then(r => setResponsibleResults(r.data.slice(0, 6))).catch(() => setResponsibleResults([]))
-                            else setResponsibleResults([])
+                            if (v.length >= 3) buscarMoradores<Resident>('moradores-responsavel', v, { params: { type: 'member' }, espera: 0 }).then(data => { if (data !== null) setResponsibleResults(data.slice(0, 6)) }).catch(() => setResponsibleResults([]))
+                            else { cancelarBuscaMoradores('moradores-responsavel'); setResponsibleResults([]) }
                           }, 300)
                         }}
                         placeholder="Buscar associado por nome…"
@@ -778,10 +779,10 @@ function ResidentProfileModal({ resident, onClose }: { resident: Resident; onClo
   const [currentResident, setCurrentResident] = useState(resident)
 
   const searchConvertResponsible = async (q: string) => {
-    if (q.length < 2) { setConvertResponsibleResults([]); return }
+    if (q.length < 2) { cancelarBuscaMoradores('moradores-converter'); setConvertResponsibleResults([]); return }
     try {
-      const res = await api.get<Resident[]>('/residents/search', { params: { q } })
-      setConvertResponsibleResults(res.data.filter((r: Resident) => r.type === 'member' && !(r as any).responsible_id && r.id !== resident.id).slice(0, 6))
+      const data = await buscarMoradores<Resident>('moradores-converter', q)
+      if (data !== null) setConvertResponsibleResults(data.filter((r: Resident) => r.type === 'member' && !(r as any).responsible_id && r.id !== resident.id).slice(0, 6))
     } catch { }
   }
 
