@@ -1,6 +1,8 @@
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session
 from sqlmodel import SQLModel
 
 from app.config import get_settings
@@ -42,6 +44,19 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+@event.listens_for(Session, "after_begin")
+def _propagar_usuario_logado(session: Session, transaction, connection) -> None:
+    # O gatilho set_audit_fields (migration v29) le app.user_id pra preencher
+    # created_by/updated_by. set_config(..., true) vale so ate o fim da
+    # transacao -- por isso reaplicado a cada BEGIN (endpoint que commita no
+    # meio abre transacao nova), e nunca vaza pra outra requisicao que pegue a
+    # mesma conexao do pool. Sessao sem usuario (cron/script) nao seta nada:
+    # o gatilho grava NULL = "sistema".
+    user_id = session.info.get("user_id")
+    if user_id:
+        connection.execute(text("SELECT set_config('app.user_id', :uid, true)"), {"uid": user_id})
 
 
 async def init_db() -> None:

@@ -143,6 +143,14 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Transacao atual ja comecou (SELECT acima), entao o after_begin de
+    # app/database.py nao pegou o usuario -- seta aqui pra esta transacao; as
+    # proximas da mesma requisicao pegam via session.info.
+    session.info["user_id"] = str(user_id)
+    await session.execute(
+        text("SELECT set_config('app.user_id', :uid, true)"), {"uid": str(user_id)}
+    )
+
     linked_ids = [UUID(i) for i in payload.get("linked_association_ids", [])]
     empresa_id_claim = payload.get("empresa_id")
     association_id_claim = payload.get("association_id")
